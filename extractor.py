@@ -21,15 +21,37 @@ _FREE_MODELS = [
     "google/gemma-4-26b-a4b-it:free",
 ]
 
-_PROMPT = (
-    "Extract every field from this Romanian ID card (carte de identitate / buletin). "
-    "Preserve diacritics exactly as printed (ș ț ă â î and their uppercase forms). "
-    "The CNP is a 13-digit number near the bottom or MRZ zone. "
-    "Respond with a JSON object containing exactly these fields: "
-    "cnp, nume, prenume, serie_numar, data_nasterii, locul_nasterii, "
-    "cetatenia, adresa, judet, emisa_de, valabila_pana_la. "
-    "Use an empty string for any field that is not visible or illegible."
-)
+_PROMPT = """\
+You are extracting fields from a Romanian national ID card (Carte de Identitate / Buletin).
+
+The card has two zones: a VISUAL zone (upper half, human-readable) and an MRZ zone \
+(bottom strip, machine-readable OCR-B font). Use the visual zone as primary source; \
+use MRZ only to cross-check CNP, date of birth, and expiry.
+
+FIELD DEFINITIONS — read them carefully:
+• SURNAME / NUME: the family/last name. A word made of letters only (e.g. POPESCU, IONESCU).
+• FIRST NAME / PRENUME: the given/first name(s). Letters only (e.g. ION, MARIA ANA).
+• NATIONALITY / CETĂȚENIA: always "Română" on Romanian cards.
+• PLACE OF BIRTH / LOCUL NAȘTERII: a Romanian city or village name. \
+  NEVER a person's name. If it looks like a person's name, it is wrong — skip it.
+• DATE OF BIRTH / DATA NAȘTERII: printed as DD.MM.YYYY in visual zone (e.g. 08.12.2003).
+• ADDRESS / ADRESA: a physical street address (Str., Bd., Cal., B-dul etc. + number). \
+  NEVER "MRZ reader", "IDROU", or any document-metadata text.
+• COUNTY / JUDEȚUL: one of Romania's 41 counties or BUCURESTI (e.g. TIMIS, CLUJ, IASI).
+• ISSUED BY / EMISĂ DE: the issuing authority (e.g. SPCLEP CLUJ-NAPOCA, \
+  JUD.TM COM.DUMBRAVITA). Starts with SPCLEP, DEPABD, JUD, or a similar abbreviation.
+• EXPIRY DATE / VALABILĂ PÂNĂ LA: printed as DD.MM.YYYY (e.g. 08.12.2032).
+• CNP: exactly 13 decimal digits, first digit 1-9 (e.g. 6030812354789). \
+  Found in visual zone AND encoded in MRZ. NEVER contains letters. \
+  If uncertain, read the MRZ number line which starts with the CNP.
+• SERIES & NUMBER / SERIE ȘI NUMĂR: 2 uppercase letters + space + 6 digits (e.g. TM 729123).
+
+Return ONLY a valid JSON object with these exact keys (no extra keys, no markdown):
+cnp, nume, prenume, serie_numar, data_nasterii, locul_nasterii, cetatenia, \
+adresa, judet, emisa_de, valabila_pana_la
+
+Use "" for any field not clearly readable. Do not invent or guess values.\
+"""
 
 
 class RomanianIDData(BaseModel):

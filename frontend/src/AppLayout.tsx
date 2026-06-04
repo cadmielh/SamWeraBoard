@@ -46,7 +46,6 @@ export default function AppLayout() {
         setAccessToken('')
         sessionStorage.removeItem('gat')
         setAuthLoading(false)
-        navigate('/signin')
       } else {
         setUser(u)
         setAuthLoading(false)
@@ -90,7 +89,6 @@ export default function AppLayout() {
     setUser(null)
     setAccessToken('')
     sessionStorage.removeItem('gat')
-    navigate('/signin')
   }
 
   // Auth loading

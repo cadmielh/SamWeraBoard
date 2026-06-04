@@ -395,6 +395,17 @@ _JUDETE = {
 }
 
 
+# Substrings that indicate OCR noise / document metadata, never real field values
+_GARBAGE_FRAGMENTS = re.compile(
+    r"MRZ\s*reader|IDROU|OCR[\s\-]B|machine\s*readable|document\s*number",
+    re.IGNORECASE,
+)
+
+
+def _is_garbage(value: str) -> bool:
+    return bool(_GARBAGE_FRAGMENTS.search(value))
+
+
 def _clean_name(text: str) -> str:
     return _NAME_RE.sub("", text).strip().upper()
 
@@ -413,7 +424,7 @@ def _clean_judet(text: str) -> str:
 
 # ── Quality scoring ───────────────────────────────────────────────────────────
 
-_QUALITY_THRESHOLD = 0.50
+QUALITY_THRESHOLD = 0.50
 _MAX_RETRIES = 2
 
 
@@ -482,7 +493,7 @@ def _run_ocr(image: Image.Image) -> dict:
     # Label-based scan
     from_labels = _label_scan(lines)
     for k, v in from_labels.items():
-        if v and not fields.get(k):
+        if v and not fields.get(k) and not _is_garbage(v):
             fields[k] = v
 
     # Name cleanup
@@ -499,20 +510,21 @@ def _run_ocr(image: Image.Image) -> dict:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def extract_local(file_bytes: bytes, filename: str) -> dict:
+def extract_local(file_bytes: bytes, filename: str) -> tuple[dict, float]:
     """
     Extract Romanian ID fields with EasyOCR.
     Attempt 0: CLAHE + deskew (standard).
     Attempt 1: Adaptive threshold.
     Attempt 2: Sharpen + upscale 1.5×.
-    Raises RuntimeError if quality < threshold after all retries → AI fallback.
+    Always returns (best_fields, best_score) — never raises on low quality.
+    Caller decides whether to try AI based on the score.
     """
     image = _load_image(file_bytes, filename)
 
     preprocessors = [
-        lambda img: _clahe(_deskew(img)),   # attempt 0: CLAHE + deskew
-        _adaptive_thresh,                    # attempt 1: binarization
-        _sharpen_upscale,                    # attempt 2: upscale + sharpen
+        lambda img: _clahe(_deskew(img)),
+        _adaptive_thresh,
+        _sharpen_upscale,
     ]
 
     best_fields: dict = {}
@@ -528,13 +540,7 @@ def extract_local(file_bytes: bytes, filename: str) -> dict:
             best_score = score
             best_fields = fields
 
-        if score >= _QUALITY_THRESHOLD:
+        if score >= QUALITY_THRESHOLD:
             break
 
-    if best_score < _QUALITY_THRESHOLD:
-        raise RuntimeError(
-            f"OCR quality too low after {len(preprocessors)} attempts "
-            f"(best={best_score:.2f}) — falling back to AI."
-        )
-
-    return best_fields
+    return best_fields, best_score

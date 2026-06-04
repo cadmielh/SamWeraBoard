@@ -80,26 +80,57 @@ def extract():
     file_bytes = file.read()
     filename   = file.filename
 
-    # Try local OCR first (fast, offline, deterministic)
-    try:
-        fields = local_extractor.extract_local(file_bytes, filename)
-        # Safety net: always re-derive DOB from CNP if CNP is valid
+    def _postprocess(fields: dict) -> dict:
+        """Re-derive DOB from CNP if valid; clear CNP if invalid."""
         cnp = fields.get("cnp", "")
         if cnp and local_extractor._validate_cnp(cnp):
             dob = local_extractor._cnp_to_dob(cnp)
             if dob:
                 fields["data_nasterii"] = dob
-        print(f"[extract] local OK — cnp={cnp or '–'} dob={fields.get('data_nasterii','–')}")
-        return jsonify({**fields, "uid": uid})
-    except Exception as local_err:
-        print(f"[extract] Local OCR failed: {local_err} — falling back to OpenRouter")
+        elif cnp:
+            fields["cnp"] = ""
+        return fields
 
-    # Fallback: OpenRouter vision API
+    # ── Local OCR ────────────────────────────────────────────────────────────
+    local_fields: dict = {}
+    local_score = 0.0
+    try:
+        local_fields, local_score = local_extractor.extract_local(file_bytes, filename)
+        local_fields = _postprocess(local_fields)
+        print(f"[extract] local score={local_score:.2f} cnp={local_fields.get('cnp') or '–'}")
+    except Exception as local_err:
+        print(f"[extract] Local OCR crashed: {local_err}")
+
+    # If local OCR is good enough, return immediately — no AI call
+    if local_score >= local_extractor.QUALITY_THRESHOLD:
+        return jsonify({**local_fields, "uid": uid})
+
+    # ── AI fallback (only when local quality is insufficient) ────────────────
+    print(f"[extract] local score {local_score:.2f} < threshold — trying AI")
+    _empty = {"cnp":"","nume":"","prenume":"","serie_numar":"","data_nasterii":"",
+              "locul_nasterii":"","cetatenia":"","adresa":"","judet":"","emisa_de":"","valabila_pana_la":""}
     try:
         id_data = extractor.extract_from_bytes(file_bytes, filename)
-        return jsonify({**id_data.model_dump(), "uid": uid})
-    except Exception as e:
-        return jsonify({"error": f"Extraction failed: {e}"}), 500
+        ai_fields = _postprocess(id_data.model_dump())
+        ai_score  = local_extractor._quality_score(ai_fields)
+        print(f"[extract] ai score={ai_score:.2f}")
+
+        best = ai_fields if ai_score > local_score else local_fields
+
+        # If local OCR validated the CNP, always trust it — CNP + derived DOB
+        # are mathematically certain; AI can't do better on these two fields
+        local_cnp = local_fields.get("cnp", "")
+        if local_cnp and local_extractor._validate_cnp(local_cnp):
+            best["cnp"] = local_cnp
+            local_dob = local_extractor._cnp_to_dob(local_cnp)
+            if local_dob:
+                best["data_nasterii"] = local_dob
+
+        return jsonify({**best, "uid": uid})
+    except Exception as ai_err:
+        print(f"[extract] AI fallback failed: {ai_err}")
+        # Return whatever local OCR found (even if partial), never block the user
+        return jsonify({**(_empty | local_fields), "uid": uid})
 
 
 @app.route("/extract/drive", methods=["POST"])
