@@ -1,0 +1,11 @@
+.env
+token.json
+credentials.json
+uploads/
+__pycache__/
+*.pyc
+*.pyo
+.claude/
+preview.html
+*.egg-info/
+.git/

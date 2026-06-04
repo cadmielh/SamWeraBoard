@@ -1,0 +1,110 @@
+# ============================================================
+# SECURITY — Never commit these
+# ============================================================
+.env
+.env.local
+.env.*.local
+
+# Firebase service account private key
+firebase-service-account.json
+
+# Google OAuth2 credentials and tokens
+credentials.json
+token.json
+
+# Any other key/secret files
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+service-account*.json
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+*.so
+*.whl
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Coverage / test output
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================================
+# Node / JavaScript / TypeScript
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp
+.pnp.js
+
+# Build output
+frontend/dist/
+samwera-board/dist/
+functions/lib/
+
+# ============================================================
+# Firebase / Google Cloud
+# ============================================================
+.firebase/
+.firebaserc.local
+.gcloudignore
+
+# ============================================================
+# Uploads / user data (runtime files, not source)
+# ============================================================
+uploads/
+tmp/
+
+# ============================================================
+# Generated / output documents
+# ============================================================
+completat_template.docx
+*- Copy.docx
+
+# ============================================================
+# IDE and editor files
+# ============================================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# Claude Code internal files
+# ============================================================
+.claude/
+
+# ============================================================
+# Misc
+# ============================================================
+preview.html
+*.log
+*.bak
+*.tmp

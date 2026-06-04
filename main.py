@@ -1,0 +1,26 @@
+import os
+
+os.environ.setdefault("UPLOAD_FOLDER", "/tmp/uploads")
+
+from firebase_functions import https_fn, params
+from app import app as flask_app
+
+_openrouter_key  = params.SecretParam("OPENROUTER_API_KEY")
+_openapi_ro_key  = params.SecretParam("OPENAPI_RO_KEY")
+_listafirme_key  = params.SecretParam("LISTAFIRME_KEY")
+
+
+@https_fn.on_request(
+    region="us-central1",
+    memory=512,
+    timeout_sec=300,
+    max_instances=10,
+    secrets=[_openrouter_key, _openapi_ro_key, _listafirme_key],
+)
+def api(req: https_fn.Request) -> https_fn.Response:
+    environ = dict(req.environ)
+    path = environ.get("PATH_INFO", "/")
+    if path.startswith("/api"):
+        environ["PATH_INFO"] = path[4:] or "/"
+    with flask_app.request_context(environ):
+        return flask_app.full_dispatch_request()

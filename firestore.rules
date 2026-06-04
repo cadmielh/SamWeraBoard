@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users own profile (active workspace preference)
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Helper functions
+    function isMember(wid) {
+      return request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/workspaces/$(wid)).data.members;
+    }
+    function isAdmin(wid) {
+      let members = get(/databases/$(database)/documents/workspaces/$(wid)).data.members;
+      return request.auth != null &&
+        request.auth.uid in members &&
+        members[request.auth.uid].role == 'admin';
+    }
+
+    // Workspaces
+    match /workspaces/{wid} {
+      allow read: if request.auth != null &&
+        request.auth.uid in resource.data.members;
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.ownerId;
+      allow update: if isAdmin(wid);
+      allow delete: if false;
+
+      // Clients sub-collection — any workspace member can CRUD
+      match /clienti/{clientId} {
+        allow read, write, delete: if isMember(wid);
+      }
+    }
+
+    // Invitations — keyed by encoded email (@ -> _AT_, . -> _DOT_)
+    match /invitations/{encodedEmail} {
+      // Any authenticated user can read (to check their own invitation at login)
+      allow read: if request.auth != null;
+      // Any admin can create/update invitations for their workspace
+      allow write: if request.auth != null &&
+        isAdmin(request.resource.data.workspaceId);
+    }
+  }
+}

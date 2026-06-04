@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>CI DataExtractor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+<!-- ══════════════════ HEADER ══════════════════ -->
+<header class="header">
+  <div class="header-inner">
+
+    <a class="logo" href="/">
+      <div class="logo-mark">🪪</div>
+      <span class="logo-name">CI<em>Extractor</em></span>
+    </a>
+
+    <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0;">
+      {% if ocr_mode == 'local' %}
+        <span class="chip chip-muted" title="EasyOCR rulează local — niciun API key necesar">🖥 Local OCR</span>
+      {% else %}
+        <span class="chip chip-primary" title="Claude Vision API activ">✦ Claude AI</span>
+      {% endif %}
+    </div>
+
+    <ol class="step-trail" aria-label="Pași">
+      <li class="step-node is-active" id="s1">
+        <span class="step-badge">1</span> Încarcă
+      </li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step-node" id="s2">
+        <span class="step-badge">2</span> Verifică
+      </li>
+      <li class="step-sep" aria-hidden="true"></li>
+      <li class="step-node" id="s3">
+        <span class="step-badge">3</span> Completează
+      </li>
+    </ol>
+
+    <div class="auth-pill">
+      {% if authenticated %}
+        <span class="status-dot ok" title="Google Drive conectat"></span>
+        <span class="auth-label">Drive conectat</span>
+        <a class="btn btn-ghost btn-sm" href="/auth/google">Reautorizare</a>
+      {% else %}
+        <span class="status-dot off" title="Google Drive neconectat"></span>
+        <span class="auth-label">Drive neconectat</span>
+        <a class="btn btn-primary btn-sm" href="/auth/google">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Conectare
+        </a>
+      {% endif %}
+    </div>
+
+  </div>
+</header>
+
+<!-- ══════════════════ PAGE ══════════════════ -->
+<main class="page">
+
+  <!-- ── Row 1: Upload + Drive ── -->
+  <div class="row-2">
+
+    <!-- Upload card -->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">
+            <span class="step-chip">1</span> Încarcă imaginea CI
+          </div>
+          <div class="card-sub">Fotografie, scan sau PDF</div>
+        </div>
+        <span class="chip chip-muted" id="upload-badge" style="display:none"></span>
+      </div>
+      <div class="card-body">
+
+        <div class="drop-zone" id="drop-zone" role="button" tabindex="0"
+             aria-label="Zonă de încărcare fișier">
+          <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.webp,.pdf"
+                 aria-label="Selectează fișier CI">
+          <div class="dz-icon" id="dz-icon">📎</div>
+          <div class="dz-title" id="dz-title">Trage fișierul aici sau click pentru a selecta</div>
+          <div class="dz-sub" id="dz-sub">Fișierul rămâne pe dispozitivul tău</div>
+          <div class="dz-types">
+            <span class="dz-badge">JPG</span>
+            <span class="dz-badge">PNG</span>
+            <span class="dz-badge">WEBP</span>
+            <span class="dz-badge">PDF</span>
+          </div>
+        </div>
+
+        <div class="preview-wrap" id="preview-wrap">
+          <img class="preview-img" id="preview-img" src="" alt="Previzualizare CI">
+          <span class="preview-badge" id="preview-badge"></span>
+        </div>
+
+        <div class="inline-status" id="upload-status"></div>
+
+        <div class="btn-row" style="margin-top:1rem;">
+          <button class="btn btn-primary btn-full" id="btn-extract" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+            <span id="extract-label">Extrage câmpuri</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Drive card -->
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">
+            <span class="step-chip">1</span> Sau din Google Drive
+          </div>
+          <div class="card-sub">Navighează și selectează un fișier</div>
+        </div>
+        {% if authenticated %}
+          <span class="chip chip-success">● Activ</span>
+        {% else %}
+          <span class="chip chip-muted">Neconectat</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+
+        <div class="drive-toolbar">
+          <span class="breadcrumb" id="drive-breadcrumb">Drive principal</span>
+          <button class="btn btn-ghost btn-icon btn-sm" id="btn-drive-home"
+                  onclick="loadDrive('root')" title="Rădăcină Drive">
+            🏠
+          </button>
+          <button class="btn btn-ghost btn-icon btn-sm" id="btn-drive-back"
+                  onclick="drivePop()" title="Înapoi" disabled>
+            ←
+          </button>
+          <button class="btn btn-ghost btn-icon btn-sm"
+                  onclick="loadDrive(driveStack[driveStack.length-1])" title="Reîncarcă">
+            ↻
+          </button>
+        </div>
+
+        <ul class="file-list" id="file-list">
+          {% if not authenticated %}
+          <li class="file-item" style="cursor:default;">
+            <div class="fi-icon">🔒</div>
+            <div class="fi-info">
+              <div class="fi-name" style="color:var(--s400);">Conectează Google Drive</div>
+              <div class="fi-meta">pentru a naviga fișierele tale</div>
+            </div>
+          </li>
+          {% endif %}
+        </ul>
+
+        <div class="inline-status" id="drive-status"></div>
+
+      </div>
+    </div>
+
+  </div><!-- /row-2 -->
+
+  <!-- ── Row 2: Extracted fields ── -->
+  <div class="card" id="section-fields">
+    <div class="card-head">
+      <div>
+        <div class="card-title">
+          <span class="step-chip">2</span> Câmpuri extrase
+        </div>
+        <div class="card-sub">Verifică și corectează valorile înainte de completare</div>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;">
+        <span class="chip chip-muted" id="fields-status-chip" style="display:none;"></span>
+        <button class="btn btn-ghost btn-sm" id="btn-clear-fields" onclick="clearFields()"
+                title="Șterge câmpurile" style="display:none;">
+          ✕ Șterge
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div class="fields-grid">
+
+        <div class="field">
+          <label class="field-label" for="f-cnp">CNP</label>
+          <div class="field-wrap">
+            <span class="field-icon">🔢</span>
+            <input class="field-input" type="text" id="f-cnp" placeholder="1234567890123"
+                   maxlength="13" autocomplete="off" data-key="cnp">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-serie_numar">Serie și număr</label>
+          <div class="field-wrap">
+            <span class="field-icon">🪪</span>
+            <input class="field-input" type="text" id="f-serie_numar" placeholder="AZ 123456"
+                   autocomplete="off" data-key="serie_numar">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-nume">Nume</label>
+          <div class="field-wrap">
+            <span class="field-icon">👤</span>
+            <input class="field-input" type="text" id="f-nume" placeholder="POPESCU"
+                   autocomplete="off" data-key="nume">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-prenume">Prenume</label>
+          <div class="field-wrap">
+            <span class="field-icon">👤</span>
+            <input class="field-input" type="text" id="f-prenume" placeholder="ION GABRIEL"
+                   autocomplete="off" data-key="prenume">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-data_nasterii">Data naşterii</label>
+          <div class="field-wrap">
+            <span class="field-icon">📅</span>
+            <input class="field-input" type="text" id="f-data_nasterii" placeholder="01.01.1990"
+                   autocomplete="off" data-key="data_nasterii">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-locul_nasterii">Locul naşterii</label>
+          <div class="field-wrap">
+            <span class="field-icon">📍</span>
+            <input class="field-input" type="text" id="f-locul_nasterii" placeholder="CLUJ-NAPOCA"
+                   autocomplete="off" data-key="locul_nasterii">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-cetatenia">Cetăţenia</label>
+          <div class="field-wrap">
+            <span class="field-icon">🌍</span>
+            <input class="field-input" type="text" id="f-cetatenia" placeholder="ROMÂNĂ"
+                   autocomplete="off" data-key="cetatenia">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-judet">Judeţul</label>
+          <div class="field-wrap">
+            <span class="field-icon">🗺️</span>
+            <input class="field-input" type="text" id="f-judet" placeholder="CLUJ"
+                   autocomplete="off" data-key="judet">
+          </div>
+        </div>
+
+        <div class="field field-full">
+          <label class="field-label" for="f-adresa">Adresa</label>
+          <div class="field-wrap">
+            <span class="field-icon">🏠</span>
+            <input class="field-input" type="text" id="f-adresa"
+                   placeholder="STR. EXEMPLU NR. 1, BL. A, AP. 2"
+                   autocomplete="off" data-key="adresa">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-emisa_de">Emisă de</label>
+          <div class="field-wrap">
+            <span class="field-icon">🏛️</span>
+            <input class="field-input" type="text" id="f-emisa_de" placeholder="SPCLEP CLUJ-NAPOCA"
+                   autocomplete="off" data-key="emisa_de">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="f-valabila_pana_la">Valabilă până la</label>
+          <div class="field-wrap">
+            <span class="field-icon">⏳</span>
+            <input class="field-input" type="text" id="f-valabila_pana_la" placeholder="01.01.2030"
+                   autocomplete="off" data-key="valabila_pana_la">
+          </div>
+        </div>
+
+      </div><!-- /fields-grid -->
+
+    </div>
+  </div>
+
+  <!-- ── Row 3: Template filling ── -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">
+          <span class="step-chip">3</span> Completează document
+        </div>
+        <div class="card-sub">Exportă câmpurile într-un șablon Word sau Google Docs</div>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div class="tabs-bar" role="tablist">
+        <button class="tab-pill is-active" role="tab" aria-selected="true"
+                onclick="switchTab('tab-docx',this)">
+          📄 Word (.docx)
+        </button>
+        <button class="tab-pill" role="tab" aria-selected="false"
+                onclick="switchTab('tab-gdoc',this)">
+          📝 Google Docs
+        </button>
+      </div>
+
+      <!-- ── DOCX tab ── -->
+      <div class="tab-pane is-active" id="tab-docx" role="tabpanel">
+
+        <p class="help-text">
+          Folosește markeri <code>{{CNP}}</code>, <code>{{NUME}}</code>, <code>{{PRENUME}}</code>,
+          <code>{{ADRESA}}</code> etc. în șablonul tău Word. Fiecare marker va fi înlocuit cu
+          valoarea câmpului corespunzător.
+        </p>
+
+        <div class="template-upload-row" id="tu-row"
+             onclick="document.getElementById('docx-input').click()"
+             style="cursor:pointer;">
+          <input type="file" id="docx-input" accept=".docx" style="display:none">
+          <div class="tu-icon">📂</div>
+          <div class="tu-info">
+            <div class="tu-name" id="docx-name">Niciun șablon selectat</div>
+            <div class="tu-hint">Click pentru a alege un fișier .docx</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button"
+                  onclick="event.stopPropagation();document.getElementById('docx-input').click()">
+            Alege
+          </button>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-success" id="btn-fill-dl" onclick="fillDocx(false)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Descarcă completat
+          </button>
+          <button class="btn btn-primary" id="btn-fill-drive" onclick="fillDocx(true)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Salvează în Drive
+          </button>
+        </div>
+
+        <div class="inline-status" id="docx-status"></div>
+
+      </div>
+
+      <!-- ── Google Docs tab ── -->
+      <div class="tab-pane" id="tab-gdoc" role="tabpanel">
+
+        <p class="help-text">
+          Copiază ID-ul documentului Google Docs șablon din URL:
+          <code>docs.google.com/document/d/<strong>ID</strong>/edit</code>.
+          O copie nouă va fi creată cu câmpurile completate.
+        </p>
+
+        <div class="gdoc-field">
+          <label class="field-label" for="gdoc-template-id" style="margin-bottom:.4rem;display:block;">
+            ID document șablon
+          </label>
+          <input class="gdoc-input" type="text" id="gdoc-template-id"
+                 placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="fillGdoc()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Creează copie completată
+          </button>
+        </div>
+
+        <div class="inline-status" id="gdoc-status"></div>
+
+      </div>
+
+    </div>
+  </div>
+
+</main>
+</div><!-- /app -->
+
+<!-- ── Toast dock ── -->
+<div id="toast-dock" aria-live="polite" aria-atomic="false"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════════
+const FIELDS = ['cnp','serie_numar','nume','prenume','data_nasterii',
+                'locul_nasterii','cetatenia','adresa','judet','emisa_de','valabila_pana_la'];
+
+let selectedFile = null;
+let driveStack = ['root'];
+let driveNames = { root: 'Drive principal' };
+
+// ═══════════════════════════════════════════════
+//  Toast system
+// ═══════════════════════════════════════════════
+function toast(title, msg, type = 'info') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+  const dock = document.getElementById('toast-dock');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `
+    <span class="toast-ico">${icons[type] || icons.info}</span>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
+    </div>
+    <button class="toast-close" onclick="dismissToast(this.parentElement)">×</button>`;
+  dock.appendChild(el);
+  setTimeout(() => dismissToast(el), 4800);
+}
+function dismissToast(el) {
+  if (!el || el.classList.contains('dismissing')) return;
+  el.classList.add('dismissing');
+  setTimeout(() => el.remove(), 220);
+}
+
+// ═══════════════════════════════════════════════
+//  Step indicator
+// ═══════════════════════════════════════════════
+function setStep(n) {
+  [1,2,3].forEach(i => {
+    const node = document.getElementById('s'+i);
+    node.classList.remove('is-active','is-done');
+    if (i < n) node.classList.add('is-done');
+    else if (i === n) node.classList.add('is-active');
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  Inline status helper
+// ═══════════════════════════════════════════════
+function setStatus(id, msg, type = 'info') {
+  const el = document.getElementById(id);
+  el.className = `inline-status show ${type}`;
+  el.innerHTML = `<span>${type === 'ok' ? '✓' : type === 'err' ? '✕' : 'ℹ'}</span> ${msg}`;
+}
+function clearStatus(id) {
+  const el = document.getElementById(id);
+  el.className = 'inline-status';
+  el.innerHTML = '';
+}
+
+// ═══════════════════════════════════════════════
+//  File drop zone
+// ═══════════════════════════════════════════════
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', e => {
+  if (e.target !== fileInput) fileInput.click();
+});
+dropZone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+});
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault(); dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) applyFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) applyFile(fileInput.files[0]);
+});
+
+function applyFile(file) {
+  selectedFile = file;
+  clearStatus('upload-status');
+  document.getElementById('btn-extract').disabled = false;
+
+  // Update drop zone visual
+  document.getElementById('dz-icon').textContent = file.type.startsWith('image/') ? '🖼️' : '📄';
+  document.getElementById('dz-title').textContent = file.name;
+  document.getElementById('dz-sub').textContent = formatBytes(file.size);
+
+  const badge = document.getElementById('upload-badge');
+  badge.textContent = file.type.includes('pdf') ? 'PDF' : 'Image';
+  badge.style.display = 'inline-flex';
+
+  // Preview
+  const wrap = document.getElementById('preview-wrap');
+  const img = document.getElementById('preview-img');
+  if (file.type.startsWith('image/')) {
+    img.src = URL.createObjectURL(file);
+    document.getElementById('preview-badge').textContent = file.name;
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+    img.src = '';
+  }
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(2) + ' MB';
+}
+
+// ═══════════════════════════════════════════════
+//  Extract from upload
+// ═══════════════════════════════════════════════
+document.getElementById('btn-extract').addEventListener('click', async () => {
+  if (!selectedFile) return;
+  const btn = document.getElementById('btn-extract');
+  const label = document.getElementById('extract-label');
+  btn.disabled = true;
+  label.innerHTML = '<span class="spin"></span> Se extrage…';
+  clearStatus('upload-status');
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  try {
+    const res = await fetch('/extract', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Eroare server');
+    populateFields(data);
+    setStep(2);
+    toast('Extragere completă', `Câmpuri completate din ${selectedFile.name}`, 'success');
+    setStatus('upload-status', 'Câmpuri extrase cu succes — verifică și corectează mai jos.', 'ok');
+    showFieldsState(true);
+    document.getElementById('section-fields').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch(e) {
+    setStatus('upload-status', e.message, 'err');
+    toast('Extragere eșuată', e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    label.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Extrage câmpuri';
+  }
+});
+
+// ═══════════════════════════════════════════════
+//  Fields helpers
+// ═══════════════════════════════════════════════
+function populateFields(data) {
+  FIELDS.forEach(k => {
+    const el = document.getElementById('f-' + k);
+    if (el) {
+      el.value = data[k] || '';
+      el.classList.toggle('is-valid', !!data[k]);
+    }
+  });
+}
+
+function getFields() {
+  const out = {};
+  FIELDS.forEach(k => { out[k] = document.getElementById('f-' + k)?.value || ''; });
+  return out;
+}
+
+function clearFields() {
+  FIELDS.forEach(k => {
+    const el = document.getElementById('f-' + k);
+    if (el) { el.value = ''; el.classList.remove('is-valid'); }
+  });
+  showFieldsState(false);
+  setStep(1);
+}
+
+function showFieldsState(filled) {
+  const chip = document.getElementById('fields-status-chip');
+  const btn = document.getElementById('btn-clear-fields');
+  if (filled) {
+    chip.textContent = 'Date completate';
+    chip.className = 'chip chip-success';
+    chip.style.display = 'inline-flex';
+    btn.style.display = 'inline-flex';
+  } else {
+    chip.style.display = 'none';
+    btn.style.display = 'none';
+  }
+}
+
+// Live CNP validation
+document.getElementById('f-cnp').addEventListener('input', e => {
+  const val = e.target.value.replace(/\D/g,'');
+  e.target.value = val;
+  e.target.classList.toggle('is-valid', val.length === 13);
+});
+
+// ═══════════════════════════════════════════════
+//  Google Drive browser
+// ═══════════════════════════════════════════════
+async function loadDrive(folderId) {
+  const list = document.getElementById('file-list');
+  clearStatus('drive-status');
+
+  // Show skeleton
+  list.innerHTML = [1,2,3].map(() => `
+    <li class="file-item" style="cursor:default;">
+      <div class="fi-icon" style="background:var(--s100)"></div>
+      <div class="fi-info" style="gap:.35rem;display:flex;flex-direction:column;">
+        <div class="skeleton" style="width:60%;height:13px;"></div>
+        <div class="skeleton" style="width:35%;height:10px;"></div>
+      </div>
+    </li>`).join('');
+
+  updateBreadcrumb();
+
+  try {
+    const res = await fetch(`/drive/files?folder_id=${encodeURIComponent(folderId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Eroare Drive');
+
+    if (!data.files.length) {
+      list.innerHTML = `<li class="drive-empty">📭 Folder gol</li>`;
+      return;
+    }
+
+    list.innerHTML = '';
+    data.files.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'file-item';
+
+      const icon = f.is_folder ? '📁'
+        : f.mimeType.includes('pdf') ? '📄'
+        : f.mimeType.includes('image') ? '🖼️'
+        : f.mimeType.includes('document') ? '📝' : '📎';
+
+      li.innerHTML = `
+        <div class="fi-icon${f.is_folder ? ' folder':''}"> ${icon}</div>
+        <div class="fi-info">
+          <div class="fi-name">${escHtml(f.name)}</div>
+          <div class="fi-meta">${f.label}${f.modifiedTime ? ' · ' + fmtDate(f.modifiedTime) : ''}</div>
+        </div>
+        ${f.is_folder ? '<span style="color:var(--s300);font-size:1.1rem;">›</span>' : `<span class="fi-badge">${f.label}</span>`}`;
+
+      if (f.is_folder) {
+        li.onclick = () => {
+          driveStack.push(f.id);
+          driveNames[f.id] = f.name;
+          document.getElementById('btn-drive-back').disabled = false;
+          loadDrive(f.id);
+        };
+      } else {
+        li.onclick = () => extractFromDrive(f.id, f.name);
+      }
+      list.appendChild(li);
+    });
+  } catch(e) {
+    list.innerHTML = `<li class="drive-empty" style="color:var(--r500);">⚠️ ${escHtml(e.message)}</li>`;
+  }
+}
+
+function drivePop() {
+  if (driveStack.length > 1) driveStack.pop();
+  document.getElementById('btn-drive-back').disabled = driveStack.length <= 1;
+  loadDrive(driveStack[driveStack.length - 1]);
+}
+
+function updateBreadcrumb() {
+  const current = driveStack[driveStack.length - 1];
+  document.getElementById('drive-breadcrumb').textContent = driveNames[current] || current;
+}
+
+async function extractFromDrive(fileId, name) {
+  setStatus('drive-status', `Extragere din <strong>${escHtml(name)}</strong>…`, 'info');
+  try {
+    const res = await fetch('/extract/drive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Eroare');
+    populateFields(data);
+    showFieldsState(true);
+    setStep(2);
+    setStatus('drive-status', `Extras cu succes din <strong>${escHtml(name)}</strong>`, 'ok');
+    toast('Extragere completă', name, 'success');
+    document.getElementById('section-fields').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch(e) {
+    setStatus('drive-status', e.message, 'err');
+    toast('Eroare', e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  Tab switching
+// ═══════════════════════════════════════════════
+function switchTab(tabId, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('is-active'));
+  document.querySelectorAll('.tab-pill').forEach(b => {
+    b.classList.remove('is-active');
+    b.setAttribute('aria-selected','false');
+  });
+  document.getElementById(tabId).classList.add('is-active');
+  btn.classList.add('is-active');
+  btn.setAttribute('aria-selected','true');
+}
+
+// ═══════════════════════════════════════════════
+//  Docx template — file select
+// ═══════════════════════════════════════════════
+document.getElementById('docx-input').addEventListener('change', function() {
+  if (this.files.length) {
+    document.getElementById('docx-name').textContent = this.files[0].name;
+  }
+});
+
+// ═══════════════════════════════════════════════
+//  Fill .docx
+// ═══════════════════════════════════════════════
+async function fillDocx(toDrive) {
+  const inp = document.getElementById('docx-input');
+  if (!inp.files.length) {
+    toast('Niciun șablon', 'Alege mai întâi un fișier .docx.', 'warning');
+    return;
+  }
+
+  const fields = getFields();
+  const filled = Object.values(fields).some(v => v);
+  if (!filled) {
+    toast('Câmpuri goale', 'Extrage mai întâi datele din CI.', 'warning');
+    return;
+  }
+
+  clearStatus('docx-status');
+  const btnId = toDrive ? 'btn-fill-drive' : 'btn-fill-dl';
+  const btn = document.getElementById(btnId);
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Se procesează…';
+
+  const fd = new FormData();
+  fd.append('template', inp.files[0]);
+  Object.entries(fields).forEach(([k, v]) => fd.append(k.toUpperCase(), v));
+
+  const endpoint = toDrive ? '/fill/docx/upload-to-drive' : '/fill/docx';
+
+  try {
+    const res = await fetch(endpoint, { method: 'POST', body: fd });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+
+    if (toDrive) {
+      const d = await res.json();
+      setStep(3);
+      setStatus('docx-status',
+        `Salvat în Drive: <a class="result-link" href="${d.link}" target="_blank">↗ ${escHtml(d.name)}</a>`, 'ok');
+      toast('Salvat în Drive', `<a href="${d.link}" target="_blank">${d.name}</a>`, 'success');
+    } else {
+      const blob = await res.blob();
+      const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: 'completat_' + inp.files[0].name
+      });
+      a.click();
+      setStep(3);
+      setStatus('docx-status', 'Fișier descărcat cu succes.', 'ok');
+      toast('Descărcat', inp.files[0].name, 'success');
+    }
+  } catch(e) {
+    setStatus('docx-status', e.message, 'err');
+    toast('Eroare', e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  Fill Google Doc
+// ═══════════════════════════════════════════════
+async function fillGdoc() {
+  const templateId = document.getElementById('gdoc-template-id').value.trim();
+  if (!templateId) {
+    toast('ID lipsă', 'Introdu ID-ul documentului șablon.', 'warning');
+    return;
+  }
+
+  const fields = getFields();
+  const upperFields = {};
+  Object.entries(fields).forEach(([k, v]) => { upperFields[k.toUpperCase()] = v; });
+
+  clearStatus('gdoc-status');
+
+  try {
+    const res = await fetch('/fill/gdoc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template_doc_id: templateId, fields: upperFields })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    setStep(3);
+    setStatus('gdoc-status',
+      `Document creat: <a class="result-link" href="${data.link}" target="_blank">↗ Deschide în Google Docs</a>`, 'ok');
+    toast('Document creat', 'Deschide linkul pentru a vizualiza.', 'success');
+  } catch(e) {
+    setStatus('gdoc-status', e.message, 'err');
+    toast('Eroare', e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  Utilities
+// ═══════════════════════════════════════════════
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('ro-RO', { day:'2-digit', month:'short', year:'numeric' });
+  } catch { return ''; }
+}
+
+// ═══════════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════════
+{% if authenticated %}
+loadDrive('root');
+{% endif %}
+
+// Mark filled fields as valid on page load if user navigates back
+FIELDS.forEach(k => {
+  const el = document.getElementById('f-' + k);
+  if (el) {
+    el.addEventListener('input', () => el.classList.toggle('is-valid', !!el.value.trim()));
+  }
+});
+</script>
+</body>
+</html>
