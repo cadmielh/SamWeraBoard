@@ -59,7 +59,7 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
   }
 
   return (
-    <div ref={wrapRef} className="caen-wrap">
+    <div ref={wrapRef} className="combo-wrap">
       <div style={{ position: 'relative' }}>
         <input
           className="field-input"
@@ -79,13 +79,13 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
         )}
       </div>
       {open && !disabled && (
-        <div className="caen-dropdown">
+        <div className="combo-dropdown">
           {filtered.length === 0 ? (
-            <div className="caen-opt" style={{ color: 'var(--s400)', cursor: 'default' }}>Niciun rezultat</div>
+            <div className="combo-opt" style={{ color: 'var(--s400)', cursor: 'default' }}>Niciun rezultat</div>
           ) : (
             filtered.map(c => (
-              <div key={c.cod} className="caen-opt" onMouseDown={() => select(c.cod, c.descriere)}>
-                <span className="caen-opt-cod">{c.cod}</span>
+              <div key={c.cod} className="combo-opt" onMouseDown={() => select(c.cod, c.descriere)}>
+                <span className="combo-opt-cod">{c.cod}</span>
                 {c.descriere}
               </div>
             ))

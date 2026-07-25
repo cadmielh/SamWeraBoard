@@ -3,11 +3,11 @@ import { useSearchParams } from 'react-router-dom'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import type { IDFields } from '../lib/api'
-import type { Client, ScannedPerson } from '../types'
+import type { Client, Persoana, ScannedPerson } from '../types'
 import { inferTipClient } from '../types'
 import { useApp } from '../AppLayout'
-import { useClienti } from '../lib/clienti'
-import { EMPTY_ID_FIELDS } from '../lib/idFields'
+import { useClienti, EMPTY_PERSOANA } from '../lib/clienti'
+import { EMPTY_ID_FIELDS, idFieldsToPersoana, persoanaToIDFields } from '../lib/idFields'
 import UploadZone from '../components/UploadZone'
 import DriveFilePicker from '../components/DriveFilePicker'
 import FieldsForm from '../components/FieldsForm'
@@ -16,10 +16,23 @@ import History from '../components/History'
 import ScanQueue from '../components/ScanQueue'
 import ClientDocSelector from '../components/ClientDocSelector'
 import MultiPersonPreview from '../components/MultiPersonPreview'
+import CompanyInfoForm, { type CompanyData } from '../components/CompanyInfoForm'
+import PersonScanModal from '../components/PersonScanModal'
 
 // Internal source modes — 'buletin' = nou PF, 'societate' = nou PJ, 'client' = din portofoliu
 type SourceMode = 'buletin' | 'societate' | 'client'
 type Step = 1 | 2 | 3
+
+function scannedPersonsToPersoane(persons: ScannedPerson[]): Persoana[] {
+  return persons
+    .filter(p => p.role === 'asociat')
+    .map(p => idFieldsToPersoana(p.fields, { ...EMPTY_PERSOANA, calitate: 'Asociat', cotaParticipare: p.cotaParticipare }))
+}
+
+const EMPTY_COMPANY_DATA: CompanyData = {
+  denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
+  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], capitalSocial: null,
+}
 
 const CONTENT_STYLE = {
   maxWidth: 860, margin: '0 auto', padding: '2rem 1.5rem',
@@ -29,7 +42,7 @@ const CONTENT_STYLE = {
 export default function GenerareDocumentePage() {
   const { user, accessToken, toast, ocrMode, activeWorkspace } = useApp()
   const workspaceId = activeWorkspace?.id ?? ''
-  const { clienti, loading: clientiLoading, add: addClient } = useClienti(workspaceId || null)
+  const { clienti, loading: clientiLoading, add: addClient, update: updateClient } = useClienti(workspaceId || null)
 
   const [hasStarted, setHasStarted] = useState(false)
   const [sourceMode, setSourceMode] = useState<SourceMode>('client')
@@ -46,12 +59,19 @@ export default function GenerareDocumentePage() {
   // Societate / Client mode state
   const [scannedPersons, setScannedPersons] = useState<ScannedPerson[]>([])
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [companyInfo, setCompanyInfo] = useState<CompanyData>(EMPTY_COMPANY_DATA)
+  const [pfScanMode, setPfScanMode] = useState<'scan' | 'manual' | null>(null)
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
-  // Deep-link: navigare din ClientView (?clientId=...&mode=client)
+  // Deep-link: navigare din ClientView (?clientId=...&mode=client) — se aplică
+  // o singură dată, la intrarea în pagină. Fără gardă pe `hasStarted`, orice
+  // schimbare ulterioară a listei `clienti` (ex. salvarea datelor editate în
+  // pasul de verificare) re-declanșează efectul și trage utilizatorul înapoi
+  // la pasul 2, anulând progresul din "Continuă".
   useEffect(() => {
+    if (hasStarted) return
     const clientId = searchParams.get('clientId')
     const mode = searchParams.get('mode') as SourceMode | null
     if (clientId && mode === 'client' && clienti.length > 0) {
@@ -60,24 +80,11 @@ export default function GenerareDocumentePage() {
         setSourceMode('client')
         setSelectedClient(found)
         setHasStarted(true)
-        // PF cu date complete → direct la TemplateFiller
-        const tipClient = inferTipClient(found)
-        if (tipClient === 'PF' && isPFComplete(found)) {
-          setStep(3)
-        } else {
-          setStep(2)
-        }
+        setStep(2)
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, clienti])
-
-  function isPFComplete(c: Client): boolean {
-    const titular = c.titular
-    if (!titular) return false
-    // Cel puțin: CNP + Nume + Prenume
-    return !!(titular.cnp && titular.nume && titular.prenume)
-  }
+  }, [searchParams, clienti, hasStarted])
 
   const startMode = (mode: SourceMode) => {
     setSourceMode(mode)
@@ -85,6 +92,7 @@ export default function GenerareDocumentePage() {
     setSourceFile('')
     setScannedPersons([])
     setSelectedClient(null)
+    setCompanyInfo(EMPTY_COMPANY_DATA)
     setShowDrivePicker(false)
     setStep(1)
     setHasStarted(true)
@@ -96,6 +104,7 @@ export default function GenerareDocumentePage() {
     setSourceFile('')
     setScannedPersons([])
     setSelectedClient(null)
+    setCompanyInfo(EMPTY_COMPANY_DATA)
     setShowDrivePicker(false)
     setStep(1)
   }
@@ -129,42 +138,67 @@ export default function GenerareDocumentePage() {
 
   const handleScanQueueContinue = (persons: ScannedPerson[]) => {
     setScannedPersons(persons)
-    setStep(3)
+    setStep(2)
   }
 
   // ── Client din portofoliu handlers ────────────────────────────────────────────
 
   const handleClientSelect = (c: Client) => {
     setSelectedClient(c)
-    const tipClient = inferTipClient(c)
-    if (tipClient === 'PF' && isPFComplete(c)) {
-      // Date PF complete → salt direct la TemplateFiller
-      setStep(3)
-    } else {
-      setStep(2)
-    }
+    setStep(2)
   }
 
-  const handleMultiPersonContinue = (persons: ScannedPerson[], updatedClient: Client) => {
+  const handleMultiPersonContinue = async (persons: ScannedPerson[], updatedClient: Client) => {
     setScannedPersons(persons)
     setSelectedClient(updatedClient)
     setStep(3)
+    if (workspaceId && updatedClient.id) {
+      try {
+        await updateClient(workspaceId, updatedClient.id, {
+          denumire: updatedClient.denumire,
+          formaJuridica: updatedClient.formaJuridica,
+          codFiscal: updatedClient.codFiscal,
+          nrRegistrul: updatedClient.nrRegistrul,
+          sediuSocial: updatedClient.sediuSocial,
+          caenCod: updatedClient.caenCod,
+          caenDescriere: updatedClient.caenDescriere,
+          caenSecundare: updatedClient.caenSecundare,
+          capitalSocial: updatedClient.capitalSocial,
+          asociati: updatedClient.asociati,
+          administratori: updatedClient.administratori,
+        })
+        toast('Datele clientului au fost actualizate', 'ok')
+      } catch (err: unknown) {
+        toast((err as Error).message ?? 'Eroare la actualizarea clientului', 'err')
+      }
+    }
   }
 
-  // PF cu date lipsă: scanare CI → completare + merging în selectedClient.titular
-  const handlePFScanExtracted = useCallback(async (result: IDFields, filename: string) => {
-    setFields(result)
-    setSourceFile(filename)
-    setStep(3)
-    toast('Date CI extrase', 'ok')
+  // PF client din portofoliu: scanare/editare CI → merge în selectedClient.titular,
+  // rămâne pe pasul de verificare (nu sare automat la template)
+  const handlePFPersonUpdate = useCallback(async (result: IDFields) => {
+    if (!selectedClient) return
+    const updatedTitular = idFieldsToPersoana(result, selectedClient.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' })
+    const updated = { ...selectedClient, titular: updatedTitular }
+    setSelectedClient(updated)
+    setPfScanMode(null)
+    toast('Date actualizate', 'ok')
+
+    if (workspaceId) {
+      try {
+        await updateClient(workspaceId, updated.id, { titular: updatedTitular })
+      } catch (err: unknown) {
+        toast((err as Error).message ?? 'Eroare la actualizarea clientului', 'err')
+      }
+    }
     if (user) {
       try {
         await addDoc(collection(db, 'users', user.uid, 'extractions'), {
-          createdAt: serverTimestamp(), sourceFile: filename, fields: result,
+          createdAt: serverTimestamp(), sourceFile: pfScanMode === 'manual' ? 'manual' : 'scan', fields: result,
         })
       } catch {}
     }
-  }, [user, toast])
+  }, [user, toast, selectedClient, workspaceId, updateClient, pfScanMode])
 
   // ── Save client from TemplateFiller ──────────────────────────────────────────
 
@@ -188,14 +222,9 @@ export default function GenerareDocumentePage() {
 
   const getStepLabels = (): string[] => {
     if (sourceMode === 'buletin') return ['Scanează CI', 'Verifică', 'Completează']
-    if (sourceMode === 'societate') return ['Configurează', 'Completează']
-    if (selectedClient && inferTipClient(selectedClient) === 'PF') {
-      return isPFComplete(selectedClient) ? ['Selectează', 'Completează'] : ['Selectează', 'Scanează CI', 'Completează']
-    }
+    if (sourceMode === 'societate') return ['Configurează echipa', 'Date societate', 'Completează']
     return ['Selectează client', 'Verifică date', 'Completează']
   }
-
-  const displayStep = sourceMode === 'societate' && step === 3 ? 2 : step
 
   return (
     <>
@@ -223,8 +252,8 @@ export default function GenerareDocumentePage() {
             <nav style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flex: 1 }}>
               {getStepLabels().map((label, i) => {
                 const s = i + 1
-                const active = displayStep === s
-                const done = displayStep > s
+                const active = step === s
+                const done = step > s
                 return (
                   <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
                     {i > 0 && <div style={{ width: 20, height: 1, background: done ? 'var(--p200)' : 'var(--s200)' }} />}
@@ -408,9 +437,35 @@ export default function GenerareDocumentePage() {
                 <div className="card-body">
                   <ScanQueue
                     accessToken={accessToken}
+                    initialPersons={scannedPersons}
                     onContinue={handleScanQueueContinue}
                     onToast={toast}
                   />
+                </div>
+              </div>
+            )}
+            {step === 2 && (
+              <div className="card">
+                <div className="card-head">
+                  <div>
+                    <span className="card-title">
+                      <span className="step-chip">2</span>
+                      Date societate
+                    </span>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}>← Înapoi</button>
+                </div>
+                <div className="card-body">
+                  <CompanyInfoForm
+                    value={companyInfo}
+                    onChange={patch => setCompanyInfo(prev => ({ ...prev, ...patch }))}
+                    asociati={scannedPersonsToPersoane(scannedPersons)}
+                    accessToken={accessToken}
+                    onToast={toast}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                    <button className="btn btn-primary" onClick={() => setStep(3)}>Continuă la template →</button>
+                  </div>
                 </div>
               </div>
             )}
@@ -420,10 +475,10 @@ export default function GenerareDocumentePage() {
                 user={user}
                 fields={null}
                 scannedPersons={scannedPersons}
-                client={null}
+                client={{ tipClient: 'PJ', ...companyInfo }}
                 accessToken={accessToken}
                 onToast={toast}
-                onBack={() => setStep(1)}
+                onBack={() => setStep(2)}
                 onClientSaved={handleClientSaved}
               />
             )}
@@ -456,37 +511,58 @@ export default function GenerareDocumentePage() {
               </div>
             )}
 
-            {/* Step 2: PF cu date lipsă → scanare CI */}
+            {/* Step 2: PF → verifică/completează date CI */}
             {step === 2 && selectedClient && inferTipClient(selectedClient) === 'PF' && (
               <div className="card">
                 <div className="card-head">
                   <div>
                     <span className="card-title">
                       <span className="step-chip">2</span>
-                      Completează date CI
+                      Verifică datele persoanei
                     </span>
-                    <p className="card-sub">{selectedClient.denumire} — date lipsă</p>
+                    <p className="card-sub">{selectedClient.denumire}</p>
                   </div>
                   <button className="btn btn-ghost btn-sm" onClick={() => { setStep(1); setSelectedClient(null) }}>← Înapoi</button>
                 </div>
                 <div className="card-body">
-                  {showDrivePicker
-                    ? <DriveFilePicker
-                        accessToken={accessToken}
-                        onExtracted={handlePFScanExtracted}
-                        onToast={toast}
-                        onClose={() => setShowDrivePicker(false)}
-                      />
-                    : <UploadZone
-                        accessToken={accessToken}
-                        onExtracted={handlePFScanExtracted}
-                        onToast={toast}
-                        onShowDrivePicker={() => setShowDrivePicker(true)}
-                        onManualEntry={() => { setFields(EMPTY_ID_FIELDS); setSourceFile('manual'); setStep(3) }}
-                      />
-                  }
+                  <div className="persoana-card" style={{ marginBottom: '1rem' }}>
+                    <div>
+                      <div className="persoana-card-name">
+                        {selectedClient.titular?.nume || selectedClient.titular?.prenume
+                          ? `${selectedClient.titular.prenume} ${selectedClient.titular.nume}`
+                          : 'Fără date completate'}
+                      </div>
+                      <div className="persoana-card-sub">
+                        {selectedClient.titular?.cnp ? `CNP: ${selectedClient.titular.cnp}` : ''}
+                        {selectedClient.titular?.adresa ? ` · ${selectedClient.titular.adresa}${selectedClient.titular.judet ? `, ${selectedClient.titular.judet}` : ''}` : ''}
+                        {selectedClient.titular?.data_nasterii ? ` · Născut: ${selectedClient.titular.data_nasterii}` : ''}
+                        {selectedClient.titular?.serie_numar ? ` · CI: ${selectedClient.titular.serie_numar}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-outline-primary btn-sm" onClick={() => setPfScanMode('scan')}>📷 Scanează CI</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPfScanMode('manual')}>✏️ Editează manual</button>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                    <button className="btn btn-primary" onClick={() => setStep(3)}>Continuă la template →</button>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {pfScanMode && selectedClient && (
+              <PersonScanModal
+                personLabel={selectedClient.denumire}
+                accessToken={accessToken}
+                initialFields={pfScanMode === 'manual' ? persoanaToIDFields(selectedClient.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' }) : undefined}
+                mode={pfScanMode}
+                onConfirm={handlePFPersonUpdate}
+                onClose={() => setPfScanMode(null)}
+                onToast={toast}
+              />
             )}
 
             {/* Step 2: PJ → MultiPersonPreview */}
@@ -523,14 +599,7 @@ export default function GenerareDocumentePage() {
                 client={selectedClient}
                 accessToken={accessToken}
                 onToast={toast}
-                onBack={() => {
-                  const tipClient = inferTipClient(selectedClient)
-                  if (tipClient === 'PF' && isPFComplete(selectedClient)) {
-                    setStep(1)
-                  } else {
-                    setStep(2)
-                  }
-                }}
+                onBack={() => setStep(2)}
                 onClientSaved={handleClientSaved}
               />
             )}

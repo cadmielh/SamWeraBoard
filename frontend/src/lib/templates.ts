@@ -21,7 +21,7 @@ export function useTemplates(workspaceId: string | null) {
     setLoading(true)
     const q = query(templatesCol(workspaceId), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q, snap => {
-      setTemplates(snap.docs.map(d => ({ id: d.id, ...d.data() } as DocTemplate)))
+      setTemplates(snap.docs.map(d => ({ ...d.data(), id: d.id } as DocTemplate)))
       setLoading(false)
     }, () => setLoading(false))
     return unsub

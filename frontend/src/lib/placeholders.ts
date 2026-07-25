@@ -13,6 +13,7 @@ const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   CETATENIA: 'cetatenia',
   SERIE_NUMAR: 'serie_numar',
   EMISA_DE: 'emisa_de',
+  VALABILA_DE_LA: 'valabila_de_la',
   VALABILA_PANA_LA: 'valabila_pana_la',
   COTA_PARTICIPARE: 'cotaParticipare',
 }
@@ -28,17 +29,34 @@ const ID_FIELD_MAP: Record<string, keyof IDFields> = {
   ADRESA: 'adresa',
   JUDET: 'judet',
   EMISA_DE: 'emisa_de',
+  VALABILA_DE_LA: 'valabila_de_la',
   VALABILA_PANA_LA: 'valabila_pana_la',
 }
 
 function today(): Record<string, string> {
   const d = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
+  const dataStr = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`
   return {
-    '{{DATA_AZI}}': `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`,
+    '{{DATA_AZI}}': dataStr,
+    '{{DATA_CURENTA}}': dataStr,
     '{{LUNA_AZI}}': pad(d.getMonth() + 1),
     '{{AN_AZI}}': String(d.getFullYear()),
   }
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString('ro-RO', { maximumFractionDigits: 2 })
+}
+
+function formatCaen(cod?: string, descriere?: string): string {
+  if (!cod) return ''
+  return descriere ? `${cod} - ${descriere}` : cod
+}
+
+function parsePercent(s: string): number {
+  const m = /(-?\d+(?:[.,]\d+)?)/.exec(s)
+  return m ? parseFloat(m[1].replace(',', '.')) : 0
 }
 
 function persoanaToMap(p: Persoana, prefix: string): Record<string, string> {
@@ -71,6 +89,7 @@ function scannedToPersoana(sp: ScannedPerson): Persoana {
     adresa: sp.fields.adresa,
     judet: sp.fields.judet,
     emisa_de: sp.fields.emisa_de,
+    valabila_de_la: sp.fields.valabila_de_la,
     valabila_pana_la: sp.fields.valabila_pana_la,
   }
 }
@@ -79,6 +98,16 @@ export interface BuildOptions {
   idFields?: IDFields | null
   client?: Partial<Client> | null
   scannedPersons?: ScannedPerson[]
+}
+
+function resolvePersons(
+  client: Partial<Client> | null | undefined,
+  scannedPersons: ScannedPerson[] | undefined,
+  role: 'asociat' | 'administrator',
+): Persoana[] {
+  const clientList = role === 'asociat' ? (client?.asociati ?? []) : (client?.administratori ?? [])
+  const scanned = (scannedPersons ?? []).filter(p => p.role === role)
+  return scanned.length > 0 ? scanned.map(scannedToPersoana) : clientList
 }
 
 export function buildReplacements({ idFields, client, scannedPersons }: BuildOptions): Record<string, string> {
@@ -101,26 +130,33 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     out['{{SOCIETATE_NR_REG}}'] = client.nrRegistrul ?? ''
     out['{{SOCIETATE_SEDIU}}'] = client.sediuSocial ?? ''
     out['{{SOCIETATE_FORMA_JURIDICA}}'] = client.formaJuridica ?? ''
+
+    if (client.capitalSocial != null) {
+      out['{{CAPITAL_SOCIAL_TOTAL}}'] = formatNumber(client.capitalSocial)
+      out['{{PARTI_SOCIALE_TOTALE}}'] = formatNumber(client.capitalSocial / 10)
+    }
+
+    // CAEN_1 = activitate principală, CAEN_2, CAEN_3… = activități secundare, în ordine
+    // fiecare valoare e "cod - descriere", gata de pus direct în document
+    out['{{CAEN_1}}'] = formatCaen(client.caenCod, client.caenDescriere)
+    ;(client.caenSecundare ?? []).forEach((c, i) => {
+      out[`{{CAEN_${i + 2}}}`] = formatCaen(c.cod, c.descriere)
+    })
   }
 
   if (!isPF) {
     // Asociați și administratori — doar pentru PJ
-    const clientAsociati = client?.asociati ?? []
-    const clientAdmini = client?.administratori ?? []
-
-    const scannedAsociati = (scannedPersons ?? []).filter(p => p.role === 'asociat')
-    const scannedAdmini = (scannedPersons ?? []).filter(p => p.role === 'administrator')
-
-    const asociatiToUse: Persoana[] = scannedAsociati.length > 0
-      ? scannedAsociati.map(scannedToPersoana)
-      : clientAsociati
-
-    const adminiToUse: Persoana[] = scannedAdmini.length > 0
-      ? scannedAdmini.map(scannedToPersoana)
-      : clientAdmini
+    const asociatiToUse = resolvePersons(client, scannedPersons, 'asociat')
+    const adminiToUse = resolvePersons(client, scannedPersons, 'administrator')
 
     asociatiToUse.forEach((p, i) => {
       Object.assign(out, persoanaToMap(p, `ASOCIAT_${i + 1}`))
+      out[`{{COTA_ASOCIAT_${i + 1}}}`] = p.cotaParticipare ?? ''
+      if (client?.capitalSocial != null) {
+        const capitalAsociat = client.capitalSocial * parsePercent(p.cotaParticipare) / 100
+        out[`{{CAPITAL_SOCIAL_ASOCIAT_${i + 1}}}`] = formatNumber(capitalAsociat)
+        out[`{{PARTI_SOCIALE_ASOCIAT_${i + 1}}}`] = formatNumber(capitalAsociat / 10)
+      }
     })
     adminiToUse.forEach((p, i) => {
       Object.assign(out, persoanaToMap(p, `ADMINISTRATOR_${i + 1}`))
@@ -139,19 +175,65 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
   return out
 }
 
+function persoanaToSingularMap(p: Persoana, capitalSocialTotal: number | null): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {
+    out[key] = (p as unknown as Record<string, string>)[field as string] ?? ''
+  }
+  if (capitalSocialTotal != null) {
+    const capitalAsociat = capitalSocialTotal * parsePercent(p.cotaParticipare) / 100
+    out.CAPITAL_SOCIAL = formatNumber(capitalAsociat)
+    out.PARTI_SOCIALE = formatNumber(capitalAsociat / 10)
+  }
+  return out
+}
+
+/**
+ * Grupuri de date per-persoană pentru blocurile repetitive din șablon
+ * ({{#ASOCIATI}}...{{/ASOCIATI}}, {{#ADMINISTRATORI}}...{{/ADMINISTRATORI}}) —
+ * un rând de câmpuri (NUME, PRENUME, CNP… + INDEX) pentru fiecare persoană,
+ * multiplicat de backend o dată per element din listă.
+ */
+export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Record<string, Record<string, string>[]> {
+  if (client?.tipClient === 'PF') return {}
+  const asociati = resolvePersons(client, scannedPersons, 'asociat')
+  const admini = resolvePersons(client, scannedPersons, 'administrator')
+  return {
+    ASOCIATI: asociati.map(p => persoanaToSingularMap(p, client?.capitalSocial ?? null)),
+    ADMINISTRATORI: admini.map(p => persoanaToSingularMap(p, null)),
+  }
+}
+
 export interface ReadinessResult {
   filled: string[]
   missing: string[]
 }
 
+const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE'])
+
 export function checkReadiness(
   placeholders: string[],
   replacements: Record<string, string>,
+  repeatGroups?: Record<string, Record<string, string>[]>,
 ): ReadinessResult {
   const filled: string[] = []
   const missing: string[] = []
+  const groupItems = repeatGroups ? Object.values(repeatGroups).flat() : []
+
   for (const ph of placeholders) {
+    const inner = ph.replace(/^\{\{|\}\}$/g, '')
     if (replacements[ph] && replacements[ph].trim() !== '') {
+      filled.push(ph)
+    } else if (inner === 'INDEX' && groupItems.length > 0) {
+      // Numărul de ordine dintr-un bloc repetitiv — generat automat, mereu disponibil
+      filled.push(ph)
+    } else if (
+      SINGULAR_KEYS.has(inner) && groupItems.length > 0
+      && groupItems.every(item => (item[inner] ?? '').trim() !== '')
+    ) {
+      // Câmp singular dintr-un bloc {{#ASOCIATI}}/{{#ADMINISTRATORI}} — completat
+      // doar dacă TOATE persoanele relevante au acel câmp (indicator aproximativ,
+      // completarea reală se face per-persoană la generare)
       filled.push(ph)
     } else {
       missing.push(ph)
@@ -173,6 +255,7 @@ const FRIENDLY_FIELD: Record<string, string> = {
   CETATENIA: 'Cetățenia',
   SERIE_NUMAR: 'Serie & Nr. CI',
   EMISA_DE: 'Emisă de',
+  VALABILA_DE_LA: 'Valabilă de la',
   VALABILA_PANA_LA: 'Valabilă până la',
   COTA_PARTICIPARE: 'Cotă participare',
   DENUMIRE: 'Denumire',
@@ -196,6 +279,25 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
 
   const membruIF = inner.match(/^MEMBRU_IF_(\d+)_(.+)$/)
   if (membruIF) return { group: `Membru IF ${membruIF[1]}`, field: FRIENDLY_FIELD[membruIF[2]] ?? membruIF[2] }
+
+  const capitalAsoc = inner.match(/^CAPITAL_SOCIAL_ASOCIAT_(\d+)$/)
+  if (capitalAsoc) return { group: `Asociat ${capitalAsoc[1]}`, field: 'Capital social' }
+
+  const cotaAsoc = inner.match(/^COTA_ASOCIAT_(\d+)$/)
+  if (cotaAsoc) return { group: `Asociat ${cotaAsoc[1]}`, field: 'Cotă participare' }
+
+  const partiAsoc = inner.match(/^PARTI_SOCIALE_ASOCIAT_(\d+)$/)
+  if (partiAsoc) return { group: `Asociat ${partiAsoc[1]}`, field: 'Părți sociale' }
+
+  const caen = inner.match(/^CAEN_(\d+)$/)
+  if (caen) return {
+    group: 'Societate',
+    field: caen[1] === '1' ? 'Activitate principală (CAEN)' : `Activitate secundară ${Number(caen[1]) - 1} (CAEN)`,
+  }
+
+  if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
+  if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }
+  if (inner === 'DATA_CURENTA') return { group: 'Date automate', field: 'Data curentă' }
 
   const soc = inner.match(/^SOCIETATE_(.+)$/)
   if (soc) return { group: 'Societate', field: FRIENDLY_FIELD[soc[1]] ?? soc[1] }

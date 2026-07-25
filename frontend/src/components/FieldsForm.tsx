@@ -1,5 +1,11 @@
 import { useState } from 'react'
 import type { IDFields } from '../lib/api'
+import { roDateToISO, isoDateToRo } from '../lib/dates'
+import { JUDETE_ROMANIA } from '../lib/counties'
+import { CETATENII } from '../lib/citizenships'
+import Combobox from './Combobox'
+
+const DATE_KEYS = new Set<keyof IDFields>(['data_nasterii', 'valabila_de_la', 'valabila_pana_la'])
 
 interface Props {
   fields: IDFields
@@ -21,6 +27,7 @@ const FIELD_LABELS: Record<keyof IDFields, string> = {
   adresa: 'Adresa',
   judet: 'Județ',
   emisa_de: 'Emisă de',
+  valabila_de_la: 'Valabilă de la',
   valabila_pana_la: 'Valabilă până la',
 }
 
@@ -83,16 +90,23 @@ export default function FieldsForm({ fields, sourceFile, initialEditing, onField
                 )}
               </label>
               {editing ? (
-                <input
-                  value={local[key]}
-                  onChange={e => handleChange(key, e.target.value)}
-                  style={{
-                    padding: '.375rem .625rem', borderRadius: 'var(--r-sm)',
-                    border: `1.5px solid ${key === 'cnp' && local.cnp && !cnpValid ? 'var(--r500)' : 'var(--s300)'}`,
-                    fontSize: '.875rem', color: 'var(--s800)', background: '#fff',
-                    width: '100%', fontFamily: 'var(--font)', outline: 'none',
-                  }}
-                />
+                key === 'judet' ? (
+                  <Combobox value={local.judet} options={JUDETE_ROMANIA} onChange={val => handleChange('judet', val)} placeholder="Județul" />
+                ) : key === 'cetatenia' ? (
+                  <Combobox value={local.cetatenia} options={CETATENII} onChange={val => handleChange('cetatenia', val)} placeholder="Cetățenia" />
+                ) : (
+                  <input
+                    type={DATE_KEYS.has(key) ? 'date' : 'text'}
+                    value={DATE_KEYS.has(key) ? roDateToISO(local[key]) : local[key]}
+                    onChange={e => handleChange(key, DATE_KEYS.has(key) ? isoDateToRo(e.target.value) : e.target.value)}
+                    style={{
+                      padding: '.375rem .625rem', borderRadius: 'var(--r-sm)',
+                      border: `1.5px solid ${key === 'cnp' && local.cnp && !cnpValid ? 'var(--r500)' : 'var(--s300)'}`,
+                      fontSize: '.875rem', color: 'var(--s800)', background: '#fff',
+                      width: '100%', fontFamily: 'var(--font)', outline: 'none',
+                    }}
+                  />
+                )
               ) : (
                 <div style={{
                   padding: '.375rem .625rem', borderRadius: 'var(--r-sm)',

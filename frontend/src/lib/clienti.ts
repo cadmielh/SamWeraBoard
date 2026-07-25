@@ -20,6 +20,15 @@ function clientiCol(workspaceId: string) {
   return collection(db, 'workspaces', workspaceId, 'clienti')
 }
 
+/** Denumirea e identificator unic per workspace — verifică dacă mai există un client cu aceeași denumire. */
+export async function denumireExists(workspaceId: string, denumire: string, excludeId?: string): Promise<boolean> {
+  const lower = denumire.trim().toLowerCase()
+  if (!lower) return false
+  const q = query(clientiCol(workspaceId), where('denumireLower', '==', lower), limit(5))
+  const snap = await getDocs(q)
+  return snap.docs.some(d => d.id !== excludeId)
+}
+
 export function useClienti(workspaceId: string | null) {
   const [clienti, setClienti] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,7 +46,7 @@ export function useClienti(workspaceId: string | null) {
     const q = query(clientiCol(workspaceId), orderBy('createdAt', 'desc'), limit(PAGE_SIZE))
     getDocs(q).then(snap => {
       if (cancelled) return
-      setClienti(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client)))
+      setClienti(snap.docs.map(d => ({ ...d.data(), id: d.id } as Client)))
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null
       setHasMore(snap.docs.length === PAGE_SIZE)
       setLoading(false)
@@ -55,7 +64,7 @@ export function useClienti(workspaceId: string | null) {
         startAfter(lastDocRef.current), limit(PAGE_SIZE)
       )
       const snap = await getDocs(q)
-      setClienti(prev => [...prev, ...snap.docs.map(d => ({ id: d.id, ...d.data() } as Client))])
+      setClienti(prev => [...prev, ...snap.docs.map(d => ({ ...d.data(), id: d.id } as Client))])
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? lastDocRef.current
       setHasMore(snap.docs.length === PAGE_SIZE)
     } finally {
@@ -73,7 +82,7 @@ export function useClienti(workspaceId: string | null) {
       limit(50)
     )
     const snap = await getDocs(q)
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as Client))
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as Client))
   }, [])
 
   const add = useCallback(async (workspaceId: string, data: ClientInput, uid: string) => {
@@ -82,6 +91,12 @@ export function useClienti(workspaceId: string | null) {
     for (const [k, v] of Object.entries(data)) {
       if (v !== undefined) payload[k] = v
     }
+    // Apărare împotriva unui apelant care trimite din greșeală un Client complet
+    // (cu id/createdAt/createdBy proprii) în loc de ClientInput — acele câmpuri
+    // nu trebuie stocate niciodată ca date în document, doar derivate mai jos.
+    delete payload.id
+    delete payload.createdAt
+    delete payload.createdBy
     payload.denumire = displayName
     payload.denumireLower = displayName.toLowerCase()
     payload.createdAt = serverTimestamp()
@@ -95,6 +110,11 @@ export function useClienti(workspaceId: string | null) {
     for (const [k, v] of Object.entries(data)) {
       patch[k] = v === undefined ? deleteField() : v
     }
+    // Vezi comentariul din add() — un apelant nu trebuie să poată suprascrie
+    // identitatea documentului cu date arbitrare.
+    delete patch.id
+    delete patch.createdAt
+    delete patch.createdBy
     if (data.denumire !== undefined || data.titular !== undefined || data.tipClient !== undefined) {
       const displayName = resolveDisplayName({ ...EMPTY_CLIENT, ...data } as ClientInput)
       patch.denumire = displayName
@@ -116,7 +136,7 @@ export const EMPTY_PERSOANA: Persoana = {
   calitate: '', cotaParticipare: '',
   cnp: '', nume: '', prenume: '', serie_numar: '',
   data_nasterii: '', locul_nasterii: '', cetatenia: '',
-  adresa: '', judet: '', emisa_de: '', valabila_pana_la: '',
+  adresa: '', judet: '', emisa_de: '', valabila_de_la: '', valabila_pana_la: '',
 }
 
 export const EMPTY_CLIENT: ClientInput = {
@@ -125,7 +145,7 @@ export const EMPTY_CLIENT: ClientInput = {
   titular: undefined,
   membriIF: undefined,
   denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
-  sediuSocial: '', caenCod: '', caenDescriere: '', telefon: '', email: '',
+  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], telefon: '', email: '',
   statutFiscal: '', platitorTva: false, periodaTva: '',
   tvaLaIncasare: false, plafonTvaAnual: null, regimFiscal: '',
   nrSalariati: null, capitalSocial: null, anFiscal: '',

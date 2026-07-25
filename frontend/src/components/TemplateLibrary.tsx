@@ -36,27 +36,44 @@ function PlaceholderBadge({ ph }: { ph: string }) {
 const GUIDE_SECTIONS = [
   {
     title: 'Persoană fizică / titular (PF sau scanare CI)',
-    items: ['{{CNP}}', '{{NUME}}', '{{PRENUME}}', '{{SERIE_NUMAR}}', '{{DATA_NASTERII}}', '{{LOCUL_NASTERII}}', '{{CETATENIA}}', '{{ADRESA}}', '{{JUDET}}', '{{EMISA_DE}}', '{{VALABILA_PANA_LA}}'],
+    items: ['{{CNP}}', '{{NUME}}', '{{PRENUME}}', '{{SERIE_NUMAR}}', '{{DATA_NASTERII}}', '{{LOCUL_NASTERII}}', '{{CETATENIA}}', '{{ADRESA}}', '{{JUDET}}', '{{EMISA_DE}}', '{{VALABILA_DE_LA}}', '{{VALABILA_PANA_LA}}'],
   },
   {
     title: 'Entitate / Societate',
-    items: ['{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_FORMA_JURIDICA}}'],
+    items: [
+      '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_FORMA_JURIDICA}}',
+      '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}',
+      '{{CAEN_1}} (principală, format "cod - descriere")', '{{CAEN_2}}, {{CAEN_3}}… (secundare, în ordinea adăugării)',
+    ],
   },
   {
     title: 'Asociați — PJ (N = 1, 2, 3 …)',
-    items: ['{{ASOCIAT_N_NUME}}', '{{ASOCIAT_N_PRENUME}}', '{{ASOCIAT_N_CNP}}', '{{ASOCIAT_N_ADRESA}}', '{{ASOCIAT_N_DATA_NASTERII}}', '{{ASOCIAT_N_LOCUL_NASTERII}}', '{{ASOCIAT_N_CETATENIA}}', '{{ASOCIAT_N_SERIE_NUMAR}}', '{{ASOCIAT_N_EMISA_DE}}', '{{ASOCIAT_N_VALABILA_PANA_LA}}', '{{ASOCIAT_N_COTA_PARTICIPARE}}'],
+    items: [
+      '{{ASOCIAT_N_NUME}}', '{{ASOCIAT_N_PRENUME}}', '{{ASOCIAT_N_CNP}}', '{{ASOCIAT_N_ADRESA}}', '{{ASOCIAT_N_DATA_NASTERII}}', '{{ASOCIAT_N_LOCUL_NASTERII}}', '{{ASOCIAT_N_CETATENIA}}', '{{ASOCIAT_N_SERIE_NUMAR}}', '{{ASOCIAT_N_EMISA_DE}}', '{{ASOCIAT_N_VALABILA_DE_LA}}', '{{ASOCIAT_N_VALABILA_PANA_LA}}', '{{ASOCIAT_N_COTA_PARTICIPARE}}',
+      '{{COTA_ASOCIAT_N}}', '{{CAPITAL_SOCIAL_ASOCIAT_N}}', '{{PARTI_SOCIALE_ASOCIAT_N}}',
+    ],
   },
   {
     title: 'Administratori — PJ (N = 1, 2, 3 …)',
-    items: ['{{ADMINISTRATOR_N_NUME}}', '{{ADMINISTRATOR_N_PRENUME}}', '{{ADMINISTRATOR_N_CNP}}', '{{ADMINISTRATOR_N_ADRESA}}', '{{ADMINISTRATOR_N_DATA_NASTERII}}', '{{ADMINISTRATOR_N_LOCUL_NASTERII}}', '{{ADMINISTRATOR_N_CETATENIA}}', '{{ADMINISTRATOR_N_SERIE_NUMAR}}', '{{ADMINISTRATOR_N_EMISA_DE}}', '{{ADMINISTRATOR_N_VALABILA_PANA_LA}}'],
+    items: ['{{ADMINISTRATOR_N_NUME}}', '{{ADMINISTRATOR_N_PRENUME}}', '{{ADMINISTRATOR_N_CNP}}', '{{ADMINISTRATOR_N_ADRESA}}', '{{ADMINISTRATOR_N_DATA_NASTERII}}', '{{ADMINISTRATOR_N_LOCUL_NASTERII}}', '{{ADMINISTRATOR_N_CETATENIA}}', '{{ADMINISTRATOR_N_SERIE_NUMAR}}', '{{ADMINISTRATOR_N_EMISA_DE}}', '{{ADMINISTRATOR_N_VALABILA_DE_LA}}', '{{ADMINISTRATOR_N_VALABILA_PANA_LA}}'],
   },
   {
     title: 'Membri familie — IF (N = 1, 2, 3 …)',
     items: ['{{MEMBRU_IF_N_NUME}}', '{{MEMBRU_IF_N_PRENUME}}', '{{MEMBRU_IF_N_CNP}}', '{{MEMBRU_IF_N_ADRESA}}', '{{MEMBRU_IF_N_DATA_NASTERII}}', '{{MEMBRU_IF_N_SERIE_NUMAR}}'],
   },
   {
+    title: 'Blocuri repetitive — un paragraf per persoană (doar .docx)',
+    items: [
+      '{{#ASOCIATI}} ... {{/ASOCIATI}} — paragraful/paragrafele dintre cele două marcaje se repetă o dată pentru fiecare asociat',
+      '{{#ADMINISTRATORI}} ... {{/ADMINISTRATORI}} — la fel, pentru administratori',
+      'În interiorul blocului: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{SERIE_NUMAR}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
+      '{{INDEX}} — numărul de ordine (1, 2, 3…) în cadrul blocului',
+      '{{CAPITAL_SOCIAL}}, {{PARTI_SOCIALE}} — doar în {{#ASOCIATI}}, calculate din cota asociatului',
+    ],
+  },
+  {
     title: 'Date automate',
-    items: ['{{DATA_AZI}}', '{{LUNA_AZI}}', '{{AN_AZI}}'],
+    items: ['{{DATA_AZI}}', '{{DATA_CURENTA}}', '{{LUNA_AZI}}', '{{AN_AZI}}'],
   },
 ]
 

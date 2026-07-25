@@ -15,6 +15,7 @@ export interface IDFields {
   adresa: string;
   judet: string;
   emisa_de: string;
+  valabila_de_la: string;
   valabila_pana_la: string;
 }
 
@@ -81,12 +82,14 @@ export async function fillDocx(
   uploadToDrive = false,
   driveFolderId?: string,
   outputName?: string,
+  groups?: Record<string, Record<string, string>[]>,
 ): Promise<{ blob?: Blob; name?: string; link?: string }> {
   const fd = new FormData();
   fd.append("template", templateFile);
   Object.entries(fields).forEach(([k, v]) => fd.append(k.toUpperCase(), v));
   if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
   if (outputName) fd.append("_output_name", outputName);
+  if (groups) fd.append("_groups", JSON.stringify(groups));
 
   const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
   const res = await fetch(endpoint, {
@@ -151,12 +154,14 @@ export async function fillDocxFromDriveTemplate(
   uploadToDrive = false,
   driveFolderId?: string,
   outputName?: string,
+  groups?: Record<string, Record<string, string>[]>,
 ): Promise<{ blob?: Blob; name?: string; link?: string }> {
   const fd = new FormData();
   fd.append("template_drive_id", templateDriveId);
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
   if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
   if (outputName) fd.append("_output_name", outputName);
+  if (groups) fd.append("_groups", JSON.stringify(groups));
 
   const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
   const res = await fetch(endpoint, {

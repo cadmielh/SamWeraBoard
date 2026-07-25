@@ -360,6 +360,7 @@ LABELS: dict[str, list[str]] = {
     "adresa":           [r"ADDRESS", r"ADRES[AĂ]"],
     "judet":            [r"COUNTY", r"JUD[EȘ][TȚ]UL"],
     "emisa_de":         [r"ISSUED\s+BY", r"EMIS[AĂ]\s+DE"],
+    "valabila_de_la":   [r"DATA\s+ELIBER[AĂ]RII", r"ISSU(?:E|ING)\s+DATE", r"VALABIL[AĂ]\s+DE\s+LA"],
     "valabila_pana_la": [r"EXPIRY\s+DATE", r"EXPIRY", r"VALABIL[AĂ]\s+P[AÂ]N[AĂ]\s+LA"],
 }
 
@@ -464,7 +465,7 @@ def _quality_score(fields: dict) -> float:
         score += 0.10
     if fields.get("serie_numar"):
         score += 0.10
-    others = ["adresa", "locul_nasterii", "emisa_de", "valabila_pana_la"]
+    others = ["adresa", "locul_nasterii", "emisa_de", "valabila_de_la", "valabila_pana_la"]
     score += min(0.15, sum(0.04 for k in others if fields.get(k)))
     return round(score, 2)
 
@@ -479,7 +480,8 @@ def _run_ocr(image: Image.Image) -> dict:
 
     fields: dict = {k: "" for k in [
         "cnp", "nume", "prenume", "serie_numar", "data_nasterii",
-        "locul_nasterii", "cetatenia", "adresa", "judet", "emisa_de", "valabila_pana_la",
+        "locul_nasterii", "cetatenia", "adresa", "judet", "emisa_de",
+        "valabila_de_la", "valabila_pana_la",
     ]}
 
     # MRZ dedicated strip (most reliable)
@@ -513,6 +515,8 @@ def _run_ocr(image: Image.Image) -> dict:
         fields["data_nasterii"] = dates[0]
     if not fields["valabila_pana_la"] and len(dates) >= 2:
         fields["valabila_pana_la"] = dates[-1]
+    if not fields["valabila_de_la"] and len(dates) >= 3:
+        fields["valabila_de_la"] = dates[1]  # middle date — issue date between DOB and expiry
 
     # Label-based scan
     from_labels = _label_scan(lines)

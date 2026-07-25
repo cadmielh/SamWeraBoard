@@ -40,6 +40,8 @@ FIELD DEFINITIONS — read them carefully:
 • COUNTY / JUDEȚUL: one of Romania's 41 counties or BUCURESTI (e.g. TIMIS, CLUJ, IASI).
 • ISSUED BY / EMISĂ DE: the issuing authority (e.g. SPCLEP CLUJ-NAPOCA, \
   JUD.TM COM.DUMBRAVITA). Starts with SPCLEP, DEPABD, JUD, or a similar abbreviation.
+• VALID FROM / VALABILĂ DE LA: the document's issue date, printed as DD.MM.YYYY. \
+  Often shown as "Data eliberării" or as the first date of a "Valabilitate: DD.MM.YYYY - DD.MM.YYYY" range.
 • EXPIRY DATE / VALABILĂ PÂNĂ LA: printed as DD.MM.YYYY (e.g. 08.12.2032).
 • CNP: exactly 13 decimal digits, first digit 1-9 (e.g. 6030812354789). \
   Found in visual zone AND encoded in MRZ. NEVER contains letters. \
@@ -48,7 +50,7 @@ FIELD DEFINITIONS — read them carefully:
 
 Return ONLY a valid JSON object with these exact keys (no extra keys, no markdown):
 cnp, nume, prenume, serie_numar, data_nasterii, locul_nasterii, cetatenia, \
-adresa, judet, emisa_de, valabila_pana_la
+adresa, judet, emisa_de, valabila_de_la, valabila_pana_la
 
 Use "" for any field not clearly readable. Do not invent or guess values.\
 """
@@ -65,6 +67,7 @@ class RomanianIDData(BaseModel):
     adresa:            str = ""
     judet:             str = ""
     emisa_de:          str = ""
+    valabila_de_la:    str = ""
     valabila_pana_la:  str = ""
 
     def to_placeholders(self) -> dict[str, str]:
@@ -79,6 +82,7 @@ class RomanianIDData(BaseModel):
             "{{ADRESA}}":           self.adresa,
             "{{JUDET}}":            self.judet,
             "{{EMISA_DE}}":         self.emisa_de,
+            "{{VALABILA_DE_LA}}":   self.valabila_de_la,
             "{{VALABILA_PANA_LA}}": self.valabila_pana_la,
         }
 

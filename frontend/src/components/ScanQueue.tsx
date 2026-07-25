@@ -2,11 +2,13 @@ import { useState } from 'react'
 import type { ScannedPerson, ToastItem } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_ID_FIELDS } from '../lib/idFields'
+import { equalShare } from '../lib/cota'
 import PersonScanModal from './PersonScanModal'
 import Modal from './Modal'
 
 interface Props {
   accessToken: string
+  initialPersons?: ScannedPerson[]
   onContinue: (persons: ScannedPerson[]) => void
   onToast: (msg: string, type: ToastItem['type']) => void
 }
@@ -15,14 +17,14 @@ function makePerson(role: ScannedPerson['role']): ScannedPerson {
   return { id: crypto.randomUUID(), role, cotaParticipare: '', fields: { ...EMPTY_ID_FIELDS }, scanStatus: 'empty' }
 }
 
-function equalShare(n: number): string {
-  if (n <= 0) return ''
-  const val = Math.round((100 / n) * 100) / 100
-  return `${Number.isInteger(val) ? val : val.toFixed(2)}%`
-}
-
-function personKey(p: ScannedPerson): string {
-  return p.fields.cnp.trim() || `${p.fields.nume.trim()}|${p.fields.prenume.trim()}`
+// Returnează null când persoana nu are date de identificare — două persoane
+// nescanate/necompletate nu trebuie considerate "aceeași persoană".
+function personKey(p: ScannedPerson): string | null {
+  const cnp = p.fields.cnp.trim()
+  if (cnp) return cnp
+  const nume = p.fields.nume.trim()
+  const prenume = p.fields.prenume.trim()
+  return (nume || prenume) ? `${nume}|${prenume}` : null
 }
 
 function scanStatus(p: ScannedPerson) {
@@ -37,11 +39,12 @@ function personLabel(p: ScannedPerson, idx: number, role: string): string {
   return `${role} ${idx + 1}${name ? ` — ${name}` : ''}`
 }
 
-export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
-  const [persons, setPersons] = useState<ScannedPerson[]>([
-    makePerson('asociat'),
-    makePerson('administrator'),
-  ])
+export default function ScanQueue({ accessToken, initialPersons, onContinue, onToast }: Props) {
+  const [persons, setPersons] = useState<ScannedPerson[]>(
+    initialPersons && initialPersons.length > 0
+      ? initialPersons
+      : [makePerson('asociat'), makePerson('administrator')]
+  )
   const [scanTarget, setScanTarget] = useState<{ personId: string; manual: boolean } | null>(null)
   const [adminPicker, setAdminPicker] = useState(false)
 
@@ -80,18 +83,32 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
   }
 
   const soleAsociat = asociati.length === 1 ? asociati[0] : null
-  const isAdminSameAsSoleAsociat = !!soleAsociat && admini.length === 1 && personKey(admini[0]) === personKey(soleAsociat)
+
+  // Stare explicită, bifată de utilizator — NU derivată din compararea datelor:
+  // două persoane nescanate (ambele goale) nu sunt automat "aceeași persoană".
+  const [adminSameAsSoleAsociat, setAdminSameAsSoleAsociat] = useState(() => {
+    const initAsoc = (initialPersons ?? []).filter(p => p.role === 'asociat')
+    const initAdmin = (initialPersons ?? []).filter(p => p.role === 'administrator')
+    if (initAsoc.length !== 1 || initAdmin.length !== 1) return false
+    const k1 = personKey(initAsoc[0])
+    const k2 = personKey(initAdmin[0])
+    return !!k1 && k1 === k2
+  })
+  // Activă doar când bifa chiar are sens (există exact un asociat unic)
+  const hideAdminSection = !!soleAsociat && adminSameAsSoleAsociat
 
   const toggleAdminSameAsSoleAsociat = (checked: boolean) => {
     if (!soleAsociat) return
-    setPersons(prev => {
-      const withoutAdmins = prev.filter(p => p.role !== 'administrator')
-      if (!checked) return withoutAdmins
-      return [...withoutAdmins, {
-        id: crypto.randomUUID(), role: 'administrator', cotaParticipare: '',
-        fields: { ...soleAsociat.fields }, scanStatus: soleAsociat.scanStatus,
-      }]
-    })
+    setAdminSameAsSoleAsociat(checked)
+    if (checked) {
+      setPersons(prev => {
+        const withoutAdmins = prev.filter(p => p.role !== 'administrator')
+        return [...withoutAdmins, {
+          id: crypto.randomUUID(), role: 'administrator', cotaParticipare: '',
+          fields: { ...soleAsociat.fields }, scanStatus: soleAsociat.scanStatus,
+        }]
+      })
+    }
   }
 
   const moveUp = (idx: number) => {
@@ -205,13 +222,13 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
 
         {soleAsociat && (
           <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={isAdminSameAsSoleAsociat} onChange={e => toggleAdminSameAsSoleAsociat(e.target.checked)} />
+            <input type="checkbox" checked={adminSameAsSoleAsociat} onChange={e => toggleAdminSameAsSoleAsociat(e.target.checked)} />
             Administratorul este aceeași persoană cu asociatul unic
           </label>
         )}
 
         {/* Administratori */}
-        {admini.length > 0 && (
+        {!hideAdminSection &&admini.length > 0 && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
             <div style={SECTION_TITLE}>Administratori <span style={COUNT_CHIP}>{admini.length}</span></div>
             {persons.map((p, i) => p.role === 'administrator' ? renderRow(p, i) : null)}
@@ -223,9 +240,11 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
           <button className="btn btn-ghost btn-sm" onClick={addAsociat}>
             + Adaugă asociat
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleAddAdministrator}>
-            + Adaugă administrator
-          </button>
+          {!hideAdminSection &&(
+            <button className="btn btn-ghost btn-sm" onClick={handleAddAdministrator}>
+              + Adaugă administrator
+            </button>
+          )}
         </div>
 
         {/* Continue */}
@@ -235,7 +254,7 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
             onClick={() => onContinue(persons)}
             disabled={persons.length === 0}
           >
-            Continuă la template →
+            Continuă →
           </button>
         </div>
       </div>

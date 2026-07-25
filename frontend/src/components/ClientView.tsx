@@ -64,6 +64,7 @@ function PersoanaCard({ p }: { p: Persoana }) {
     p.locul_nasterii   ? { label: 'Locul nașterii',    value: p.locul_nasterii }   : null,
     p.cetatenia        ? { label: 'Cetățenia',         value: p.cetatenia }        : null,
     p.emisa_de         ? { label: 'Emis de',           value: p.emisa_de }         : null,
+    p.valabila_de_la   ? { label: 'Valabil de la',     value: p.valabila_de_la }   : null,
     p.valabila_pana_la ? { label: 'Valabil până la',   value: p.valabila_pana_la } : null,
     adresaFull         ? { label: 'Adresa',            value: adresaFull }         : null,
   ].filter(Boolean) as { label: string; value: string }[]
@@ -211,11 +212,17 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
               <InfoRow label="Cod fiscal (CIF)" value={client.codFiscal} />
               <InfoRow label="Nr. reg. comerțului" value={client.nrRegistrul} />
               <InfoRow
-                label="CAEN"
+                label="CAEN principal"
                 value={client.caenCod
                   ? `${client.caenCod}${client.caenDescriere ? ` — ${client.caenDescriere}` : ''}`
                   : undefined}
               />
+              {client.caenSecundare && client.caenSecundare.length > 0 && (
+                <InfoRow
+                  label="CAEN secundare"
+                  value={client.caenSecundare.map(c => c.cod + (c.descriere ? ` — ${c.descriere}` : '')).join('; ')}
+                />
+              )}
             </div>
             <div className="cv2-col">
               <div className="cv2-col-title">Contact</div>
@@ -247,6 +254,7 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
               <div className="cv2-col-title">Altele</div>
               <InfoRow label="Nr. salariați" value={client.nrSalariati != null ? String(client.nrSalariati) : undefined} />
               {!isPF && <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />}
+              {!isPF && <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / 10).toLocaleString('ro-RO') : undefined} />}
               <InfoRow label="An fiscal" value={client.anFiscal || undefined} />
             </div>
           </div>

@@ -336,11 +336,17 @@ export default function ClientiPage() {
 
   const handleDelete = useCallback(async () => {
     if (!deleteConf || !workspaceId) return
-    await remove(workspaceId, deleteConf.id)
-    toast('Client șters', 'ok')
-    setOpenClientIds(prev => prev.filter(id => id !== deleteConf.id))
-    if (activeTab === deleteConf.id) setActiveTab('list')
-    setDeleteConf(null)
+    try {
+      await remove(workspaceId, deleteConf.id)
+      // rezultatele de căutare sunt un instantaneu separat — nu se actualizează singure la ștergere
+      setSearchResults(prev => prev ? prev.filter(c => c.id !== deleteConf.id) : prev)
+      toast('Client șters', 'ok')
+      setOpenClientIds(prev => prev.filter(id => id !== deleteConf.id))
+      if (activeTab === deleteConf.id) setActiveTab('list')
+      setDeleteConf(null)
+    } catch (err: unknown) {
+      toast((err as Error).message ?? 'Eroare la ștergerea clientului', 'err')
+    }
   }, [deleteConf, workspaceId, remove, toast, activeTab])
 
   const openTab = useCallback((c: Client) => {

@@ -50,7 +50,13 @@ export interface Persoana {
   adresa: string
   judet: string
   emisa_de: string
+  valabila_de_la: string
   valabila_pana_la: string
+}
+
+export interface CaenActivitate {
+  cod: string
+  descriere: string
 }
 
 export type TipClient = 'PF' | 'PJ'
@@ -74,6 +80,7 @@ export interface Client {
   sediuSocial: string
   caenCod: string
   caenDescriere: string
+  caenSecundare: CaenActivitate[]
   telefon: string
   email: string
   statutFiscal: string

@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import re
 import time
@@ -106,7 +107,8 @@ def extract():
         return fields
 
     _empty = {"cnp":"","nume":"","prenume":"","serie_numar":"","data_nasterii":"",
-              "locul_nasterii":"","cetatenia":"","adresa":"","judet":"","emisa_de":"","valabila_pana_la":""}
+              "locul_nasterii":"","cetatenia":"","adresa":"","judet":"","emisa_de":"",
+              "valabila_de_la":"","valabila_pana_la":""}
 
     # ── Local OCR ────────────────────────────────────────────────────────────
     local_fields: dict = {}
@@ -216,8 +218,11 @@ def fill_docx_route():
         fields       = request.form.to_dict()
         fields.pop("template_drive_id", None)
         output_name  = fields.pop("_output_name", None) or None
-        replacements = {f"{{{{{k}}}}}": v for k, v in fields.items() if v}
-        filled_bytes = fill_docx(file_bytes, replacements)
+        groups_raw   = fields.pop("_groups", None)
+        groups       = json.loads(groups_raw) if groups_raw else None
+        # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
+        replacements = {k: v for k, v in fields.items() if v}
+        filled_bytes = fill_docx(file_bytes, replacements, groups)
     except Exception as e:
         return jsonify({"error": f"Fill failed: {e}"}), 500
 
@@ -252,10 +257,13 @@ def fill_docx_and_upload():
     fields.pop("template_drive_id", None)
     folder_id   = fields.pop("_drive_folder_id", None)
     output_name = fields.pop("_output_name", None) or None
-    replacements = {f"{{{{{k}}}}}": v for k, v in fields.items() if v}
+    groups_raw  = fields.pop("_groups", None)
+    groups      = json.loads(groups_raw) if groups_raw else None
+    # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
+    replacements = {k: v for k, v in fields.items() if v}
 
     try:
-        filled_bytes = fill_docx(file_bytes, replacements)
+        filled_bytes = fill_docx(file_bytes, replacements, groups)
         out_name     = output_name or ("completat_" + secure_filename(original_name))
         meta = gdrive.upload_file(access_token, filled_bytes, out_name,
                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -282,7 +290,8 @@ def fill_gdoc_route():
     if not template_doc_id:
         return jsonify({"error": "template_doc_id required"}), 400
 
-    replacements = {f"{{{{{k}}}}}": v for k, v in fields.items() if v}
+    # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
+    replacements = {k: v for k, v in fields.items() if v}
     try:
         new_id = gdrive.fill_google_doc(access_token, template_doc_id, replacements, output_name=output_name)
         link   = gdrive.get_doc_web_link(access_token, new_id)

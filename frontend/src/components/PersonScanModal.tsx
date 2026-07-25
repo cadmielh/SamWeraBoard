@@ -3,7 +3,13 @@ import { extractFile } from '../lib/api'
 import type { IDFields } from '../lib/api'
 import type { ToastItem } from '../types'
 import { EMPTY_ID_FIELDS } from '../lib/idFields'
+import { roDateToISO, isoDateToRo } from '../lib/dates'
+import { JUDETE_ROMANIA } from '../lib/counties'
+import { CETATENII } from '../lib/citizenships'
 import Modal from './Modal'
+import Combobox from './Combobox'
+
+const DATE_KEYS = new Set<keyof IDFields>(['data_nasterii', 'valabila_de_la', 'valabila_pana_la'])
 
 interface Props {
   personLabel: string          // ex: "Asociat 1 — Ion Popescu"
@@ -28,6 +34,7 @@ const FIELD_LABELS: Record<keyof IDFields, string> = {
   adresa: 'Adresa',
   judet: 'Județ',
   emisa_de: 'Emisă de',
+  valabila_de_la: 'Valabilă de la',
   valabila_pana_la: 'Valabilă până la',
 }
 
@@ -148,16 +155,23 @@ export default function PersonScanModal({ personLabel, accessToken, initialField
                         </span>
                       )}
                     </label>
-                    <input
-                      value={fields[key]}
-                      onChange={e => handleFieldChange(key, e.target.value)}
-                      style={{
-                        padding: '.3rem .5rem', borderRadius: 'var(--r-sm)',
-                        border: `1.5px solid ${key === 'cnp' && fields.cnp && !cnpValid ? 'var(--r500)' : 'var(--s300)'}`,
-                        fontSize: '.85rem', color: 'var(--s800)', background: '#fff',
-                        fontFamily: 'var(--font)', outline: 'none', width: '100%',
-                      }}
-                    />
+                    {key === 'judet' ? (
+                      <Combobox value={fields.judet} options={JUDETE_ROMANIA} onChange={val => handleFieldChange('judet', val)} placeholder="Județul" />
+                    ) : key === 'cetatenia' ? (
+                      <Combobox value={fields.cetatenia} options={CETATENII} onChange={val => handleFieldChange('cetatenia', val)} placeholder="Cetățenia" />
+                    ) : (
+                      <input
+                        type={DATE_KEYS.has(key) ? 'date' : 'text'}
+                        value={DATE_KEYS.has(key) ? roDateToISO(fields[key]) : fields[key]}
+                        onChange={e => handleFieldChange(key, DATE_KEYS.has(key) ? isoDateToRo(e.target.value) : e.target.value)}
+                        style={{
+                          padding: '.3rem .5rem', borderRadius: 'var(--r-sm)',
+                          border: `1.5px solid ${key === 'cnp' && fields.cnp && !cnpValid ? 'var(--r500)' : 'var(--s300)'}`,
+                          fontSize: '.85rem', color: 'var(--s800)', background: '#fff',
+                          fontFamily: 'var(--font)', outline: 'none', width: '100%',
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>

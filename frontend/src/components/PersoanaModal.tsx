@@ -3,8 +3,12 @@ import type { Persoana } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_PERSOANA } from '../lib/clienti'
 import { isValidCNP } from '../lib/cnp'
+import { roDateToISO, isoDateToRo } from '../lib/dates'
+import { JUDETE_ROMANIA } from '../lib/counties'
+import { CETATENII } from '../lib/citizenships'
 import MiniOCR from './MiniOCR'
 import Modal from './Modal'
+import Combobox from './Combobox'
 
 interface Props {
   initial: Persoana | null
@@ -35,6 +39,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
       adresa: fields.adresa || prev.adresa,
       judet: fields.judet || prev.judet,
       emisa_de: fields.emisa_de || prev.emisa_de,
+      valabila_de_la: fields.valabila_de_la || prev.valabila_de_la,
       valabila_pana_la: fields.valabila_pana_la || prev.valabila_pana_la,
     }))
   }
@@ -105,7 +110,11 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
 
             <div className="field">
               <label className="field-label">Data nașterii</label>
-              <input className="field-input" value={p.data_nasterii} onChange={e => set('data_nasterii', e.target.value)} />
+              <input
+                className="field-input" type="date"
+                value={roDateToISO(p.data_nasterii)}
+                onChange={e => set('data_nasterii', isoDateToRo(e.target.value))}
+              />
             </div>
             <div className="field">
               <label className="field-label">Locul nașterii</label>
@@ -114,7 +123,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
 
             <div className="field full">
               <label className="field-label">Cetățenia</label>
-              <input className="field-input" value={p.cetatenia} onChange={e => set('cetatenia', e.target.value)} />
+              <Combobox value={p.cetatenia} options={CETATENII} onChange={val => set('cetatenia', val)} placeholder="Cetățenia" />
             </div>
 
             <div className="field full">
@@ -124,16 +133,28 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
 
             <div className="field">
               <label className="field-label">Județul</label>
-              <input className="field-input" value={p.judet} onChange={e => set('judet', e.target.value)} />
+              <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județul" />
             </div>
             <div className="field">
               <label className="field-label">Emis de</label>
               <input className="field-input" value={p.emisa_de} onChange={e => set('emisa_de', e.target.value)} />
             </div>
 
-            <div className="field full">
+            <div className="field">
+              <label className="field-label">Valabil de la</label>
+              <input
+                className="field-input" type="date"
+                value={roDateToISO(p.valabila_de_la)}
+                onChange={e => set('valabila_de_la', isoDateToRo(e.target.value))}
+              />
+            </div>
+            <div className="field">
               <label className="field-label">Valabil până la</label>
-              <input className="field-input" value={p.valabila_pana_la} onChange={e => set('valabila_pana_la', e.target.value)} />
+              <input
+                className="field-input" type="date"
+                value={roDateToISO(p.valabila_pana_la)}
+                onChange={e => set('valabila_pana_la', isoDateToRo(e.target.value))}
+              />
             </div>
           </div>
         </div>

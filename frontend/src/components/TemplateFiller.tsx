@@ -5,7 +5,7 @@ import type { IDFields } from '../lib/api'
 import type { Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
-import { buildReplacements, checkReadiness, groupMissingFields } from '../lib/placeholders'
+import { buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields } from '../lib/placeholders'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { EMPTY_CLIENT, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
@@ -45,6 +45,9 @@ export default function TemplateFiller({
   const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({})
   const [showLibrary, setShowLibrary] = useState(false)
   const [showSaveClient, setShowSaveClient] = useState(false)
+  const [showSavePrompt, setShowSavePrompt] = useState(false)
+  const [askedSaveClient, setAskedSaveClient] = useState(false)
+  const [clientSaved, setClientSaved] = useState(false)
   const [expandedReadiness, setExpandedReadiness] = useState<Set<string>>(new Set())
   const [pendingGenerate, setPendingGenerate] = useState<{
     tpl: DocTemplate
@@ -54,6 +57,8 @@ export default function TemplateFiller({
   } | null>(null)
 
   const replacements = buildReplacements({ idFields: fields, client, scannedPersons })
+  const repeatGroups = buildRepeatGroups({ idFields: fields, client, scannedPersons })
+  const hasScannedPersonsNoClient = (scannedPersons ?? []).length > 0 && !client?.id
 
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => {
@@ -84,6 +89,16 @@ export default function TemplateFiller({
     return name.endsWith('.docx') ? name : `${name}.docx`
   }
 
+  // Întreabă explicit, o singură dată pe sesiune, dacă entitatea nou generată
+  // (fără client existent) ar trebui salvată în portofoliu — nu doar un buton
+  // care poate trece neobservat.
+  const maybePromptSaveClient = () => {
+    if (hasScannedPersonsNoClient && !askedSaveClient && !clientSaved) {
+      setAskedSaveClient(true)
+      setShowSavePrompt(true)
+    }
+  }
+
   const handleGenerateDocx = async (tpl: DocTemplate) => {
     setLoading(tpl.id, true)
     try {
@@ -91,23 +106,25 @@ export default function TemplateFiller({
       let result: { blob?: Blob; name?: string; link?: string }
 
       if (tpl.driveFileId) {
-        result = await fillDocxFromDriveTemplate(tpl.driveFileId, replacements, accessToken, uploadToDrive, driveFolder?.id, outputName)
+        result = await fillDocxFromDriveTemplate(tpl.driveFileId, replacements, accessToken, uploadToDrive, driveFolder?.id, outputName, repeatGroups)
       } else {
         const file = await resolveTemplateFile(tpl)
         if (!file) { onToast(`Fișierul pentru "${tpl.name}" nu este disponibil`, 'err'); return }
-        result = await fillDocx(file, replacements, accessToken, uploadToDrive, driveFolder?.id, outputName)
+        result = await fillDocx(file, replacements, accessToken, uploadToDrive, driveFolder?.id, outputName, repeatGroups)
       }
 
       if (result.link) {
         setGeneratedLinks(prev => ({ ...prev, [tpl.id]: result.link! }))
         onToast(`Salvat pe Drive: ${result.name}`, 'ok')
         await _logGeneration(tpl, outputName, result.link)
+        maybePromptSaveClient()
       } else if (result.blob) {
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
         URL.revokeObjectURL(url)
         onToast(`Descărcat: ${outputName}`, 'ok')
         await _logGeneration(tpl, outputName)
+        maybePromptSaveClient()
       }
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
@@ -125,6 +142,7 @@ export default function TemplateFiller({
       setGeneratedLinks(prev => ({ ...prev, [tpl.id]: result.link }))
       onToast('Document Google creat', 'ok')
       await _logGeneration(tpl, outputName, result.link)
+      maybePromptSaveClient()
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
     } finally {
@@ -142,7 +160,7 @@ export default function TemplateFiller({
 
   // Confirmation wrappers — check for missing fields before generating
   const tryGenerateSingle = (tpl: DocTemplate) => {
-    const { missing } = checkReadiness(tpl.placeholders ?? [], replacements)
+    const { missing } = checkReadiness(tpl.placeholders ?? [], replacements, repeatGroups)
     if (missing.length > 0) {
       setPendingGenerate({ tpl, missing })
     } else {
@@ -153,7 +171,7 @@ export default function TemplateFiller({
 
   const tryBatchGenerate = () => {
     const targets = templates.filter(t => selectedIds.has(t.id))
-    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], replacements).missing)
+    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], replacements, repeatGroups).missing)
     const uniqueMissing = [...new Set(allMissing)]
     if (uniqueMissing.length > 0) {
       // Show confirmation using the first template as representative (batch flag)
@@ -195,7 +213,8 @@ export default function TemplateFiller({
       serie_numar: p.fields.serie_numar, data_nasterii: p.fields.data_nasterii,
       locul_nasterii: p.fields.locul_nasterii, cetatenia: p.fields.cetatenia,
       adresa: p.fields.adresa, judet: p.fields.judet,
-      emisa_de: p.fields.emisa_de, valabila_pana_la: p.fields.valabila_pana_la,
+      emisa_de: p.fields.emisa_de, valabila_de_la: p.fields.valabila_de_la,
+      valabila_pana_la: p.fields.valabila_pana_la,
     }))
     const admini = (scannedPersons ?? []).filter(p => p.role === 'administrator').map(p => ({
       calitate: 'Administrator', cotaParticipare: '',
@@ -203,7 +222,8 @@ export default function TemplateFiller({
       serie_numar: p.fields.serie_numar, data_nasterii: p.fields.data_nasterii,
       locul_nasterii: p.fields.locul_nasterii, cetatenia: p.fields.cetatenia,
       adresa: p.fields.adresa, judet: p.fields.judet,
-      emisa_de: p.fields.emisa_de, valabila_pana_la: p.fields.valabila_pana_la,
+      emisa_de: p.fields.emisa_de, valabila_de_la: p.fields.valabila_de_la,
+      valabila_pana_la: p.fields.valabila_pana_la,
     }))
     return {
       id: '', createdAt: null, createdBy: user?.uid ?? '',
@@ -224,7 +244,7 @@ export default function TemplateFiller({
 
   const renderReadiness = (tpl: DocTemplate) => {
     if (!tpl.placeholders || tpl.placeholders.length === 0) return null
-    const { filled, missing } = checkReadiness(tpl.placeholders, replacements)
+    const { filled, missing } = checkReadiness(tpl.placeholders, replacements, repeatGroups)
     const total = tpl.placeholders.length
     const pct = Math.round((filled.length / total) * 100)
     const isExpanded = expandedReadiness.has(tpl.id)
@@ -356,7 +376,6 @@ export default function TemplateFiller({
 
   const currentTabTemplates = tab === 'docx' ? docxTemplates : gdocTemplates
   const selectedInTab = currentTabTemplates.filter(t => selectedIds.has(t.id))
-  const hasScannedPersonsNoClient = (scannedPersons ?? []).length > 0 && !client?.id
 
   return (
     <>
@@ -367,7 +386,7 @@ export default function TemplateFiller({
             Completare template
           </span>
           <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {hasScannedPersonsNoClient && (
+            {hasScannedPersonsNoClient && !clientSaved && (
               <button className="btn btn-success btn-sm" onClick={() => setShowSaveClient(true)}>
                 💾 Salvează ca client
               </button>
@@ -528,6 +547,34 @@ export default function TemplateFiller({
         )
       })()}
 
+      {/* Prompt explicit — întrebăm o singură dată dacă salvăm entitatea generată ca client */}
+      {showSavePrompt && (
+        <Modal
+          onClose={() => setShowSavePrompt(false)}
+          ariaLabel="Salvează client"
+          backdropStyle={{ background: 'rgba(15,23,42,.45)', zIndex: 400 }}
+          boxStyle={{ maxWidth: 440, display: 'flex', flexDirection: 'column' }}
+        >
+          <div style={{ padding: '1.125rem 1.25rem', borderBottom: '1px solid var(--s200)' }}>
+            <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>
+              💾 Salvezi această entitate ca client?
+            </div>
+          </div>
+          <div style={{ padding: '1rem 1.25rem' }}>
+            <p style={{ fontSize: '.875rem', color: 'var(--s600)', margin: 0 }}>
+              Ai generat documente pentru o entitate care nu există încă în portofoliu.
+              Salveaz-o ca să regăsești datele completate (inclusiv corecturile de mai sus) data viitoare, fără să le reintroduci.
+            </p>
+          </div>
+          <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--s200)', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowSavePrompt(false)}>Nu, mulțumesc</button>
+            <button className="btn btn-primary btn-sm" onClick={() => { setShowSavePrompt(false); setShowSaveClient(true) }}>
+              Da, salvează
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {/* Save as client modal */}
       {showSaveClient && (
         <ClientModal
@@ -536,6 +583,7 @@ export default function TemplateFiller({
             // Parent must provide save handler; we bubble via onClientSaved
             onToast('Client salvat', 'ok')
             setShowSaveClient(false)
+            setClientSaved(true)
             if (onClientSaved) {
               onClientSaved({ id: '', createdAt: null, createdBy: user?.uid ?? '', denumireLower: data.denumire.toLowerCase(), ...data } as Client)
             }

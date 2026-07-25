@@ -1,13 +1,29 @@
 import { useState } from 'react'
 import type { Client, Persoana, ScannedPerson, ToastItem } from '../types'
 import { persoanaToIDFields, idFieldsToPersoana } from '../lib/idFields'
+import { equalShare } from '../lib/cota'
 import PersonScanModal from './PersonScanModal'
+import CompanyInfoForm, { type CompanyData } from './CompanyInfoForm'
 
 interface Props {
   client: Client
   accessToken: string
   onContinue: (persons: ScannedPerson[], updatedClient: Client) => void
   onToast: (msg: string, type: ToastItem['type']) => void
+}
+
+function companyDataFromClient(client: Client): CompanyData {
+  return {
+    denumire: client.denumire,
+    formaJuridica: client.formaJuridica,
+    codFiscal: client.codFiscal,
+    nrRegistrul: client.nrRegistrul,
+    sediuSocial: client.sediuSocial,
+    caenCod: client.caenCod,
+    caenDescriere: client.caenDescriere,
+    caenSecundare: client.caenSecundare ?? [],
+    capitalSocial: client.capitalSocial,
+  }
 }
 
 function completenessScore(p: Persoana): number {
@@ -17,13 +33,14 @@ function completenessScore(p: Persoana): number {
 
 function PersonCard({
   persoana, role, index, accessToken,
-  onUpdate, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onToast,
+  onUpdate, onCotaChange, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onToast,
 }: {
   persoana: Persoana
   role: 'asociat' | 'administrator'
   index: number
   accessToken: string
   onUpdate: (p: Persoana) => void
+  onCotaChange?: (val: string) => void
   onMoveUp: () => void
   onMoveDown: () => void
   canMoveUp: boolean
@@ -61,10 +78,18 @@ function PersonCard({
           {isComplete && <span title="Date complete" style={{ color: 'var(--g600)' }}>✅</span>}
           {isPartial && <span title="Date parțiale" style={{ color: 'var(--y600, #ca8a04)' }}>⚠️</span>}
           {isEmpty && <span title="Fără date" style={{ color: 'var(--s400)' }}>⏳</span>}
-          {persoana.cotaParticipare && (
-            <span style={{ fontSize: '.72rem', color: 'var(--s500)', background: 'var(--s100)', padding: '.1rem .35rem', borderRadius: 3 }}>
-              {persoana.cotaParticipare}
-            </span>
+          {role === 'asociat' && onCotaChange && (
+            <input
+              value={persoana.cotaParticipare}
+              onChange={e => onCotaChange(e.target.value)}
+              placeholder="cotă"
+              title="Cotă participare"
+              style={{
+                width: 56, fontSize: '.72rem', textAlign: 'center', padding: '.15rem .3rem',
+                borderRadius: 3, border: '1.5px solid var(--s300)', color: 'var(--s700)',
+                background: '#fff', fontFamily: 'var(--font)', outline: 'none',
+              }}
+            />
           )}
           <div style={{ display: 'flex', gap: '.125rem' }}>
             <button onClick={onMoveUp} disabled={!canMoveUp} style={BTN_ICON} title="Sus">↑</button>
@@ -121,8 +146,13 @@ function PersonCard({
 }
 
 export default function MultiPersonPreview({ client, accessToken, onContinue, onToast }: Props) {
-  const [asociati, setAsociati] = useState<Persoana[]>([...client.asociati])
+  // Cotă neintrodusă explicit → default egal proporțional între asociați
+  const [asociati, setAsociati] = useState<Persoana[]>(() => {
+    const share = equalShare(client.asociati.length)
+    return client.asociati.map(a => a.cotaParticipare.trim() ? { ...a } : { ...a, cotaParticipare: share })
+  })
   const [admini, setAdmini] = useState<Persoana[]>([...client.administratori])
+  const [companyData, setCompanyData] = useState<CompanyData>(() => companyDataFromClient(client))
 
   const moveInArray = <T,>(arr: T[], from: number, to: number): T[] => {
     const next = [...arr]
@@ -147,12 +177,24 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
         scanStatus: (p.cnp ? 'scanned' : 'empty') as ScannedPerson['scanStatus'],
       })),
     ]
-    const updatedClient: Client = { ...client, asociati, administratori: admini }
+    const updatedClient: Client = { ...client, ...companyData, asociati, administratori: admini }
     onContinue(persons, updatedClient)
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* Date societate */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+        <div style={SECTION_TITLE}>Date societate</div>
+        <CompanyInfoForm
+          value={companyData}
+          onChange={patch => setCompanyData(prev => ({ ...prev, ...patch }))}
+          asociati={asociati}
+          accessToken={accessToken}
+          onToast={onToast}
+        />
+      </section>
+
       {/* Asociați */}
       {asociati.length > 0 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
@@ -167,6 +209,7 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
               index={i}
               accessToken={accessToken}
               onUpdate={updated => setAsociati(prev => prev.map((x, idx) => idx === i ? updated : x))}
+              onCotaChange={val => setAsociati(prev => prev.map((x, idx) => idx === i ? { ...x, cotaParticipare: val } : x))}
               onMoveUp={() => setAsociati(prev => moveInArray(prev, i, i - 1))}
               onMoveDown={() => setAsociati(prev => moveInArray(prev, i, i + 1))}
               canMoveUp={i > 0}

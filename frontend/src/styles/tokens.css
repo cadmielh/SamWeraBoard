@@ -414,12 +414,12 @@ body {
 .mini-ocr-divider { display:flex; align-items:center; gap:.75rem; color:var(--s400); font-size:.78rem; margin:.75rem 0; }
 .mini-ocr-divider::before, .mini-ocr-divider::after { content:''; flex:1; height:1px; background:var(--s200); }
 
-/* ── CAEN combobox ── */
-.caen-wrap { position:relative; }
-.caen-dropdown { position:absolute; left:0; right:0; top:calc(100% + 4px); background:#fff; border:1.5px solid var(--s200); border-radius:var(--r-md); box-shadow:var(--sh-lg); z-index:50; max-height:220px; overflow-y:auto; }
-.caen-opt { padding:.5rem .75rem; font-size:.8125rem; cursor:pointer; color:var(--s800); transition:background var(--t); }
-.caen-opt:hover { background:var(--p50); }
-.caen-opt-cod { font-weight:700; color:var(--p600); margin-right:.35rem; }
+/* ── Combobox (CAEN, județ, cetățenie etc.) ── */
+.combo-wrap { position:relative; }
+.combo-dropdown { position:absolute; left:0; right:0; top:calc(100% + 4px); background:#fff; border:1.5px solid var(--s200); border-radius:var(--r-md); box-shadow:var(--sh-lg); z-index:50; max-height:220px; overflow-y:auto; }
+.combo-opt { padding:.5rem .75rem; font-size:.8125rem; cursor:pointer; color:var(--s800); transition:background var(--t); }
+.combo-opt:hover { background:var(--p50); }
+.combo-opt-cod { font-weight:700; color:var(--p600); margin-right:.35rem; }
 
 /* ── ANAF info strip ── */
 .anaf-strip { background:var(--p50); border:1px solid var(--p200); border-radius:var(--r-sm); padding:.5rem .875rem; font-size:.78rem; color:var(--p700); display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }

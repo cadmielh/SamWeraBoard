@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { Client, Persoana, TipClient, SubtipPF } from '../types'
-import { EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from '../lib/clienti'
+import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, type ClientInput } from '../lib/clienti'
 import { fetchAnafCompany } from '../lib/api'
+import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
+import { equalShare } from '../lib/cota'
 import { useApp } from '../AppLayout'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
@@ -12,8 +14,6 @@ interface Props {
   onSave: (data: ClientInput) => Promise<void>
   onClose: () => void
 }
-
-const FORME_JURIDICE_PJ = ['SRL', 'SA', 'SNC', 'SCS', 'RA', 'SNA', 'ONG', 'Asociație', 'Fundație', 'Altul']
 
 type PersonaModalState =
   | { type: 'asociati' | 'administratori'; index: number | null; prefill?: Partial<Persoana> }
@@ -27,18 +27,18 @@ const SUBTIP_LABELS: Record<SubtipPF, string> = {
   II: 'II',
 }
 
-function equalShare(n: number): string {
-  if (n <= 0) return ''
-  const val = Math.round((100 / n) * 100) / 100
-  return `${Number.isInteger(val) ? val : val.toFixed(2)}%`
-}
-
-function personKey(p: Persoana): string {
-  return p.cnp.trim() || `${p.nume.trim()}|${p.prenume.trim()}`
+// Returnează null când persoana nu are date de identificare — două persoane
+// nescanate/necompletate nu trebuie considerate "aceeași persoană".
+function personKey(p: Persoana): string | null {
+  const cnp = p.cnp.trim()
+  if (cnp) return cnp
+  const nume = p.nume.trim()
+  const prenume = p.prenume.trim()
+  return (nume || prenume) ? `${nume}|${prenume}` : null
 }
 
 export default function ClientModal({ initial, onSave, onClose }: Props) {
-  const { accessToken, toast } = useApp()
+  const { accessToken, toast, activeWorkspace } = useApp()
 
   const [form, setForm] = useState<ClientInput>(() => {
     if (!initial) return { ...EMPTY_CLIENT }
@@ -54,6 +54,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       sediuSocial: initial.sediuSocial,
       caenCod: initial.caenCod,
       caenDescriere: initial.caenDescriere,
+      caenSecundare: initial.caenSecundare ? [...initial.caenSecundare] : [],
       telefon: initial.telefon,
       email: initial.email ?? '',
       statutFiscal: initial.statutFiscal,
@@ -73,9 +74,11 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   })
 
   const [saving, setSaving] = useState(false)
+  const [denumireError, setDenumireError] = useState('')
   const [anafLoading, setAnafLoading] = useState(false)
   const [personaModal, setPersonaModal] = useState<PersonaModalState>(null)
   const [adminPicker, setAdminPicker] = useState(false)
+  const [sediuPicker, setSediuPicker] = useState(false)
 
   const set = (key: keyof ClientInput, val: unknown) => setForm(prev => ({ ...prev, [key]: val }))
 
@@ -84,12 +87,24 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   const isIF = isPF && form.subtipPF === 'IF'
 
   const soleAsociat = form.asociati.length === 1 ? form.asociati[0] : null
-  const isAdminSameAsSoleAsociat = !!soleAsociat && form.administratori.length === 1
-    && personKey(form.administratori[0]) === personKey(soleAsociat)
+
+  // Stare explicită, bifată de utilizator — NU derivată din compararea datelor:
+  // două persoane nescanate (ambele goale) nu sunt automat "aceeași persoană".
+  const [adminSameAsSoleAsociat, setAdminSameAsSoleAsociat] = useState(() => {
+    if (form.asociati.length !== 1 || form.administratori.length !== 1) return false
+    const k1 = personKey(form.asociati[0])
+    const k2 = personKey(form.administratori[0])
+    return !!k1 && k1 === k2
+  })
+  // Activă doar când bifa chiar are sens (există exact un asociat unic)
+  const hideAdminSection = !!soleAsociat && adminSameAsSoleAsociat
 
   const toggleAdminSameAsSoleAsociat = (checked: boolean) => {
     if (!soleAsociat) return
-    set('administratori', checked ? [{ ...soleAsociat, calitate: 'Administrator', cotaParticipare: '' }] : [])
+    setAdminSameAsSoleAsociat(checked)
+    if (checked) {
+      set('administratori', [{ ...soleAsociat, calitate: 'Administrator', cotaParticipare: '' }])
+    }
   }
 
   const handleAddAdministrator = () => {
@@ -162,7 +177,17 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
+    setDenumireError('')
     try {
+      const workspaceId = activeWorkspace?.id
+      if (workspaceId) {
+        const duplicate = await denumireExists(workspaceId, form.denumire, initial?.id)
+        if (duplicate) {
+          setDenumireError('Există deja un client cu această denumire — denumirea trebuie să fie unică')
+          setSaving(false)
+          return
+        }
+      }
       await onSave(form)
       onClose()
     } catch (e: unknown) {
@@ -171,6 +196,17 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       setSaving(false)
     }
   }
+
+  const addCaenSecundar = () => set('caenSecundare', [...form.caenSecundare, { cod: '', descriere: '' }])
+  const updateCaenSecundar = (i: number, cod: string, descriere: string) => {
+    const arr = [...form.caenSecundare]; arr[i] = { cod, descriere }; set('caenSecundare', arr)
+  }
+  const removeCaenSecundar = (i: number) => {
+    const arr = [...form.caenSecundare]; arr.splice(i, 1); set('caenSecundare', arr)
+  }
+
+  // Părți sociale — derivat din capitalul social (valoare nominală minimă 10 lei/parte), nu se stochează separat
+  const partiSocialeTotal = form.capitalSocial != null ? form.capitalSocial / 10 : null
 
   const addAsociat = (p: Persoana) => {
     const prevEqual = equalShare(form.asociati.length)
@@ -256,6 +292,43 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
           >
             + Persoană nouă
           </button>
+        </div>
+      </Modal>
+    )
+  }
+
+  if (sediuPicker) {
+    return (
+      <Modal onClose={() => setSediuPicker(false)} ariaLabel="Alege adresa asociatului">
+        <div className="modal-head">
+          <span className="modal-title">Copiază sediul de la un asociat</span>
+          <button className="modal-close" onClick={() => setSediuPicker(false)}>×</button>
+        </div>
+        <div className="modal-body">
+          <p style={{ fontSize: '.8125rem', color: 'var(--s400)', marginTop: 0 }}>
+            Selectează asociatul a cărui adresă de domiciliu devine sediul social.
+          </p>
+          {form.asociati.map((a, i) => {
+            const adresaFull = [a.adresa, a.judet].filter(Boolean).join(', ')
+            return (
+              <button
+                key={i}
+                type="button"
+                className="persoana-card"
+                disabled={!adresaFull}
+                style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s150, #e5e7eb)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
+                onClick={() => { set('sediuSocial', adresaFull); setSediuPicker(false) }}
+              >
+                <div>
+                  <div className="persoana-card-name">{a.prenume} {a.nume}</div>
+                  <div className="persoana-card-sub">{adresaFull || 'Fără adresă completată'}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={() => setSediuPicker(false)}>Anulează</button>
         </div>
       </Modal>
     )
@@ -376,15 +449,17 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
               {soleAsociat && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', marginTop: '.75rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={isAdminSameAsSoleAsociat} onChange={e => toggleAdminSameAsSoleAsociat(e.target.checked)} />
+                  <input type="checkbox" checked={adminSameAsSoleAsociat} onChange={e => toggleAdminSameAsSoleAsociat(e.target.checked)} />
                   Administratorul este aceeași persoană cu asociatul unic
                 </label>
               )}
 
-              <PersonSection title="Administratori" persons={form.administratori}
-                onAdd={handleAddAdministrator}
-                onEdit={i => setPersonaModal({ type: 'administratori', index: i })}
-                onRemove={i => removePersoana('administratori', i)} />
+              {!hideAdminSection && (
+                <PersonSection title="Administratori" persons={form.administratori}
+                  onAdd={handleAddAdministrator}
+                  onEdit={i => setPersonaModal({ type: 'administratori', index: i })}
+                  onRemove={i => removePersoana('administratori', i)} />
+              )}
             </>
           )}
 
@@ -438,9 +513,11 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   Denumire <span style={{ color: 'var(--r500)' }}>*</span>
                 </label>
                 <input className="field-input" autoFocus={!isPF} value={form.denumire}
-                  onChange={e => set('denumire', e.target.value)}
+                  onChange={e => { set('denumire', e.target.value); if (denumireError) setDenumireError('') }}
                   placeholder={isPF ? 'ex: Popescu Ion PFA' : 'Denumirea firmei'}
+                  aria-invalid={!!denumireError}
                   required />
+                {denumireError && <span className="field-error">{denumireError}</span>}
               </div>
 
               {/* Forma juridică — doar PJ */}
@@ -483,9 +560,35 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   onChange={(cod, desc) => { set('caenCod', cod); set('caenDescriere', desc) }} />
               </div>
 
+              {/* CAEN secundare — doar PJ, opțional, nelimitat */}
+              {!isPF && (
+                <div className="field full">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
+                    <label className="field-label" style={{ margin: 0 }}>Activități secundare (CAEN)</label>
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
+                  </div>
+                  {form.caenSecundare.map((a, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
+                      <div style={{ flex: 1 }}>
+                        <CAENCombobox value={a.cod} descriere={a.descriere}
+                          onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
+                      </div>
+                      <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Sediu */}
               <div className="field full">
-                <label className="field-label">{isPF ? 'Sediu profesional' : 'Sediu social'}</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label className="field-label" style={{ margin: 0 }}>{isPF ? 'Sediu profesional' : 'Sediu social'}</label>
+                  {!isPF && form.asociati.length > 0 && (
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
+                      📍 Folosește adresa unui asociat
+                    </button>
+                  )}
+                </div>
                 <textarea className="field-textarea" value={form.sediuSocial}
                   onChange={e => set('sediuSocial', e.target.value)} rows={2} />
               </div>
@@ -535,6 +638,14 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   <input className="field-input" type="number" min={0} placeholder="ex: 200"
                     value={form.capitalSocial ?? ''}
                     onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))} />
+                </div>
+              )}
+              {!isPF && (
+                <div className="field">
+                  <label className="field-label">Părți sociale</label>
+                  <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
+                    {partiSocialeTotal != null ? partiSocialeTotal.toLocaleString('ro-RO') : '—'}
+                  </div>
                 </div>
               )}
             </div>

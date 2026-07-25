@@ -4,7 +4,7 @@ import copy
 import io
 import re
 from docx import Document
-from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 
 
 def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
@@ -25,13 +25,70 @@ def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
             run.text = ""
 
 
-def fill_docx(template_bytes: bytes, replacements: dict[str, str]) -> bytes:
+def _para_text(paragraph) -> str:
+    return "".join(run.text for run in paragraph.runs).strip()
+
+
+def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]) -> None:
+    """
+    Expand {{#TAG}} ... {{/TAG}} paragraph ranges (top-level body paragraphs) into
+    one copy of the enclosed paragraphs per item in groups[TAG], substituting
+    singular placeholders (e.g. {{NUME}}, {{CNP}}, {{INDEX}}) from that item.
+    The original marker paragraphs and the template block are removed afterwards.
+    Tags with no matching group, or malformed (missing end tag), are left as-is.
+    """
+    for tag, items in groups.items():
+        start_marker = f"{{{{#{tag}}}}}"
+        end_marker = f"{{{{/{tag}}}}}"
+
+        while True:
+            paragraphs = doc.paragraphs
+            start_idx = next((i for i, p in enumerate(paragraphs) if _para_text(p) == start_marker), None)
+            if start_idx is None:
+                break
+            end_idx = next(
+                (i for i in range(start_idx + 1, len(paragraphs)) if _para_text(paragraphs[i]) == end_marker),
+                None,
+            )
+            if end_idx is None:
+                break  # no matching end tag — leave the stray start marker as-is
+
+            block_paragraphs = paragraphs[start_idx + 1:end_idx]
+            anchor = paragraphs[end_idx]._p
+
+            for i, item in enumerate(items, start=1):
+                person = {**item, "INDEX": str(i)}
+                item_replacements = {"{{" + k + "}}": v for k, v in person.items()}
+                for bp in block_paragraphs:
+                    clone = copy.deepcopy(bp._p)
+                    anchor.addprevious(clone)
+                    _replace_in_paragraph(Paragraph(clone, bp._parent), item_replacements)
+
+            # Remove the original template block + both markers
+            for bp in block_paragraphs:
+                bp._p.getparent().remove(bp._p)
+            paragraphs[end_idx]._p.getparent().remove(paragraphs[end_idx]._p)
+            paragraphs[start_idx]._p.getparent().remove(paragraphs[start_idx]._p)
+
+
+def fill_docx(
+    template_bytes: bytes,
+    replacements: dict[str, str],
+    groups: dict[str, list[dict[str, str]]] | None = None,
+) -> bytes:
     """
     Fill a .docx template by replacing {{PLACEHOLDER}} markers.
+
+    If `groups` is given, {{#TAG}}...{{/TAG}} blocks are expanded first — once
+    per item in groups[TAG] — before the flat placeholder pass runs over the
+    whole (now expanded) document.
 
     Returns the filled document as bytes.
     """
     doc = Document(io.BytesIO(template_bytes))
+
+    if groups:
+        _expand_repeat_blocks(doc, groups)
 
     # Replace in main body paragraphs
     for paragraph in doc.paragraphs:
@@ -61,16 +118,22 @@ def fill_docx(template_bytes: bytes, replacements: dict[str, str]) -> bytes:
 
 
 def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
-    """Return all unique {{PLACEHOLDER}} markers found in the template."""
+    """Return all unique {{PLACEHOLDER}} markers found in the template.
+
+    Excludes {{#TAG}}/{{/TAG}} repeat-block markers — those are structural,
+    not fillable fields.
+    """
     doc = Document(io.BytesIO(template_bytes))
     pattern = re.compile(r"\{\{[^}]+\}\}")
+    marker_pattern = re.compile(r"^\{\{[#/]")
     found: set[str] = set()
 
     def scan_paragraphs(paragraphs):
         for p in paragraphs:
             text = "".join(r.text for r in p.runs)
             for match in pattern.findall(text):
-                found.add(match)
+                if not marker_pattern.match(match):
+                    found.add(match)
 
     scan_paragraphs(doc.paragraphs)
     for table in doc.tables:

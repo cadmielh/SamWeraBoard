@@ -21,7 +21,7 @@ export function useWorkspace(uid: string | null) {
     try {
       const q = query(collection(db, 'workspaces'), where(`members.${uid}.role`, 'in', ['admin', 'member']))
       const snap = await getDocs(q)
-      const list: Workspace[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as Workspace))
+      const list: Workspace[] = snap.docs.map(d => ({ ...d.data(), id: d.id } as Workspace))
       setWorkspaces(list)
 
       const userDoc = await getDoc(doc(db, 'users', uid))
