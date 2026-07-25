@@ -62,6 +62,16 @@ service cloud.firestore {
       // Clients sub-collection — any workspace member can CRUD
       match /clienti/{clientId} {
         allow read, write, delete: if isMember(wid);
+
+        // Document-generation audit trail — any workspace member can log/read
+        match /docGenerations/{genId} {
+          allow read, write: if isMember(wid);
+        }
+      }
+
+      // Document template library — any workspace member can CRUD
+      match /docTemplates/{templateId} {
+        allow read, write, delete: if isMember(wid);
       }
     }
 
