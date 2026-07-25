@@ -3,6 +3,7 @@ import type { ScannedPerson, ToastItem } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_ID_FIELDS } from '../lib/idFields'
 import PersonScanModal from './PersonScanModal'
+import Modal from './Modal'
 
 interface Props {
   accessToken: string
@@ -12,6 +13,16 @@ interface Props {
 
 function makePerson(role: ScannedPerson['role']): ScannedPerson {
   return { id: crypto.randomUUID(), role, cotaParticipare: '', fields: { ...EMPTY_ID_FIELDS }, scanStatus: 'empty' }
+}
+
+function equalShare(n: number): string {
+  if (n <= 0) return ''
+  const val = Math.round((100 / n) * 100) / 100
+  return `${Number.isInteger(val) ? val : val.toFixed(2)}%`
+}
+
+function personKey(p: ScannedPerson): string {
+  return p.fields.cnp.trim() || `${p.fields.nume.trim()}|${p.fields.prenume.trim()}`
 }
 
 function scanStatus(p: ScannedPerson) {
@@ -28,16 +39,60 @@ function personLabel(p: ScannedPerson, idx: number, role: string): string {
 
 export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
   const [persons, setPersons] = useState<ScannedPerson[]>([
-    makePerson('administrator'),
     makePerson('asociat'),
+    makePerson('administrator'),
   ])
   const [scanTarget, setScanTarget] = useState<{ personId: string; manual: boolean } | null>(null)
+  const [adminPicker, setAdminPicker] = useState(false)
+
+  const asociati = persons.filter(p => p.role === 'asociat')
+  const admini = persons.filter(p => p.role === 'administrator')
 
   const updatePerson = (id: string, patch: Partial<ScannedPerson>) =>
     setPersons(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
 
   const removePerson = (id: string) =>
-    setPersons(prev => prev.filter(p => p.id !== id))
+    setPersons(prev => {
+      const removed = prev.find(p => p.id === id)
+      const next = prev.filter(p => p.id !== id)
+      if (removed?.role !== 'asociat') return next
+      const prevEqual = equalShare(prev.filter(p => p.role === 'asociat').length)
+      const newEqual = equalShare(next.filter(p => p.role === 'asociat').length)
+      return next.map(p => (p.role === 'asociat' && p.cotaParticipare === prevEqual) ? { ...p, cotaParticipare: newEqual } : p)
+    })
+
+  const addAsociat = () =>
+    setPersons(prev => {
+      const asocCount = prev.filter(p => p.role === 'asociat').length
+      const prevEqual = equalShare(asocCount)
+      const newEqual = equalShare(asocCount + 1)
+      const rebalanced = prev.map(p =>
+        p.role === 'asociat' && (!p.cotaParticipare.trim() || p.cotaParticipare === prevEqual)
+          ? { ...p, cotaParticipare: newEqual }
+          : p
+      )
+      return [...rebalanced, { ...makePerson('asociat'), cotaParticipare: newEqual }]
+    })
+
+  const handleAddAdministrator = () => {
+    if (asociati.length > 0) setAdminPicker(true)
+    else setPersons(prev => [...prev, makePerson('administrator')])
+  }
+
+  const soleAsociat = asociati.length === 1 ? asociati[0] : null
+  const isAdminSameAsSoleAsociat = !!soleAsociat && admini.length === 1 && personKey(admini[0]) === personKey(soleAsociat)
+
+  const toggleAdminSameAsSoleAsociat = (checked: boolean) => {
+    if (!soleAsociat) return
+    setPersons(prev => {
+      const withoutAdmins = prev.filter(p => p.role !== 'administrator')
+      if (!checked) return withoutAdmins
+      return [...withoutAdmins, {
+        id: crypto.randomUUID(), role: 'administrator', cotaParticipare: '',
+        fields: { ...soleAsociat.fields }, scanStatus: soleAsociat.scanStatus,
+      }]
+    })
+  }
 
   const moveUp = (idx: number) => {
     if (idx === 0) return
@@ -66,9 +121,6 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
     setScanTarget(null)
     onToast('Date salvate', 'ok')
   }
-
-  const asociati = persons.filter(p => p.role === 'asociat')
-  const admini = persons.filter(p => p.role === 'administrator')
 
   const renderRow = (p: ScannedPerson, globalIdx: number) => {
     const roleLabel = p.role === 'asociat' ? 'Asociat' : 'Administrator'
@@ -143,6 +195,21 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Asociați — determină firma, deci se completează primii */}
+        {asociati.length > 0 && (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+            <div style={SECTION_TITLE}>Asociați <span style={COUNT_CHIP}>{asociati.length}</span></div>
+            {persons.map((p, i) => p.role === 'asociat' ? renderRow(p, i) : null)}
+          </section>
+        )}
+
+        {soleAsociat && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={isAdminSameAsSoleAsociat} onChange={e => toggleAdminSameAsSoleAsociat(e.target.checked)} />
+            Administratorul este aceeași persoană cu asociatul unic
+          </label>
+        )}
+
         {/* Administratori */}
         {admini.length > 0 && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
@@ -151,20 +218,12 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
           </section>
         )}
 
-        {/* Asociați */}
-        {asociati.length > 0 && (
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
-            <div style={SECTION_TITLE}>Asociați <span style={COUNT_CHIP}>{asociati.length}</span></div>
-            {persons.map((p, i) => p.role === 'asociat' ? renderRow(p, i) : null)}
-          </section>
-        )}
-
         {/* Add buttons */}
         <div style={{ display: 'flex', gap: '.625rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => setPersons(prev => [...prev, makePerson('asociat')])}>
+          <button className="btn btn-ghost btn-sm" onClick={addAsociat}>
             + Adaugă asociat
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setPersons(prev => [...prev, makePerson('administrator')])}>
+          <button className="btn btn-ghost btn-sm" onClick={handleAddAdministrator}>
             + Adaugă administrator
           </button>
         </div>
@@ -180,6 +239,54 @@ export default function ScanQueue({ accessToken, onContinue, onToast }: Props) {
           </button>
         </div>
       </div>
+
+      {/* Selector administrator dintre asociați */}
+      {adminPicker && (
+        <Modal onClose={() => setAdminPicker(false)} ariaLabel="Alege administrator">
+          <div className="modal-head">
+            <span className="modal-title">Cine este administrator?</span>
+            <button className="modal-close" onClick={() => setAdminPicker(false)}>×</button>
+          </div>
+          <div className="modal-body">
+            <p style={{ fontSize: '.8125rem', color: 'var(--s400)', marginTop: 0 }}>
+              Selectează un asociat existent pentru a-i copia datele, sau adaugă o persoană nouă.
+            </p>
+            {asociati.map((a, i) => {
+              const name = [a.fields.prenume, a.fields.nume].filter(Boolean).join(' ')
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="persoana-card"
+                  style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent' }}
+                  onClick={() => {
+                    setPersons(prev => [...prev, {
+                      id: crypto.randomUUID(), role: 'administrator', cotaParticipare: '',
+                      fields: { ...a.fields }, scanStatus: a.scanStatus,
+                    }])
+                    setAdminPicker(false)
+                  }}
+                >
+                  <div className="persoana-card-name">{name || `Asociat ${i + 1}`}</div>
+                  <div className="persoana-card-sub">
+                    Asociat{a.cotaParticipare ? ` — ${a.cotaParticipare}` : ''}{a.fields.cnp ? ` · CNP: ${a.fields.cnp}` : ''}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={() => setAdminPicker(false)}>Anulează</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => { setPersons(prev => [...prev, makePerson('administrator')]); setAdminPicker(false) }}
+            >
+              + Persoană nouă
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {/* Scan modal */}
       {scanTarget && (() => {
