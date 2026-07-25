@@ -13,7 +13,7 @@ interface Props {
 
 export default function DriveFolderPicker({ accessToken, onSelect, onToast }: Props) {
   const [files, setFiles] = useState<DriveFile[]>([])
-  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: 'root', name: 'My Drive' }])
+  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: 'root', name: 'Drive-ul meu' }])
   const [loading, setLoading] = useState(false)
   const [nextPage, setNextPage] = useState<string | undefined>()
 
@@ -28,7 +28,7 @@ export default function DriveFolderPicker({ accessToken, onSelect, onToast }: Pr
       setFiles(prev => pageToken ? [...prev, ...folders] : folders)
       setNextPage(result.nextPageToken)
     } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Drive error', 'err')
+      onToast((err as Error).message ?? 'Eroare Drive', 'err')
     } finally {
       setLoading(false)
     }
@@ -82,7 +82,7 @@ export default function DriveFolderPicker({ accessToken, onSelect, onToast }: Pr
           style={{ flexShrink: 0 }}
           onClick={() => onSelect(currentFolder.id === 'root' ? null : currentFolder)}
         >
-          Select here
+          Selectează aici
         </button>
       </div>
 
@@ -100,7 +100,7 @@ export default function DriveFolderPicker({ accessToken, onSelect, onToast }: Pr
           </div>
         ) : files.length === 0 && !loading ? (
           <div style={{ textAlign: 'center', color: 'var(--s400)', padding: '1rem', fontSize: '.8rem' }}>
-            No subfolders here
+            Niciun subfolder aici
           </div>
         ) : (
           files.map(f => (
@@ -138,7 +138,7 @@ export default function DriveFolderPicker({ accessToken, onSelect, onToast }: Pr
               onClick={() => loadFiles(currentFolder.id, nextPage)}
               disabled={loading}
             >
-              {loading ? 'Loading…' : 'Load more'}
+              {loading ? 'Se încarcă…' : 'Încarcă mai multe'}
             </button>
           </div>
         )}

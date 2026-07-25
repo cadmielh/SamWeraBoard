@@ -4,6 +4,39 @@ export interface ToastItem {
   type: 'ok' | 'err' | 'info'
 }
 
+export interface ScannedPerson {
+  id: string
+  role: 'asociat' | 'administrator'
+  cotaParticipare: string
+  fields: import('./lib/api').IDFields
+  scanStatus: 'scanned' | 'manual' | 'empty'
+}
+
+export interface DocTemplate {
+  id: string
+  name: string
+  description: string
+  type: 'docx' | 'gdoc'
+  fileBase64?: string
+  fileName?: string
+  driveFileId?: string
+  placeholders?: string[]
+  docId?: string
+  outputNameTemplate: string
+  tipTemplate?: 'PF' | 'PJ' | 'universal'
+  createdAt: string
+  createdBy: string
+}
+
+export interface DocGeneration {
+  templateId: string
+  templateName: string
+  generatedAt: string
+  generatedBy: string
+  outputName: string
+  driveLink?: string
+}
+
 export interface Persoana {
   calitate: string
   cotaParticipare: string
@@ -20,8 +53,19 @@ export interface Persoana {
   valabila_pana_la: string
 }
 
+export type TipClient = 'PF' | 'PJ'
+export type SubtipPF = 'PFA' | 'IF' | 'II'
+export type RegimFiscal = '' | 'microintreprindere' | 'impozit_profit'
+
 export interface Client {
   id: string
+  tipClient: TipClient
+  subtipPF?: SubtipPF
+  // Date persoană fizică (sursă: CI scanat sau introdus manual)
+  titular?: Persoana
+  // Membri IF (calitate: 'Titular' sau 'Membru IF')
+  membriIF?: Persoana[]
+  // Date entitate (sursă: ANAF sau introducere manuală)
   denumire: string
   denumireLower: string
   formaJuridica: string
@@ -35,12 +79,26 @@ export interface Client {
   statutFiscal: string
   platitorTva: boolean
   periodaTva: string
+  tvaLaIncasare: boolean
+  plafonTvaAnual: number | null
+  regimFiscal: RegimFiscal
+  nrSalariati: number | null
+  capitalSocial: number | null
+  anFiscal: string
   dataAnafActualizat: string | null
   notite: string
   asociati: Persoana[]
   administratori: Persoana[]
   createdAt: string | null
   createdBy: string
+}
+
+export function inferTipClient(c: Partial<Client>): TipClient {
+  return c.tipClient ?? 'PJ'
+}
+
+export function getClientDisplayName(c: Pick<Client, 'denumire' | 'tipClient' | 'subtipPF' | 'titular'>): string {
+  return c.denumire
 }
 
 export interface WorkspaceMember {

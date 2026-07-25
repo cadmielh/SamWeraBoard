@@ -1,6 +1,8 @@
 import { auth } from "./firebase";
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+// OCR calls go directly to Cloud Run to bypass Firebase Hosting's 60s proxy timeout
+const OCR_BASE = import.meta.env.VITE_OCR_BASE ?? BASE;
 
 export interface IDFields {
   cnp: string;
@@ -27,7 +29,7 @@ async function headers(accessToken: string): Promise<Record<string, string>> {
 export async function extractFile(file: File, accessToken: string): Promise<IDFields> {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(`${BASE}/extract`, {
+  const res = await fetch(`${OCR_BASE}/extract`, {
     method: "POST",
     headers: await headers(accessToken),
     body: fd,
@@ -38,7 +40,7 @@ export async function extractFile(file: File, accessToken: string): Promise<IDFi
 }
 
 export async function extractFromDrive(fileId: string, accessToken: string): Promise<IDFields> {
-  const res = await fetch(`${BASE}/extract/drive`, {
+  const res = await fetch(`${OCR_BASE}/extract/drive`, {
     method: "POST",
     headers: { ...(await headers(accessToken)), "Content-Type": "application/json" },
     body: JSON.stringify({ file_id: fileId }),
@@ -117,6 +119,7 @@ export interface AnafResult {
   statutFiscal?: string
   platitorTva?: boolean
   periodaTva?: string
+  tvaLaIncasare?: boolean
 }
 
 export async function fetchAnafCompany(cif: string, accessToken: string): Promise<AnafResult> {
@@ -126,6 +129,51 @@ export async function fetchAnafCompany(cif: string, accessToken: string): Promis
   const data = await res.json()
   if (!res.ok) throw new Error(data.error ?? 'Eroare ANAF')
   return data as AnafResult
+}
+
+export async function detectPlaceholders(templateFile: File, accessToken: string): Promise<string[]> {
+  const fd = new FormData();
+  fd.append("template", templateFile);
+  const res = await fetch(`${BASE}/template/placeholders`, {
+    method: "POST",
+    headers: await headers(accessToken),
+    body: fd,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Placeholder detection failed");
+  return data.placeholders as string[];
+}
+
+export async function fillDocxFromDriveTemplate(
+  templateDriveId: string,
+  fields: Record<string, string>,
+  accessToken: string,
+  uploadToDrive = false,
+  driveFolderId?: string,
+  outputName?: string,
+): Promise<{ blob?: Blob; name?: string; link?: string }> {
+  const fd = new FormData();
+  fd.append("template_drive_id", templateDriveId);
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
+  if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
+  if (outputName) fd.append("_output_name", outputName);
+
+  const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: await headers(accessToken),
+    body: fd,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? "Fill failed");
+  }
+  if (uploadToDrive) {
+    const d = await res.json();
+    return { name: d.name, link: d.link };
+  }
+  const blob = await res.blob();
+  return { blob };
 }
 
 export async function fillGdoc(

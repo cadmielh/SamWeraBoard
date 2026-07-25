@@ -12,9 +12,10 @@ _listafirme_key  = params.SecretParam("LISTAFIRME_KEY")
 
 @https_fn.on_request(
     region="us-central1",
-    memory=512,
+    memory=4096,
     timeout_sec=300,
     max_instances=10,
+    concurrency=1,
     secrets=[_openrouter_key, _openapi_ro_key, _listafirme_key],
 )
 def api(req: https_fn.Request) -> https_fn.Response:

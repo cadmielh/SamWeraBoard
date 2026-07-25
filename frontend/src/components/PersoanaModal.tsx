@@ -2,19 +2,23 @@ import { useState } from 'react'
 import type { Persoana } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_PERSOANA } from '../lib/clienti'
+import { isValidCNP } from '../lib/cnp'
 import MiniOCR from './MiniOCR'
+import Modal from './Modal'
 
 interface Props {
   initial: Persoana | null
+  prefill?: Partial<Persoana>
   calitateDefault: string
+  showCota?: boolean
   onSave: (p: Persoana) => void
   onClose: () => void
 }
 
 const CALITATI = ['Asociat', 'Administrator', 'Asociat și Administrator', 'Cenzor', 'Acționar', 'Fondator', 'Altul']
 
-export default function PersoanaModal({ initial, calitateDefault, onSave, onClose }: Props) {
-  const [p, setP] = useState<Persoana>(initial ?? { ...EMPTY_PERSOANA, calitate: calitateDefault })
+export default function PersoanaModal({ initial, prefill, calitateDefault, showCota = true, onSave, onClose }: Props) {
+  const [p, setP] = useState<Persoana>(initial ?? { ...EMPTY_PERSOANA, calitate: calitateDefault, ...prefill })
 
   const set = (key: keyof Persoana, val: string) => setP(prev => ({ ...prev, [key]: val }))
 
@@ -35,15 +39,16 @@ export default function PersoanaModal({ initial, calitateDefault, onSave, onClos
     }))
   }
 
-  const canSave = !!(p.nume.trim() || p.cnp.trim())
+  const cnpTrimmed = p.cnp.trim()
+  const cnpError = cnpTrimmed && !isValidCNP(cnpTrimmed) ? 'CNP invalid (cifră de control sau dată incorectă)' : ''
+  const canSave = !!(p.nume.trim() || cnpTrimmed) && !cnpError
 
   const title = initial
     ? `Editează ${calitateDefault}`
     : `Adaugă ${calitateDefault}`
 
   return (
-    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box">
+    <Modal onClose={onClose} ariaLabel={title}>
         <div className="modal-head">
           <span className="modal-title">{title}</span>
           <button className="modal-close" onClick={onClose}>×</button>
@@ -63,14 +68,25 @@ export default function PersoanaModal({ initial, calitateDefault, onSave, onClos
                 {CALITATI.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
-            <div className="field">
-              <label className="field-label">Cotă participare</label>
-              <input className="field-input" placeholder="ex: 50%" value={p.cotaParticipare} onChange={e => set('cotaParticipare', e.target.value)} />
-            </div>
+            {showCota && (
+              <div className="field">
+                <label className="field-label">Cotă participare</label>
+                <input className="field-input" placeholder="ex: 50%" value={p.cotaParticipare} onChange={e => set('cotaParticipare', e.target.value)} />
+              </div>
+            )}
 
             <div className="field full">
               <label className="field-label">CNP</label>
-              <input className="field-input" placeholder="13 cifre" value={p.cnp} onChange={e => set('cnp', e.target.value)} maxLength={13} />
+              <input
+                className="field-input"
+                placeholder="13 cifre"
+                value={p.cnp}
+                onChange={e => set('cnp', e.target.value.replace(/\D/g, ''))}
+                maxLength={13}
+                inputMode="numeric"
+                aria-invalid={!!cnpError}
+              />
+              {cnpError && <span className="field-error">{cnpError}</span>}
             </div>
 
             <div className="field">
@@ -128,7 +144,6 @@ export default function PersoanaModal({ initial, calitateDefault, onSave, onClos
             {initial ? 'Salvează' : 'Adaugă'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

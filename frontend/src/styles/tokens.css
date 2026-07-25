@@ -370,6 +370,8 @@ body {
 .field-input { padding:.5rem .75rem; border:1.5px solid var(--s200); border-radius:var(--r-sm); font:inherit; font-size:.875rem; color:var(--s900); background:#fff; transition:border-color var(--t); outline:none; width:100%; box-sizing:border-box; }
 .field-input:focus { border-color:var(--p500); box-shadow:0 0 0 3px rgba(99,102,241,.1); }
 .field-input:disabled { background:var(--s50); color:var(--s400); cursor:not-allowed; }
+.field-input[aria-invalid="true"] { border-color:var(--r500); }
+.field-error { font-size:.75rem; color:var(--r600); }
 .field-textarea { padding:.5rem .75rem; border:1.5px solid var(--s200); border-radius:var(--r-sm); font:inherit; font-size:.875rem; color:var(--s900); background:#fff; transition:border-color var(--t); outline:none; width:100%; box-sizing:border-box; resize:vertical; min-height:72px; }
 .field-textarea:focus { border-color:var(--p500); box-shadow:0 0 0 3px rgba(99,102,241,.1); }
 .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
@@ -498,6 +500,14 @@ body {
 .cv2-detail-row { display:flex; gap:.5rem; font-size:.8125rem; line-height:1.4; }
 .cv2-detail-label { color:var(--s400); white-space:nowrap; flex-shrink:0; min-width:120px; }
 .cv2-detail-value { color:var(--s800); font-weight:500; word-break:break-word; }
+
+/* Scadențe fiscale */
+.cv2-scadente-list { display:flex; flex-direction:column; gap:.5rem; }
+.cv2-scadenta-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; background:var(--s50); border:1px solid var(--s200); border-radius:var(--r-md); padding:.625rem .875rem; }
+.cv2-scadenta-titlu { font-size:.8125rem; font-weight:700; color:var(--s800); }
+.cv2-scadenta-descriere { font-size:.75rem; color:var(--s500); margin-top:.15rem; }
+.cv2-scadenta-data { font-size:.8125rem; font-weight:700; color:var(--p700); white-space:nowrap; flex-shrink:0; }
+.cv2-scadente-disclaimer { font-size:.7rem; color:var(--s400); font-style:italic; margin:0; }
 
 /* ── Responsive ── */
 @media (max-width:768px) {

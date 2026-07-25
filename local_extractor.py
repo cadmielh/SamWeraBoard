@@ -41,7 +41,12 @@ def _get_reader():
     global _reader
     if _reader is None:
         import easyocr
-        _reader = easyocr.Reader(["ro", "en"], gpu=False, verbose=False)
+        _reader = easyocr.Reader(
+            ["ro", "en"],
+            gpu=False,
+            verbose=False,
+            model_storage_directory="/tmp/easyocr",
+        )
     return _reader
 
 
@@ -58,11 +63,11 @@ def _load_image(file_bytes: bytes, filename: str) -> Image.Image:
         img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
 
     w, h = img.size
-    if w < 1200:
-        scale = 1200 / w
+    if w < 1000:
+        scale = 1000 / w
         img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-    elif w > 3000:
-        scale = 3000 / w
+    elif w > 2000:
+        scale = 2000 / w
         img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
     return img
 
@@ -184,6 +189,13 @@ def _line_text(line) -> str:
 _CNP_WEIGHTS = [2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9]
 
 
+def mask_cnp(cnp: str) -> str:
+    """Mask a CNP for logging — CNP is special-category personal data (GDPR)."""
+    if not cnp:
+        return "–"
+    return f"{cnp[:2]}{'*' * max(len(cnp) - 4, 0)}{cnp[-2:]}" if len(cnp) > 4 else "*" * len(cnp)
+
+
 def _validate_cnp(cnp: str) -> bool:
     """Full CNP validation: check digit + embedded date must be a real calendar date."""
     if len(cnp) != 13 or not cnp.isdigit() or cnp[0] == "0":
@@ -275,18 +287,19 @@ def _parse_mrz(lines: list[list]) -> dict[str, str]:
     if not mrz:
         return out
 
-    # Name line: contains '<<' separator
-    name_line = next((l for l in mrz if "<<" in l), None)
+    # Name line: contains '<<' separator (normalize spaced variants like "< <")
+    name_line = next((l for l in mrz if "<<" in l or re.search(r"<\s+<", l)), None)
     if name_line:
-        # Strip any leading document code prefix (e.g. IDROU...)
-        name_part = re.sub(r"^ID[A-Z]{3}", "", name_line)
+        name_line = re.sub(r"<\s+<", "<<", name_line)
+        name_part = re.sub(r"^ID[A-Z]{3}[A-Z0-9<]*?(?=[A-Z]{2,})", "", name_line)
         parts = name_part.split("<<")
         if parts[0]:
             out["nume"] = parts[0].lstrip("<").replace("<", " ").strip()
         if len(parts) > 1 and parts[1]:
-            out["prenume"] = parts[1].replace("<", " ").strip()
+            out["prenume"] = parts[1].split("<")[0].replace("<", " ").strip()
 
     # Date + sex line: YYMMDD[check][MF]YYMMDD[check]...
+    # CNP (13 digits) appears at the start of this line on Romanian IDs
     for l in mrz:
         m = re.search(r"(\d{6})\d([MF])(\d{6})", l)
         if m:
@@ -302,6 +315,13 @@ def _parse_mrz(lines: list[list]) -> dict[str, str]:
                 out["valabila_pana_la"] = f"{edd}.{emo}.{exp_year}"
             except ValueError:
                 pass
+            # Extract CNP from start of this line (13 digits before the date block)
+            digits = re.sub(r"[^0-9]", "", l)
+            for start in range(max(0, len(digits) - 19), max(0, len(digits) - 12)):
+                candidate = digits[start:start + 13]
+                if len(candidate) == 13 and _validate_cnp(candidate):
+                    out["cnp"] = candidate
+                    break
             break
 
     return out
@@ -373,7 +393,11 @@ def _label_scan(lines: list[list]) -> dict[str, str]:
                                 nlt2 = _line_text(lines[j + 1])
                                 if not _is_label(nlt2) and len(nlt2.strip()) > 1:
                                     nlt = nlt.strip() + ", " + nlt2.strip()
-                            found[field] = nlt.strip()
+                            val = nlt.strip()
+                            # Non-address fields: truncate at first comma/newline-like break
+                            if field not in ("adresa",) and len(val) > 60:
+                                val = val[:60].rsplit(" ", 1)[0]
+                            found[field] = val
                             break
                     break
     return found
@@ -524,7 +548,6 @@ def extract_local(file_bytes: bytes, filename: str) -> tuple[dict, float]:
     preprocessors = [
         lambda img: _clahe(_deskew(img)),
         _adaptive_thresh,
-        _sharpen_upscale,
     ]
 
     best_fields: dict = {}
@@ -534,7 +557,7 @@ def extract_local(file_bytes: bytes, filename: str) -> tuple[dict, float]:
         img = preprocess(image)
         fields = _run_ocr(img)
         score = _quality_score(fields)
-        print(f"[ocr] attempt={attempt} score={score:.2f} cnp={fields.get('cnp','–')}")
+        print(f"[ocr] attempt={attempt} score={score:.2f} cnp={mask_cnp(fields.get('cnp',''))}")
 
         if score > best_score:
             best_score = score

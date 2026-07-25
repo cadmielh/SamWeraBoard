@@ -19,6 +19,27 @@ service cloud.firestore {
         members[request.auth.uid].role == 'admin';
     }
 
+    // Derives the invitations/{docId} for the current signed-in user's own email,
+    // mirroring the frontend's encodeEmail() (replace '.' -> '_DOT_', then '@' -> '_AT_').
+    // string.replace() only replaces the FIRST match per call, so dots are replaced
+    // iteratively — extra passes beyond what's needed are harmless no-ops.
+    function ownInvitationId() {
+      return request.auth.token.email.lower()
+        .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
+        .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
+        .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
+        .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
+        .replace('@', '_AT_');
+    }
+
+    // A pending, unused invitation for the current user that points at wid.
+    function hasValidInvitation(wid) {
+      let invPath = /databases/$(database)/documents/invitations/$(ownInvitationId());
+      return exists(invPath) &&
+        get(invPath).data.workspaceId == wid &&
+        get(invPath).data.get('used', false) != true;
+    }
+
     // Workspaces
     match /workspaces/{wid} {
       allow read: if request.auth != null &&
@@ -26,6 +47,16 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.ownerId;
       allow update: if isAdmin(wid);
+      // Invited (not-yet-member) user accepting an invitation: may only add
+      // their own membership entry, only if a valid invitation exists, and only
+      // with the exact role the admin set on that invitation (no self-promotion).
+      allow update: if request.auth != null &&
+        !(request.auth.uid in resource.data.members) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+        request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
+        hasValidInvitation(wid) &&
+        request.resource.data.members[request.auth.uid].role ==
+          get(/databases/$(database)/documents/invitations/$(ownInvitationId())).data.role;
       allow delete: if false;
 
       // Clients sub-collection — any workspace member can CRUD
@@ -36,11 +67,17 @@ service cloud.firestore {
 
     // Invitations — keyed by encoded email (@ -> _AT_, . -> _DOT_)
     match /invitations/{encodedEmail} {
-      // Any authenticated user can read (to check their own invitation at login)
-      allow read: if request.auth != null;
-      // Any admin can create/update invitations for their workspace
-      allow write: if request.auth != null &&
+      // Only the invited user can read their own invitation
+      allow read: if request.auth != null &&
+        resource.data.email == request.auth.token.email.lower();
+      // Admins create/update invitations for their own workspace
+      allow create, update: if request.auth != null &&
         isAdmin(request.resource.data.workspaceId);
+      // Invited user may mark their own invitation as used — nothing else
+      allow update: if request.auth != null &&
+        resource.data.email == request.auth.token.email.lower() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
+        request.resource.data.used == true;
     }
   }
 }

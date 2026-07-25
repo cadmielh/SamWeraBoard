@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, forwardRef } from 'react'
 import { FixedSizeList } from 'react-window'
 import type { Client } from '../types'
+import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
 import { useClienti } from '../lib/clienti'
+import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 import { useApp } from '../AppLayout'
 import ClientModal from '../components/ClientModal'
 import ClientView from '../components/ClientView'
+import Modal from '../components/Modal'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -19,7 +22,7 @@ interface ColDef {
 
 const COLUMNS: ColDef[] = [
   { key: 'denumire',      label: 'Denumire',      width: 220, fixed: true, sortable: true,  filterable: true  },
-  { key: 'formaJuridica', label: 'Tip',           width: 80,  sortable: true,  filterable: true  },
+  { key: 'formaJuridica', label: 'Forma juridică', width: 110, sortable: true,  filterable: true  },
   { key: 'codFiscal',     label: 'Cod fiscal',    width: 120, sortable: true,  filterable: true  },
   { key: 'caenCod',       label: 'CAEN',          width: 180, sortable: true,  filterable: true  },
   { key: 'tva',           label: 'TVA',           width: 110, sortable: false, filterable: true  },
@@ -61,15 +64,30 @@ const ActionsListOuter = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
 
 /* ── Pure helper functions ── */
 
+const SUBTIP_LABELS: Record<string, string> = {
+  PFA: 'PFA', IF: 'IF', II: 'II',
+}
+
 function getColValue(c: Client, key: string): string {
+  const tip = inferTipClient(c)
+  const isPF = tip === 'PF'
   switch (key) {
+    case 'formaJuridica':
+      if (isPF) return SUBTIP_LABELS[c.subtipPF ?? 'PFA'] ?? 'PF'
+      return c.formaJuridica
+    case 'codFiscal':
+      return c.codFiscal
     case 'tva':
       if (!c.platitorTva) return c.dataAnafActualizat ? 'Non-TVA' : ''
       return c.periodaTva === 'lunara' ? 'TVA lunar'
            : c.periodaTva === 'trimestriala' ? 'TVA trim.' : 'TVA'
+    case 'statutFiscal':
+      return c.statutFiscal
     case 'asoc':
+      if (isPF) return ''
       return c.asociati.length > 0 ? String(c.asociati.length) : ''
     case 'admin':
+      if (isPF) return ''
       return c.administratori.length > 0 ? String(c.administratori.length) : ''
     default: {
       const val = (c as unknown as Record<string, unknown>)[key]
@@ -81,7 +99,24 @@ function getColValue(c: Client, key: string): string {
 }
 
 function renderCellContent(c: Client, key: string): React.ReactNode {
+  const tip = inferTipClient(c)
+  const isPF = tip === 'PF'
   switch (key) {
+    case 'formaJuridica': {
+      const v = getColValue(c, 'formaJuridica')
+      if (isPF) return (
+        <span style={{
+          padding: '.0625rem .375rem', borderRadius: '4px', fontSize: '.7rem', fontWeight: 700,
+          background: 'var(--b100, #dbeafe)', color: 'var(--b700, #1d4ed8)', border: '1px solid var(--b200, #bfdbfe)',
+          whiteSpace: 'nowrap',
+        }}>{v}</span>
+      )
+      return v || null
+    }
+    case 'codFiscal': {
+      const v = getColValue(c, 'codFiscal')
+      return v ? <span style={{ fontFamily: 'monospace', fontSize: '.8125rem' }}>{v}</span> : null
+    }
     case 'tva': {
       const tva = getColValue(c, 'tva')
       return tva ? <span className={`badge ${c.platitorTva ? 'badge-tva' : 'badge-notva'}`}>{tva}</span> : null
@@ -91,10 +126,12 @@ function renderCellContent(c: Client, key: string): React.ReactNode {
         ? <span className={`badge badge-${c.statutFiscal}`}>{c.statutFiscal}</span>
         : null
     case 'asoc':
+      if (isPF) return null
       return c.asociati.length > 0
         ? <span className="chip chip-muted">{c.asociati.length}</span>
         : null
     case 'admin':
+      if (isPF) return null
       return c.administratori.length > 0
         ? <span className="chip chip-muted">{c.administratori.length}</span>
         : null
@@ -215,7 +252,7 @@ export default function ClientiPage() {
   const { user, activeWorkspace, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
 
-  const { clienti, loading, search, add, update, remove } = useClienti(workspaceId)
+  const { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove } = useClienti(workspaceId)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Client[] | null>(null)
@@ -226,7 +263,21 @@ export default function ClientiPage() {
     search(workspaceId, debouncedQ).then(setSearchResults).catch(() => {})
   }, [debouncedQ, workspaceId, search])
 
-  const displayed = searchResults ?? clienti
+  const rawDisplayed = searchResults ?? clienti
+
+  const [typeFilter, setTypeFilter] = useState<'all' | 'PF' | 'PJ'>(() => {
+    return (localStorage.getItem('samwera-type-filter') as 'all' | 'PF' | 'PJ') ?? 'all'
+  })
+
+  const setTypeFilterPersisted = (f: 'all' | 'PF' | 'PJ') => {
+    setTypeFilter(f)
+    localStorage.setItem('samwera-type-filter', f)
+  }
+
+  const displayed = useMemo(() => {
+    if (typeFilter === 'all') return rawDisplayed
+    return rawDisplayed.filter(c => inferTipClient(c) === typeFilter)
+  }, [rawDisplayed, typeFilter])
 
   const [sortState, dispatchSort] = useReducer(sortReducer, { col: null, dir: 'asc' })
   const [colFilters, setColFilters] = useState<Record<string, string[]>>({})
@@ -368,6 +419,36 @@ export default function ClientiPage() {
           </div>
 
           <div className="toolbar">
+            {/* Filtrare tip: Toți / Persoane Fizice / Persoane Juridice */}
+            <div style={{ display: 'flex', gap: '.25rem', marginRight: '.75rem', flexShrink: 0 }}>
+              {([['all', 'Toți'], ['PF', 'PF'], ['PJ', 'PJ']] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setTypeFilterPersisted(val)}
+                  style={{
+                    padding: '.25rem .625rem',
+                    borderRadius: '5px',
+                    border: '1.5px solid',
+                    cursor: 'pointer',
+                    fontSize: '.75rem',
+                    fontWeight: typeFilter === val ? 700 : 400,
+                    borderColor: typeFilter === val
+                      ? (val === 'PF' ? 'var(--b400, #60a5fa)' : val === 'PJ' ? 'var(--g400, #4ade80)' : 'var(--s400)')
+                      : 'var(--s200)',
+                    background: typeFilter === val
+                      ? (val === 'PF' ? 'var(--b50, #eff6ff)' : val === 'PJ' ? 'var(--g50, #f0fdf4)' : 'var(--s100)')
+                      : 'transparent',
+                    color: typeFilter === val
+                      ? (val === 'PF' ? 'var(--b700, #1d4ed8)' : val === 'PJ' ? 'var(--g700, #15803d)' : 'var(--s700)')
+                      : 'var(--s400)',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <div className="search-box">
               <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="var(--s400)" strokeWidth="2" strokeLinecap="round">
                 <circle cx="9" cy="9" r="6" /><path d="M15 15l3 3" />
@@ -389,6 +470,7 @@ export default function ClientiPage() {
                 ? 'Se încarcă...'
                 : `${processedClients.length}${processedClients.length !== displayed.length ? ` / ${displayed.length}` : ''} client${displayed.length !== 1 ? 'i' : ''}`}
               {searchResults !== null && ` · rezultate pentru „${debouncedQ}"`}
+              {searchResults === null && hasMore && !loading && ' (nu toți sunt încărcați încă)'}
             </span>
             <div style={{ flex: 1 }} />
             {hasActiveFiltersOrSort && (
@@ -495,6 +577,17 @@ export default function ClientiPage() {
                     onDelete={setDeleteConf}
                   />
                 )}
+                {!loading && searchResults === null && hasMore && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '.75rem', borderTop: '1px solid var(--s100)' }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={loadingMore}
+                      onClick={() => workspaceId && loadMore(workspaceId)}
+                    >
+                      {loadingMore ? 'Se încarcă...' : 'Încarcă mai mulți clienți'}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -510,8 +603,7 @@ export default function ClientiPage() {
       )}
 
       {deleteConf && (
-        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setDeleteConf(null)}>
-          <div className="modal-box modal-box--sm">
+        <Modal onClose={() => setDeleteConf(null)} className="modal-box--sm" ariaLabel="Șterge client">
             <div className="modal-head">
               <span className="modal-title">Șterge client</span>
               <button className="modal-close" onClick={() => setDeleteConf(null)}>×</button>
@@ -527,8 +619,7 @@ export default function ClientiPage() {
                 Șterge
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   )
@@ -598,9 +689,11 @@ function ClientTable({
   const actionsColCleanupRef = useRef<(() => void) | null>(null)
 
   /* Filter dropdown */
-  const [openFilter, setOpenFilter] = useState<string | null>(null)
-  const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
-  const filterDdRef = useRef<HTMLDivElement>(null)
+  const [openFilterKey, setOpenFilterKey] = useState<string | null>(null)
+  const filterDropdown = usePositionedDropdown<HTMLDivElement>({ clampWidth: 240, onScroll: 'close' })
+  useEffect(() => {
+    if (!filterDropdown.open) setOpenFilterKey(null)
+  }, [filterDropdown.open])
 
   /* Observe container height */
   useEffect(() => {
@@ -612,23 +705,6 @@ function ClientTable({
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
-
-  /* Close filter on click-outside or scroll */
-  useEffect(() => {
-    if (!openFilter) return
-    const onMouse = (e: MouseEvent) => {
-      if (!filterDdRef.current?.contains(e.target as Node)) {
-        setOpenFilter(null); setFilterPos(null)
-      }
-    }
-    const onScroll = () => { setOpenFilter(null); setFilterPos(null) }
-    document.addEventListener('mousedown', onMouse)
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
-    return () => {
-      document.removeEventListener('mousedown', onMouse)
-      window.removeEventListener('scroll', onScroll, { capture: true })
-    }
-  }, [openFilter])
 
   /* Computed columns */
   const colMap = useMemo(() => new Map(COLUMNS.map(c => [c.key, c])), [])
@@ -738,12 +814,9 @@ function ClientTable({
   /* Filter button click */
   const handleFilterBtnClick = (key: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (openFilter === key) { setOpenFilter(null); setFilterPos(null); return }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const dropW = 240
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - dropW - 8))
-    setFilterPos({ top: rect.bottom + 4, left })
-    setOpenFilter(key)
+    if (filterDropdown.open && openFilterKey === key) { filterDropdown.close(); return }
+    setOpenFilterKey(key)
+    filterDropdown.openAt(e.currentTarget as HTMLElement)
   }
 
   /* Rows */
@@ -869,26 +942,27 @@ function ClientTable({
       </div>
 
       {/* Filter dropdown (fixed position) */}
-      {openFilter && filterPos && (() => {
-        const col = colMap.get(openFilter)!
-        const opts = getUniqueValues(rawClients, openFilter)
-        const selected = colFilters[openFilter] ?? []
+      {openFilterKey && filterDropdown.open && filterDropdown.position && (() => {
+        const key = openFilterKey
+        const col = colMap.get(key)!
+        const opts = getUniqueValues(rawClients, key)
+        const selected = colFilters[key] ?? []
         const allSel = opts.length > 0 && opts.every(v => selected.includes(v))
         return (
           <div
-            ref={filterDdRef}
+            ref={filterDropdown.containerRef}
             className="col-filter-dd"
-            style={{ position: 'fixed', top: filterPos.top, left: filterPos.left, zIndex: 600 }}
+            style={{ position: 'fixed', top: filterDropdown.position.top, left: filterDropdown.position.left, zIndex: 600 }}
           >
             <div className="col-filter-dd__head">
               <span>{col?.label}</span>
-              <button onClick={() => { onClearFilter(openFilter); setOpenFilter(null) }}>Golește filtrul</button>
+              <button onClick={() => { onClearFilter(key); filterDropdown.close() }}>Golește filtrul</button>
             </div>
             <div className="col-filter-dd__list">
               <label
                 className={`col-filter-dd__opt col-filter-dd__opt--all${allSel ? ' col-filter-dd__opt--on' : ''}`}
               >
-                <input type="checkbox" checked={allSel} onChange={() => onSelectAllFilter(openFilter)} />
+                <input type="checkbox" checked={allSel} onChange={() => onSelectAllFilter(key)} />
                 <span>Selectează tot</span>
               </label>
               {opts.map(val => {
@@ -899,7 +973,7 @@ function ClientTable({
                     key={val}
                     className={`col-filter-dd__opt${isSel ? ' col-filter-dd__opt--on' : ''}${isEmpty ? ' col-filter-dd__opt--empty' : ''}`}
                   >
-                    <input type="checkbox" checked={isSel} onChange={() => onFilterToggle(openFilter, val)} />
+                    <input type="checkbox" checked={isSel} onChange={() => onFilterToggle(key, val)} />
                     <span>{val}</span>
                   </label>
                 )

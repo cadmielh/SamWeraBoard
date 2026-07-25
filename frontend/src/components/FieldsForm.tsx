@@ -12,16 +12,16 @@ interface Props {
 
 const FIELD_LABELS: Record<keyof IDFields, string> = {
   cnp: 'CNP',
-  nume: 'Last Name',
-  prenume: 'First Name',
-  serie_numar: 'Series & Number',
-  data_nasterii: 'Date of Birth',
-  locul_nasterii: 'Place of Birth',
-  cetatenia: 'Citizenship',
-  adresa: 'Address',
-  judet: 'County',
-  emisa_de: 'Issued By',
-  valabila_pana_la: 'Valid Until',
+  nume: 'Nume',
+  prenume: 'Prenume',
+  serie_numar: 'Serie și număr',
+  data_nasterii: 'Data nașterii',
+  locul_nasterii: 'Locul nașterii',
+  cetatenia: 'Cetățenia',
+  adresa: 'Adresa',
+  judet: 'Județ',
+  emisa_de: 'Emisă de',
+  valabila_pana_la: 'Valabilă până la',
 }
 
 const CNP_RE = /^\d{13}$/
@@ -54,19 +54,19 @@ export default function FieldsForm({ fields, sourceFile, initialEditing, onField
         <div>
           <span className="card-title">
             <span className="step-chip">2</span>
-            Extracted Fields
+            Câmpuri extrase
           </span>
-          <p className="card-sub">Source: {sourceFile}</p>
+          <p className="card-sub">Sursă: {sourceFile}</p>
         </div>
         <div style={{ display: 'flex', gap: '.5rem' }}>
-          <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button>
+          <button className="btn btn-ghost btn-sm" onClick={onBack}>← Înapoi</button>
           {editing ? (
             <>
-              <button className="btn btn-ghost btn-sm" onClick={handleReset}>Reset</button>
-              <button className="btn btn-success btn-sm" onClick={handleSave}>Save</button>
+              <button className="btn btn-ghost btn-sm" onClick={handleReset}>Resetează</button>
+              <button className="btn btn-success btn-sm" onClick={handleSave}>Salvează</button>
             </>
           ) : (
-            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Edit</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Editează</button>
           )}
         </div>
       </div>
@@ -78,7 +78,7 @@ export default function FieldsForm({ fields, sourceFile, initialEditing, onField
                 {FIELD_LABELS[key]}
                 {key === 'cnp' && local.cnp && (
                   <span style={{ marginLeft: '.375rem', fontWeight: 400, textTransform: 'none', color: cnpValid ? 'var(--g600)' : 'var(--r500)', letterSpacing: 0 }}>
-                    {cnpValid ? '✓' : '⚠ invalid length'}
+                    {cnpValid ? '✓' : '⚠ lungime invalidă'}
                   </span>
                 )}
               </label>
@@ -109,7 +109,7 @@ export default function FieldsForm({ fields, sourceFile, initialEditing, onField
 
         <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary" onClick={onNext}>
-            Fill Template →
+            Completează șablonul →
           </button>
         </div>
       </div>

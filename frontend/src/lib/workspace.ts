@@ -16,7 +16,7 @@ export function useWorkspace(uid: string | null) {
   const [loading, setLoading] = useState(true)
 
   const loadWorkspaces = useCallback(async () => {
-    if (!uid) { setWorkspaces([]); setActiveWorkspaceState(null); setLoading(false); return }
+    if (!uid) { setWorkspaces([]); setActiveWorkspaceState(null); return }
     setLoading(true)
     try {
       const q = query(collection(db, 'workspaces'), where(`members.${uid}.role`, 'in', ['admin', 'member']))
@@ -63,13 +63,16 @@ export function useWorkspace(uid: string | null) {
   }, [loadWorkspaces])
 
   const inviteMember = useCallback(async (workspaceId: string, email: string, role: 'admin' | 'member', workspaceName: string, invitedByUid: string) => {
-    const encoded = encodeEmail(email)
+    const normalizedEmail = email.trim().toLowerCase()
+    const encoded = encodeEmail(normalizedEmail)
     await setDoc(doc(db, 'invitations', encoded), {
+      email: normalizedEmail,
       workspaceId,
       workspaceName,
       role,
       invitedBy: invitedByUid,
       invitedAt: serverTimestamp(),
+      used: false,
     })
   }, [])
 

@@ -215,7 +215,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, o
 
         <NavLink to="/extragere" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
           <IconExtract />
-          Extragere buletin
+          Generare Documente
         </NavLink>
 
         {userRole === 'admin' && (

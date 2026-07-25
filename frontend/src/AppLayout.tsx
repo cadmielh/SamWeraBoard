@@ -81,7 +81,10 @@ export default function AppLayout() {
   const toast = useCallback((message: string, type: ToastItem['type'] = 'info') => {
     const id = Math.random().toString(36).slice(2)
     setToasts(t => [...t, { id, message, type }])
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000)
+  }, [])
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(t => t.filter(x => x.id !== id))
   }, [])
 
   const handleSignOut = () => {
@@ -91,8 +94,8 @@ export default function AppLayout() {
     sessionStorage.removeItem('gat')
   }
 
-  // Auth loading
-  if (authLoading) {
+  // Auth loading sau workspace loading
+  if (authLoading || (user && workspaceCtx.loading)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
         <span className="spin spin-dark" style={{ width: 24, height: 24, borderWidth: 3 }} />
@@ -111,7 +114,7 @@ export default function AppLayout() {
       } catch (err: unknown) {
         toast((err as Error).message ?? 'Autentificare eșuată', 'err')
       }
-    }} toasts={toasts} />
+    }} toasts={toasts} onDismiss={dismissToast} />
   }
 
   const { activeWorkspace, workspaces } = workspaceCtx
@@ -152,12 +155,12 @@ export default function AppLayout() {
           <Outlet />
         </div>
       </div>
-      <Toast toasts={toasts} />
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>
   )
 }
 
-function SignInView({ onSignIn, toasts }: { onSignIn: () => Promise<void>; toasts: ToastItem[] }) {
+function SignInView({ onSignIn, toasts, onDismiss }: { onSignIn: () => Promise<void>; toasts: ToastItem[]; onDismiss: (id: string) => void }) {
   const [signing, setSigning] = useState(false)
   const handle = async () => {
     setSigning(true)
@@ -173,7 +176,7 @@ function SignInView({ onSignIn, toasts }: { onSignIn: () => Promise<void>; toast
             SamWera<span style={{ color: 'var(--p500)' }}>Board</span>
           </h1>
           <p style={{ color: 'var(--s400)', fontSize: '.875rem', marginBottom: '1.5rem' }}>
-            CRM contabil — clienți, extragere buletin, șabloane
+            CRM contabil — clienți, generare documente, șabloane
           </p>
           <button className="btn btn-primary btn-full" onClick={handle} disabled={signing} style={{ fontSize: '.9375rem', padding: '.625rem 1.25rem' }}>
             {signing ? <><span className="spin" />Se conectează...</> : 'Autentificare cu Google'}
@@ -183,7 +186,7 @@ function SignInView({ onSignIn, toasts }: { onSignIn: () => Promise<void>; toast
           </p>
         </div>
       </div>
-      <Toast toasts={toasts} />
+      <Toast toasts={toasts} onDismiss={onDismiss} />
     </div>
   )
 }

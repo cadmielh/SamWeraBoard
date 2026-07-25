@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import type { IDFields } from '../lib/api'
+import Modal from './Modal'
 
 interface Extraction {
   id: string
@@ -35,7 +36,7 @@ export default function History({ user, open, onSelect, onClose }: Props) {
         const data = d.data()
         return {
           id: d.id,
-          sourceFile: (data.sourceFile as string) ?? 'Unknown',
+          sourceFile: (data.sourceFile as string) ?? 'Necunoscut',
           seconds: (data.createdAt as { seconds: number } | null)?.seconds ?? null,
           fields: data.fields as IDFields,
         }
@@ -55,19 +56,19 @@ export default function History({ user, open, onSelect, onClose }: Props) {
   }
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.25)', zIndex: 200, backdropFilter: 'blur(2px)' }}
-      />
-      <div style={{
+    <Modal
+      onClose={onClose}
+      ariaLabel="Istoric extrageri"
+      backdropStyle={{ background: 'rgba(15,23,42,.25)', backdropFilter: 'blur(2px)' }}
+      boxStyle={{
         position: 'fixed', top: 0, right: 0, bottom: 0, width: 340,
-        background: '#fff', boxShadow: 'var(--sh-xl)', zIndex: 201,
+        borderRadius: 0, boxShadow: 'var(--sh-xl)',
         display: 'flex', flexDirection: 'column',
         animation: 'slideUp .2s var(--ease)',
-      }}>
+      }}
+    >
         <div style={{ padding: '1.125rem 1.5rem', borderBottom: '1px solid var(--s200)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontWeight: 700, fontSize: '.9375rem', color: 'var(--s900)' }}>Extraction History</span>
+          <span style={{ fontWeight: 700, fontSize: '.9375rem', color: 'var(--s900)' }}>Istoric extrageri</span>
           <button className="btn btn-ghost btn-xs" onClick={onClose}>✕</button>
         </div>
 
@@ -80,7 +81,7 @@ export default function History({ user, open, onSelect, onClose }: Props) {
             </div>
           ) : items.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--s400)', padding: '2.5rem 1rem', fontSize: '.875rem' }}>
-              No extractions yet
+              Nicio extragere încă
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
@@ -109,7 +110,6 @@ export default function History({ user, open, onSelect, onClose }: Props) {
             </div>
           )}
         </div>
-      </div>
-    </>
+    </Modal>
   )
 }

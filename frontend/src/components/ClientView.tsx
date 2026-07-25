@@ -1,5 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Client, Persoana } from '../types'
+import { inferTipClient } from '../types'
+import { computeScadente } from '../lib/scadente'
+
+const REGIM_FISCAL_LABELS: Record<string, string> = {
+  microintreprindere: 'Microîntreprindere',
+  impozit_profit: 'Impozit pe profit',
+}
 
 interface Props {
   client: Client
@@ -8,6 +16,12 @@ interface Props {
   onDelete: () => void
   onSaveNotite: (notite: string) => Promise<void>
   embedded?: boolean
+}
+
+const SUBTIP_LABELS: Record<string, string> = {
+  PFA: 'PFA',
+  IF: 'IF',
+  II: 'II',
 }
 
 function getInitials(name: string): string {
@@ -81,7 +95,12 @@ function PersoanaCard({ p }: { p: Persoana }) {
 }
 
 export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNotite, embedded }: Props) {
+  const navigate = useNavigate()
+  const tipClient = inferTipClient(client)
+  const isPF = tipClient === 'PF'
+  const isIF = isPF && client.subtipPF === 'IF'
   const hasAnaf = !!client.dataAnafActualizat
+  const scadente = useMemo(() => computeScadente(client), [client])
 
   const [editingNotite, setEditingNotite] = useState(false)
   const [notiteValue, setNotiteValue] = useState(client.notite)
@@ -111,6 +130,20 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
     setEditingNotite(false)
   }
 
+  const headerBadge = isPF
+    ? <span style={{
+        padding: '.125rem .5rem', borderRadius: '4px', fontSize: '.6875rem', fontWeight: 700,
+        background: 'var(--b100, #dbeafe)', color: 'var(--b700, #1d4ed8)', border: '1px solid var(--b200, #bfdbfe)',
+      }}>
+        {SUBTIP_LABELS[client.subtipPF ?? 'PFA'] ?? 'PF'}
+      </span>
+    : <span style={{
+        padding: '.125rem .5rem', borderRadius: '4px', fontSize: '.6875rem', fontWeight: 700,
+        background: 'var(--g100, #dcfce7)', color: 'var(--g700, #15803d)', border: '1px solid var(--g200, #bbf7d0)',
+      }}>
+        {client.formaJuridica || 'PJ'}
+      </span>
+
   return (
     <div className={embedded ? 'cv2-embed' : 'cv2-panel'}>
 
@@ -119,10 +152,17 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
         <div className="cv2-header-row">
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ flexShrink: 0 }}>← Înapoi</button>
           <div className="cv2-header-title">
-            {client.formaJuridica && <span className="cv2-forma-badge">{client.formaJuridica}</span>}
+            {headerBadge}
             <span className="cv2-company-name" title={client.denumire}>{client.denumire}</span>
           </div>
           <div className="cv2-header-actions">
+            <button
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => navigate(`/extragere?clientId=${client.id}&mode=client`)}
+              title="Generează documente pentru acest client"
+            >
+              📄 Generează documente
+            </button>
             <button className="btn btn-ghost btn-sm" onClick={onEdit} title="Editează">✏️ Editează</button>
             <button className="btn btn-ghost btn-sm" onClick={onDelete} title="Șterge" style={{ color: 'var(--r500)' }}>🗑️</button>
           </div>
@@ -151,12 +191,24 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
       {/* ── Body ── */}
       <div className="cv2-body">
 
-        {/* Identificare fiscală + Contact */}
+        {/* ── Bloc Date persoană (CI) — orice PF ── */}
+        {isPF && client.titular && (
+          <div className="cv2-section">
+            <div className="cv2-section-label" style={{ color: 'var(--b600, #2563eb)' }}>
+              Date persoană (CI)
+            </div>
+            <PersoanaCard p={client.titular} />
+          </div>
+        )}
+
+        {/* ── Bloc Date entitate — PF autorizată și PJ ── */}
         <div className="cv2-section">
           <div className="cv2-two-col">
             <div className="cv2-col">
-              <div className="cv2-col-title">Identificare fiscală</div>
-              <InfoRow label="Cod fiscal" value={client.codFiscal} />
+              <div className="cv2-col-title">
+                {isPF ? 'Date entitate' : 'Identificare fiscală'}
+              </div>
+              <InfoRow label="Cod fiscal (CIF)" value={client.codFiscal} />
               <InfoRow label="Nr. reg. comerțului" value={client.nrRegistrul} />
               <InfoRow
                 label="CAEN"
@@ -173,14 +225,55 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
           </div>
         </div>
 
-        {/* Sediu social */}
+        {/* Sediu social / profesional */}
         <div className="cv2-section">
-          <div className="cv2-section-label">Sediu social</div>
+          <div className="cv2-section-label">{isPF ? 'Sediu profesional' : 'Sediu social'}</div>
           {client.sediuSocial
             ? <div className="cv2-address">{client.sediuSocial}</div>
             : <span className="cv2-info-empty">—</span>
           }
         </div>
+
+        {/* Date fiscale */}
+        <div className="cv2-section">
+          <div className="cv2-two-col">
+            <div className="cv2-col">
+              <div className="cv2-col-title">Regim fiscal</div>
+              <InfoRow label="Regim de impunere" value={client.regimFiscal ? REGIM_FISCAL_LABELS[client.regimFiscal] : undefined} />
+              <InfoRow label="TVA la încasare" value={client.platitorTva ? (client.tvaLaIncasare ? 'Da' : 'Nu') : undefined} />
+              <InfoRow label="Plafon TVA anual" value={client.plafonTvaAnual != null ? `${client.plafonTvaAnual.toLocaleString('ro-RO')} lei` : undefined} />
+            </div>
+            <div className="cv2-col">
+              <div className="cv2-col-title">Altele</div>
+              <InfoRow label="Nr. salariați" value={client.nrSalariati != null ? String(client.nrSalariati) : undefined} />
+              {!isPF && <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />}
+              <InfoRow label="An fiscal" value={client.anFiscal || undefined} />
+            </div>
+          </div>
+        </div>
+
+        {/* Scadențe fiscale */}
+        {scadente.length > 0 && (
+          <div className="cv2-section">
+            <div className="cv2-section-label">📅 Scadențe fiscale</div>
+            <div className="cv2-scadente-list">
+              {scadente.map(s => (
+                <div key={s.cod} className="cv2-scadenta-row">
+                  <div>
+                    <div className="cv2-scadenta-titlu">{s.titlu}</div>
+                    <div className="cv2-scadenta-descriere">{s.descriere}</div>
+                  </div>
+                  <span className="cv2-scadenta-data">
+                    {s.urmatoarea.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="cv2-scadente-disclaimer">
+              Termene orientative, calculate din datele completate mai sus — verifică reglementările ANAF în vigoare pentru cazuri speciale.
+            </p>
+          </div>
+        )}
 
         {/* Notițe interne */}
         <div className="cv2-section cv2-section--notes">
@@ -220,33 +313,53 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
           )}
         </div>
 
-        {/* Asociați */}
-        <div className="cv2-section">
-          <div className="cv2-section-label">
-            Asociați
-            {client.asociati.length > 0 && <span className="cv2-count-chip">{client.asociati.length}</span>}
+        {/* ── Asociați (doar PJ) ── */}
+        {!isPF && (
+          <div className="cv2-section">
+            <div className="cv2-section-label">
+              Asociați
+              {client.asociati.length > 0 && <span className="cv2-count-chip">{client.asociati.length}</span>}
+            </div>
+            {client.asociati.length > 0
+              ? <div className="cv2-persons-list">
+                  {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                </div>
+              : <span className="cv2-info-empty">Niciun asociat adăugat.</span>
+            }
           </div>
-          {client.asociati.length > 0
-            ? <div className="cv2-persons-list">
-                {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} />)}
-              </div>
-            : <span className="cv2-info-empty">Niciun asociat adăugat.</span>
-          }
-        </div>
+        )}
 
-        {/* Administratori */}
-        <div className="cv2-section">
-          <div className="cv2-section-label">
-            Administratori
-            {client.administratori.length > 0 && <span className="cv2-count-chip">{client.administratori.length}</span>}
+        {/* ── Administratori (doar PJ) ── */}
+        {!isPF && (
+          <div className="cv2-section">
+            <div className="cv2-section-label">
+              Administratori
+              {client.administratori.length > 0 && <span className="cv2-count-chip">{client.administratori.length}</span>}
+            </div>
+            {client.administratori.length > 0
+              ? <div className="cv2-persons-list">
+                  {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                </div>
+              : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
+            }
           </div>
-          {client.administratori.length > 0
-            ? <div className="cv2-persons-list">
-                {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} />)}
-              </div>
-            : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
-          }
-        </div>
+        )}
+
+        {/* ── Membri familie (doar IF) ── */}
+        {isIF && (
+          <div className="cv2-section">
+            <div className="cv2-section-label">
+              Membri familie IF
+              {(client.membriIF?.length ?? 0) > 0 && <span className="cv2-count-chip">{client.membriIF!.length}</span>}
+            </div>
+            {(client.membriIF?.length ?? 0) > 0
+              ? <div className="cv2-persons-list">
+                  {client.membriIF!.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                </div>
+              : <span className="cv2-info-empty">Niciun membru adăugat.</span>
+            }
+          </div>
+        )}
       </div>
     </div>
   )

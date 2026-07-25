@@ -41,6 +41,8 @@
       "source": ".",
       "codebase": "default",
       "runtime": "python312",
+      "memory": "1GiB",
+      "cpu": 1,
       "environmentVariables": {
         "UPLOAD_FOLDER": "/tmp/uploads",
         "FRONTEND_ORIGIN": "https://samwera-board.web.app,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000"

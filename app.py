@@ -10,6 +10,8 @@ import requests as http_requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 
 load_dotenv()
@@ -24,6 +26,14 @@ import extractor
 import gdrive
 from doc_filler import fill_docx, list_placeholders_in_docx
 
+# Pre-load EasyOCR models at container startup so requests don't time out waiting
+# for model download. Cloud Run waits for startup to complete before routing traffic.
+try:
+    local_extractor._get_reader()
+    print("[startup] EasyOCR reader pre-loaded")
+except Exception as _pre_err:
+    print(f"[startup] EasyOCR pre-load failed (will retry on first request): {_pre_err}")
+
 # ── Firebase Admin init ───────────────────────────────────────────────────────
 _sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "firebase-service-account.json")
 if Path(_sa_file).exists():
@@ -34,9 +44,12 @@ else:
 
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB — OCR uploads only need a few MB
 _cors_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "*").split(",") if o.strip()]
 CORS(app, origins=_cors_origins or "*",
      allow_headers=["Content-Type", "Authorization", "X-Firebase-Token"])
+
+limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 
 UPLOAD_FOLDER = Path(os.getenv("UPLOAD_FOLDER", "uploads"))
 UPLOAD_FOLDER.mkdir(exist_ok=True)
@@ -65,6 +78,7 @@ def _auth_error(e: Exception):
 # ── Extraction ────────────────────────────────────────────────────────────────
 
 @app.route("/extract", methods=["POST"])
+@limiter.limit("20 per minute")
 def extract():
     try:
         uid, _ = _verify()
@@ -91,49 +105,45 @@ def extract():
             fields["cnp"] = ""
         return fields
 
+    _empty = {"cnp":"","nume":"","prenume":"","serie_numar":"","data_nasterii":"",
+              "locul_nasterii":"","cetatenia":"","adresa":"","judet":"","emisa_de":"","valabila_pana_la":""}
+
     # ── Local OCR ────────────────────────────────────────────────────────────
     local_fields: dict = {}
     local_score = 0.0
     try:
         local_fields, local_score = local_extractor.extract_local(file_bytes, filename)
         local_fields = _postprocess(local_fields)
-        print(f"[extract] local score={local_score:.2f} cnp={local_fields.get('cnp') or '–'}")
+        print(f"[extract] local score={local_score:.2f} cnp={local_extractor.mask_cnp(local_fields.get('cnp', ''))}")
     except Exception as local_err:
-        print(f"[extract] Local OCR crashed: {local_err}")
+        print(f"[extract] Local OCR failed: {local_err}")
 
-    # If local OCR is good enough, return immediately — no AI call
     if local_score >= local_extractor.QUALITY_THRESHOLD:
         return jsonify({**local_fields, "uid": uid})
 
-    # ── AI fallback (only when local quality is insufficient) ────────────────
-    print(f"[extract] local score {local_score:.2f} < threshold — trying AI")
-    _empty = {"cnp":"","nume":"","prenume":"","serie_numar":"","data_nasterii":"",
-              "locul_nasterii":"","cetatenia":"","adresa":"","judet":"","emisa_de":"","valabila_pana_la":""}
+    # ── AI fallback — când scorul local e insuficient ─────────────────────────
+    print(f"[extract] local score {local_score:.2f} < {local_extractor.QUALITY_THRESHOLD} — AI fallback")
     try:
         id_data = extractor.extract_from_bytes(file_bytes, filename)
         ai_fields = _postprocess(id_data.model_dump())
         ai_score  = local_extractor._quality_score(ai_fields)
         print(f"[extract] ai score={ai_score:.2f}")
-
         best = ai_fields if ai_score > local_score else local_fields
-
-        # If local OCR validated the CNP, always trust it — CNP + derived DOB
-        # are mathematically certain; AI can't do better on these two fields
+        # CNP validat local e mai sigur decât cel al AI (verificare cu cifra de control)
         local_cnp = local_fields.get("cnp", "")
         if local_cnp and local_extractor._validate_cnp(local_cnp):
             best["cnp"] = local_cnp
-            local_dob = local_extractor._cnp_to_dob(local_cnp)
-            if local_dob:
-                best["data_nasterii"] = local_dob
-
+            dob = local_extractor._cnp_to_dob(local_cnp)
+            if dob:
+                best["data_nasterii"] = dob
         return jsonify({**best, "uid": uid})
     except Exception as ai_err:
         print(f"[extract] AI fallback failed: {ai_err}")
-        # Return whatever local OCR found (even if partial), never block the user
         return jsonify({**(_empty | local_fields), "uid": uid})
 
 
 @app.route("/extract/drive", methods=["POST"])
+@limiter.limit("20 per minute")
 def extract_from_drive():
     try:
         _, access_token = _verify()
@@ -181,25 +191,37 @@ def drive_files():
 @app.route("/fill/docx", methods=["POST"])
 def fill_docx_route():
     try:
-        _, _ = _verify()
+        _, access_token = _verify()
     except PermissionError as e:
         return _auth_error(e)
 
-    if "template" not in request.files:
-        return jsonify({"error": "No template file provided"}), 400
-    template_file = request.files["template"]
-    if Path(template_file.filename).suffix.lower() != ".docx":
-        return jsonify({"error": "Template must be a .docx file"}), 400
+    template_drive_id = request.form.get("template_drive_id")
+    if template_drive_id:
+        if not access_token:
+            return jsonify({"error": "Google access_token required for Drive template"}), 400
+        try:
+            file_bytes, original_name, _ = gdrive.download_file(access_token, template_drive_id)
+        except Exception as e:
+            return jsonify({"error": f"Failed to download template from Drive: {e}"}), 500
+    elif "template" in request.files:
+        template_file = request.files["template"]
+        if Path(template_file.filename).suffix.lower() != ".docx":
+            return jsonify({"error": "Template must be a .docx file"}), 400
+        file_bytes    = template_file.read()
+        original_name = template_file.filename
+    else:
+        return jsonify({"error": "No template provided (upload file or set template_drive_id)"}), 400
 
     try:
         fields       = request.form.to_dict()
+        fields.pop("template_drive_id", None)
         output_name  = fields.pop("_output_name", None) or None
         replacements = {f"{{{{{k}}}}}": v for k, v in fields.items() if v}
-        filled_bytes = fill_docx(template_file.read(), replacements)
+        filled_bytes = fill_docx(file_bytes, replacements)
     except Exception as e:
         return jsonify({"error": f"Fill failed: {e}"}), 500
 
-    out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(template_file.filename)
+    out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
     return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -212,18 +234,29 @@ def fill_docx_and_upload():
         return _auth_error(e)
     if not access_token:
         return jsonify({"error": "Google access_token required"}), 400
-    if "template" not in request.files:
-        return jsonify({"error": "No template file provided"}), 400
 
-    template_file = request.files["template"]
-    fields       = request.form.to_dict()
-    folder_id    = fields.pop("_drive_folder_id", None)
-    output_name  = fields.pop("_output_name", None) or None
+    template_drive_id = request.form.get("template_drive_id")
+    if template_drive_id:
+        try:
+            file_bytes, original_name, _ = gdrive.download_file(access_token, template_drive_id)
+        except Exception as e:
+            return jsonify({"error": f"Failed to download template from Drive: {e}"}), 500
+    elif "template" in request.files:
+        template_file = request.files["template"]
+        file_bytes    = template_file.read()
+        original_name = template_file.filename
+    else:
+        return jsonify({"error": "No template provided"}), 400
+
+    fields      = request.form.to_dict()
+    fields.pop("template_drive_id", None)
+    folder_id   = fields.pop("_drive_folder_id", None)
+    output_name = fields.pop("_output_name", None) or None
     replacements = {f"{{{{{k}}}}}": v for k, v in fields.items() if v}
 
     try:
-        filled_bytes = fill_docx(template_file.read(), replacements)
-        out_name     = output_name or ("completat_" + secure_filename(template_file.filename))
+        filled_bytes = fill_docx(file_bytes, replacements)
+        out_name     = output_name or ("completat_" + secure_filename(original_name))
         meta = gdrive.upload_file(access_token, filled_bytes, out_name,
                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                   folder_id=folder_id)
@@ -303,7 +336,8 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
                              telefon: str, caen_cod: str, stare: str,
                              radiata: bool, platitor_tva: bool,
                              perioada_tva: str,
-                             forma_juridica: str | None = None) -> dict:
+                             forma_juridica: str | None = None,
+                             tva_la_incasare: bool = False) -> dict:
     stare_up = stare.upper()
     if radiata or "RADIAT" in stare_up or "DIZOLVAT" in stare_up:
         statut = "radiat"
@@ -323,6 +357,7 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
         "statutFiscal":  statut,
         "platitorTva":   platitor_tva,
         "periodaTva":    perioada_tva,
+        "tvaLaIncasare": tva_la_incasare,
     }
 
 
@@ -338,7 +373,6 @@ def _query_anaf(cif_int: int) -> dict | None:
                 "User-Agent": "Mozilla/5.0 (compatible; SamWeraBoard/1.0)",
             },
             timeout=8,
-            verify=False,
         )
         post_resp.raise_for_status()
         correlation_id = post_resp.json().get("correlationId")
@@ -355,7 +389,6 @@ def _query_anaf(cif_int: int) -> dict | None:
                 _ANAF_GET,
                 params={"id": correlation_id},
                 timeout=8,
-                verify=False,
             )
             if get_resp.status_code == 200:
                 body = get_resp.json()
@@ -409,6 +442,7 @@ def _query_openapi_ro(cif_str: str) -> dict | None:
 
 
 @app.route("/anaf/company")
+@limiter.limit("30 per minute")
 def anaf_company():
     try:
         _verify()
@@ -431,9 +465,11 @@ def anaf_company():
 
         dg            = found[0].get("date_generale", {}) or {}
         inreg         = found[0].get("inregistrare_scop_Tva", {}) or {}
+        inreg_rtvai   = found[0].get("inregistrare_RTVAI", {}) or {}
         stare_inactiv = found[0].get("stare_inactiv", {}) or {}
 
         platitor_tva = bool(inreg.get("dataInceputScop"))
+        tva_la_incasare = bool(inreg_rtvai.get("dataInceputTvaInc")) and not bool(inreg_rtvai.get("dataSfarsitTvaInc"))
         perioada_tva = ""
         if platitor_tva:
             tip = (inreg.get("tipPerioadaFiscala") or "").lower()
@@ -455,6 +491,7 @@ def anaf_company():
             radiata      = radiata,
             platitor_tva = platitor_tva,
             perioada_tva = perioada_tva,
+            tva_la_incasare = tva_la_incasare,
         ))
 
     # --- Sursă 2: openapi.ro — date complete, fără CAEN ---
@@ -487,4 +524,4 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=5000)

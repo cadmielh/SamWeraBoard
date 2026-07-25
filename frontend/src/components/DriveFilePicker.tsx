@@ -14,7 +14,7 @@ interface Crumb { id: string; name: string }
 
 export default function DriveFilePicker({ accessToken, onExtracted, onToast, onClose }: Props) {
   const [files, setFiles] = useState<DriveFile[]>([])
-  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: 'root', name: 'My Drive' }])
+  const [crumbs, setCrumbs] = useState<Crumb[]>([{ id: 'root', name: 'Drive-ul meu' }])
   const [loading, setLoading] = useState(false)
   const [extracting, setExtracting] = useState<string | null>(null)
   const [nextPage, setNextPage] = useState<string | undefined>()
@@ -29,7 +29,7 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
       setFiles(prev => pageToken ? [...prev, ...result.files] : result.files)
       setNextPage(result.nextPageToken)
     } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Drive error', 'err')
+      onToast((err as Error).message ?? 'Eroare Drive', 'err')
     } finally {
       setLoading(false)
     }
@@ -58,7 +58,7 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
       const result = await extractFromDrive(f.id, accessToken)
       onExtracted(result, f.name)
     } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Extraction failed', 'err')
+      onToast((err as Error).message ?? 'Extragere eșuată', 'err')
     } finally {
       setExtracting(null)
     }
@@ -79,7 +79,7 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
           <span className="step-chip">1</span>
           Google Drive
         </span>
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>← Upload a file instead</button>
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>← Încarcă un fișier în schimb</button>
       </div>
       <div className="card-body">
         {/* Breadcrumb */}
@@ -112,7 +112,7 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
           </div>
         ) : files.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--s400)', padding: '2rem', fontSize: '.875rem' }}>
-            This folder is empty
+            Acest folder este gol
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem', maxHeight: 360, overflowY: 'auto' }}>
@@ -140,7 +140,7 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
                 ) : f.is_folder ? (
                   <span style={{ color: 'var(--s300)', fontSize: '.8rem' }}>›</span>
                 ) : (
-                  <span style={{ fontSize: '.7rem', color: 'var(--p600)', fontWeight: 600, flexShrink: 0 }}>Extract</span>
+                  <span style={{ fontSize: '.7rem', color: 'var(--p600)', fontWeight: 600, flexShrink: 0 }}>Extrage</span>
                 )}
               </button>
             ))}
@@ -150,7 +150,7 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
         {nextPage && (
           <div style={{ marginTop: '.875rem', textAlign: 'center' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => loadFiles(currentFolder.id, nextPage)} disabled={loading}>
-              {loading ? 'Loading…' : 'Load more'}
+              {loading ? 'Se încarcă…' : 'Încarcă mai multe'}
             </button>
           </div>
         )}

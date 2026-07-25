@@ -38,13 +38,13 @@ export default function UploadZone({ accessToken, onExtracted, onToast, onShowDr
 
   const handleExtract = async () => {
     if (!file) return
-    if (!accessToken) { onToast('Please sign in first', 'err'); return }
+    if (!accessToken) { onToast('Te rugăm să te autentifici mai întâi', 'err'); return }
     setLoading(true)
     try {
       const result = await extractFile(file, accessToken)
       onExtracted(result, file.name)
     } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Extraction failed', 'err')
+      onToast((err as Error).message ?? 'Extragere eșuată', 'err')
     } finally {
       setLoading(false)
     }
@@ -55,11 +55,11 @@ export default function UploadZone({ accessToken, onExtracted, onToast, onShowDr
       <div className="card-head">
         <span className="card-title">
           <span className="step-chip">1</span>
-          Upload ID Card
+          Încarcă buletinul
         </span>
         <div style={{ display: 'flex', gap: '.5rem' }}>
-          <button className="btn btn-ghost btn-sm" onClick={onManualEntry}>Enter Manually</button>
-          <button className="btn btn-outline-primary btn-sm" onClick={onShowDrivePicker}>Browse Drive</button>
+          <button className="btn btn-ghost btn-sm" onClick={onManualEntry}>Introdu manual</button>
+          <button className="btn btn-outline-primary btn-sm" onClick={onShowDrivePicker}>Alege din Drive</button>
         </div>
       </div>
       <div className="card-body">
@@ -82,10 +82,10 @@ export default function UploadZone({ accessToken, onExtracted, onToast, onShowDr
             <div style={{ fontSize: '2.5rem', marginBottom: '.5rem', opacity: .4 }}>⬆</div>
           )}
           <div style={{ fontWeight: 600, color: 'var(--s700)', marginBottom: '.25rem' }}>
-            {file ? file.name : 'Drop an ID card here, or click to browse'}
+            {file ? file.name : 'Aruncă buletinul aici sau apasă pentru a alege'}
           </div>
           <div style={{ fontSize: '.78rem', color: 'var(--s400)' }}>
-            {file ? `${(file.size / 1024).toFixed(0)} KB` : 'JPG, PNG, WEBP, PDF supported'}
+            {file ? `${(file.size / 1024).toFixed(0)} KB` : 'JPG, PNG, WEBP, PDF'}
           </div>
           <input
             ref={inputRef} type="file" accept={ACCEPT} style={{ display: 'none' }}
@@ -95,9 +95,9 @@ export default function UploadZone({ accessToken, onExtracted, onToast, onShowDr
 
         {file && (
           <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '.5rem' }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setFile(null); setPreview(null) }}>Clear</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setFile(null); setPreview(null) }}>Șterge</button>
             <button className="btn btn-primary" onClick={handleExtract} disabled={loading}>
-              {loading ? <><span className="spin" />&nbsp;Extracting…</> : 'Extract Fields'}
+              {loading ? <><span className="spin" />&nbsp;Se extrage…</> : 'Extrage câmpuri'}
             </button>
           </div>
         )}
