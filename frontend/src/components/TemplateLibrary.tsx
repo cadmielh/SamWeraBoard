@@ -43,14 +43,14 @@ const GUIDE_SECTIONS = [
     items: [
       '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_FORMA_JURIDICA}}',
       '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}',
-      '{{CAEN_1}} (principală, format "cod - descriere")', '{{CAEN_2}}, {{CAEN_3}}… (secundare, în ordinea adăugării)',
+      '{{CAEN_1}} (activitate principală, format "cod - descriere")',
     ],
   },
   {
     title: 'Asociați — PJ (N = 1, 2, 3 …)',
     items: [
       '{{ASOCIAT_N_NUME}}', '{{ASOCIAT_N_PRENUME}}', '{{ASOCIAT_N_CNP}}', '{{ASOCIAT_N_ADRESA}}', '{{ASOCIAT_N_DATA_NASTERII}}', '{{ASOCIAT_N_LOCUL_NASTERII}}', '{{ASOCIAT_N_CETATENIA}}', '{{ASOCIAT_N_SERIE_NUMAR}}', '{{ASOCIAT_N_EMISA_DE}}', '{{ASOCIAT_N_VALABILA_DE_LA}}', '{{ASOCIAT_N_VALABILA_PANA_LA}}', '{{ASOCIAT_N_COTA_PARTICIPARE}}',
-      '{{COTA_ASOCIAT_N}}', '{{CAPITAL_SOCIAL_ASOCIAT_N}}', '{{PARTI_SOCIALE_ASOCIAT_N}}',
+      '{{CAPITAL_SOCIAL_ASOCIAT_N}}', '{{PARTI_SOCIALE_ASOCIAT_N}}',
     ],
   },
   {
@@ -62,13 +62,21 @@ const GUIDE_SECTIONS = [
     items: ['{{MEMBRU_IF_N_NUME}}', '{{MEMBRU_IF_N_PRENUME}}', '{{MEMBRU_IF_N_CNP}}', '{{MEMBRU_IF_N_ADRESA}}', '{{MEMBRU_IF_N_DATA_NASTERII}}', '{{MEMBRU_IF_N_SERIE_NUMAR}}'],
   },
   {
-    title: 'Blocuri repetitive — un paragraf per persoană (doar .docx)',
+    title: 'Blocuri repetitive — un paragraf per element (doar .docx)',
     items: [
       '{{#ASOCIATI}} ... {{/ASOCIATI}} — paragraful/paragrafele dintre cele două marcaje se repetă o dată pentru fiecare asociat',
       '{{#ADMINISTRATORI}} ... {{/ADMINISTRATORI}} — la fel, pentru administratori',
-      'În interiorul blocului: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{SERIE_NUMAR}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
+      'În interiorul {{#ASOCIATI}}/{{#ADMINISTRATORI}}: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{SERIE_NUMAR}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
       '{{INDEX}} — numărul de ordine (1, 2, 3…) în cadrul blocului',
       '{{CAPITAL_SOCIAL}}, {{PARTI_SOCIALE}} — doar în {{#ASOCIATI}}, calculate din cota asociatului',
+      '{{#CAEN_SECUNDARE}} {{CAEN}} {{/CAEN_SECUNDARE}} — un rând per activitate secundară CAEN (nelimitat); dacă nu există niciuna, tot blocul dispare din document',
+    ],
+  },
+  {
+    title: 'Poziții numerotate fixe (N = 1, 2, 3 …) — pentru text diferit per persoană sau tabele',
+    items: [
+      'Folosește {{ASOCIAT_N_...}} / {{ADMINISTRATOR_N_...}} / {{MEMBRU_IF_N_...}} doar când textul chiar diferă în funcție de poziție (ex. semnătura doar a asociatului 1), sau în interiorul unui tabel — blocurile repetitive de mai sus nu funcționează în tabele',
+      'Dacă poziția N nu există (ex. {{ASOCIAT_3_NUME}} dar sunt doar 2 asociați), paragraful respectiv e șters automat din document; într-un tabel, doar celula e golită',
     ],
   },
   {

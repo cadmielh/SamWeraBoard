@@ -71,6 +71,82 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
             paragraphs[start_idx]._p.getparent().remove(paragraphs[start_idx]._p)
 
 
+_NUMBERED_TAG_RE = re.compile(r"\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_[A-Z_]+\}\}")
+_NUMBERED_KEY_RE = re.compile(r"^\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_")
+
+
+def _max_numbered_index(replacements: dict[str, str]) -> dict[str, int]:
+    """Highest N actually present for each known numbered prefix (ASOCIAT_N_*, ...)."""
+    max_idx: dict[str, int] = {}
+    for key in replacements:
+        m = _NUMBERED_KEY_RE.match(key)
+        if m:
+            prefix, n = m.group(1), int(m.group(2))
+            if n > max_idx.get(prefix, 0):
+                max_idx[prefix] = n
+    return max_idx
+
+
+def _has_unresolved_numbered_tag(text: str, max_idx: dict[str, int]) -> bool:
+    for m in _NUMBERED_TAG_RE.finditer(text):
+        prefix, n = m.group(1), int(m.group(2))
+        if n > max_idx.get(prefix, 0):
+            return True
+    return False
+
+
+def _clean_unresolved_numbered_positions(doc: Document, replacements: dict[str, str]) -> None:
+    """
+    Known numbered tags (ASOCIAT_N_*, ADMINISTRATOR_N_*, MEMBRU_IF_N_*) that
+    reference a position beyond how many actually exist — e.g. {{ASOCIAT_3_NUME}}
+    when there are only 2 asociați — are cleaned up instead of left as literal
+    braces in the output:
+      - in the main body/headers/footers, the whole paragraph is deleted (a
+        half-finished sentence reads worse than no sentence);
+      - in a table cell, only the cell's text is cleared, so the table itself
+        isn't structurally broken.
+    Unrecognized/misspelled tags are left untouched, so they stay visible —
+    a clear signal something needs fixing before the document is final.
+    """
+    max_idx = _max_numbered_index(replacements)
+    if not max_idx:
+        return
+
+    def delete_paragraph(paragraph) -> None:
+        p = paragraph._p
+        parent = p.getparent()
+        if parent is not None:
+            parent.remove(p)
+
+    for paragraph in list(doc.paragraphs):
+        text = "".join(run.text for run in paragraph.runs)
+        if _has_unresolved_numbered_tag(text, max_idx):
+            delete_paragraph(paragraph)
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    text = "".join(run.text for run in paragraph.runs)
+                    if _has_unresolved_numbered_tag(text, max_idx):
+                        for run in paragraph.runs:
+                            run.text = ""
+
+    for section in doc.sections:
+        for header in [section.header, section.first_page_header, section.even_page_header]:
+            if header is not None:
+                for paragraph in list(header.paragraphs):
+                    text = "".join(run.text for run in paragraph.runs)
+                    if _has_unresolved_numbered_tag(text, max_idx):
+                        delete_paragraph(paragraph)
+        for footer in [section.footer, section.first_page_footer, section.even_page_footer]:
+            if footer is not None:
+                for paragraph in list(footer.paragraphs):
+                    text = "".join(run.text for run in paragraph.runs)
+                    if _has_unresolved_numbered_tag(text, max_idx):
+                        delete_paragraph(paragraph)
+
+
 def fill_docx(
     template_bytes: bytes,
     replacements: dict[str, str],
@@ -111,6 +187,8 @@ def fill_docx(
             if footer is not None:
                 for paragraph in footer.paragraphs:
                     _replace_in_paragraph(paragraph, replacements)
+
+    _clean_unresolved_numbered_positions(doc, replacements)
 
     out = io.BytesIO()
     doc.save(out)

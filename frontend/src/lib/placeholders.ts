@@ -136,12 +136,9 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
       out['{{PARTI_SOCIALE_TOTALE}}'] = formatNumber(client.capitalSocial / 10)
     }
 
-    // CAEN_1 = activitate principală, CAEN_2, CAEN_3… = activități secundare, în ordine
-    // fiecare valoare e "cod - descriere", gata de pus direct în document
+    // CAEN_1 = activitate principală (unică — fără prefix numeric). Activitățile
+    // secundare (număr nelimitat) se pun în blocul repetitiv {{#CAEN_SECUNDARE}}.
     out['{{CAEN_1}}'] = formatCaen(client.caenCod, client.caenDescriere)
-    ;(client.caenSecundare ?? []).forEach((c, i) => {
-      out[`{{CAEN_${i + 2}}}`] = formatCaen(c.cod, c.descriere)
-    })
   }
 
   if (!isPF) {
@@ -150,8 +147,8 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     const adminiToUse = resolvePersons(client, scannedPersons, 'administrator')
 
     asociatiToUse.forEach((p, i) => {
+      // Cota apare deja ca {{ASOCIAT_N_COTA_PARTICIPARE}}, la fel ca orice alt câmp per-asociat
       Object.assign(out, persoanaToMap(p, `ASOCIAT_${i + 1}`))
-      out[`{{COTA_ASOCIAT_${i + 1}}}`] = p.cotaParticipare ?? ''
       if (client?.capitalSocial != null) {
         const capitalAsociat = client.capitalSocial * parsePercent(p.cotaParticipare) / 100
         out[`{{CAPITAL_SOCIAL_ASOCIAT_${i + 1}}}`] = formatNumber(capitalAsociat)
@@ -189,18 +186,20 @@ function persoanaToSingularMap(p: Persoana, capitalSocialTotal: number | null): 
 }
 
 /**
- * Grupuri de date per-persoană pentru blocurile repetitive din șablon
- * ({{#ASOCIATI}}...{{/ASOCIATI}}, {{#ADMINISTRATORI}}...{{/ADMINISTRATORI}}) —
- * un rând de câmpuri (NUME, PRENUME, CNP… + INDEX) pentru fiecare persoană,
- * multiplicat de backend o dată per element din listă.
+ * Grupuri de date per-element pentru blocurile repetitive din șablon —
+ * {{#ASOCIATI}}, {{#ADMINISTRATORI}} (câte un rând de câmpuri NUME, PRENUME,
+ * CNP… + INDEX per persoană) și {{#CAEN_SECUNDARE}} (câte un {{CAEN}} per
+ * activitate secundară) — multiplicate de backend o dată per element din listă.
  */
 export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Record<string, Record<string, string>[]> {
   if (client?.tipClient === 'PF') return {}
   const asociati = resolvePersons(client, scannedPersons, 'asociat')
   const admini = resolvePersons(client, scannedPersons, 'administrator')
+  const caenSecundare = client?.caenSecundare ?? []
   return {
     ASOCIATI: asociati.map(p => persoanaToSingularMap(p, client?.capitalSocial ?? null)),
     ADMINISTRATORI: admini.map(p => persoanaToSingularMap(p, null)),
+    CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })),
   }
 }
 
@@ -209,7 +208,7 @@ export interface ReadinessResult {
   missing: string[]
 }
 
-const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE'])
+const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN'])
 
 export function checkReadiness(
   placeholders: string[],
@@ -227,14 +226,16 @@ export function checkReadiness(
     } else if (inner === 'INDEX' && groupItems.length > 0) {
       // Numărul de ordine dintr-un bloc repetitiv — generat automat, mereu disponibil
       filled.push(ph)
-    } else if (
-      SINGULAR_KEYS.has(inner) && groupItems.length > 0
-      && groupItems.every(item => (item[inner] ?? '').trim() !== '')
-    ) {
-      // Câmp singular dintr-un bloc {{#ASOCIATI}}/{{#ADMINISTRATORI}} — completat
-      // doar dacă TOATE persoanele relevante au acel câmp (indicator aproximativ,
-      // completarea reală se face per-persoană la generare)
-      filled.push(ph)
+    } else if (SINGULAR_KEYS.has(inner)) {
+      // Câmp singular dintr-un bloc repetitiv — se ia în calcul doar în elementele
+      // grupului care chiar au acest câmp (ex. {{CAEN}} nu apare la asociați),
+      // ca să nu se contamineze verificarea între grupuri diferite.
+      const relevantItems = groupItems.filter(item => inner in item)
+      if (relevantItems.length > 0 && relevantItems.every(item => (item[inner] ?? '').trim() !== '')) {
+        filled.push(ph)
+      } else {
+        missing.push(ph)
+      }
     } else {
       missing.push(ph)
     }
@@ -283,17 +284,11 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
   const capitalAsoc = inner.match(/^CAPITAL_SOCIAL_ASOCIAT_(\d+)$/)
   if (capitalAsoc) return { group: `Asociat ${capitalAsoc[1]}`, field: 'Capital social' }
 
-  const cotaAsoc = inner.match(/^COTA_ASOCIAT_(\d+)$/)
-  if (cotaAsoc) return { group: `Asociat ${cotaAsoc[1]}`, field: 'Cotă participare' }
-
   const partiAsoc = inner.match(/^PARTI_SOCIALE_ASOCIAT_(\d+)$/)
   if (partiAsoc) return { group: `Asociat ${partiAsoc[1]}`, field: 'Părți sociale' }
 
-  const caen = inner.match(/^CAEN_(\d+)$/)
-  if (caen) return {
-    group: 'Societate',
-    field: caen[1] === '1' ? 'Activitate principală (CAEN)' : `Activitate secundară ${Number(caen[1]) - 1} (CAEN)`,
-  }
+  if (inner === 'CAEN_1') return { group: 'Societate', field: 'Activitate principală (CAEN)' }
+  if (inner === 'CAEN') return { group: 'Societate', field: 'Activitate secundară (CAEN)' }
 
   if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
   if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }
