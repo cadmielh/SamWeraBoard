@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ScannedPerson, ToastItem } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_ID_FIELDS } from '../lib/idFields'
-import { equalShare } from '../lib/cota'
+import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import PersonScanModal from './PersonScanModal'
 import Modal from './Modal'
 
@@ -43,10 +43,12 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
   const [persons, setPersons] = useState<ScannedPerson[]>(
     initialPersons && initialPersons.length > 0
       ? initialPersons
-      : [makePerson('asociat'), makePerson('administrator')]
+      : [{ ...makePerson('asociat'), cotaParticipare: equalShare(1) }, makePerson('administrator')]
   )
   const [scanTarget, setScanTarget] = useState<{ personId: string; manual: boolean } | null>(null)
-  const [adminPicker, setAdminPicker] = useState(false)
+  // targetId === null → se adaugă un administrator nou (copiat din asociatul ales);
+  // targetId = id → administratorul existent cu acest id este înlocuit cu datele asociatului ales
+  const [adminPicker, setAdminPicker] = useState<{ targetId: string | null } | false>(false)
 
   const asociati = persons.filter(p => p.role === 'asociat')
   const admini = persons.filter(p => p.role === 'administrator')
@@ -78,9 +80,21 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
     })
 
   const handleAddAdministrator = () => {
-    if (asociati.length > 0) setAdminPicker(true)
+    if (asociati.length > 0) setAdminPicker({ targetId: null })
     else setPersons(prev => [...prev, makePerson('administrator')])
   }
+
+  // Leagă un administrator deja existent de un asociat curent (îi copiază datele) —
+  // funcționează indiferent de câți asociați/administratori sunt deja în listă.
+  const handleLinkAdministrator = (id: string) => setAdminPicker({ targetId: id })
+
+  // O societate trebuie să aibă minim un asociat și un administrator, iar
+  // cotele asociaților trebuie să însumeze mereu 100%
+  const asociatAtMin = asociati.length <= 1
+  const adminAtMin = admini.length <= 1
+  const cotaTotal = sumCota(asociati.map(a => a.cotaParticipare))
+  const cotaValid = isCotaTotalValid(asociati.map(a => a.cotaParticipare))
+  const hasMinPeople = asociati.length > 0 && admini.length > 0
 
   const soleAsociat = asociati.length === 1 ? asociati[0] : null
 
@@ -143,6 +157,7 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
     const roleLabel = p.role === 'asociat' ? 'Asociat' : 'Administrator'
     const roleIdx = persons.slice(0, globalIdx).filter(x => x.role === p.role).length
     const st = scanStatus(p)
+    const atMin = p.role === 'asociat' ? asociatAtMin : adminAtMin
 
     return (
       <div
@@ -162,9 +177,25 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
             {st.icon} {st.label}
           </span>
           <div style={{ display: 'flex', gap: '.125rem', flexShrink: 0 }}>
+            {p.role === 'administrator' && asociati.length > 0 && (
+              <button
+                onClick={() => handleLinkAdministrator(p.id)}
+                style={BTN_ICON}
+                title="Marchează drept aceeași persoană cu un asociat"
+              >
+                🔗
+              </button>
+            )}
             <button onClick={() => moveUp(globalIdx)} style={BTN_ICON} title="Sus" disabled={globalIdx === 0}>↑</button>
             <button onClick={() => moveDown(globalIdx)} style={BTN_ICON} title="Jos" disabled={globalIdx === persons.length - 1}>↓</button>
-            <button onClick={() => removePerson(p.id)} style={{ ...BTN_ICON, color: 'var(--r500)' }} title="Elimină">×</button>
+            <button
+              onClick={() => removePerson(p.id)}
+              style={{ ...BTN_ICON, color: atMin ? 'var(--s300)' : 'var(--r500)' }}
+              disabled={atMin}
+              title={atMin ? `Trebuie să existe cel puțin un ${roleLabel.toLowerCase()}` : 'Elimină'}
+            >
+              ×
+            </button>
           </div>
         </div>
 
@@ -213,12 +244,24 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         {/* Asociați — determină firma, deci se completează primii */}
-        {asociati.length > 0 && (
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+        <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={SECTION_TITLE}>Asociați <span style={COUNT_CHIP}>{asociati.length}</span></div>
-            {persons.map((p, i) => p.role === 'asociat' ? renderRow(p, i) : null)}
-          </section>
-        )}
+            <button type="button" className="btn btn-success btn-sm" onClick={addAsociat}>+ Adaugă asociat</button>
+          </div>
+          {asociati.length === 0 && (
+            <p style={{ fontSize: '.8125rem', color: 'var(--s400)', margin: 0 }}>Niciun asociat adăugat.</p>
+          )}
+          {persons.map((p, i) => p.role === 'asociat' ? renderRow(p, i) : null)}
+          {asociati.length > 0 && (
+            <div style={{
+              fontSize: '.8125rem', fontWeight: 600,
+              color: cotaValid ? 'var(--g700, #15803d)' : 'var(--r600, #dc2626)',
+            }}>
+              Cotă totală: {cotaTotal}% {cotaValid ? '✓' : '— ar trebui să fie 100%'}
+            </div>
+          )}
+        </section>
 
         {soleAsociat && (
           <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', cursor: 'pointer' }}>
@@ -228,31 +271,31 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
         )}
 
         {/* Administratori */}
-        {!hideAdminSection &&admini.length > 0 && (
+        {!hideAdminSection && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
-            <div style={SECTION_TITLE}>Administratori <span style={COUNT_CHIP}>{admini.length}</span></div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={SECTION_TITLE}>Administratori <span style={COUNT_CHIP}>{admini.length}</span></div>
+              <button type="button" className="btn btn-success btn-sm" onClick={handleAddAdministrator}>+ Adaugă administrator</button>
+            </div>
+            {admini.length === 0 && (
+              <p style={{ fontSize: '.8125rem', color: 'var(--s400)', margin: 0 }}>Niciun administrator adăugat.</p>
+            )}
             {persons.map((p, i) => p.role === 'administrator' ? renderRow(p, i) : null)}
           </section>
         )}
 
-        {/* Add buttons */}
-        <div style={{ display: 'flex', gap: '.625rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-ghost btn-sm" onClick={addAsociat}>
-            + Adaugă asociat
-          </button>
-          {!hideAdminSection &&(
-            <button className="btn btn-ghost btn-sm" onClick={handleAddAdministrator}>
-              + Adaugă administrator
-            </button>
-          )}
-        </div>
+        {!hasMinPeople && (
+          <p className="field-error" style={{ margin: 0 }}>
+            Este necesar cel puțin un asociat și un administrator.
+          </p>
+        )}
 
         {/* Continue */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '.5rem' }}>
           <button
             className="btn btn-primary"
             onClick={() => onContinue(persons)}
-            disabled={persons.length === 0}
+            disabled={!hasMinPeople || !cotaValid}
           >
             Continuă →
           </button>
@@ -260,52 +303,64 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
       </div>
 
       {/* Selector administrator dintre asociați */}
-      {adminPicker && (
-        <Modal onClose={() => setAdminPicker(false)} ariaLabel="Alege administrator">
-          <div className="modal-head">
-            <span className="modal-title">Cine este administrator?</span>
-            <button className="modal-close" onClick={() => setAdminPicker(false)}>×</button>
-          </div>
-          <div className="modal-body">
-            <p style={{ fontSize: '.8125rem', color: 'var(--s400)', marginTop: 0 }}>
-              Selectează un asociat existent pentru a-i copia datele, sau adaugă o persoană nouă.
-            </p>
-            {asociati.map((a, i) => {
-              const name = [a.fields.prenume, a.fields.nume].filter(Boolean).join(' ')
-              return (
+      {adminPicker && (() => {
+        const isLinking = adminPicker.targetId !== null
+        const chooseAsociat = (a: ScannedPerson) => {
+          if (isLinking) {
+            updatePerson(adminPicker.targetId as string, { fields: { ...a.fields }, scanStatus: a.scanStatus })
+          } else {
+            setPersons(prev => [...prev, {
+              id: crypto.randomUUID(), role: 'administrator', cotaParticipare: '',
+              fields: { ...a.fields }, scanStatus: a.scanStatus,
+            }])
+          }
+          setAdminPicker(false)
+        }
+        return (
+          <Modal onClose={() => setAdminPicker(false)} ariaLabel="Alege administrator">
+            <div className="modal-head">
+              <span className="modal-title">Cine este administrator?</span>
+              <button className="modal-close" onClick={() => setAdminPicker(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '.8125rem', color: 'var(--s400)', marginTop: 0 }}>
+                {isLinking
+                  ? 'Selectează asociatul cu care este aceeași persoană — datele lui vor fi copiate în acest administrator.'
+                  : 'Selectează un asociat existent pentru a-i copia datele, sau adaugă o persoană nouă.'}
+              </p>
+              {asociati.map((a, i) => {
+                const name = [a.fields.prenume, a.fields.nume].filter(Boolean).join(' ')
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="persoana-card"
+                    style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent' }}
+                    onClick={() => chooseAsociat(a)}
+                  >
+                    <div className="persoana-card-name">{name || `Asociat ${i + 1}`}</div>
+                    <div className="persoana-card-sub">
+                      Asociat{a.cotaParticipare ? ` — ${a.cotaParticipare}` : ''}{a.fields.cnp ? ` · CNP: ${a.fields.cnp}` : ''}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setAdminPicker(false)}>Anulează</button>
+              {!isLinking && (
                 <button
-                  key={a.id}
                   type="button"
-                  className="persoana-card"
-                  style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent' }}
-                  onClick={() => {
-                    setPersons(prev => [...prev, {
-                      id: crypto.randomUUID(), role: 'administrator', cotaParticipare: '',
-                      fields: { ...a.fields }, scanStatus: a.scanStatus,
-                    }])
-                    setAdminPicker(false)
-                  }}
+                  className="btn btn-primary"
+                  onClick={() => { setPersons(prev => [...prev, makePerson('administrator')]); setAdminPicker(false) }}
                 >
-                  <div className="persoana-card-name">{name || `Asociat ${i + 1}`}</div>
-                  <div className="persoana-card-sub">
-                    Asociat{a.cotaParticipare ? ` — ${a.cotaParticipare}` : ''}{a.fields.cnp ? ` · CNP: ${a.fields.cnp}` : ''}
-                  </div>
+                  + Persoană nouă
                 </button>
-              )
-            })}
-          </div>
-          <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={() => setAdminPicker(false)}>Anulează</button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => { setPersons(prev => [...prev, makePerson('administrator')]); setAdminPicker(false) }}
-            >
-              + Persoană nouă
-            </button>
-          </div>
-        </Modal>
-      )}
+              )}
+            </div>
+          </Modal>
+        )
+      })()}
 
       {/* Scan modal */}
       {scanTarget && (() => {

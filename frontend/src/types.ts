@@ -87,6 +87,11 @@ export interface Client {
   platitorTva: boolean
   periodaTva: string
   tvaLaIncasare: boolean
+  inactivAnaf: boolean
+  splitTva: boolean
+  eFactura: boolean
+  // Strict informativ, din ANAF — nu înlocuiește lista structurată `administratori`
+  administratoriAnaf: { nume: string; rol: string }[]
   plafonTvaAnual: number | null
   regimFiscal: RegimFiscal
   nrSalariati: number | null

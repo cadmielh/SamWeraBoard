@@ -109,6 +109,17 @@ export default function GenerareDocumentePage() {
     setStep(1)
   }
 
+  // Navigare "un pas înapoi" — aceeași logică e folosită atât de butonul
+  // mereu vizibil din bara de sus, cât și de butoanele locale din fiecare card,
+  // ca să nu existe două căi de întoarcere cu comportamente diferite.
+  const handleStepBack = () => {
+    if (step === 3) { setStep(2); return }
+    if (step !== 2) return
+    if (sourceMode === 'buletin') { setStep(1); setFields(null); return }
+    if (sourceMode === 'societate') { setStep(1); return }
+    setStep(1); setSelectedClient(null)
+  }
+
   // ── Buletin (nou PF) handlers ─────────────────────────────────────────────────
 
   const handleExtracted = useCallback(async (result: IDFields, filename: string) => {
@@ -228,19 +239,29 @@ export default function GenerareDocumentePage() {
 
   return (
     <>
-      {/* ══ TOP BAR ══ */}
+      {/* ══ TOP BAR — sticky, ca navigarea înapoi să rămână mereu vizibilă, indiferent de scroll ══ */}
       <div style={{
         background: '#fff', borderBottom: '1px solid var(--s200)',
         padding: '.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+        position: 'sticky', top: 0, zIndex: 10,
       }}>
         {hasStarted ? (
           <>
+            {step > 1 && (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleStepBack}
+                style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flexShrink: 0 }}
+              >
+                ← Pasul anterior
+              </button>
+            )}
             <button
               className="btn btn-ghost btn-sm"
               onClick={goToLanding}
               style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flexShrink: 0 }}
             >
-              ← Schimbă modul
+              ← Generare documente
             </button>
             <div style={{
               fontSize: '.72rem', fontWeight: 700, color: 'var(--p600)',
@@ -401,7 +422,7 @@ export default function GenerareDocumentePage() {
                 initialEditing={sourceFile === 'manual'}
                 onFieldsChange={setFields}
                 onNext={() => setStep(3)}
-                onBack={() => { setStep(1); setFields(null) }}
+                onBack={handleStepBack}
               />
             )}
             {step === 3 && fields && (
@@ -416,7 +437,7 @@ export default function GenerareDocumentePage() {
                 client={null}
                 accessToken={accessToken}
                 onToast={toast}
-                onBack={() => setStep(2)}
+                onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
               />
             )}
@@ -453,7 +474,7 @@ export default function GenerareDocumentePage() {
                       Date societate
                     </span>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setStep(1)}>← Înapoi</button>
+                  <button className="btn btn-ghost btn-sm" onClick={handleStepBack}>← Înapoi</button>
                 </div>
                 <div className="card-body">
                   <CompanyInfoForm
@@ -478,7 +499,7 @@ export default function GenerareDocumentePage() {
                 client={{ tipClient: 'PJ', ...companyInfo }}
                 accessToken={accessToken}
                 onToast={toast}
-                onBack={() => setStep(2)}
+                onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
               />
             )}
@@ -522,7 +543,7 @@ export default function GenerareDocumentePage() {
                     </span>
                     <p className="card-sub">{selectedClient.denumire}</p>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setStep(1); setSelectedClient(null) }}>← Înapoi</button>
+                  <button className="btn btn-ghost btn-sm" onClick={handleStepBack}>← Înapoi</button>
                 </div>
                 <div className="card-body">
                   <div className="persoana-card" style={{ marginBottom: '1rem' }}>
@@ -576,7 +597,7 @@ export default function GenerareDocumentePage() {
                     </span>
                     <p className="card-sub">{selectedClient.denumire}</p>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setStep(1); setSelectedClient(null) }}>← Înapoi</button>
+                  <button className="btn btn-ghost btn-sm" onClick={handleStepBack}>← Înapoi</button>
                 </div>
                 <div className="card-body">
                   <MultiPersonPreview
@@ -599,7 +620,7 @@ export default function GenerareDocumentePage() {
                 client={selectedClient}
                 accessToken={accessToken}
                 onToast={toast}
-                onBack={() => setStep(2)}
+                onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
               />
             )}

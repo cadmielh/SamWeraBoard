@@ -1,6 +1,7 @@
 import type { IDFields } from './api'
 import type { Client, Persoana, ScannedPerson } from '../types'
 import { persoanaToIDFields } from './idFields'
+import { parsePercent } from './cota'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -52,11 +53,6 @@ function formatNumber(n: number): string {
 function formatCaen(cod?: string, descriere?: string): string {
   if (!cod) return ''
   return descriere ? `${cod} - ${descriere}` : cod
-}
-
-function parsePercent(s: string): number {
-  const m = /(-?\d+(?:[.,]\d+)?)/.exec(s)
-  return m ? parseFloat(m[1].replace(',', '.')) : 0
 }
 
 function persoanaToMap(p: Persoana, prefix: string): Record<string, string> {
@@ -172,13 +168,17 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
   return out
 }
 
-function persoanaToSingularMap(p: Persoana, capitalSocialTotal: number | null): Record<string, string> {
+function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number | null; includeCota?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {
+    // COTA_PARTICIPARE nu se aplică administratorilor — dacă e inclus mereu,
+    // {{COTA_PARTICIPARE}} pare mereu "necompletat" în checkReadiness de îndată
+    // ce există și un administrator (a cărui cotă e mereu goală, legitim).
+    if (key === 'COTA_PARTICIPARE' && !opts.includeCota) continue
     out[key] = (p as unknown as Record<string, string>)[field as string] ?? ''
   }
-  if (capitalSocialTotal != null) {
-    const capitalAsociat = capitalSocialTotal * parsePercent(p.cotaParticipare) / 100
+  if (opts.capitalSocialTotal != null) {
+    const capitalAsociat = opts.capitalSocialTotal * parsePercent(p.cotaParticipare) / 100
     out.CAPITAL_SOCIAL = formatNumber(capitalAsociat)
     out.PARTI_SOCIALE = formatNumber(capitalAsociat / 10)
   }
@@ -197,8 +197,8 @@ export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Rec
   const admini = resolvePersons(client, scannedPersons, 'administrator')
   const caenSecundare = client?.caenSecundare ?? []
   return {
-    ASOCIATI: asociati.map(p => persoanaToSingularMap(p, client?.capitalSocial ?? null)),
-    ADMINISTRATORI: admini.map(p => persoanaToSingularMap(p, null)),
+    ASOCIATI: asociati.map(p => persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, includeCota: true })),
+    ADMINISTRATORI: admini.map(p => persoanaToSingularMap(p)),
     CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })),
   }
 }

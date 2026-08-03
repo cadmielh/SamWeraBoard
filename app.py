@@ -314,8 +314,7 @@ def get_placeholders():
 
 _ANAF_POST       = "https://webservicesp.anaf.ro/AsynchWebService/api/v8/ws/tva"
 _ANAF_GET        = "https://webservicesp.anaf.ro/AsynchWebService/api/v7/ws/tva"
-_LISTAFIRME_URL  = "https://listafirme.ro/api/info-v2.asp"
-_OPENAPI_BASE    = "https://api.openapi.ro/api/companies"
+_DEMOANAF_BASE   = "https://demoanaf.ro/api/company"
 
 # Ordinea contează: formele mai lungi/specifice înaintea celor mai scurte
 _FORME_JURIDICE = [
@@ -346,11 +345,17 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
                              radiata: bool, platitor_tva: bool,
                              perioada_tva: str,
                              forma_juridica: str | None = None,
-                             tva_la_incasare: bool = False) -> dict:
+                             tva_la_incasare: bool = False,
+                             inactiv_anaf: bool | None = None,
+                             split_tva: bool | None = None,
+                             e_factura: bool | None = None,
+                             caen_secundare: list[str] | None = None) -> dict:
+    # Stem-uri, nu forme complete — textul de stare variază după sursă/flexiune
+    # ("Radiere" la ONRC vs. "RADIAT" la ANAF, "Suspendare" vs. "SUSPENDAT" etc.).
     stare_up = stare.upper()
-    if radiata or "RADIAT" in stare_up or "DIZOLVAT" in stare_up:
+    if radiata or "RADI" in stare_up or "DIZOLV" in stare_up:
         statut = "radiat"
-    elif "INACTIV" in stare_up or "SUSPENDAT" in stare_up:
+    elif "INACTIV" in stare_up or "SUSPEND" in stare_up:
         statut = "inactiv"
     else:
         statut = "activ"
@@ -363,11 +368,68 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
         "nrRegCom":      nr_reg_com,
         "telefon":       telefon,
         "caenCod":       caen_cod,
+        "caenSecundare": caen_secundare or [],
         "statutFiscal":  statut,
         "platitorTva":   platitor_tva,
         "periodaTva":    perioada_tva,
         "tvaLaIncasare": tva_la_incasare,
+        "inactivAnaf":   inactiv_anaf,
+        "splitTva":      split_tva,
+        "eFactura":      e_factura,
     }
+
+
+def _query_demoanaf(cif_str: str) -> dict | None:
+    """Returnează dict cu date firmă din demoanaf.ro (proxy live pe date ANAF+ONRC),
+    sau None dacă nu e configurată cheia sau serviciul e indisponibil."""
+    api_key = os.getenv("DEMOANAF_API_KEY", "")
+    if not api_key:
+        return None
+    try:
+        resp = http_requests.get(
+            f"{_DEMOANAF_BASE}/{cif_str}",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            return None
+        body = resp.json()
+        if not body.get("success"):
+            return None
+        return body.get("data")
+    except Exception:
+        return None
+
+
+def _parse_demoanaf_response(data: dict) -> dict:
+    stare = f'{data.get("registrationState") or ""} {data.get("onrcStatusLabel") or ""}'.strip()
+    caen_cod = str(data.get("caenCode") or "")
+    # authorizedCaenCodes include şi codul principal — restul sunt activităţile secundare
+    caen_secundare = [c for c in (data.get("authorizedCaenCodes") or []) if c != caen_cod]
+    result = _parse_company_response(
+        denumire     = data.get("name") or "",
+        adresa       = data.get("address") or "",
+        nr_reg_com   = data.get("registrationNumber") or "",
+        telefon      = data.get("phone") or "",
+        caen_cod     = caen_cod,
+        stare        = stare,
+        radiata      = False,
+        platitor_tva = bool(data.get("vatRegistered")),
+        perioada_tva = "",
+        forma_juridica   = data.get("legalForm") or None,
+        tva_la_incasare  = bool(data.get("cashBasisVat")),
+        inactiv_anaf     = bool(data.get("inactive")),
+        split_tva        = bool(data.get("splitVat")),
+        e_factura        = bool(data.get("eFacturaRegistered")),
+        caen_secundare   = caen_secundare,
+    )
+    # Doar nume + rol — API-ul nu oferă CNP/CI, deci e strict informativ
+    # (nu se poate mapa fiabil pe structura Persoana folosită la generarea documentelor).
+    result["administratoriAnaf"] = [
+        {"nume": a.get("name") or "", "rol": a.get("role") or ""}
+        for a in (data.get("administrators") or []) if not a.get("gdprHidden") and a.get("name")
+    ]
+    return result
 
 
 def _query_anaf(cif_int: int) -> dict | None:
@@ -408,48 +470,6 @@ def _query_anaf(cif_int: int) -> dict | None:
     return None
 
 
-def _query_listafirme_caen(cif_str: str) -> str:
-    """Returnează doar codul NACE/CAEN din listafirme.ro v2, sau '' la eroare."""
-    api_key = os.getenv("LISTAFIRME_KEY", "")
-    if not api_key:
-        return ""
-    import json as _json
-    data = _json.dumps({"TaxCode": cif_str, "NACE": ""})
-    try:
-        resp = http_requests.get(
-            _LISTAFIRME_URL,
-            params={"key": api_key, "data": data},
-            timeout=8,
-        )
-        if resp.status_code != 200:
-            return ""
-        body = resp.json()
-        return str(body.get("NACE") or "")
-    except Exception:
-        return ""
-
-
-def _query_openapi_ro(cif_str: str) -> dict | None:
-    """Returnează dict cu date firmă din openapi.ro, sau None la eroare."""
-    api_key = os.getenv("OPENAPI_RO_KEY", "")
-    if not api_key:
-        return None
-    try:
-        resp = http_requests.get(
-            f"{_OPENAPI_BASE}/{cif_str}",
-            headers={"x-api-key": api_key},
-            timeout=8,
-        )
-        if resp.status_code != 200:
-            return None
-        body = resp.json()
-        if body.get("error"):
-            return None
-        return body
-    except Exception:
-        return None
-
-
 @app.route("/anaf/company")
 @limiter.limit("30 per minute")
 def anaf_company():
@@ -465,7 +485,12 @@ def anaf_company():
 
     cif_int = int(cif_str)
 
-    # --- Sursă 1: ANAF async v8 ---
+    # --- Sursă 1: demoanaf.ro — proxy live pe date ANAF+ONRC, rapid, un singur apel ---
+    ddata = _query_demoanaf(cif_str)
+    if ddata is not None:
+        return jsonify(_parse_demoanaf_response(ddata))
+
+    # --- Sursă 2: ANAF async v8 oficial ---
     anaf_data = _query_anaf(cif_int)
     if anaf_data is not None:
         found = anaf_data.get("found", [])
@@ -476,18 +501,12 @@ def anaf_company():
         inreg         = found[0].get("inregistrare_scop_Tva", {}) or {}
         inreg_rtvai   = found[0].get("inregistrare_RTVAI", {}) or {}
         stare_inactiv = found[0].get("stare_inactiv", {}) or {}
+        split_tva     = found[0].get("inregistrare_SplitTVA", {}) or {}
 
-        platitor_tva = bool(inreg.get("dataInceputScop"))
-        tva_la_incasare = bool(inreg_rtvai.get("dataInceputTvaInc")) and not bool(inreg_rtvai.get("dataSfarsitTvaInc"))
-        perioada_tva = ""
-        if platitor_tva:
-            tip = (inreg.get("tipPerioadaFiscala") or "").lower()
-            if "trimestri" in tip:
-                perioada_tva = "trimestriala"
-            elif "semestr" in tip:
-                perioada_tva = "semestrial"
-            else:
-                perioada_tva = "lunara"
+        # API-ul public ANAF nu expune periodicitatea declarării TVA (lunar/trimestrial) —
+        # câmpul rămâne necompletat din această sursă, nu se ghicește.
+        platitor_tva    = bool(inreg.get("scpTVA"))
+        tva_la_incasare = bool(inreg_rtvai.get("statusTvaIncasare"))
 
         radiata = bool(stare_inactiv.get("dataRadiere"))
         return jsonify(_parse_company_response(
@@ -499,32 +518,14 @@ def anaf_company():
             stare        = dg.get("stare_inregistrare") or "",
             radiata      = radiata,
             platitor_tva = platitor_tva,
-            perioada_tva = perioada_tva,
+            perioada_tva = "",
             tva_la_incasare = tva_la_incasare,
+            inactiv_anaf = bool(stare_inactiv.get("statusInactivi")),
+            split_tva    = bool(split_tva.get("statusSplitTVA")),
+            e_factura    = bool(dg.get("statusRO_e_Factura")),
         ))
 
-    # --- Sursă 2: openapi.ro — date complete, fără CAEN ---
-    odata = _query_openapi_ro(cif_str)
-    if odata is None:
-        return jsonify({"error": "Serviciile de date fiscale sunt indisponibile momentan"}), 502
-
-    # --- Sursă 3: listafirme.ro — doar NACE/CAEN pentru a completa openapi.ro ---
-    caen_cod = _query_listafirme_caen(cif_str)
-
-    platitor_tva = bool(odata.get("tva"))
-    adresa_parts = [p for p in [odata.get("adresa"), odata.get("cod_postal"), odata.get("judet")] if p]
-
-    return jsonify(_parse_company_response(
-        denumire     = odata.get("denumire") or "",
-        adresa       = ", ".join(adresa_parts),
-        nr_reg_com   = odata.get("numar_reg_com") or "",
-        telefon      = odata.get("telefon") or "",
-        caen_cod     = caen_cod,
-        stare        = odata.get("stare") or "",
-        radiata      = bool(odata.get("radiata")),
-        platitor_tva = platitor_tva,
-        perioada_tva = "lunara" if platitor_tva else "",
-    ))
+    return jsonify({"error": "Serviciile de date fiscale sunt indisponibile momentan"}), 502
 
 
 @app.route("/health")

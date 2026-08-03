@@ -351,6 +351,9 @@ body {
 .badge-radiat { background:var(--s100); color:var(--s500); }
 .badge-tva { background:var(--p100); color:var(--p700); }
 .badge-notva { background:var(--s100); color:var(--s400); }
+.badge-inactiv-anaf { background:var(--r600); color:#fff; }
+.badge-split-tva { background:#fef3c7; color:#92400e; }
+.badge-efactura { background:var(--g50); color:var(--g600); }
 
 /* ── Modals ── */
 .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:flex; align-items:flex-start; justify-content:center; padding:2.5rem 1rem; overflow-y:auto; animation:fadeIn .15s; }

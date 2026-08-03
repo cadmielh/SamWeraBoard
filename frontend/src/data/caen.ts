@@ -1,3 +1,7 @@
+export function findCaenDescriere(cod: string): string {
+  return CAEN_CODES.find(c => c.cod === cod)?.descriere ?? ''
+}
+
 export const CAEN_CODES: { cod: string; descriere: string }[] = [
   { cod: '0111', descriere: 'Cultivarea cerealelor (excluzând orezul), plantelor leguminoase şi a plantelor oleaginoase' },
   { cod: '0112', descriere: 'Cultivarea orezului' },

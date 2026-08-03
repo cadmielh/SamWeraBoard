@@ -181,6 +181,9 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
                 ? <span className="badge badge-tva">TVA {client.periodaTva || ''}</span>
                 : <span className="badge badge-notva">Non-TVA</span>
               }
+              {client.inactivAnaf && <span className="badge badge-inactiv-anaf">⚠ Inactiv fiscal ANAF</span>}
+              {client.splitTva && <span className="badge badge-split-tva">Split TVA</span>}
+              {client.eFactura && <span className="badge badge-efactura">RO e-Factura</span>}
             </div>
             <span className="cv2-anaf-note">
               Date ANAF — actualizat la {new Date(client.dataAnafActualizat!).toLocaleDateString('ro-RO')}
@@ -350,6 +353,11 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
                 </div>
               : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
             }
+            {client.administratoriAnaf && client.administratoriAnaf.length > 0 && (
+              <p className="cv2-anaf-note" style={{ marginTop: '.5rem' }}>
+                Conform ANAF (informativ, verifică CNP/CI separat): {client.administratoriAnaf.map(a => a.nume).join(', ')}
+              </p>
+            )}
           </div>
         )}
 

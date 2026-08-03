@@ -3,7 +3,8 @@ import type { Client, Persoana, TipClient, SubtipPF } from '../types'
 import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, type ClientInput } from '../lib/clienti'
 import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
-import { equalShare } from '../lib/cota'
+import { findCaenDescriere } from '../data/caen'
+import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import { useApp } from '../AppLayout'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
@@ -61,6 +62,10 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       platitorTva: initial.platitorTva,
       periodaTva: initial.periodaTva,
       tvaLaIncasare: initial.tvaLaIncasare ?? false,
+      inactivAnaf: initial.inactivAnaf ?? false,
+      splitTva: initial.splitTva ?? false,
+      eFactura: initial.eFactura ?? false,
+      administratoriAnaf: initial.administratoriAnaf ?? [],
       plafonTvaAnual: initial.plafonTvaAnual ?? null,
       regimFiscal: initial.regimFiscal ?? '',
       nrSalariati: initial.nrSalariati ?? null,
@@ -77,7 +82,9 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   const [denumireError, setDenumireError] = useState('')
   const [anafLoading, setAnafLoading] = useState(false)
   const [personaModal, setPersonaModal] = useState<PersonaModalState>(null)
-  const [adminPicker, setAdminPicker] = useState(false)
+  // targetIndex === null → se adaugă un administrator nou (copiat din asociatul ales);
+  // targetIndex = i → administratorul existent de la indexul i este înlocuit cu datele asociatului ales
+  const [adminPicker, setAdminPicker] = useState<{ targetIndex: number | null } | false>(false)
   const [sediuPicker, setSediuPicker] = useState(false)
 
   const set = (key: keyof ClientInput, val: unknown) => setForm(prev => ({ ...prev, [key]: val }))
@@ -108,9 +115,13 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   }
 
   const handleAddAdministrator = () => {
-    if (form.asociati.length > 0) setAdminPicker(true)
+    if (form.asociati.length > 0) setAdminPicker({ targetIndex: null })
     else setPersonaModal({ type: 'administratori', index: null })
   }
+
+  // Leagă un administrator deja existent de un asociat curent (îi copiază datele) —
+  // funcționează indiferent de câți asociați/administratori sunt deja în formular.
+  const handleLinkAdministrator = (index: number) => setAdminPicker({ targetIndex: index })
 
   const switchTip = (tip: TipClient) => {
     if (isEditing) {
@@ -153,10 +164,18 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
         nrRegistrul: result.nrRegCom || prev.nrRegistrul,
         telefon: result.telefon || prev.telefon,
         caenCod: result.caenCod || prev.caenCod,
+        caenDescriere: result.caenCod ? findCaenDescriere(result.caenCod) : prev.caenDescriere,
+        caenSecundare: result.caenSecundare
+          ? result.caenSecundare.map(cod => ({ cod, descriere: findCaenDescriere(cod) }))
+          : prev.caenSecundare,
         statutFiscal: result.statutFiscal || prev.statutFiscal,
         platitorTva: result.platitorTva ?? prev.platitorTva,
         periodaTva: result.periodaTva || prev.periodaTva,
         tvaLaIncasare: result.tvaLaIncasare ?? prev.tvaLaIncasare,
+        inactivAnaf: result.inactivAnaf ?? prev.inactivAnaf,
+        splitTva: result.splitTva ?? prev.splitTva,
+        eFactura: result.eFactura ?? prev.eFactura,
+        administratoriAnaf: result.administratoriAnaf ?? prev.administratoriAnaf,
         dataAnafActualizat: new Date().toISOString(),
       }))
       toast('Date preluate de la ANAF', 'ok')
@@ -172,7 +191,13 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
     ? 'CIF invalid (ex: RO12345678 sau 12345678)'
     : ''
 
-  const canSave = !cifError && !!form.denumire.trim()
+  // O societate trebuie să aibă minim un asociat și un administrator, iar
+  // cotele asociaților trebuie să însumeze mereu 100%
+  const cotaTotal = sumCota(form.asociati.map(a => a.cotaParticipare))
+  const cotaValid = isPF || isCotaTotalValid(form.asociati.map(a => a.cotaParticipare))
+  const hasMinPeople = isPF || (form.asociati.length > 0 && form.administratori.length > 0)
+
+  const canSave = !cifError && !!form.denumire.trim() && hasMinPeople && cotaValid
 
   const handleSave = async () => {
     if (!canSave) return
@@ -255,6 +280,19 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   }
 
   if (adminPicker) {
+    const targetIndex = adminPicker.targetIndex
+    const isLinking = targetIndex !== null
+    const chooseAsociat = (a: Persoana) => {
+      if (isLinking) {
+        const arr = [...form.administratori]
+        arr[targetIndex] = { ...a, calitate: 'Administrator', cotaParticipare: '' }
+        set('administratori', arr)
+        setAdminPicker(false)
+      } else {
+        setAdminPicker(false)
+        setPersonaModal({ type: 'administratori', index: null, prefill: { ...a, calitate: 'Administrator', cotaParticipare: '' } })
+      }
+    }
     return (
       <Modal onClose={() => setAdminPicker(false)} ariaLabel="Alege administrator">
         <div className="modal-head">
@@ -263,7 +301,9 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
         </div>
         <div className="modal-body">
           <p style={{ fontSize: '.8125rem', color: 'var(--s400)', marginTop: 0 }}>
-            Selectează un asociat existent pentru a-i copia datele, sau adaugă o persoană nouă.
+            {isLinking
+              ? 'Selectează asociatul cu care este aceeași persoană — datele lui vor fi copiate în acest administrator.'
+              : 'Selectează un asociat existent pentru a-i copia datele, sau adaugă o persoană nouă.'}
           </p>
           {form.asociati.map((a, i) => (
             <button
@@ -271,10 +311,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
               type="button"
               className="persoana-card"
               style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '.375rem', border: '1px solid var(--s150, #e5e7eb)', background: 'transparent' }}
-              onClick={() => {
-                setAdminPicker(false)
-                setPersonaModal({ type: 'administratori', index: null, prefill: { ...a, calitate: 'Administrator', cotaParticipare: '' } })
-              }}
+              onClick={() => chooseAsociat(a)}
             >
               <div>
                 <div className="persoana-card-name">{a.prenume} {a.nume}</div>
@@ -285,13 +322,15 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={() => setAdminPicker(false)}>Anulează</button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => { setAdminPicker(false); setPersonaModal({ type: 'administratori', index: null }) }}
-          >
-            + Persoană nouă
-          </button>
+          {!isLinking && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => { setAdminPicker(false); setPersonaModal({ type: 'administratori', index: null }) }}
+            >
+              + Persoană nouă
+            </button>
+          )}
         </div>
       </Modal>
     )
@@ -443,9 +482,19 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
           {!isPF && (
             <>
               <PersonSection title="Asociați" persons={form.asociati}
+                minCount={1}
                 onAdd={() => setPersonaModal({ type: 'asociati', index: null })}
                 onEdit={i => setPersonaModal({ type: 'asociati', index: i })}
                 onRemove={i => removePersoana('asociati', i)} />
+
+              {form.asociati.length > 0 && (
+                <div style={{
+                  fontSize: '.8125rem', fontWeight: 600, marginTop: '-.25rem', marginBottom: '.75rem',
+                  color: cotaValid ? 'var(--g700, #15803d)' : 'var(--r600, #dc2626)',
+                }}>
+                  Cotă totală: {cotaTotal}% {cotaValid ? '✓' : '— ar trebui să fie 100%'}
+                </div>
+              )}
 
               {soleAsociat && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', marginTop: '.75rem', cursor: 'pointer' }}>
@@ -456,9 +505,18 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
               {!hideAdminSection && (
                 <PersonSection title="Administratori" persons={form.administratori}
+                  minCount={1}
                   onAdd={handleAddAdministrator}
                   onEdit={i => setPersonaModal({ type: 'administratori', index: i })}
-                  onRemove={i => removePersoana('administratori', i)} />
+                  onRemove={i => removePersoana('administratori', i)}
+                  onLink={form.asociati.length > 0 ? handleLinkAdministrator : undefined}
+                  linkTitle="Marchează drept aceeași persoană cu un asociat" />
+              )}
+
+              {!hasMinPeople && (
+                <p className="field-error" style={{ marginTop: '.5rem' }}>
+                  Este necesar cel puțin un asociat și un administrator.
+                </p>
               )}
             </>
           )}
@@ -471,6 +529,14 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
               {form.platitorTva && <span className="badge badge-tva">TVA {form.periodaTva}</span>}
               {form.platitorTva && form.tvaLaIncasare && <span className="badge badge-tva">TVA la încasare</span>}
               {!form.platitorTva && form.dataAnafActualizat && <span className="badge badge-notva">Non-TVA</span>}
+              {form.inactivAnaf && <span className="badge badge-inactiv-anaf">⚠ Inactiv fiscal ANAF</span>}
+              {form.splitTva && <span className="badge badge-split-tva">Split TVA</span>}
+              {form.eFactura && <span className="badge badge-efactura">RO e-Factura</span>}
+              {form.administratoriAnaf.length > 0 && (
+                <span className="cv2-anaf-note" style={{ width: '100%' }}>
+                  Administratori conform ANAF (informativ, verifică CNP/CI separat): {form.administratoriAnaf.map(a => a.nume).join(', ')}
+                </span>
+              )}
             </div>
           )}
 
@@ -715,7 +781,7 @@ function SectionCard({ title, children, action }: {
 }
 
 function PersonSection({
-  title, persons, onAdd, onEdit, onRemove, addLabel,
+  title, persons, onAdd, onEdit, onRemove, addLabel, minCount = 0, onLink, linkTitle,
 }: {
   title: string
   persons: Persoana[]
@@ -723,13 +789,19 @@ function PersonSection({
   onEdit: (i: number) => void
   onRemove: (i: number) => void
   addLabel?: string
+  /** Sub acest număr, ștergerea ultimei persoane rămase este blocată. */
+  minCount?: number
+  /** Când e prezent, afișează pe fiecare rând un buton pentru a lega persoana de un asociat existent. */
+  onLink?: (i: number) => void
+  linkTitle?: string
 }) {
   const label = addLabel ?? (title === 'Asociați' ? 'asociat' : title === 'Administratori' ? 'administrator' : 'persoană')
+  const atMin = persons.length <= minCount
   return (
     <div style={{ marginTop: '1.25rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.625rem' }}>
         <span style={{ fontWeight: 700, fontSize: '.875rem', color: 'var(--s700)' }}>{title}</span>
-        <button type="button" className="btn btn-outline-primary btn-sm" onClick={onAdd}>
+        <button type="button" className="btn btn-success btn-sm" onClick={onAdd}>
           + {addLabel ?? `Adaugă ${label}`}
         </button>
       </div>
@@ -743,8 +815,25 @@ function PersonSection({
             <div className="persoana-card-sub">{p.calitate}{p.cotaParticipare ? ` — ${p.cotaParticipare}` : ''}{p.cnp ? ` · CNP: ${p.cnp}` : ''}</div>
           </div>
           <div className="persoana-card-actions">
+            {onLink && (
+              <button
+                className="btn btn-ghost btn-xs"
+                onClick={() => onLink(i)}
+                title={linkTitle ?? 'Marchează drept aceeași persoană cu un asociat'}
+              >
+                🔗
+              </button>
+            )}
             <button className="btn btn-ghost btn-xs" onClick={() => onEdit(i)}>✏️</button>
-            <button className="btn btn-ghost btn-xs" onClick={() => onRemove(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+            <button
+              className="btn btn-ghost btn-xs"
+              onClick={() => onRemove(i)}
+              disabled={atMin}
+              title={atMin ? `Trebuie să existe cel puțin un ${label}` : undefined}
+              style={{ color: atMin ? 'var(--s300)' : 'var(--r500)' }}
+            >
+              🗑️
+            </button>
           </div>
         </div>
       ))}

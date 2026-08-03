@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CaenActivitate, Persoana, ToastItem } from '../types'
 import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
+import { findCaenDescriere } from '../data/caen'
 import CAENCombobox from './CAENCombobox'
 import Modal from './Modal'
 
@@ -48,6 +49,10 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
         sediuSocial: result.adresa || value.sediuSocial,
         nrRegistrul: result.nrRegCom || value.nrRegistrul,
         caenCod: result.caenCod || value.caenCod,
+        caenDescriere: result.caenCod ? findCaenDescriere(result.caenCod) : value.caenDescriere,
+        caenSecundare: result.caenSecundare
+          ? result.caenSecundare.map(cod => ({ cod, descriere: findCaenDescriere(cod) }))
+          : value.caenSecundare,
       })
       onToast('Date preluate de la ANAF', 'ok')
     } catch (e: unknown) {

@@ -119,10 +119,17 @@ export interface AnafResult {
   nrRegCom?: string
   telefon?: string
   caenCod?: string
+  caenSecundare?: string[]
   statutFiscal?: string
   platitorTva?: boolean
   periodaTva?: string
   tvaLaIncasare?: boolean
+  // null/undefined = necunoscut (sursă de rezervă fără acest detaliu, nu ANAF)
+  inactivAnaf?: boolean | null
+  splitTva?: boolean | null
+  eFactura?: boolean | null
+  // Strict informativ — API-ul nu oferă CNP/CI, nu se poate mapa pe Persoana
+  administratoriAnaf?: { nume: string; rol: string }[]
 }
 
 export async function fetchAnafCompany(cif: string, accessToken: string): Promise<AnafResult> {

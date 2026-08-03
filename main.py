@@ -6,8 +6,7 @@ from firebase_functions import https_fn, params
 from app import app as flask_app
 
 _openrouter_key  = params.SecretParam("OPENROUTER_API_KEY")
-_openapi_ro_key  = params.SecretParam("OPENAPI_RO_KEY")
-_listafirme_key  = params.SecretParam("LISTAFIRME_KEY")
+_demoanaf_key    = params.SecretParam("DEMOANAF_API_KEY")
 
 
 @https_fn.on_request(
@@ -16,7 +15,7 @@ _listafirme_key  = params.SecretParam("LISTAFIRME_KEY")
     timeout_sec=300,
     max_instances=10,
     concurrency=1,
-    secrets=[_openrouter_key, _openapi_ro_key, _listafirme_key],
+    secrets=[_openrouter_key, _demoanaf_key],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
     environ = dict(req.environ)

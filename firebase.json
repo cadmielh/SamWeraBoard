@@ -47,7 +47,7 @@
         "UPLOAD_FOLDER": "/tmp/uploads",
         "FRONTEND_ORIGIN": "https://samwera-board.web.app,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000"
       },
-      "secrets": ["OPENROUTER_API_KEY", "OPENAPI_RO_KEY", "LISTAFIRME_KEY"]
+      "secrets": ["OPENROUTER_API_KEY", "DEMOANAF_API_KEY"]
     }
   ]
 }

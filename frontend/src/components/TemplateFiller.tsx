@@ -301,6 +301,14 @@ export default function TemplateFiller({
                 </span>
               </div>
             ))}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onBack}
+              style={{ alignSelf: 'flex-start', marginTop: '.125rem' }}
+            >
+              ← Completează acum
+            </button>
           </div>
         )}
       </div>
@@ -386,13 +394,13 @@ export default function TemplateFiller({
             Completare template
           </span>
           <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost btn-sm" onClick={onBack}>← Înapoi</button>
             {hasScannedPersonsNoClient && !clientSaved && (
               <button className="btn btn-success btn-sm" onClick={() => setShowSaveClient(true)}>
                 💾 Salvează ca client
               </button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => setShowLibrary(true)}>📁 Șabloane</button>
-            <button className="btn btn-ghost btn-sm" onClick={onBack}>← Înapoi</button>
           </div>
         </div>
 
@@ -536,7 +544,7 @@ export default function TemplateFiller({
               </div>
 
               <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--s200)', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setPendingGenerate(null)}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setPendingGenerate(null); onBack() }}>
                   ← Întoarce-te și completează
                 </button>
                 <button className="btn btn-primary btn-sm" onClick={confirmGenerate}>
