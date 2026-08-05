@@ -622,7 +622,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
               {/* CAEN */}
               <div className="field full">
                 <label className="field-label">Activitate principală (CAEN)</label>
-                <CAENCombobox value={form.caenCod} descriere={form.caenDescriere}
+                <CAENCombobox value={form.caenCod} descriere={form.caenDescriere || findCaenDescriere(form.caenCod)}
                   onChange={(cod, desc) => { set('caenCod', cod); set('caenDescriere', desc) }} />
               </div>
 
@@ -636,7 +636,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   {form.caenSecundare.map((a, i) => (
                     <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
                       <div style={{ flex: 1 }}>
-                        <CAENCombobox value={a.cod} descriere={a.descriere}
+                        <CAENCombobox value={a.cod} descriere={a.descriere || findCaenDescriere(a.cod)}
                           onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
                       </div>
                       <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>

@@ -149,7 +149,7 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
 
       <div className="field full">
         <label className="field-label">Activitate principală (CAEN)</label>
-        <CAENCombobox value={value.caenCod} descriere={value.caenDescriere}
+        <CAENCombobox value={value.caenCod} descriere={value.caenDescriere || findCaenDescriere(value.caenCod)}
           onChange={(cod, desc) => onChange({ caenCod: cod, caenDescriere: desc })} />
       </div>
 
@@ -161,7 +161,7 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
         {value.caenSecundare.map((a, i) => (
           <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
             <div style={{ flex: 1 }}>
-              <CAENCombobox value={a.cod} descriere={a.descriere} onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
+              <CAENCombobox value={a.cod} descriere={a.descriere || findCaenDescriere(a.cod)} onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
             </div>
             <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
           </div>

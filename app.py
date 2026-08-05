@@ -16,6 +16,9 @@ from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 
 load_dotenv()
+# .env.local nu e citit de Firebase Functions la deploy (doar de emulator/dev local) —
+# aici ţinem cheile reale, ca să nu se coreleze cu SecretParam-urile omonime în producţie.
+load_dotenv(".env.local", override=True)
 
 import firebase_admin
 from firebase_admin import auth as fb_auth, credentials as fb_creds
@@ -401,11 +404,21 @@ def _query_demoanaf(cif_str: str) -> dict | None:
         return None
 
 
+def _pad_caen(cod) -> str:
+    """Codurile CAEN au mereu 4 cifre — demoanaf.ro serializează uneori codul ca număr JSON,
+    ceea ce pierde zero-ul din faţă la codurile din secţiuni ca 0610, 0620 etc."""
+    s = str(cod or "").strip()
+    return s.zfill(4) if s else ""
+
+
 def _parse_demoanaf_response(data: dict) -> dict:
     stare = f'{data.get("registrationState") or ""} {data.get("onrcStatusLabel") or ""}'.strip()
-    caen_cod = str(data.get("caenCode") or "")
+    caen_cod = _pad_caen(data.get("caenCode"))
     # authorizedCaenCodes include şi codul principal — restul sunt activităţile secundare
-    caen_secundare = [c for c in (data.get("authorizedCaenCodes") or []) if c != caen_cod]
+    caen_secundare = [
+        padded for c in (data.get("authorizedCaenCodes") or [])
+        if (padded := _pad_caen(c)) != caen_cod
+    ]
     result = _parse_company_response(
         denumire     = data.get("name") or "",
         adresa       = data.get("address") or "",
@@ -514,7 +527,7 @@ def anaf_company():
             adresa       = dg.get("adresa") or "",
             nr_reg_com   = dg.get("nrRegCom") or "",
             telefon      = dg.get("telefon") or "",
-            caen_cod     = str(dg.get("cod_CAEN") or ""),
+            caen_cod     = _pad_caen(dg.get("cod_CAEN")),
             stare        = dg.get("stare_inregistrare") or "",
             radiata      = radiata,
             platitor_tva = platitor_tva,

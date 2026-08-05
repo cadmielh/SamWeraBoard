@@ -1,5 +1,8 @@
 export function findCaenDescriere(cod: string): string {
-  return CAEN_CODES.find(c => c.cod === cod)?.descriere ?? ''
+  // Codurile CAEN au mereu 4 cifre — plasă de siguranţă pentru surse care
+  // pierd zero-ul din faţă (ex: cod trecut printr-un JSON number).
+  const padded = cod && cod.length < 4 ? cod.padStart(4, '0') : cod
+  return CAEN_CODES.find(c => c.cod === padded)?.descriere ?? ''
 }
 
 export const CAEN_CODES: { cod: string; descriere: string }[] = [

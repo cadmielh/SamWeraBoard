@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Client, Persoana } from '../types'
 import { inferTipClient } from '../types'
 import { computeScadente } from '../lib/scadente'
+import { findCaenDescriere } from '../data/caen'
 
 const REGIM_FISCAL_LABELS: Record<string, string> = {
   microintreprindere: 'Microîntreprindere',
@@ -217,13 +218,13 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
               <InfoRow
                 label="CAEN principal"
                 value={client.caenCod
-                  ? `${client.caenCod}${client.caenDescriere ? ` — ${client.caenDescriere}` : ''}`
+                  ? `${client.caenCod} — ${client.caenDescriere || findCaenDescriere(client.caenCod)}`
                   : undefined}
               />
               {client.caenSecundare && client.caenSecundare.length > 0 && (
                 <InfoRow
                   label="CAEN secundare"
-                  value={client.caenSecundare.map(c => c.cod + (c.descriere ? ` — ${c.descriere}` : '')).join('; ')}
+                  value={client.caenSecundare.map(c => `${c.cod} — ${c.descriere || findCaenDescriere(c.cod)}`).join('; ')}
                 />
               )}
             </div>
