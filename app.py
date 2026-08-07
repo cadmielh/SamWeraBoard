@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from datetime import date
 from pathlib import Path
@@ -40,12 +41,18 @@ import gdrive
 from doc_filler import fill_docx, list_placeholders_in_docx
 
 # Pre-load EasyOCR models at container startup so requests don't time out waiting
-# for model download. Cloud Run waits for startup to complete before routing traffic.
-try:
-    local_extractor._get_reader()
-    print("[startup] EasyOCR reader pre-loaded")
-except Exception as _pre_err:
-    print(f"[startup] EasyOCR pre-load failed (will retry on first request): {_pre_err}")
+# for model download. Runs in a background thread — module import must return
+# fast: the Firebase CLI's local "determine backend specification" step imports
+# this module too and fails deployment if it doesn't return within ~10s.
+def _preload_easyocr() -> None:
+    try:
+        local_extractor._get_reader()
+        print("[startup] EasyOCR reader pre-loaded")
+    except Exception as _pre_err:
+        print(f"[startup] EasyOCR pre-load failed (will retry on first request): {_pre_err}")
+
+
+threading.Thread(target=_preload_easyocr, daemon=True).start()
 
 # ── Firebase Admin init ───────────────────────────────────────────────────────
 _sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "firebase-service-account.json")

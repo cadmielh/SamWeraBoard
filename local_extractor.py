@@ -7,12 +7,14 @@ import io
 import re
 import sys
 import subprocess
+import threading
 import numpy as np
 from pathlib import Path
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import fitz  # PyMuPDF
 
 _reader = None
+_reader_lock = threading.Lock()
 
 
 # ── System packages bootstrap (cv2, easyocr live in system Python) ────────────
@@ -40,13 +42,17 @@ _add_sys_packages()
 def _get_reader():
     global _reader
     if _reader is None:
-        import easyocr
-        _reader = easyocr.Reader(
-            ["ro", "en"],
-            gpu=False,
-            verbose=False,
-            model_storage_directory="/tmp/easyocr",
-        )
+        # lock ca preload-ul din thread-ul de fundal (app.py) și o cerere reală
+        # care ajunge în același interval să nu inițializeze fiecare propriul Reader
+        with _reader_lock:
+            if _reader is None:
+                import easyocr
+                _reader = easyocr.Reader(
+                    ["ro", "en"],
+                    gpu=False,
+                    verbose=False,
+                    model_storage_directory="/tmp/easyocr",
+                )
     return _reader
 
 
