@@ -272,9 +272,47 @@ def _find_dates(text: str) -> list[str]:
     return out
 
 
+# ── MRZ check digits (ICAO 9303) ──────────────────────────────────────────────
+# Aceleași principii ca la validarea CNP-ului, dar pentru cifrele de control
+# tipărite direct în banda MRZ (independent de CNP, funcționează și pentru
+# documente unde CNP-ul nu poate fi determinat — ex. pașapoarte, în viitor).
+
+_MRZ_CHECK_WEIGHTS = [7, 3, 1]
+
+
+def _mrz_char_value(ch: str) -> int:
+    if ch.isdigit():
+        return int(ch)
+    if ch == "<":
+        return 0
+    if "A" <= ch <= "Z":
+        return ord(ch) - ord("A") + 10
+    return 0
+
+
+def _mrz_check_digit(data: str) -> int:
+    """Cifră de control ICAO 9303 (ponderi ciclice 7-3-1)."""
+    total = sum(_mrz_char_value(c) * _MRZ_CHECK_WEIGHTS[i % 3] for i, c in enumerate(data))
+    return total % 10
+
+
+def _detect_mrz_format(mrz: list[str]) -> str:
+    """TD1 (buletin, 3 linii x 30) vs TD3 (pașaport, 2 linii x 44).
+    Doar detecție de format — parsarea completă TD3 nu e implementată încă,
+    dar pregătește terenul pentru suport pașaport pe viitor."""
+    lens = [len(l) for l in mrz]
+    if len(mrz) >= 3 and sum(1 for l in lens if 28 <= l <= 31) >= 3:
+        return "TD1"
+    if len(mrz) >= 2 and sum(1 for l in lens if 42 <= l <= 45) >= 2:
+        return "TD3"
+    return "unknown"
+
+
 # ── MRZ parsing ───────────────────────────────────────────────────────────────
 
-def _parse_mrz(lines: list[list]) -> dict[str, str]:
+def _parse_mrz(lines: list[list]) -> tuple[dict[str, str], bool]:
+    """Returnează (câmpuri, mrz_checks_ok) — al doilea element e True doar dacă
+    toate cifrele de control MRZ găsite (document, dată naștere, expirare) au validat."""
     out: dict[str, str] = {}
     mrz = []
     # Collect MRZ-like lines (all caps + digits + '<', no spaces, long enough)
@@ -285,7 +323,11 @@ def _parse_mrz(lines: list[list]) -> dict[str, str]:
             mrz.append(cleaned)
 
     if not mrz:
-        return out
+        return out, False
+
+    mrz_format = _detect_mrz_format(mrz)
+    checks_attempted = 0
+    checks_passed = 0
 
     # Name line: contains '<<' separator (normalize spaced variants like "< <")
     name_line = next((l for l in mrz if "<<" in l or re.search(r"<\s+<", l)), None)
@@ -298,16 +340,38 @@ def _parse_mrz(lines: list[list]) -> dict[str, str]:
         if len(parts) > 1 and parts[1]:
             out["prenume"] = parts[1].split("<")[0].replace("<", " ").strip()
 
+    if mrz_format == "TD1":
+        # Line 1: ID + țară emitentă (3) + serie/număr document (9) + cifră control
+        doc_line = next((l for l in mrz if re.match(r"^ID[A-Z]{3}", l)), None)
+        if doc_line and len(doc_line) >= 15:
+            doc_number, doc_check = doc_line[5:14], doc_line[14]
+            if doc_check.isdigit():
+                checks_attempted += 1
+                if _mrz_check_digit(doc_number) == int(doc_check):
+                    checks_passed += 1
+                    number = doc_number.rstrip("<")
+                    if len(number) >= 2 and not out.get("serie_numar"):
+                        out["serie_numar"] = f"{number[:2]} {number[2:]}".strip()
+
     # Date + sex line: YYMMDD[check][MF]YYMMDD[check]...
     # CNP (13 digits) appears at the start of this line on Romanian IDs
     for l in mrz:
-        m = re.search(r"(\d{6})\d([MF])(\d{6})", l)
+        m = re.search(r"(\d{6})(\d)([MF])(\d{6})(\d)?", l)
         if m:
-            bd, ed = m.group(1), m.group(3)
+            bd, bd_check, ed, ed_check = m.group(1), m.group(2), m.group(4), m.group(5)
             by, bmo, bdd = bd[:2], bd[2:4], bd[4:6]
             ey, emo, edd = ed[:2], ed[2:4], ed[4:6]
             birth_year = f"19{by}" if int(by) > 24 else f"20{by}"
             exp_year = f"20{ey}"
+
+            checks_attempted += 1
+            if _mrz_check_digit(bd) == int(bd_check):
+                checks_passed += 1
+            if ed_check is not None:
+                checks_attempted += 1
+                if _mrz_check_digit(ed) == int(ed_check):
+                    checks_passed += 1
+
             try:
                 import datetime
                 datetime.date(int(birth_year), int(bmo), int(bdd))
@@ -324,10 +388,11 @@ def _parse_mrz(lines: list[list]) -> dict[str, str]:
                     break
             break
 
-    return out
+    checks_ok = checks_attempted > 0 and checks_passed == checks_attempted
+    return out, checks_ok
 
 
-def _ocr_mrz_strip(image: Image.Image) -> dict[str, str]:
+def _ocr_mrz_strip(image: Image.Image) -> tuple[dict[str, str], bool]:
     """Run a dedicated OCR pass on the bottom 30% of the image for MRZ.
     Uses MRZ character allowlist — no confidence filter since OCR-B is clean."""
     w, h = image.size
@@ -408,16 +473,26 @@ def _label_scan(lines: list[list]) -> dict[str, str]:
 
 _NAME_RE = re.compile(r"[^A-ZĂÂÎȘȚ\s\-]", re.IGNORECASE)
 
-# Known Romanian counties for județul validation
-_JUDETE = {
-    "ALBA", "ARAD", "ARGES", "BACAU", "BIHOR", "BISTRITA-NASAUD", "BOTOSANI",
-    "BRAILA", "BRASOV", "BUCURESTI", "BUZAU", "CALARASI", "CARAS-SEVERIN",
-    "CLUJ", "CONSTANTA", "COVASNA", "DAMBOVITA", "DOLJ", "GALATI", "GIURGIU",
-    "GORJ", "HARGHITA", "HUNEDOARA", "IALOMITA", "IASI", "ILFOV", "MARAMURES",
-    "MEHEDINTI", "MURES", "NEAMT", "OLT", "PRAHOVA", "SALAJ", "SATU MARE",
-    "SIBIU", "SUCEAVA", "TELEORMAN", "TIMIS", "TULCEA", "VALCEA", "VASLUI",
-    "VRANCEA",
+# Known Romanian counties pentru validarea județului — chei normalizate (majuscule,
+# fără diacritice) pentru potrivire tolerantă cu textul OCR zgomotos; valorile sunt
+# forma de afișat (identică cu frontend/src/lib/counties.ts JUDETE_ROMANIA și cu
+# azure_extractor._JUDET_COD_MAP, ca toate sursele de extragere să afișeze la fel).
+_JUDETE_DISPLAY: dict[str, str] = {
+    "ALBA": "Alba", "ARAD": "Arad", "ARGES": "Argeș", "BACAU": "Bacău",
+    "BIHOR": "Bihor", "BISTRITA-NASAUD": "Bistrița-Năsăud", "BOTOSANI": "Botoșani",
+    "BRAILA": "Brăila", "BRASOV": "Brașov", "BUCURESTI": "București",
+    "BUZAU": "Buzău", "CALARASI": "Călărași", "CARAS-SEVERIN": "Caraș-Severin",
+    "CLUJ": "Cluj", "CONSTANTA": "Constanța", "COVASNA": "Covasna",
+    "DAMBOVITA": "Dâmbovița", "DOLJ": "Dolj", "GALATI": "Galați",
+    "GIURGIU": "Giurgiu", "GORJ": "Gorj", "HARGHITA": "Harghita",
+    "HUNEDOARA": "Hunedoara", "IALOMITA": "Ialomița", "IASI": "Iași",
+    "ILFOV": "Ilfov", "MARAMURES": "Maramureș", "MEHEDINTI": "Mehedinți",
+    "MURES": "Mureș", "NEAMT": "Neamț", "OLT": "Olt", "PRAHOVA": "Prahova",
+    "SALAJ": "Sălaj", "SATU MARE": "Satu Mare", "SIBIU": "Sibiu",
+    "SUCEAVA": "Suceava", "TELEORMAN": "Teleorman", "TIMIS": "Timiș",
+    "TULCEA": "Tulcea", "VALCEA": "Vâlcea", "VASLUI": "Vaslui", "VRANCEA": "Vrancea",
 }
+_JUDETE = set(_JUDETE_DISPLAY.keys())
 
 
 # Substrings that indicate OCR noise / document metadata, never real field values
@@ -436,14 +511,14 @@ def _clean_name(text: str) -> str:
 
 
 def _clean_judet(text: str) -> str:
-    """Return text only if it matches a known Romanian county."""
+    """Return the display form (cu diacritice) if text matches a known Romanian county."""
     normalized = re.sub(r"[^A-Z\s\-]", "", text.upper()).strip()
     if normalized in _JUDETE:
-        return normalized
+        return _JUDETE_DISPLAY[normalized]
     # Partial match
     for j in _JUDETE:
         if j in normalized or normalized in j:
-            return j
+            return _JUDETE_DISPLAY[j]
     return text  # keep as-is if no match
 
 
@@ -453,7 +528,7 @@ QUALITY_THRESHOLD = 0.50
 _MAX_RETRIES = 2
 
 
-def _quality_score(fields: dict) -> float:
+def _quality_score(fields: dict, mrz_valid: bool = False) -> float:
     score = 0.0
     if fields.get("cnp") and _validate_cnp(fields["cnp"]):
         score += 0.40
@@ -467,12 +542,14 @@ def _quality_score(fields: dict) -> float:
         score += 0.10
     others = ["adresa", "locul_nasterii", "emisa_de", "valabila_de_la", "valabila_pana_la"]
     score += min(0.15, sum(0.04 for k in others if fields.get(k)))
-    return round(score, 2)
+    if mrz_valid:
+        score += 0.10  # cifrele de control MRZ (ICAO 9303) au validat — semnal suplimentar
+    return round(min(score, 1.0), 2)
 
 
 # ── Core OCR pipeline ─────────────────────────────────────────────────────────
 
-def _run_ocr(image: Image.Image) -> dict:
+def _run_ocr(image: Image.Image) -> tuple[dict, bool]:
     reader = _get_reader()
     results = reader.readtext(np.array(image))
     lines = _group_lines(results, tol=14)
@@ -485,16 +562,18 @@ def _run_ocr(image: Image.Image) -> dict:
     ]}
 
     # MRZ dedicated strip (most reliable)
-    mrz = _ocr_mrz_strip(image)
+    mrz, mrz_valid = _ocr_mrz_strip(image)
     for k, v in mrz.items():
         if v:
             fields[k] = v
 
     # MRZ from full-image OCR (fallback / supplement)
-    mrz2 = _parse_mrz(lines)
+    mrz2, mrz2_valid = _parse_mrz(lines)
     for k, v in mrz2.items():
         if v and not fields[k]:
             fields[k] = v
+
+    mrz_checks_ok = mrz_valid or mrz2_valid
 
     # CNP with check-digit validation
     fields["cnp"] = _find_cnp(full_text)
@@ -506,8 +585,11 @@ def _run_ocr(image: Image.Image) -> dict:
         if dob:
             fields["data_nasterii"] = dob  # overwrites any MRZ or visual OCR result
 
-    # Serie/număr
-    fields["serie_numar"] = _find_serie_numar(full_text)
+    # Serie/număr — OCR-ul vizual are prioritate; păstrăm valoarea din MRZ
+    # (linia 1, validată prin cifra de control) doar dacă zona vizuală n-a găsit nimic.
+    visual_serie_numar = _find_serie_numar(full_text)
+    if visual_serie_numar:
+        fields["serie_numar"] = visual_serie_numar
 
     # Dates from visual zone
     dates = _find_dates(full_text)
@@ -533,7 +615,7 @@ def _run_ocr(image: Image.Image) -> dict:
     if fields.get("judet"):
         fields["judet"] = _clean_judet(fields["judet"])
 
-    return fields
+    return fields, mrz_checks_ok
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -545,7 +627,8 @@ def extract_local(file_bytes: bytes, filename: str) -> tuple[dict, float]:
     Attempt 1: Adaptive threshold.
     Attempt 2: Sharpen + upscale 1.5×.
     Always returns (best_fields, best_score) — never raises on low quality.
-    Caller decides whether to try AI based on the score.
+    Azure e sursa principală (vezi app.py /extract) — acest OCR local rulează
+    doar ca fallback, când Azure eșuează sau dă un scor sub QUALITY_THRESHOLD.
     """
     image = _load_image(file_bytes, filename)
 
@@ -559,9 +642,10 @@ def extract_local(file_bytes: bytes, filename: str) -> tuple[dict, float]:
 
     for attempt, preprocess in enumerate(preprocessors):
         img = preprocess(image)
-        fields = _run_ocr(img)
-        score = _quality_score(fields)
-        print(f"[ocr] attempt={attempt} score={score:.2f} cnp={mask_cnp(fields.get('cnp',''))}")
+        fields, mrz_checks_ok = _run_ocr(img)
+        score = _quality_score(fields, mrz_valid=mrz_checks_ok)
+        print(f"[ocr] attempt={attempt} score={score:.2f} mrz_ok={mrz_checks_ok} "
+              f"cnp={mask_cnp(fields.get('cnp',''))}")
 
         if score > best_score:
             best_score = score

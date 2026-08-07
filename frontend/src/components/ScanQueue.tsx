@@ -177,15 +177,6 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
             {st.icon} {st.label}
           </span>
           <div style={{ display: 'flex', gap: '.125rem', flexShrink: 0 }}>
-            {p.role === 'administrator' && asociati.length > 0 && (
-              <button
-                onClick={() => handleLinkAdministrator(p.id)}
-                style={BTN_ICON}
-                title="Marchează drept aceeași persoană cu un asociat"
-              >
-                🔗
-              </button>
-            )}
             <button onClick={() => moveUp(globalIdx)} style={BTN_ICON} title="Sus" disabled={globalIdx === 0}>↑</button>
             <button onClick={() => moveDown(globalIdx)} style={BTN_ICON} title="Jos" disabled={globalIdx === persons.length - 1}>↓</button>
             <button
@@ -236,6 +227,17 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
             </button>
           )}
         </div>
+
+        {p.role === 'administrator' && asociati.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-outline-primary btn-sm"
+            onClick={() => handleLinkAdministrator(p.id)}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            🔗 Aceeași persoană cu un asociat
+          </button>
+        )}
       </div>
     )
   }

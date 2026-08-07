@@ -63,7 +63,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
           <MiniOCR onExtracted={handleExtracted} />
 
           <div className="form-grid">
-            <div className="field">
+            <div className="field full">
               <label className="field-label">Calitate</label>
               <select
                 className="field-input"
@@ -74,13 +74,13 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               </select>
             </div>
             {showCota && (
-              <div className="field">
+              <div className="field full">
                 <label className="field-label">Cotă participare</label>
                 <input className="field-input" placeholder="ex: 50%" value={p.cotaParticipare} onChange={e => set('cotaParticipare', e.target.value)} />
               </div>
             )}
 
-            <div className="field full">
+            <div className="field">
               <label className="field-label">CNP</label>
               <input
                 className="field-input"
@@ -93,6 +93,10 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               />
               {cnpError && <span className="field-error">{cnpError}</span>}
             </div>
+            <div className="field">
+              <label className="field-label">Serie / Număr buletin</label>
+              <input className="field-input" placeholder="ex: MX 123456" value={p.serie_numar} onChange={e => set('serie_numar', e.target.value)} />
+            </div>
 
             <div className="field">
               <label className="field-label">Nume</label>
@@ -101,11 +105,6 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
             <div className="field">
               <label className="field-label">Prenume</label>
               <input className="field-input" value={p.prenume} onChange={e => set('prenume', e.target.value)} />
-            </div>
-
-            <div className="field full">
-              <label className="field-label">Serie / Număr buletin</label>
-              <input className="field-input" placeholder="ex: MX 123456" value={p.serie_numar} onChange={e => set('serie_numar', e.target.value)} />
             </div>
 
             <div className="field">
@@ -121,23 +120,18 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               <input className="field-input" value={p.locul_nasterii} onChange={e => set('locul_nasterii', e.target.value)} />
             </div>
 
-            <div className="field full">
+            <div className="field">
               <label className="field-label">Cetățenia</label>
               <Combobox value={p.cetatenia} options={CETATENII} onChange={val => set('cetatenia', val)} placeholder="Cetățenia" />
+            </div>
+            <div className="field">
+              <label className="field-label">Județul</label>
+              <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județul" />
             </div>
 
             <div className="field full">
               <label className="field-label">Adresa</label>
               <input className="field-input" value={p.adresa} onChange={e => set('adresa', e.target.value)} />
-            </div>
-
-            <div className="field">
-              <label className="field-label">Județul</label>
-              <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județul" />
-            </div>
-            <div className="field">
-              <label className="field-label">Emis de</label>
-              <input className="field-input" value={p.emisa_de} onChange={e => set('emisa_de', e.target.value)} />
             </div>
 
             <div className="field">
@@ -155,6 +149,11 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
                 value={roDateToISO(p.valabila_pana_la)}
                 onChange={e => set('valabila_pana_la', isoDateToRo(e.target.value))}
               />
+            </div>
+
+            <div className="field">
+              <label className="field-label">Emis de</label>
+              <input className="field-input" value={p.emisa_de} onChange={e => set('emisa_de', e.target.value)} />
             </div>
           </div>
         </div>

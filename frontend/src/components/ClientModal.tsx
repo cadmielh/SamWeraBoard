@@ -6,6 +6,7 @@ import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import { useApp } from '../AppLayout'
+import { formatDateRo } from '../lib/dates'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
 import Modal from './Modal'
@@ -510,7 +511,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   onEdit={i => setPersonaModal({ type: 'administratori', index: i })}
                   onRemove={i => removePersoana('administratori', i)}
                   onLink={form.asociati.length > 0 ? handleLinkAdministrator : undefined}
-                  linkTitle="Marchează drept aceeași persoană cu un asociat" />
+                  linkTitle="Aceeași persoană cu un asociat" />
               )}
 
               {!hasMinPeople && (
@@ -524,7 +525,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
           {/* ANAF strip (doar dacă avem date ANAF) */}
           {form.dataAnafActualizat && (
             <div className="anaf-strip" style={{ marginBottom: '1rem' }}>
-              ✓ <b>Date ANAF</b> — actualizat la {new Date(form.dataAnafActualizat).toLocaleDateString('ro-RO')}
+              ✓ <b>Date ANAF</b> — actualizat la {formatDateRo(new Date(form.dataAnafActualizat))}
               {form.statutFiscal && <span className={`badge badge-${form.statutFiscal}`}>{form.statutFiscal}</span>}
               {form.platitorTva && <span className="badge badge-tva">TVA {form.periodaTva}</span>}
               {form.platitorTva && form.tvaLaIncasare && <span className="badge badge-tva">TVA la încasare</span>}
@@ -626,24 +627,22 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   onChange={(cod, desc) => { set('caenCod', cod); set('caenDescriere', desc) }} />
               </div>
 
-              {/* CAEN secundare — doar PJ, opțional, nelimitat */}
-              {!isPF && (
-                <div className="field full">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
-                    <label className="field-label" style={{ margin: 0 }}>Activități secundare (CAEN)</label>
-                    <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
-                  </div>
-                  {form.caenSecundare.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
-                      <div style={{ flex: 1 }}>
-                        <CAENCombobox value={a.cod} descriere={a.descriere || findCaenDescriere(a.cod)}
-                          onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
-                      </div>
-                      <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
-                    </div>
-                  ))}
+              {/* CAEN secundare — opțional, nelimitat (PJ și PF/PFA-II-IF au coduri CAEN) */}
+              <div className="field full">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
+                  <label className="field-label" style={{ margin: 0 }}>Activități secundare (CAEN)</label>
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
                 </div>
-              )}
+                {form.caenSecundare.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
+                    <div style={{ flex: 1 }}>
+                      <CAENCombobox value={a.cod} descriere={a.descriere || findCaenDescriere(a.cod)}
+                        onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
+                    </div>
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+                  </div>
+                ))}
+              </div>
 
               {/* Sediu */}
               <div className="field full">
@@ -791,8 +790,9 @@ function PersonSection({
   addLabel?: string
   /** Sub acest număr, ștergerea ultimei persoane rămase este blocată. */
   minCount?: number
-  /** Când e prezent, afișează pe fiecare rând un buton pentru a lega persoana de un asociat existent. */
+  /** Când e prezent, afișează pe un rând separat un buton pentru a lega persoana de un asociat existent. */
   onLink?: (i: number) => void
+  /** Textul butonului de legare (nu doar tooltip — e vizibil pe rândul dedicat). */
   linkTitle?: string
 }) {
   const label = addLabel ?? (title === 'Asociați' ? 'asociat' : title === 'Administratori' ? 'administrator' : 'persoană')
@@ -809,32 +809,39 @@ function PersonSection({
         <p style={{ fontSize: '.8125rem', color: 'var(--s400)', margin: 0 }}>Nicio {label} adăugat{label.endsWith('a') ? '' : 'ă'}.</p>
       )}
       {persons.map((p, i) => (
-        <div key={i} className="persoana-card" style={{ marginBottom: '.375rem' }}>
-          <div>
-            <div className="persoana-card-name">{p.prenume} {p.nume}</div>
-            <div className="persoana-card-sub">{p.calitate}{p.cotaParticipare ? ` — ${p.cotaParticipare}` : ''}{p.cnp ? ` · CNP: ${p.cnp}` : ''}</div>
-          </div>
-          <div className="persoana-card-actions">
-            {onLink && (
+        <div
+          key={i}
+          className="persoana-card"
+          style={{ marginBottom: '.375rem', ...(onLink ? { flexDirection: 'column', alignItems: 'stretch' } : {}) }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.5rem' }}>
+            <div>
+              <div className="persoana-card-name">{p.prenume} {p.nume}</div>
+              <div className="persoana-card-sub">{p.calitate}{p.cotaParticipare ? ` — ${p.cotaParticipare}` : ''}{p.cnp ? ` · CNP: ${p.cnp}` : ''}</div>
+            </div>
+            <div className="persoana-card-actions">
+              <button className="btn btn-ghost btn-xs" onClick={() => onEdit(i)}>✏️</button>
               <button
                 className="btn btn-ghost btn-xs"
-                onClick={() => onLink(i)}
-                title={linkTitle ?? 'Marchează drept aceeași persoană cu un asociat'}
+                onClick={() => onRemove(i)}
+                disabled={atMin}
+                title={atMin ? `Trebuie să existe cel puțin un ${label}` : undefined}
+                style={{ color: atMin ? 'var(--s300)' : 'var(--r500)' }}
               >
-                🔗
+                🗑️
               </button>
-            )}
-            <button className="btn btn-ghost btn-xs" onClick={() => onEdit(i)}>✏️</button>
-            <button
-              className="btn btn-ghost btn-xs"
-              onClick={() => onRemove(i)}
-              disabled={atMin}
-              title={atMin ? `Trebuie să existe cel puțin un ${label}` : undefined}
-              style={{ color: atMin ? 'var(--s300)' : 'var(--r500)' }}
-            >
-              🗑️
-            </button>
+            </div>
           </div>
+          {onLink && (
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-xs"
+              onClick={() => onLink(i)}
+              style={{ alignSelf: 'flex-start', marginTop: '.5rem' }}
+            >
+              🔗 {linkTitle ?? 'Aceeași persoană cu un asociat'}
+            </button>
+          )}
         </div>
       ))}
     </div>

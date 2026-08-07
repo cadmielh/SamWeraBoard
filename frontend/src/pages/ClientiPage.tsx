@@ -40,7 +40,7 @@ const COLUMNS: ColDef[] = [
 const EXTRA_COL_KEYS = new Set(['email', 'nrRegistrul', 'telefon', 'sediuSocial', 'notite', 'admin'])
 
 const ROW_H = 48
-const ACTION_W = 130
+const ACTION_W = 90
 const HEADER_H = 36
 const EMPTY_PLACEHOLDER = '(Necompletat)'
 
@@ -701,12 +701,14 @@ function ClientTable({
     if (!filterDropdown.open) setOpenFilterKey(null)
   }, [filterDropdown.open])
 
-  /* Observe container height */
+  /* Observe container size */
+  const [width, setWidth] = useState(800)
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const obs = new ResizeObserver(entries => {
       setHeight(entries[0]?.contentRect.height ?? 500)
+      setWidth(entries[0]?.contentRect.width ?? 800)
     })
     obs.observe(el)
     return () => obs.disconnect()
@@ -729,6 +731,20 @@ function ClientTable({
     () => orderedVisibleColumns.reduce((s, c) => s + getW(c.key), 0),
     [orderedVisibleColumns, getW]
   )
+
+  // Când coloanele vizibile nu umplu lățimea disponibilă (ex. puține coloane
+  // afișate), le întindem proporțional ca tabelul să nu arate gol de la
+  // jumătate încolo — fără să atingem lățimile salvate de utilizator.
+  const availableDataW = Math.max(0, width - ACTION_W)
+  const stretchScale = totalDataW > 0 && totalDataW < availableDataW
+    ? availableDataW / totalDataW
+    : 1
+
+  const getDisplayW = useCallback(
+    (key: string): number => getW(key) * stretchScale,
+    [getW, stretchScale]
+  )
+  const totalDisplayW = totalDataW * stretchScale
 
   /* Resize handler */
   const startResize = useCallback((e: React.MouseEvent, colKey: string) => {
@@ -831,14 +847,14 @@ function ClientTable({
     return (
       <div
         className="vrow"
-        style={{ ...style, width: totalDataW, display: 'flex', alignItems: 'center' }}
+        style={{ ...style, width: totalDisplayW, display: 'flex', alignItems: 'center' }}
         onClick={() => onView(c)}
       >
         {orderedVisibleColumns.map(col => (
           <div
             key={col.key}
             className={`td${col.key === 'denumire' ? ' td-bold' : col.key === 'tva' || col.key === 'statutFiscal' || col.key === 'asoc' ? '' : ' td-muted'}`}
-            style={{ width: getW(col.key), flexShrink: 0 }}
+            style={{ width: getDisplayW(col.key), flexShrink: 0 }}
             title={col.key === 'caenCod' ? c.caenDescriere : undefined}
           >
             {renderCellContent(c, col.key)}
@@ -846,20 +862,19 @@ function ClientTable({
         ))}
       </div>
     )
-  }, [clients, orderedVisibleColumns, totalDataW, getW, onView])
+  }, [clients, orderedVisibleColumns, totalDisplayW, getDisplayW, onView])
 
   const ActionRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
     const c = clients[index]
     return (
       <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '.25rem', padding: '0 .5rem', borderBottom: '1px solid var(--s100)' }}>
-        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onView(c) }} title="Vizualizare">👁</button>
         <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onEdit(c) }} title="Editare">✏️</button>
         <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onDelete(c) }} title="Șterge" style={{ color: 'var(--r500)' }}>🗑️</button>
       </div>
     )
-  }, [clients, onView, onEdit, onDelete])
+  }, [clients, onEdit, onDelete])
 
-  const minW = Math.max(totalDataW, 400)
+  const minW = Math.max(totalDisplayW, 400)
 
   return (
     <div ref={containerRef} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
@@ -884,7 +899,7 @@ function ClientTable({
                 key={col.key}
                 className={thClass}
                 data-colkey={col.key}
-                style={{ width: getW(col.key) }}
+                style={{ width: getDisplayW(col.key) }}
                 onClick={() => col.sortable && !resizingRef.current && onColSort(col.key)}
                 draggable={!isFixed}
                 onDragStart={!isFixed ? e => handleColDragStart(e, col.key) : undefined}

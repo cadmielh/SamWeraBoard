@@ -419,7 +419,6 @@ export default function GenerareDocumentePage() {
               <FieldsForm
                 fields={fields}
                 sourceFile={sourceFile}
-                initialEditing={sourceFile === 'manual'}
                 onFieldsChange={setFields}
                 onNext={() => setStep(3)}
                 onBack={handleStepBack}

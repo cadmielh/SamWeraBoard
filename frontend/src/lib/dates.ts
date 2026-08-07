@@ -17,3 +17,10 @@ export function isoDateToRo(s: string): string {
   const [, y, mo, d] = m
   return `${d}.${mo}.${y}`
 }
+
+/** Formatează un obiect Date ca DD.MM.YYYY (nu ne bazăm pe toLocaleDateString('ro-RO'),
+ * ca formatul să fie identic peste tot în aplicație, indiferent de locale-ul browserului). */
+export function formatDateRo(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`
+}

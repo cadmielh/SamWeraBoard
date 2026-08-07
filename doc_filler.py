@@ -8,21 +8,51 @@ from docx.text.paragraph import Paragraph
 
 
 def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
-    """Replace placeholders in a paragraph, handling runs that split a placeholder."""
-    # Rebuild full paragraph text from runs
-    full_text = "".join(run.text for run in paragraph.runs)
-    new_text = full_text
-    for placeholder, value in replacements.items():
-        new_text = new_text.replace(placeholder, value)
+    """Replace placeholders in a paragraph, preserving each run's own formatting
+    (bold/italic/etc.) — a placeholder typed in bold in the template comes out
+    bold in the generated document, while surrounding plain text stays plain.
 
-    if new_text == full_text:
-        return  # Nothing changed
+    Placeholders fully contained in one run are replaced in place (the common
+    case). As a fallback, placeholders that Word split across multiple runs are
+    resolved by merging just those runs, so unrelated text elsewhere in the
+    paragraph is left untouched.
+    """
+    runs = paragraph.runs
+    if not runs:
+        return
 
-    # Put the whole replaced text into the first run, clear the rest
-    if paragraph.runs:
-        paragraph.runs[0].text = new_text
-        for run in paragraph.runs[1:]:
-            run.text = ""
+    for run in runs:
+        for placeholder, value in replacements.items():
+            if placeholder in run.text:
+                run.text = run.text.replace(placeholder, value)
+
+    full_text = "".join(run.text for run in runs)
+    if not any(placeholder in full_text for placeholder in replacements):
+        return
+
+    run_bounds = []
+    pos = 0
+    for run in runs:
+        run_bounds.append((pos, pos + len(run.text)))
+        pos += len(run.text)
+
+    pattern = re.compile("|".join(re.escape(k) for k in sorted(replacements, key=len, reverse=True)))
+    for m in reversed(list(pattern.finditer(full_text))):
+        start, end = m.start(), m.end()
+        value = replacements[m.group(0)]
+        idxs = [i for i, (rs, re_) in enumerate(run_bounds) if rs < end and re_ > start]
+        if not idxs:
+            continue
+        first_i, last_i = idxs[0], idxs[-1]
+        rs = run_bounds[first_i][0]
+        ls = run_bounds[last_i][0]
+        prefix = runs[first_i].text[:start - rs]
+        suffix = runs[last_i].text[end - ls:]
+        runs[first_i].text = prefix + value + (suffix if first_i == last_i else "")
+        if first_i != last_i:
+            runs[last_i].text = suffix
+            for mid_i in idxs[1:-1]:
+                runs[mid_i].text = ""
 
 
 def _para_text(paragraph) -> str:

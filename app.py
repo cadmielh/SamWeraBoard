@@ -2,9 +2,18 @@ import io
 import json
 import os
 import re
+import sys
 import time
 from datetime import date
 from pathlib import Path
+
+# Consola Windows (cp1252) crapă la print() cu diacritice (ex. "ț", "ă") — apare
+# frecvent la loguri de diagnostic cu text real de pe CI. Pe Linux (Cloud Run/
+# Firebase Functions, stdout implicit UTF-8) asta e un no-op. errors="replace"
+# înlocuiește caracterul neafișabil în loc să arunce excepție și să piardă răspunsul.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="replace")
 
 import requests as http_requests
 
@@ -26,7 +35,7 @@ from firebase_admin import auth as fb_auth, credentials as fb_creds
 
 
 import local_extractor
-import extractor
+import azure_extractor
 import gdrive
 from doc_filler import fill_docx, list_placeholders_in_docx
 
@@ -113,7 +122,22 @@ def extract():
               "locul_nasterii":"","cetatenia":"","adresa":"","judet":"","emisa_de":"",
               "valabila_de_la":"","valabila_pana_la":""}
 
-    # ── Local OCR ────────────────────────────────────────────────────────────
+    # ── Azure — sursă principală ───────────────────────────────────────────────
+    ai_fields: dict = {}
+    ai_score = 0.0
+    try:
+        id_data = azure_extractor.extract_from_bytes(file_bytes, filename)
+        ai_fields = _postprocess(id_data.model_dump())
+        ai_score = local_extractor._quality_score(ai_fields)
+        print(f"[extract] azure score={ai_score:.2f} cnp={local_extractor.mask_cnp(ai_fields.get('cnp', ''))}")
+    except Exception as ai_err:
+        print(f"[extract] Azure extraction failed: {ai_err}")
+
+    if ai_score >= local_extractor.QUALITY_THRESHOLD:
+        return jsonify({**(_empty | ai_fields), "uid": uid})
+
+    # ── OCR local — doar dacă Azure n-a dat suficient (eșec sau scor mic) ──────
+    print(f"[extract] azure score {ai_score:.2f} < {local_extractor.QUALITY_THRESHOLD} — local OCR fallback")
     local_fields: dict = {}
     local_score = 0.0
     try:
@@ -123,28 +147,15 @@ def extract():
     except Exception as local_err:
         print(f"[extract] Local OCR failed: {local_err}")
 
-    if local_score >= local_extractor.QUALITY_THRESHOLD:
-        return jsonify({**local_fields, "uid": uid})
-
-    # ── AI fallback — când scorul local e insuficient ─────────────────────────
-    print(f"[extract] local score {local_score:.2f} < {local_extractor.QUALITY_THRESHOLD} — AI fallback")
-    try:
-        id_data = extractor.extract_from_bytes(file_bytes, filename)
-        ai_fields = _postprocess(id_data.model_dump())
-        ai_score  = local_extractor._quality_score(ai_fields)
-        print(f"[extract] ai score={ai_score:.2f}")
-        best = ai_fields if ai_score > local_score else local_fields
-        # CNP validat local e mai sigur decât cel al AI (verificare cu cifra de control)
-        local_cnp = local_fields.get("cnp", "")
-        if local_cnp and local_extractor._validate_cnp(local_cnp):
-            best["cnp"] = local_cnp
-            dob = local_extractor._cnp_to_dob(local_cnp)
-            if dob:
-                best["data_nasterii"] = dob
-        return jsonify({**best, "uid": uid})
-    except Exception as ai_err:
-        print(f"[extract] AI fallback failed: {ai_err}")
-        return jsonify({**(_empty | local_fields), "uid": uid})
+    best = local_fields if local_score > ai_score else ai_fields
+    # CNP validat local e mai sigur decât cel din Azure (verificare cu cifra de control)
+    local_cnp = local_fields.get("cnp", "")
+    if local_cnp and local_extractor._validate_cnp(local_cnp):
+        best["cnp"] = local_cnp
+        dob = local_extractor._cnp_to_dob(local_cnp)
+        if dob:
+            best["data_nasterii"] = dob
+    return jsonify({**(_empty | best), "uid": uid})
 
 
 @app.route("/extract/drive", methods=["POST"])
@@ -164,7 +175,7 @@ def extract_from_drive():
 
     try:
         file_bytes, filename, _ = gdrive.download_file(access_token, file_id)
-        id_data = extractor.extract_from_bytes(file_bytes, filename)
+        id_data = azure_extractor.extract_from_bytes(file_bytes, filename)
     except Exception as e:
         return jsonify({"error": f"Extraction failed: {e}"}), 500
 
@@ -543,7 +554,7 @@ def anaf_company():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "ocr_mode": "local+openrouter"})
+    return jsonify({"status": "ok", "ocr_mode": "azure+local"})
 
 
 if __name__ == "__main__":

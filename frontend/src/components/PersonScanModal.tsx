@@ -23,20 +23,25 @@ interface Props {
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf'
 
+// Ordinea controlează layout-ul pe 2 coloane din grila .form-grid: elementele
+// consecutive cad pe aceeași linie (CNP+Serie, Nume+Prenume ș.a.m.d.).
 const FIELD_LABELS: Record<keyof IDFields, string> = {
   cnp: 'CNP',
+  serie_numar: 'Serie & Nr. CI',
   nume: 'Nume',
   prenume: 'Prenume',
-  serie_numar: 'Serie & Nr. CI',
   data_nasterii: 'Data nașterii',
   locul_nasterii: 'Locul nașterii',
   cetatenia: 'Cetățenia',
-  adresa: 'Adresa',
   judet: 'Județ',
-  emisa_de: 'Emisă de',
+  adresa: 'Adresa',
   valabila_de_la: 'Valabilă de la',
   valabila_pana_la: 'Valabilă până la',
+  emisa_de: 'Emisă de',
 }
+
+// Adresa are nevoie de mai mult spațiu — ocupă tot rândul (ambele coloane).
+const FULL_WIDTH_FIELDS = new Set<keyof IDFields>(['adresa'])
 
 type Phase = 'upload' | 'review'
 
@@ -144,10 +149,10 @@ export default function PersonScanModal({ personLabel, accessToken, initialField
 
           {phase === 'review' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '.625rem' }}>
+              <div className="form-grid">
                 {(Object.keys(FIELD_LABELS) as (keyof IDFields)[]).map(key => (
-                  <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '.2rem' }}>
-                    <label style={{ fontSize: '.67rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.05em', textTransform: 'uppercase' }}>
+                  <div key={key} className={FULL_WIDTH_FIELDS.has(key) ? 'field full' : 'field'}>
+                    <label className="field-label">
                       {FIELD_LABELS[key]}
                       {key === 'cnp' && fields.cnp && (
                         <span style={{ marginLeft: '.3rem', fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: cnpValid ? 'var(--g600)' : 'var(--r500)' }}>
@@ -161,15 +166,11 @@ export default function PersonScanModal({ personLabel, accessToken, initialField
                       <Combobox value={fields.cetatenia} options={CETATENII} onChange={val => handleFieldChange('cetatenia', val)} placeholder="Cetățenia" />
                     ) : (
                       <input
+                        className="field-input"
                         type={DATE_KEYS.has(key) ? 'date' : 'text'}
                         value={DATE_KEYS.has(key) ? roDateToISO(fields[key]) : fields[key]}
                         onChange={e => handleFieldChange(key, DATE_KEYS.has(key) ? isoDateToRo(e.target.value) : e.target.value)}
-                        style={{
-                          padding: '.3rem .5rem', borderRadius: 'var(--r-sm)',
-                          border: `1.5px solid ${key === 'cnp' && fields.cnp && !cnpValid ? 'var(--r500)' : 'var(--s300)'}`,
-                          fontSize: '.85rem', color: 'var(--s800)', background: '#fff',
-                          fontFamily: 'var(--font)', outline: 'none', width: '100%',
-                        }}
+                        aria-invalid={key === 'cnp' && !!fields.cnp && !cnpValid}
                       />
                     )}
                   </div>

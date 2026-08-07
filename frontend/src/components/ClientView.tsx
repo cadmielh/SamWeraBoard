@@ -4,6 +4,7 @@ import type { Client, Persoana } from '../types'
 import { inferTipClient } from '../types'
 import { computeScadente } from '../lib/scadente'
 import { findCaenDescriere } from '../data/caen'
+import { formatDateRo } from '../lib/dates'
 
 const REGIM_FISCAL_LABELS: Record<string, string> = {
   microintreprindere: 'Microîntreprindere',
@@ -187,7 +188,7 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
               {client.eFactura && <span className="badge badge-efactura">RO e-Factura</span>}
             </div>
             <span className="cv2-anaf-note">
-              Date ANAF — actualizat la {new Date(client.dataAnafActualizat!).toLocaleDateString('ro-RO')}
+              Date ANAF — actualizat la {formatDateRo(new Date(client.dataAnafActualizat!))}
             </span>
           </div>
         )}
@@ -276,7 +277,7 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
                     <div className="cv2-scadenta-descriere">{s.descriere}</div>
                   </div>
                   <span className="cv2-scadenta-data">
-                    {s.urmatoarea.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    {formatDateRo(s.urmatoarea)}
                   </span>
                 </div>
               ))}
