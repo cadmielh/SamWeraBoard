@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { CAEN_CODES } from '../data/caen'
+import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 
 interface Props {
   value: string
@@ -14,9 +16,13 @@ function normalize(s: string) {
 
 export default function CAENCombobox({ value, descriere, onChange, disabled }: Props) {
   const [query, setQuery] = useState(value ? `${value} - ${descriere}` : '')
-  const [open, setOpen] = useState(false)
   const [focused, setFocused] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Poziționat cu position:fixed + portal în document.body — altfel dropdown-ul
+  // era tăiat de orice ancestor cu overflow:hidden/auto (ex. .card, .modal-body).
+  const { open, position, containerRef, openAt, close } = usePositionedDropdown({
+    matchTriggerWidth: true, onScroll: 'reposition',
+  })
 
   // Keep display in sync if value changes externally
   useEffect(() => {
@@ -25,18 +31,7 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
     }
   }, [value, descriere, focused])
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setFocused(false)
-        // Reset display to current value if user typed but didn't select
-        setQuery(value ? `${value} - ${descriere}` : '')
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [value, descriere])
+  const handleOpen = () => { if (inputRef.current) openAt(inputRef.current) }
 
   const filtered = query.trim()
     ? CAEN_CODES.filter(c => {
@@ -48,26 +43,46 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
   const select = (cod: string, desc: string) => {
     onChange(cod, desc)
     setQuery(`${cod} - ${desc}`)
-    setOpen(false)
     setFocused(false)
+    close()
   }
 
   const clear = () => {
     onChange('', '')
     setQuery('')
-    setOpen(false)
+    close()
   }
 
+  const dropdown = open && !disabled && (
+    <div className="combo-dropdown" style={{ position: 'fixed', top: position?.top, left: position?.left, width: position?.width, zIndex: 9999 }}>
+      {filtered.length === 0 ? (
+        <div className="combo-opt" style={{ color: 'var(--s400)', cursor: 'default' }}>Niciun rezultat</div>
+      ) : (
+        filtered.map(c => (
+          <div key={c.cod} className="combo-opt" onMouseDown={e => { e.preventDefault(); select(c.cod, c.descriere) }}>
+            <span className="combo-opt-cod">{c.cod}</span>
+            {c.descriere}
+          </div>
+        ))
+      )}
+    </div>
+  )
+
   return (
-    <div ref={wrapRef} className="combo-wrap">
+    <div ref={containerRef} className="combo-wrap">
       <div style={{ position: 'relative' }}>
         <input
+          ref={inputRef}
           className="field-input"
           placeholder="Caută după cod sau descriere..."
           value={query}
           disabled={disabled}
-          onChange={e => { setQuery(e.target.value); setOpen(true) }}
-          onFocus={() => { setFocused(true); setOpen(true); if (value) setQuery('') }}
+          onChange={e => { setQuery(e.target.value); handleOpen() }}
+          onFocus={() => { setFocused(true); handleOpen(); if (value) setQuery('') }}
+          onBlur={() => setTimeout(() => {
+            setFocused(false)
+            setQuery(value ? `${value} - ${descriere}` : '')
+          }, 150)}
         />
         {value && !focused && (
           <button
@@ -78,20 +93,7 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
           >×</button>
         )}
       </div>
-      {open && !disabled && (
-        <div className="combo-dropdown">
-          {filtered.length === 0 ? (
-            <div className="combo-opt" style={{ color: 'var(--s400)', cursor: 'default' }}>Niciun rezultat</div>
-          ) : (
-            filtered.map(c => (
-              <div key={c.cod} className="combo-opt" onMouseDown={() => select(c.cod, c.descriere)}>
-                <span className="combo-opt-cod">{c.cod}</span>
-                {c.descriere}
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {dropdown && createPortal(dropdown, document.body)}
     </div>
   )
 }

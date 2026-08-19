@@ -15,6 +15,7 @@ export interface CompanyData {
   caenCod: string
   caenDescriere: string
   caenSecundare: CaenActivitate[]
+  puncteLucru: string[]
   capitalSocial: number | null
 }
 
@@ -68,6 +69,14 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
   }
   const removeCaenSecundar = (i: number) => {
     const arr = [...value.caenSecundare]; arr.splice(i, 1); set('caenSecundare', arr)
+  }
+
+  const addPunctLucru = () => set('puncteLucru', [...value.puncteLucru, ''])
+  const updatePunctLucru = (i: number, adresa: string) => {
+    const arr = [...value.puncteLucru]; arr[i] = adresa; set('puncteLucru', arr)
+  }
+  const removePunctLucru = (i: number) => {
+    const arr = [...value.puncteLucru]; arr.splice(i, 1); set('puncteLucru', arr)
   }
 
   const partiSocialeTotal = value.capitalSocial != null ? value.capitalSocial / 10 : null
@@ -178,6 +187,20 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
           )}
         </div>
         <textarea className="field-textarea" value={value.sediuSocial} onChange={e => set('sediuSocial', e.target.value)} rows={2} />
+      </div>
+
+      <div className="field full">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
+          <label className="field-label" style={{ margin: 0 }}>Puncte de lucru</label>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={addPunctLucru}>+ Adaugă punct de lucru</button>
+        </div>
+        {value.puncteLucru.map((adresa, i) => (
+          <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
+            <input className="field-input" style={{ flex: 1 }} value={adresa}
+              onChange={e => updatePunctLucru(i, e.target.value)} placeholder="Adresă punct de lucru" />
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+          </div>
+        ))}
       </div>
 
       <div className="field">

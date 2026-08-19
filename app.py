@@ -38,7 +38,7 @@ from firebase_admin import auth as fb_auth, credentials as fb_creds
 import local_extractor
 import azure_extractor
 import gdrive
-from doc_filler import fill_docx, list_placeholders_in_docx
+from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx
 
 # Pre-load EasyOCR models at container startup so requests don't time out waiting
 # for model download. Runs in a background thread — module import must return
@@ -209,6 +209,58 @@ def drive_files():
     return jsonify(result)
 
 
+# ── Șabloane de bază ("built-in") ────────────────────────────────────────────
+# Servite direct din fisiere_template/, nu copiate în Firestore — orice workspace
+# le vede identice și la zi, fără pas de seed/versionare. Userul care vrea să le
+# personalizeze le "Duplică" (fluxul obișnuit de upload) în șabloanele proprii.
+
+BUILTIN_TEMPLATE_DIR = Path(__file__).resolve().parent / "fisiere_template"
+
+
+def _load_builtin_templates() -> dict[str, dict]:
+    registry_path = BUILTIN_TEMPLATE_DIR / "registry.json"
+    if not registry_path.exists():
+        return {}
+    entries = json.loads(registry_path.read_text(encoding="utf-8"))
+    result: dict[str, dict] = {}
+    for entry in entries:
+        file_bytes = (BUILTIN_TEMPLATE_DIR / entry["filename"]).read_bytes()
+        result[entry["key"]] = {
+            **entry,
+            "bytes": file_bytes,
+            "placeholders": list_placeholders_in_docx(file_bytes),
+            "clauses": list_clauses_in_docx(file_bytes),
+        }
+    return result
+
+
+BUILTIN_TEMPLATES = _load_builtin_templates()
+
+
+@app.route("/templates/builtin", methods=["GET"])
+def list_builtin_templates():
+    try:
+        _verify()
+    except PermissionError as e:
+        return _auth_error(e)
+    return jsonify({"templates": [
+        {k: v for k, v in tpl.items() if k != "bytes"} for tpl in BUILTIN_TEMPLATES.values()
+    ]})
+
+
+@app.route("/templates/builtin/<key>", methods=["GET"])
+def get_builtin_template(key: str):
+    try:
+        _verify()
+    except PermissionError as e:
+        return _auth_error(e)
+    tpl = BUILTIN_TEMPLATES.get(key)
+    if not tpl:
+        return jsonify({"error": "Unknown built-in template"}), 404
+    return send_file(io.BytesIO(tpl["bytes"]), as_attachment=True, download_name=tpl["filename"],
+                     mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
 # ── Template filling ──────────────────────────────────────────────────────────
 
 @app.route("/fill/docx", methods=["POST"])
@@ -218,8 +270,14 @@ def fill_docx_route():
     except PermissionError as e:
         return _auth_error(e)
 
-    template_drive_id = request.form.get("template_drive_id")
-    if template_drive_id:
+    template_drive_id    = request.form.get("template_drive_id")
+    template_builtin_key = request.form.get("template_builtin_key")
+    if template_builtin_key:
+        tpl = BUILTIN_TEMPLATES.get(template_builtin_key)
+        if not tpl:
+            return jsonify({"error": "Unknown built-in template"}), 400
+        file_bytes, original_name = tpl["bytes"], tpl["filename"]
+    elif template_drive_id:
         if not access_token:
             return jsonify({"error": "Google access_token required for Drive template"}), 400
         try:
@@ -233,17 +291,20 @@ def fill_docx_route():
         file_bytes    = template_file.read()
         original_name = template_file.filename
     else:
-        return jsonify({"error": "No template provided (upload file or set template_drive_id)"}), 400
+        return jsonify({"error": "No template provided (upload file, set template_drive_id, or set template_builtin_key)"}), 400
 
     try:
         fields       = request.form.to_dict()
         fields.pop("template_drive_id", None)
+        fields.pop("template_builtin_key", None)
         output_name  = fields.pop("_output_name", None) or None
         groups_raw   = fields.pop("_groups", None)
         groups       = json.loads(groups_raw) if groups_raw else None
+        clauses_raw       = fields.pop("_clauses", None)
+        selected_clauses  = json.loads(clauses_raw) if clauses_raw else None
         # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
         replacements = {k: v for k, v in fields.items() if v}
-        filled_bytes = fill_docx(file_bytes, replacements, groups)
+        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses)
     except Exception as e:
         return jsonify({"error": f"Fill failed: {e}"}), 500
 
@@ -261,8 +322,14 @@ def fill_docx_and_upload():
     if not access_token:
         return jsonify({"error": "Google access_token required"}), 400
 
-    template_drive_id = request.form.get("template_drive_id")
-    if template_drive_id:
+    template_drive_id    = request.form.get("template_drive_id")
+    template_builtin_key = request.form.get("template_builtin_key")
+    if template_builtin_key:
+        tpl = BUILTIN_TEMPLATES.get(template_builtin_key)
+        if not tpl:
+            return jsonify({"error": "Unknown built-in template"}), 400
+        file_bytes, original_name = tpl["bytes"], tpl["filename"]
+    elif template_drive_id:
         try:
             file_bytes, original_name, _ = gdrive.download_file(access_token, template_drive_id)
         except Exception as e:
@@ -276,15 +343,18 @@ def fill_docx_and_upload():
 
     fields      = request.form.to_dict()
     fields.pop("template_drive_id", None)
+    fields.pop("template_builtin_key", None)
     folder_id   = fields.pop("_drive_folder_id", None)
     output_name = fields.pop("_output_name", None) or None
     groups_raw  = fields.pop("_groups", None)
     groups      = json.loads(groups_raw) if groups_raw else None
+    clauses_raw      = fields.pop("_clauses", None)
+    selected_clauses = json.loads(clauses_raw) if clauses_raw else None
     # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
     replacements = {k: v for k, v in fields.items() if v}
 
     try:
-        filled_bytes = fill_docx(file_bytes, replacements, groups)
+        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses)
         out_name     = output_name or ("completat_" + secure_filename(original_name))
         meta = gdrive.upload_file(access_token, filled_bytes, out_name,
                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -330,7 +400,11 @@ def get_placeholders():
         return _auth_error(e)
     if "template" not in request.files:
         return jsonify({"error": "No file"}), 400
-    return jsonify({"placeholders": list_placeholders_in_docx(request.files["template"].read())})
+    file_bytes = request.files["template"].read()
+    return jsonify({
+        "placeholders": list_placeholders_in_docx(file_bytes),
+        "clauses": list_clauses_in_docx(file_bytes),
+    })
 
 
 _ANAF_POST       = "https://webservicesp.anaf.ro/AsynchWebService/api/v8/ws/tva"

@@ -12,6 +12,12 @@ export interface ScannedPerson {
   scanStatus: 'scanned' | 'manual' | 'empty'
 }
 
+export interface ClauseMeta {
+  tag: string
+  label: string
+  placeholders: string[]
+}
+
 export interface DocTemplate {
   id: string
   name: string
@@ -21,11 +27,33 @@ export interface DocTemplate {
   fileName?: string
   driveFileId?: string
   placeholders?: string[]
+  // Prezent doar pe șabloanele "bibliotecă de clauze" (ex. Decizia Asociatului
+  // Unic, Hotărâre AGA) — un articol per element, în ordinea din document.
+  clauses?: ClauseMeta[]
   docId?: string
   outputNameTemplate: string
   tipTemplate?: 'PF' | 'PJ' | 'universal'
+  // Prezente doar pe șabloanele obținute prin "Duplică" dintr-un șablon de
+  // bază — leagă copia de originalul din care a pornit, pentru eticheta de
+  // "versiune mai nouă disponibilă". Absente pe un șablon urcat de la zero.
+  sourceKey?: string
+  sourceVersion?: number
   createdAt: string
   createdBy: string
+}
+
+// Șablon de bază, servit din backend (nu din Firestore) — aceeași formă ca
+// DocTemplate, minus câmpurile specifice unui document Firestore.
+export interface BuiltinTemplate {
+  key: string
+  version: number
+  filename: string
+  name: string
+  description: string
+  tipTemplate: 'PF' | 'PJ' | 'universal'
+  outputNameTemplate: string
+  placeholders: string[]
+  clauses: ClauseMeta[]
 }
 
 export interface DocGeneration {
@@ -81,6 +109,7 @@ export interface Client {
   caenCod: string
   caenDescriere: string
   caenSecundare: CaenActivitate[]
+  puncteLucru: string[]
   telefon: string
   email: string
   statutFiscal: string

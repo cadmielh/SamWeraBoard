@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 
 interface Props {
   value: string
@@ -16,29 +18,23 @@ function normalize(s: string) {
  * Combobox editabil cu sugestii: păstrează valoarea precompletată ca text,
  * dar permite scrierea liberă — la ieșire, textul tastat devine valoarea,
  * chiar dacă nu se potrivește exact cu o opțiune din listă.
+ *
+ * Dropdown-ul e poziționat cu position:fixed + portal în document.body —
+ * altfel era tăiat de orice ancestor cu overflow:hidden/auto (ex. .card,
+ * .modal-body).
  */
 export default function Combobox({ value, options, onChange, placeholder, disabled }: Props) {
   const [query, setQuery] = useState(value)
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { open, position, containerRef, openAt, close } = usePositionedDropdown({
+    matchTriggerWidth: true, onScroll: 'reposition',
+  })
 
   useEffect(() => {
     setQuery(value)
   }, [value])
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery(prev => {
-          if (prev.trim() !== value) onChange(prev.trim())
-          return prev
-        })
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [value, onChange])
+  const handleOpen = () => { if (inputRef.current) openAt(inputRef.current) }
 
   const filtered = query.trim()
     ? options.filter(o => normalize(o).includes(normalize(query))).slice(0, 50)
@@ -47,35 +43,39 @@ export default function Combobox({ value, options, onChange, placeholder, disabl
   const select = (opt: string) => {
     onChange(opt)
     setQuery(opt)
-    setOpen(false)
+    close()
   }
 
   const commitTyped = () => {
-    setOpen(false)
+    close()
     if (query.trim() !== value) onChange(query.trim())
   }
 
+  const dropdown = open && !disabled && filtered.length > 0 && (
+    <div className="combo-dropdown" style={{ position: 'fixed', top: position?.top, left: position?.left, width: position?.width, zIndex: 9999 }}>
+      {filtered.map(o => (
+        <div key={o} className="combo-opt" onMouseDown={e => { e.preventDefault(); select(o) }}>{o}</div>
+      ))}
+    </div>
+  )
+
   return (
-    <div ref={wrapRef} className="combo-wrap">
+    <div ref={containerRef} className="combo-wrap">
       <input
+        ref={inputRef}
         className="field-input"
         placeholder={placeholder}
         value={query}
         disabled={disabled}
-        onChange={e => { setQuery(e.target.value); setOpen(true) }}
-        onFocus={() => setOpen(true)}
+        onChange={e => { setQuery(e.target.value); handleOpen() }}
+        onFocus={handleOpen}
+        onBlur={() => setTimeout(commitTyped, 150)}
         onKeyDown={e => {
           if (e.key === 'Enter') { e.preventDefault(); commitTyped() }
-          if (e.key === 'Escape') { setOpen(false) }
+          if (e.key === 'Escape') { close() }
         }}
       />
-      {open && !disabled && filtered.length > 0 && (
-        <div className="combo-dropdown">
-          {filtered.map(o => (
-            <div key={o} className="combo-opt" onMouseDown={() => select(o)}>{o}</div>
-          ))}
-        </div>
-      )}
+      {dropdown && createPortal(dropdown, document.body)}
     </div>
   )
 }

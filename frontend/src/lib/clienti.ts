@@ -145,7 +145,7 @@ export const EMPTY_CLIENT: ClientInput = {
   titular: undefined,
   membriIF: undefined,
   denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
-  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], telefon: '', email: '',
+  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], puncteLucru: [], telefon: '', email: '',
   statutFiscal: '', platitorTva: false, periodaTva: '',
   tvaLaIncasare: false, inactivAnaf: false, splitTva: false, eFactura: false,
   administratoriAnaf: [],

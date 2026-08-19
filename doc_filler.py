@@ -104,6 +104,105 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
 _NUMBERED_TAG_RE = re.compile(r"\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_[A-Z_]+\}\}")
 _NUMBERED_KEY_RE = re.compile(r"^\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_")
 
+_CLAUZE_START = "{{#CLAUZE}}"
+_CLAUZE_END = "{{/CLAUZE}}"
+_DENUMIRE_RE = re.compile(r"^Denumire:\s*(.+)$")
+_ART_NR_PLACEHOLDER = "{{ART_NR}}"
+
+
+_DIACRITICS = str.maketrans("ăâîșşțţĂÂÎȘŞȚŢ", "aaissttAAISSTT")
+
+
+def _slugify_clause(label: str) -> str:
+    """"SCHIMBARE SEDIU SOCIAL" -> "SCHIMBARE_SEDIU_SOCIAL", "ADĂUGARE COD CAEN"
+    -> "ADAUGARE_COD_CAEN" — used as the clause's stable selection tag, derived
+    from its "Denumire:" label so template authors never have to invent/maintain
+    a separate tag by hand. Romanian diacritics are transliterated (not just
+    stripped) so tags stay readable — both ș/ț and their legacy cedilla
+    look-alikes ş/ţ are covered."""
+    ascii_label = label.strip().translate(_DIACRITICS)
+    return re.sub(r"[^A-Za-z0-9]+", "_", ascii_label.upper()).strip("_")
+
+
+def _parse_clause_library(doc: Document):
+    """
+    Scans top-level body paragraphs between a {{#CLAUZE}} and {{/CLAUZE}}
+    marker pair, splitting the paragraphs in between into clauses on
+    paragraphs matching "Denumire: <label>" (that paragraph is a delimiter —
+    excluded from every clause's own paragraph list).
+
+    Returns (start_marker, end_marker, clauses), where clauses is a list of
+    {"tag", "label", "denumire_paragraph", "paragraphs"} dicts in document
+    order. Returns (None, None, []) if the markers aren't both present —
+    callers treat that as "not a clause-library document".
+    """
+    paragraphs = doc.paragraphs
+    start_idx = next((i for i, p in enumerate(paragraphs) if _para_text(p) == _CLAUZE_START), None)
+    if start_idx is None:
+        return None, None, []
+    end_idx = next(
+        (i for i in range(start_idx + 1, len(paragraphs)) if _para_text(paragraphs[i]) == _CLAUZE_END),
+        None,
+    )
+    if end_idx is None:
+        return None, None, []
+
+    clauses: list[dict] = []
+    current: dict | None = None
+    for p in paragraphs[start_idx + 1:end_idx]:
+        m = _DENUMIRE_RE.match(_para_text(p))
+        if m:
+            current = {"tag": _slugify_clause(m.group(1)), "label": m.group(1).strip(), "denumire_paragraph": p, "paragraphs": []}
+            clauses.append(current)
+        elif current is not None:
+            current["paragraphs"].append(p)
+
+    return paragraphs[start_idx], paragraphs[end_idx], clauses
+
+
+def _expand_clause_library(doc: Document, selected_tags: list[str] | None) -> None:
+    """
+    Keeps only the clauses (from _parse_clause_library) whose tag is in
+    selected_tags, in their original document order, numbering {{ART_NR}}
+    sequentially (1, 2, 3…) over the kept clauses only. The "Denumire:" line
+    of every clause (kept or not) is removed — it's an authoring delimiter,
+    never meant to appear in the generated document. Clauses not selected are
+    removed entirely, along with the {{#CLAUZE}}/{{/CLAUZE}} markers
+    themselves.
+
+    Every other placeholder inside a kept clause (e.g. {{SEDIU_NOU}}) is left
+    untouched here — it's filled by the regular flat-replacement pass that
+    runs afterward in fill_docx, exactly like any other placeholder.
+
+    No-op if the document has no {{#CLAUZE}}/{{/CLAUZE}} pair — existing
+    flat/repeat-block-only templates are unaffected.
+    """
+    start_p, end_p, clauses = _parse_clause_library(doc)
+    if start_p is None:
+        return
+
+    selected = set(selected_tags or [])
+
+    def delete_paragraph(paragraph) -> None:
+        p = paragraph._p
+        parent = p.getparent()
+        if parent is not None:
+            parent.remove(p)
+
+    art_nr = 0
+    for c in clauses:
+        delete_paragraph(c["denumire_paragraph"])
+        if c["tag"] in selected:
+            art_nr += 1
+            for p in c["paragraphs"]:
+                _replace_in_paragraph(p, {_ART_NR_PLACEHOLDER: str(art_nr)})
+        else:
+            for p in c["paragraphs"]:
+                delete_paragraph(p)
+
+    delete_paragraph(start_p)
+    delete_paragraph(end_p)
+
 
 def _max_numbered_index(replacements: dict[str, str]) -> dict[str, int]:
     """Highest N actually present for each known numbered prefix (ASOCIAT_N_*, ...)."""
@@ -181,6 +280,7 @@ def fill_docx(
     template_bytes: bytes,
     replacements: dict[str, str],
     groups: dict[str, list[dict[str, str]]] | None = None,
+    selected_clauses: list[str] | None = None,
 ) -> bytes:
     """
     Fill a .docx template by replacing {{PLACEHOLDER}} markers.
@@ -189,12 +289,20 @@ def fill_docx(
     per item in groups[TAG] — before the flat placeholder pass runs over the
     whole (now expanded) document.
 
+    If the template contains a {{#CLAUZE}}...{{/CLAUZE}} section (a "clause
+    library" — several optional "Denumire: X" articles), only the clauses
+    whose tag is in `selected_clauses` are kept, with {{ART_NR}} numbered
+    sequentially over just the kept ones. Templates without that section are
+    unaffected regardless of `selected_clauses`.
+
     Returns the filled document as bytes.
     """
     doc = Document(io.BytesIO(template_bytes))
 
     if groups:
         _expand_repeat_blocks(doc, groups)
+
+    _expand_clause_library(doc, selected_clauses)
 
     # Replace in main body paragraphs
     for paragraph in doc.paragraphs:
@@ -250,3 +358,31 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
                 scan_paragraphs(cell.paragraphs)
 
     return sorted(found)
+
+
+def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
+    """
+    Return [{"tag", "label", "placeholders"}] for each "Denumire: X" clause
+    found inside a {{#CLAUZE}}...{{/CLAUZE}} section, in document order.
+
+    `placeholders` are the unique {{X}} markers used only by that clause
+    (excluding {{ART_NR}}, which is auto-numbered — never asked of the user
+    — and nested {{#TAG}}/{{/TAG}} repeat-block markers, which are
+    structural). Returns [] if the template has no clause-library section.
+    """
+    doc = Document(io.BytesIO(template_bytes))
+    _, _, clauses = _parse_clause_library(doc)
+
+    pattern = re.compile(r"\{\{[^}]+\}\}")
+    marker_pattern = re.compile(r"^\{\{[#/]")
+
+    result = []
+    for c in clauses:
+        found: set[str] = set()
+        for p in c["paragraphs"]:
+            text = "".join(r.text for r in p.runs)
+            for match in pattern.findall(text):
+                if not marker_pattern.match(match) and match != _ART_NR_PLACEHOLDER:
+                    found.add(match)
+        result.append({"tag": c["tag"], "label": c["label"], "placeholders": sorted(found)})
+    return result

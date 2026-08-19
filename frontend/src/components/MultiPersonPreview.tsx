@@ -23,6 +23,7 @@ function companyDataFromClient(client: Client): CompanyData {
     caenCod: client.caenCod,
     caenDescriere: client.caenDescriere,
     caenSecundare: client.caenSecundare ?? [],
+    puncteLucru: client.puncteLucru ?? [],
     capitalSocial: client.capitalSocial,
   }
 }

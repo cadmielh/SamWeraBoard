@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
-import { fillDocx, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
+import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import type { IDFields } from '../lib/api'
-import type { Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
+import type { BuiltinTemplate, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
 import { buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields } from '../lib/placeholders'
 import { useTemplates, logDocGeneration } from '../lib/templates'
-import { EMPTY_CLIENT, type ClientInput } from '../lib/clienti'
+import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
+import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
 import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
+import ClauseSelector from './ClauseSelector'
+import type { ClauseSelectorValue } from './ClauseSelector'
 import Modal from './Modal'
 
 interface Props {
@@ -27,16 +30,37 @@ interface Props {
 
 type Tab = 'docx' | 'gdoc'
 
+// Placeholdere completate intern (ex. {{SUBTITLU_ACTUALIZARE}}, injectat abia
+// la generare, în funcție de toggle-ul Înființare/Actualizare) — niciodată
+// tastate de user, deci nu trebuie verificate ca "necompletate".
+const INTERNAL_BUILTIN_FIELDS = new Set(['SUBTITLU_ACTUALIZARE'])
+const builtinCheckablePlaceholders = (b: BuiltinTemplate): string[] =>
+  b.placeholders.filter(ph => !INTERNAL_BUILTIN_FIELDS.has(ph.replace(/^\{\{|\}\}$/g, '')))
+
 export default function TemplateFiller({
   workspaceId, user, fields, client, scannedPersons,
   accessToken, onToast, onBack, onClientSaved,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
+  const { builtins } = useBuiltinTemplates(accessToken)
+  const { update: updateClient } = useClienti(workspaceId)
 
   const docxTemplates = templates.filter(t => t.type === 'docx')
   const gdocTemplates = templates.filter(t => t.type === 'gdoc')
 
   const [tab, setTab] = useState<Tab>('docx')
+  const [clauseState, setClauseState] = useState<Record<string, ClauseSelectorValue>>({})
+  const [pendingClientPatches, setPendingClientPatches] = useState<{ key: string; label: string; patch: Partial<ClientInput> }[] | null>(null)
+  const [checkedPatchKeys, setCheckedPatchKeys] = useState<Set<string>>(new Set())
+  // Șabloanele cu clauze au propriul toggle de expand/collapse — nu ține de
+  // selectedIds (rezervat generării în lot, irelevantă pentru formularul
+  // interactiv de clauze).
+  const [expandedClauseTpl, setExpandedClauseTpl] = useState<Set<string>>(new Set())
+  const toggleClauseExpand = (key: string) => setExpandedClauseTpl(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [uploadToDrive, setUploadToDrive] = useState(false)
   const [driveFolder, setDriveFolder] = useState<{ id: string; name: string } | null>(null)
@@ -50,15 +74,22 @@ export default function TemplateFiller({
   const [clientSaved, setClientSaved] = useState(false)
   const [expandedReadiness, setExpandedReadiness] = useState<Set<string>>(new Set())
   const [pendingGenerate, setPendingGenerate] = useState<{
-    tpl: DocTemplate
+    tpl: DocTemplate | BuiltinTemplate
     missing: string[]
     isBatch?: boolean
     batchTargets?: DocTemplate[]
+    isBuiltin?: boolean
   } | null>(null)
+  // Singurul șablon de bază fără clauze care are nevoie de acest toggle azi —
+  // implicit "actualizare", cazul de utilizare mai frecvent.
+  const [actConstitutivMode, setActConstitutivMode] = useState<'infiintare' | 'actualizare'>('actualizare')
 
   const replacements = buildReplacements({ idFields: fields, client, scannedPersons })
   const repeatGroups = buildRepeatGroups({ idFields: fields, client, scannedPersons })
   const hasScannedPersonsNoClient = (scannedPersons ?? []).length > 0 && !client?.id
+  // Asociați existenți (client.asociati) sau doar scanați, nesalvați încă —
+  // aceeași listă folosită deja la umplerea {{#ASOCIATI}}.
+  const asociatiCount = repeatGroups.ASOCIATI?.length ?? 0
 
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => {
@@ -103,14 +134,17 @@ export default function TemplateFiller({
     setLoading(tpl.id, true)
     try {
       const outputName = resolveOutputName(tpl)
+      const cs = clauseState[tpl.id]
+      const mergedReplacements = cs ? { ...replacements, ...cs.extraReplacements } : replacements
+      const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
       let result: { blob?: Blob; name?: string; link?: string }
 
       if (tpl.driveFileId) {
-        result = await fillDocxFromDriveTemplate(tpl.driveFileId, replacements, accessToken, uploadToDrive, driveFolder?.id, outputName, repeatGroups)
+        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, uploadToDrive, driveFolder?.id, outputName, mergedGroups, cs?.selectedClauses)
       } else {
         const file = await resolveTemplateFile(tpl)
         if (!file) { onToast(`Fișierul pentru "${tpl.name}" nu este disponibil`, 'err'); return }
-        result = await fillDocx(file, replacements, accessToken, uploadToDrive, driveFolder?.id, outputName, repeatGroups)
+        result = await fillDocx(file, mergedReplacements, accessToken, uploadToDrive, driveFolder?.id, outputName, mergedGroups, cs?.selectedClauses)
       }
 
       if (result.link) {
@@ -126,10 +160,85 @@ export default function TemplateFiller({
         await _logGeneration(tpl, outputName)
         maybePromptSaveClient()
       }
+      offerClientPatches(cs)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
     } finally {
       setLoading(tpl.id, false)
+    }
+  }
+
+  // Șabloane de bază — generare directă, fără duplicare prealabilă în Firestore.
+  const handleGenerateBuiltinDocx = async (b: BuiltinTemplate) => {
+    const key = `builtin:${b.key}`
+    setLoading(key, true)
+    try {
+      let outputName = b.outputNameTemplate || b.name
+      for (const [ph, val] of Object.entries(replacements)) outputName = outputName.replaceAll(ph, val)
+      if (!outputName.endsWith('.docx')) outputName += '.docx'
+
+      const cs = clauseState[key]
+      // Copie proprie, mereu — "replacements" e obiectul partajat de toate
+      // șabloanele randate în același pas, nu trebuie mutat direct.
+      const mergedReplacements = { ...replacements, ...(cs?.extraReplacements ?? {}) }
+      const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
+
+      if (b.key === 'act_constitutiv') {
+        // Placeholder gol ar fi eliminat de backend (nu se trimit câmpuri
+        // goale) și ar rămâne vizibil literal în document — un singur spațiu
+        // se substituie normal și randează ca linie goală.
+        mergedReplacements['{{SUBTITLU_ACTUALIZARE}}'] = actConstitutivMode === 'actualizare'
+          ? `- actualizat la ${replacements['{{DATA_AZI}}']} -`
+          : ' '
+      }
+
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, accessToken, uploadToDrive, driveFolder?.id, outputName, mergedGroups, cs?.selectedClauses)
+
+      if (result.link) {
+        setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
+        onToast(`Salvat pe Drive: ${result.name}`, 'ok')
+        maybePromptSaveClient()
+      } else if (result.blob) {
+        const url = URL.createObjectURL(result.blob)
+        const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
+        URL.revokeObjectURL(url)
+        onToast(`Descărcat: ${outputName}`, 'ok')
+        maybePromptSaveClient()
+      }
+      offerClientPatches(cs)
+    } catch (err: unknown) {
+      onToast((err as Error).message ?? 'Generare eșuată', 'err')
+    } finally {
+      setLoading(key, false)
+    }
+  }
+
+  // După o generare reușită, propune (nu aplică direct) actualizarea
+  // profilului clientului cu tot ce a colectat ClauseSelector din clauzele
+  // bifate — userul alege ce anume se scrie în Firestore.
+  const offerClientPatches = (cs: ClauseSelectorValue | undefined) => {
+    if (!client?.id || !cs) return
+    const proposals = Object.entries(cs.clientPatches).map(([key, p]) => ({ key, ...p }))
+    if (proposals.length === 0) return
+    setPendingClientPatches(proposals)
+    setCheckedPatchKeys(new Set(proposals.map(p => p.key)))
+  }
+
+  const handleApplyClientPatches = async () => {
+    if (!pendingClientPatches || !client?.id || !workspaceId) { setPendingClientPatches(null); return }
+    const merged: Partial<ClientInput> = {}
+    for (const p of pendingClientPatches) {
+      if (checkedPatchKeys.has(p.key)) Object.assign(merged, p.patch)
+    }
+    try {
+      if (Object.keys(merged).length > 0) {
+        await updateClient(workspaceId, client.id, merged)
+        onToast('Profilul clientului a fost actualizat', 'ok')
+      }
+    } catch (err: unknown) {
+      onToast((err as Error).message ?? 'Eroare la salvare', 'err')
+    } finally {
+      setPendingClientPatches(null)
     }
   }
 
@@ -160,12 +269,30 @@ export default function TemplateFiller({
 
   // Confirmation wrappers — check for missing fields before generating
   const tryGenerateSingle = (tpl: DocTemplate) => {
+    // Șabloanele cu clauze au propria verificare de completitudine în
+    // ClauseSelector (butonul Generează e dezactivat până e completă) —
+    // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
+    if (tpl.clauses?.length) { handleGenerateDocx(tpl); return }
+
     const { missing } = checkReadiness(tpl.placeholders ?? [], replacements, repeatGroups)
     if (missing.length > 0) {
       setPendingGenerate({ tpl, missing })
     } else {
       if (tpl.type === 'docx') handleGenerateDocx(tpl)
       else handleGenerateGdoc(tpl)
+    }
+  }
+
+  // Șabloane de bază fără clauze (ex. Act Constitutiv) — același tipar ca
+  // tryGenerateSingle; cele cu clauze rămân gestionate direct de butonul din
+  // renderBuiltinTemplate (blocat dur de ClauseSelector.isComplete).
+  const tryGenerateBuiltinSingle = (b: BuiltinTemplate) => {
+    if (b.clauses.length > 0) { handleGenerateBuiltinDocx(b); return }
+    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), replacements, repeatGroups)
+    if (missing.length > 0) {
+      setPendingGenerate({ tpl: b, missing, isBuiltin: true })
+    } else {
+      handleGenerateBuiltinDocx(b)
     }
   }
 
@@ -185,8 +312,10 @@ export default function TemplateFiller({
     if (!pendingGenerate) return
     if (pendingGenerate.isBatch && pendingGenerate.batchTargets) {
       handleBatchGenerate()
+    } else if (pendingGenerate.isBuiltin) {
+      handleGenerateBuiltinDocx(pendingGenerate.tpl as BuiltinTemplate)
     } else {
-      const { tpl } = pendingGenerate
+      const tpl = pendingGenerate.tpl as DocTemplate
       if (tpl.type === 'docx') handleGenerateDocx(tpl)
       else handleGenerateGdoc(tpl)
     }
@@ -242,7 +371,9 @@ export default function TemplateFiller({
       return next
     })
 
-  const renderReadiness = (tpl: DocTemplate) => {
+  // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
+  // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
+  const renderReadiness = (tpl: { id: string; placeholders?: string[] }) => {
     if (!tpl.placeholders || tpl.placeholders.length === 0) return null
     const { filled, missing } = checkReadiness(tpl.placeholders, replacements, repeatGroups)
     const total = tpl.placeholders.length
@@ -319,43 +450,69 @@ export default function TemplateFiller({
     const isSelected = selectedIds.has(tpl.id)
     const isLoading = loadingIds.has(tpl.id)
     const link = generatedLinks[tpl.id]
+    const hasClauses = !!tpl.clauses?.length
+    const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
+    // Șabloanele cu clauze pornesc restrânse — doar denumirea — și se extind
+    // la bifare, ca formularul de clauze să nu aglomereze lista implicit.
+    const isExpanded = hasClauses ? expandedClauseTpl.has(tpl.id) : true
 
     return (
       <div
         key={tpl.id}
         style={{
           padding: '.625rem .875rem', background: 'var(--s50)', borderRadius: 'var(--r-sm)',
-          border: `1.5px solid ${isSelected ? 'var(--p400)' : 'var(--s200)'}`,
+          border: `1.5px solid ${(hasClauses ? isExpanded : isSelected) ? 'var(--p400)' : 'var(--s200)'}`,
           display: 'flex', flexDirection: 'column', gap: '.375rem',
           transition: 'border-color var(--t)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
           <input type="checkbox" style={{ cursor: 'pointer', flexShrink: 0 }}
-            checked={isSelected} onChange={() => toggleSelect(tpl.id)} />
+            checked={hasClauses ? isExpanded : isSelected}
+            onChange={() => hasClauses ? toggleClauseExpand(tpl.id) : toggleSelect(tpl.id)} />
           <span style={{ flex: 1, fontWeight: 600, fontSize: '.875rem', color: 'var(--s800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {tpl.name}
           </span>
-          {tpl.description && (
+          {isExpanded && tpl.description && (
             <span style={{ fontSize: '.75rem', color: 'var(--s400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
               {tpl.description}
             </span>
           )}
-          <button
-            className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'}`}
-            onClick={() => tryGenerateSingle(tpl)}
-            disabled={isLoading}
-            style={{ flexShrink: 0 }}
-          >
-            {isLoading ? <><span className="spin" />&nbsp;</> : (tpl.type === 'gdoc' ? '🔷 ' : '↓ ')}
-            {uploadToDrive && tpl.type === 'docx' ? 'Upload' : 'Generează'}
-          </button>
+          {isExpanded && (
+            <button
+              className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() => tryGenerateSingle(tpl)}
+              disabled={isLoading || !!asociatiMismatch || (hasClauses && !clauseState[tpl.id]?.isComplete)}
+              style={{ flexShrink: 0 }}
+            >
+              {isLoading ? <><span className="spin" />&nbsp;</> : (tpl.type === 'gdoc' ? '🔷 ' : '↓ ')}
+              {uploadToDrive && tpl.type === 'docx' ? 'Upload' : 'Generează'}
+            </button>
+          )}
         </div>
 
-        {renderReadiness(tpl)}
+        {isExpanded && asociatiMismatch && (
+          <div style={{
+            fontSize: '.75rem', color: 'var(--o700, #c2410c)', background: 'var(--o50, #fff7ed)',
+            border: '1px solid var(--o200, #fed7aa)', borderRadius: 4, padding: '.25rem .5rem',
+          }}>
+            ⚠️ {tpl.name} {asociatiMismatch}
+          </div>
+        )}
+
+        {isExpanded && !asociatiMismatch && (hasClauses ? (
+          <ClauseSelector
+            clauses={tpl.clauses!}
+            client={client}
+            baseReplacements={replacements}
+            onChange={v => setClauseState(prev => ({ ...prev, [tpl.id]: v }))}
+          />
+        ) : (
+          renderReadiness(tpl)
+        ))}
 
         {/* Avertizare compatibilitate PF/PJ */}
-        {tpl.tipTemplate && tpl.tipTemplate !== 'universal' && client && (() => {
+        {isExpanded && tpl.tipTemplate && tpl.tipTemplate !== 'universal' && client && (() => {
           const clientTip = inferTipClient(client as Client)
           const mismatch = (tpl.tipTemplate === 'PF' && clientTip !== 'PF') || (tpl.tipTemplate === 'PJ' && clientTip !== 'PJ')
           if (!mismatch) return null
@@ -369,13 +526,96 @@ export default function TemplateFiller({
           )
         })()}
 
-        {link && (
+        {isExpanded && link && (
           <div style={{ fontSize: '.78rem' }}>
             ✓{' '}
             {tpl.type === 'gdoc'
               ? <a href={link} target="_blank" rel="noreferrer" style={{ color: 'var(--p600)', fontWeight: 600 }}>Deschide în Google Docs ↗</a>
               : <a href={link} target="_blank" rel="noreferrer" style={{ color: 'var(--g600)', fontWeight: 600 }}>Vizualizează pe Drive ↗</a>
             }
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderBuiltinTemplate = (b: BuiltinTemplate) => {
+    const key = `builtin:${b.key}`
+    const isLoading = loadingIds.has(key)
+    const link = generatedLinks[key]
+    const mismatch = asociatiCountMismatch(b.key, asociatiCount)
+    const isExpanded = expandedClauseTpl.has(key)
+
+    return (
+      <div key={key} style={{
+        padding: '.625rem .875rem', background: 'var(--s50)', borderRadius: 'var(--r-sm)',
+        border: `1.5px solid ${isExpanded ? 'var(--p400)' : 'var(--s200)'}`, display: 'flex', flexDirection: 'column', gap: '.375rem',
+        transition: 'border-color var(--t)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+          <input type="checkbox" style={{ cursor: 'pointer', flexShrink: 0 }}
+            checked={isExpanded} onChange={() => toggleClauseExpand(key)} />
+          <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: 'var(--p50)', color: 'var(--p700)' }}>
+            DE BAZĂ
+          </span>
+          <span style={{ flex: 1, fontWeight: 600, fontSize: '.875rem', color: 'var(--s800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {b.name}
+          </span>
+          {isExpanded && (
+            <button
+              className="btn btn-sm btn-outline-primary"
+              onClick={() => tryGenerateBuiltinSingle(b)}
+              disabled={isLoading || !!mismatch || (b.clauses.length > 0 && !clauseState[key]?.isComplete)}
+              style={{ flexShrink: 0 }}
+            >
+              {isLoading ? <><span className="spin" />&nbsp;</> : '↓ '}
+              {uploadToDrive ? 'Upload' : 'Generează'}
+            </button>
+          )}
+        </div>
+
+        {isExpanded && mismatch && (
+          <div style={{
+            fontSize: '.75rem', color: 'var(--o700, #c2410c)', background: 'var(--o50, #fff7ed)',
+            border: '1px solid var(--o200, #fed7aa)', borderRadius: 4, padding: '.25rem .5rem',
+          }}>
+            ⚠️ {b.name} {mismatch}
+          </div>
+        )}
+
+        {isExpanded && !mismatch && b.key === 'act_constitutiv' && (
+          <div style={{ display: 'flex', gap: '.375rem' }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${actConstitutivMode === 'infiintare' ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() => setActConstitutivMode('infiintare')}
+            >
+              🆕 Înființare
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm ${actConstitutivMode === 'actualizare' ? 'btn-primary' : 'btn-outline-primary'}`}
+              onClick={() => setActConstitutivMode('actualizare')}
+            >
+              🔄 Actualizare
+            </button>
+          </div>
+        )}
+
+        {isExpanded && !mismatch && (b.clauses.length > 0 ? (
+          <ClauseSelector
+            clauses={b.clauses}
+            client={client}
+            baseReplacements={replacements}
+            onChange={v => setClauseState(prev => ({ ...prev, [key]: v }))}
+          />
+        ) : (
+          renderReadiness({ id: key, placeholders: builtinCheckablePlaceholders(b) })
+        ))}
+
+        {isExpanded && link && (
+          <div style={{ fontSize: '.78rem' }}>
+            ✓ <a href={link} target="_blank" rel="noreferrer" style={{ color: 'var(--g600)', fontWeight: 600 }}>Vizualizează pe Drive ↗</a>
           </div>
         )}
       </div>
@@ -425,6 +665,22 @@ export default function TemplateFiller({
             <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--s400)' }}>
               <span className="spin" style={{ display: 'inline-block' }} />
             </div>
+          )}
+
+          {tab === 'docx' && builtins.length > 0 && (
+            <>
+              <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: '.5rem' }}>
+                Șabloane de bază
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.625rem', marginBottom: '1.25rem' }}>
+                {builtins.map(renderBuiltinTemplate)}
+              </div>
+              {(currentTabTemplates.length > 0 || !tplLoading) && (
+                <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: '.5rem' }}>
+                  Șabloanele mele
+                </div>
+              )}
+            </>
           )}
 
           {!tplLoading && currentTabTemplates.length === 0 && (
@@ -579,6 +835,46 @@ export default function TemplateFiller({
             <button className="btn btn-primary btn-sm" onClick={() => { setShowSavePrompt(false); setShowSaveClient(true) }}>
               Da, salvează
             </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modificări descrise în clauzele bifate — ofertă de sincronizare cu profilul clientului */}
+      {pendingClientPatches && client?.id && (
+        <Modal
+          onClose={() => setPendingClientPatches(null)}
+          ariaLabel="Actualizează profilul clientului"
+          backdropStyle={{ background: 'rgba(15,23,42,.45)', zIndex: 400 }}
+          boxStyle={{ maxWidth: 460, display: 'flex', flexDirection: 'column' }}
+        >
+          <div style={{ padding: '1.125rem 1.25rem', borderBottom: '1px solid var(--s200)' }}>
+            <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>
+              💾 Actualizezi și profilul clientului?
+            </div>
+            <div style={{ fontSize: '.825rem', color: 'var(--s500)', marginTop: '.25rem' }}>
+              Documentul descrie schimbări reale — alege ce se scrie și în portofoliu.
+            </div>
+          </div>
+          <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+            {pendingClientPatches.map(p => (
+              <label key={p.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '.5rem', cursor: 'pointer', fontSize: '.875rem', color: 'var(--s700)' }}>
+                <input
+                  type="checkbox"
+                  checked={checkedPatchKeys.has(p.key)}
+                  onChange={() => setCheckedPatchKeys(prev => {
+                    const next = new Set(prev)
+                    if (next.has(p.key)) next.delete(p.key); else next.add(p.key)
+                    return next
+                  })}
+                  style={{ marginTop: '.2rem' }}
+                />
+                <span>{p.label}</span>
+              </label>
+            ))}
+          </div>
+          <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--s200)', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setPendingClientPatches(null)}>Nu, mulțumesc</button>
+            <button className="btn btn-primary btn-sm" onClick={handleApplyClientPatches}>Aplică selectate</button>
           </div>
         </Modal>
       )}

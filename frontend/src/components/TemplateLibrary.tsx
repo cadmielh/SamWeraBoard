@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react'
-import type { DocTemplate, ToastItem } from '../types'
+import type { BuiltinTemplate, ClauseMeta, DocTemplate, ToastItem } from '../types'
 import type { TemplateInput } from '../lib/templates'
+import { useBuiltinTemplates } from '../lib/builtinTemplates'
+import { fetchBuiltinTemplateBytes } from '../lib/api'
 
 type TipTemplate = 'universal' | 'PF' | 'PJ'
 const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
@@ -90,6 +92,8 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   const [addTab, setAddTab] = useState<AddTab>('docx')
   const [saving, setSaving] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
+  const { builtins, loading: builtinsLoading } = useBuiltinTemplates(accessToken)
+  const [duplicatingKey, setDuplicatingKey] = useState<string | null>(null)
 
   // docx add form state
   const [docxFile, setDocxFile] = useState<File | null>(null)
@@ -97,6 +101,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   const [docxDesc, setDocxDesc] = useState('')
   const [docxOutput, setDocxOutput] = useState('')
   const [docxPlaceholders, setDocxPlaceholders] = useState<string[]>([])
+  const [docxClauses, setDocxClauses] = useState<ClauseMeta[]>([])
   const [docxTip, setDocxTip] = useState<TipTemplate>('universal')
   const [detecting, setDetecting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -114,10 +119,12 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     setDocxOutput(prev => prev || `${f.name.replace(/\.[^.]+$/, '')}_completat.docx`)
     setDetecting(true)
     try {
-      const phs = await detectPlaceholders(f, accessToken)
-      setDocxPlaceholders(phs)
+      const { placeholders, clauses } = await detectPlaceholders(f, accessToken)
+      setDocxPlaceholders(placeholders)
+      setDocxClauses(clauses)
     } catch {
       setDocxPlaceholders([])
+      setDocxClauses([])
     } finally {
       setDetecting(false)
     }
@@ -144,6 +151,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
         fileBase64: base64,
         fileName: docxFile.name,
         placeholders: docxPlaceholders,
+        clauses: docxClauses,
         tipTemplate: docxTip,
         outputNameTemplate: docxOutput.trim() || `${docxName.trim()}_completat.docx`,
       })
@@ -201,8 +209,39 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     URL.revokeObjectURL(url)
   }
 
-  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxTip('universal') }
+  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxTip('universal') }
   const resetGdocForm = () => { setGdocName(''); setGdocDocId(''); setGdocDesc(''); setGdocOutput(''); setGdocTip('universal') }
+
+  const handleDuplicateBuiltin = async (b: BuiltinTemplate) => {
+    setDuplicatingKey(b.key)
+    try {
+      const blob = await fetchBuiltinTemplateBytes(b.key, accessToken)
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader()
+        reader.onload = () => res((reader.result as string).split(',')[1])
+        reader.onerror = rej
+        reader.readAsDataURL(blob)
+      })
+      await onAdd({
+        name: b.name,
+        description: b.description,
+        type: 'docx',
+        fileBase64: base64,
+        fileName: b.filename,
+        placeholders: b.placeholders,
+        clauses: b.clauses,
+        tipTemplate: b.tipTemplate,
+        outputNameTemplate: b.outputNameTemplate,
+        sourceKey: b.key,
+        sourceVersion: b.version,
+      })
+      onToast(`"${b.name}" duplicat în Șabloanele mele`, 'ok')
+    } catch (err: unknown) {
+      onToast((err as Error).message ?? 'Eroare la duplicare', 'err')
+    } finally {
+      setDuplicatingKey(null)
+    }
+  }
 
   return (
     <Modal
@@ -228,6 +267,38 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
           {/* ── LIST ── */}
           {view === 'list' && (
             <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+              {/* ── Șabloane de bază — servite din backend, disponibile din prima în orice workspace ── */}
+              <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+                Șabloane de bază
+              </div>
+              {builtinsLoading && (
+                <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}><span className="spin" /> Se încarcă…</div>
+              )}
+              {!builtinsLoading && builtins.map(b => (
+                <div key={b.key} style={{ background: 'var(--s50)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: 'var(--p50)', color: 'var(--p700)' }}>
+                      DE BAZĂ
+                    </span>
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: '.9rem', color: 'var(--s800)' }}>{b.name}</span>
+                    <button
+                      className="btn btn-outline-primary btn-sm"
+                      onClick={() => handleDuplicateBuiltin(b)}
+                      disabled={duplicatingKey === b.key}
+                    >
+                      {duplicatingKey === b.key ? <span className="spin" /> : '📋 Duplică'}
+                    </button>
+                  </div>
+                  {b.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{b.description}</div>}
+                  {b.clauses.length > 0 && (
+                    <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>{b.clauses.length} articole opționale, la alegere</div>
+                  )}
+                </div>
+              ))}
+
+              <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase', marginTop: '.375rem' }}>
+                Șabloanele mele
+              </div>
               {templates.length === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--s400)', fontSize: '.875rem', padding: '2rem 0' }}>
                   Niciun șablon adăugat.<br />
@@ -263,6 +334,15 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                     </button>
                   </div>
                   {tpl.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{tpl.description}</div>}
+                  {tpl.sourceKey && tpl.sourceVersion != null && (() => {
+                    const src = builtins.find(b => b.key === tpl.sourceKey)
+                    if (!src || src.version <= tpl.sourceVersion!) return null
+                    return (
+                      <div style={{ fontSize: '.72rem', color: 'var(--o700, #c2410c)' }}>
+                        ⚠️ bazat pe "{src.name}" v{tpl.sourceVersion} — există o versiune mai nouă (v{src.version})
+                      </div>
+                    )
+                  })()}
                   {tpl.placeholders && tpl.placeholders.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.25rem', marginTop: '.125rem' }}>
                       {tpl.placeholders.slice(0, 8).map(ph => <PlaceholderBadge key={ph} ph={ph} />)}

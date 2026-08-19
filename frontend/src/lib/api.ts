@@ -1,4 +1,5 @@
 import { auth } from "./firebase";
+import type { BuiltinTemplate, ClauseMeta } from "../types";
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 // OCR calls go directly to Cloud Run to bypass Firebase Hosting's 60s proxy timeout
@@ -83,6 +84,7 @@ export async function fillDocx(
   driveFolderId?: string,
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
+  selectedClauses?: string[],
 ): Promise<{ blob?: Blob; name?: string; link?: string }> {
   const fd = new FormData();
   fd.append("template", templateFile);
@@ -90,6 +92,7 @@ export async function fillDocx(
   if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
   if (outputName) fd.append("_output_name", outputName);
   if (groups) fd.append("_groups", JSON.stringify(groups));
+  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
 
   const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
   const res = await fetch(endpoint, {
@@ -141,7 +144,10 @@ export async function fetchAnafCompany(cif: string, accessToken: string): Promis
   return data as AnafResult
 }
 
-export async function detectPlaceholders(templateFile: File, accessToken: string): Promise<string[]> {
+export async function detectPlaceholders(
+  templateFile: File,
+  accessToken: string,
+): Promise<{ placeholders: string[]; clauses: ClauseMeta[] }> {
   const fd = new FormData();
   fd.append("template", templateFile);
   const res = await fetch(`${BASE}/template/placeholders`, {
@@ -151,7 +157,7 @@ export async function detectPlaceholders(templateFile: File, accessToken: string
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Placeholder detection failed");
-  return data.placeholders as string[];
+  return { placeholders: data.placeholders as string[], clauses: (data.clauses ?? []) as ClauseMeta[] };
 }
 
 export async function fillDocxFromDriveTemplate(
@@ -162,6 +168,7 @@ export async function fillDocxFromDriveTemplate(
   driveFolderId?: string,
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
+  selectedClauses?: string[],
 ): Promise<{ blob?: Blob; name?: string; link?: string }> {
   const fd = new FormData();
   fd.append("template_drive_id", templateDriveId);
@@ -169,6 +176,7 @@ export async function fillDocxFromDriveTemplate(
   if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
   if (outputName) fd.append("_output_name", outputName);
   if (groups) fd.append("_groups", JSON.stringify(groups));
+  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
 
   const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
   const res = await fetch(endpoint, {
@@ -186,6 +194,62 @@ export async function fillDocxFromDriveTemplate(
   }
   const blob = await res.blob();
   return { blob };
+}
+
+export async function fillDocxFromBuiltinTemplate(
+  builtinKey: string,
+  fields: Record<string, string>,
+  accessToken: string,
+  uploadToDrive = false,
+  driveFolderId?: string,
+  outputName?: string,
+  groups?: Record<string, Record<string, string>[]>,
+  selectedClauses?: string[],
+): Promise<{ blob?: Blob; name?: string; link?: string }> {
+  const fd = new FormData();
+  fd.append("template_builtin_key", builtinKey);
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
+  if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
+  if (outputName) fd.append("_output_name", outputName);
+  if (groups) fd.append("_groups", JSON.stringify(groups));
+  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
+
+  const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: await headers(accessToken),
+    body: fd,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? "Fill failed");
+  }
+  if (uploadToDrive) {
+    const d = await res.json();
+    return { name: d.name, link: d.link };
+  }
+  const blob = await res.blob();
+  return { blob };
+}
+
+export async function fetchBuiltinTemplates(accessToken: string): Promise<BuiltinTemplate[]> {
+  const res = await fetch(`${BASE}/templates/builtin`, {
+    headers: await headers(accessToken),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Nu s-au putut încărca șabloanele de bază");
+  return data.templates as BuiltinTemplate[];
+}
+
+export async function fetchBuiltinTemplateBytes(key: string, accessToken: string): Promise<Blob> {
+  const res = await fetch(`${BASE}/templates/builtin/${encodeURIComponent(key)}`, {
+    headers: await headers(accessToken),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? "Nu s-a putut descărca șablonul de bază");
+  }
+  return res.blob();
 }
 
 export async function fillGdoc(

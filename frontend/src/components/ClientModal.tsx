@@ -57,6 +57,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       caenCod: initial.caenCod,
       caenDescriere: initial.caenDescriere,
       caenSecundare: initial.caenSecundare ? [...initial.caenSecundare] : [],
+      puncteLucru: initial.puncteLucru ? [...initial.puncteLucru] : [],
       telefon: initial.telefon,
       email: initial.email ?? '',
       statutFiscal: initial.statutFiscal,
@@ -229,6 +230,14 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   }
   const removeCaenSecundar = (i: number) => {
     const arr = [...form.caenSecundare]; arr.splice(i, 1); set('caenSecundare', arr)
+  }
+
+  const addPunctLucru = () => set('puncteLucru', [...form.puncteLucru, ''])
+  const updatePunctLucru = (i: number, adresa: string) => {
+    const arr = [...form.puncteLucru]; arr[i] = adresa; set('puncteLucru', arr)
+  }
+  const removePunctLucru = (i: number) => {
+    const arr = [...form.puncteLucru]; arr.splice(i, 1); set('puncteLucru', arr)
   }
 
   // Părți sociale — derivat din capitalul social (valoare nominală minimă 10 lei/parte), nu se stochează separat
@@ -656,6 +665,21 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 </div>
                 <textarea className="field-textarea" value={form.sediuSocial}
                   onChange={e => set('sediuSocial', e.target.value)} rows={2} />
+              </div>
+
+              {/* Puncte de lucru — opțional, nelimitat */}
+              <div className="field full">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
+                  <label className="field-label" style={{ margin: 0 }}>Puncte de lucru</label>
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={addPunctLucru}>+ Adaugă punct de lucru</button>
+                </div>
+                {form.puncteLucru.map((adresa, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
+                    <input className="field-input" style={{ flex: 1 }} value={adresa}
+                      onChange={e => updatePunctLucru(i, e.target.value)} placeholder="Adresă punct de lucru" />
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+                  </div>
+                ))}
               </div>
             </div>
           </SectionCard>

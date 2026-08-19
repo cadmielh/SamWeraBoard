@@ -31,7 +31,7 @@ function scannedPersonsToPersoane(persons: ScannedPerson[]): Persoana[] {
 
 const EMPTY_COMPANY_DATA: CompanyData = {
   denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
-  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], capitalSocial: null,
+  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], puncteLucru: [], capitalSocial: null,
 }
 
 const CONTENT_STYLE = {
