@@ -35,7 +35,10 @@ export default function DriveFilePicker({ accessToken, onExtracted, onToast, onC
     }
   }, [accessToken, onToast])
 
+  // Încarcă fișierele din Drive când se schimbă folderul curent (efect
+  // legitim de sincronizare cu un sistem extern — nu stare derivată).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFiles(currentFolder.id)
   }, [currentFolder.id, loadFiles])
 

@@ -267,6 +267,16 @@ const FRIENDLY_FIELD: Record<string, string> = {
   DATA_AZI: 'Data de azi',
   LUNA_AZI: 'Luna curentă',
   AN_AZI: 'Anul curent',
+  // Câmpuri ad-hoc din clauzele Decizie/Hotărâre AGA — fără etichetă
+  // dedicată, ar apărea cu numele brut al placeholderului (cu "_").
+  SEDIU_NOU: 'Sediu nou',
+  TIP_CONTRACT_SEDIU: 'Tip contract (ex. închiriere)',
+  CONTRACT_SEDIU_NR: 'Nr. contract sediu',
+  CONTRACT_SEDIU_DATA: 'Data contract sediu',
+  PUNCT_LUCRU_NOU_ADRESA: 'Adresă punct de lucru nou',
+  TIP_CONTRACT_PUNCT_LUCRU: 'Tip contract (ex. comodat)',
+  CONTRACT_PUNCT_LUCRU_NR: 'Nr. contract punct de lucru',
+  CONTRACT_PUNCT_LUCRU_DATA: 'Data contract punct de lucru',
 }
 
 export function parsePlaceholder(ph: string): { group: string; field: string } {

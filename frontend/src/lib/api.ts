@@ -232,6 +232,29 @@ export async function fillDocxFromBuiltinTemplate(
   return { blob };
 }
 
+export async function fillPdfFromBuiltinTemplate(
+  builtinKey: string,
+  fields: Record<string, string>,
+  accessToken: string,
+  outputName?: string,
+): Promise<Blob> {
+  const fd = new FormData();
+  fd.append("template_builtin_key", builtinKey);
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
+  if (outputName) fd.append("_output_name", outputName);
+
+  const res = await fetch(`${BASE}/fill/pdf`, {
+    method: "POST",
+    headers: await headers(accessToken),
+    body: fd,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? "Fill failed");
+  }
+  return res.blob();
+}
+
 export async function fetchBuiltinTemplates(accessToken: string): Promise<BuiltinTemplate[]> {
   const res = await fetch(`${BASE}/templates/builtin`, {
     headers: await headers(accessToken),

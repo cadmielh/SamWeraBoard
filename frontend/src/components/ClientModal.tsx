@@ -5,7 +5,7 @@ import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
-import { useApp } from '../AppLayout'
+import { useApp } from '../AppContext'
 import { formatDateRo } from '../lib/dates'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
@@ -215,7 +215,10 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
           return
         }
       }
-      await onSave(form)
+      // Optimist: închidem imediat, fără să așteptăm scrierea reală — useClienti
+      // actualizează local instant și revine singur dacă scrierea eșuează;
+      // eroarea de aici doar informează userul, modalul nu mai stă blocat.
+      onSave(form).catch((e: unknown) => toast((e as Error).message ?? 'Eroare la salvare', 'err'))
       onClose()
     } catch (e: unknown) {
       toast((e as Error).message ?? 'Eroare la salvare', 'err')
@@ -320,7 +323,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
               key={i}
               type="button"
               className="persoana-card"
-              style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '.375rem', border: '1px solid var(--s150, #e5e7eb)', background: 'transparent' }}
+              style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent' }}
               onClick={() => chooseAsociat(a)}
             >
               <div>
@@ -365,7 +368,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 type="button"
                 className="persoana-card"
                 disabled={!adresaFull}
-                style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s150, #e5e7eb)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
+                style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
                 onClick={() => { set('sediuSocial', adresaFull); setSediuPicker(false) }}
               >
                 <div>
@@ -446,13 +449,13 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                     fontWeight: 600,
                     fontSize: '.8125rem',
                     borderColor: form.tipClient === tip
-                      ? (tip === 'PF' ? 'var(--b500, #3b82f6)' : 'var(--g500, #22c55e)')
+                      ? (tip === 'PF' ? 'var(--b500)' : 'var(--g500)')
                       : 'var(--s200)',
                     background: form.tipClient === tip
-                      ? (tip === 'PF' ? 'var(--b50, #eff6ff)' : 'var(--g50, #f0fdf4)')
+                      ? (tip === 'PF' ? 'var(--b50)' : 'var(--g50)')
                       : 'transparent',
                     color: form.tipClient === tip
-                      ? (tip === 'PF' ? 'var(--b600, #2563eb)' : 'var(--g700, #15803d)')
+                      ? (tip === 'PF' ? 'var(--b600)' : 'var(--g700)')
                       : 'var(--s400)',
                   }}
                 >
@@ -476,9 +479,9 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                       cursor: 'pointer',
                       fontSize: '.75rem',
                       fontWeight: form.subtipPF === key ? 700 : 400,
-                      borderColor: form.subtipPF === key ? 'var(--b400, #60a5fa)' : 'var(--s200)',
-                      background: form.subtipPF === key ? 'var(--b100, #dbeafe)' : 'transparent',
-                      color: form.subtipPF === key ? 'var(--b700, #1d4ed8)' : 'var(--s500)',
+                      borderColor: form.subtipPF === key ? 'var(--b400)' : 'var(--s200)',
+                      background: form.subtipPF === key ? 'var(--b100)' : 'transparent',
+                      color: form.subtipPF === key ? 'var(--b700)' : 'var(--s500)',
                     }}
                   >
                     {label}
@@ -500,7 +503,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
               {form.asociati.length > 0 && (
                 <div style={{
                   fontSize: '.8125rem', fontWeight: 600, marginTop: '-.25rem', marginBottom: '.75rem',
-                  color: cotaValid ? 'var(--g700, #15803d)' : 'var(--r600, #dc2626)',
+                  color: cotaValid ? 'var(--g700)' : 'var(--r600)',
                 }}>
                   Cotă totală: {cotaTotal}% {cotaValid ? '✓' : '— ar trebui să fie 100%'}
                 </div>
@@ -787,7 +790,7 @@ function SectionCard({ title, children, action }: {
 }) {
   return (
     <div style={{
-      border: '1px solid var(--s150, #e5e7eb)',
+      border: '1px solid var(--s200)',
       borderRadius: '8px',
       padding: '1rem',
       marginBottom: '1rem',

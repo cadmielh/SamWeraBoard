@@ -39,6 +39,14 @@ function IconUsers() {
     </svg>
   )
 }
+function IconSettings() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="2.6" />
+      <path d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.14 4.86l-1.41 1.41M6.27 13.73l-1.41 1.41M15.14 15.14l-1.41-1.41M6.27 6.27L4.86 4.86" />
+    </svg>
+  )
+}
 function IconChevron() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -218,14 +226,19 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, o
           Generare Documente
         </NavLink>
 
+        <NavLink to="/setari" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+          <IconSettings />
+          Setări
+        </NavLink>
+
         {userRole === 'admin' && (
-          <>
-            <div className="sidebar-section" style={{ marginTop: '.5rem' }}>Administrare</div>
+          <div style={{ marginTop: 'auto' }}>
+            <div className="sidebar-section">Administrare</div>
             <NavLink to="/utilizatori" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconUsers />
               Utilizatori
             </NavLink>
-          </>
+          </div>
         )}
       </nav>
 

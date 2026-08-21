@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Workspace } from '../types'
-import { useApp } from '../AppLayout'
+import { useApp } from '../AppContext'
 
 interface Props {
   workspace: Workspace

@@ -17,6 +17,7 @@ export function useTemplates(workspaceId: string | null) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!workspaceId) { setTemplates([]); setLoading(false); return }
     setLoading(true)
     const q = query(templatesCol(workspaceId), orderBy('createdAt', 'desc'))

@@ -52,8 +52,12 @@ export interface BuiltinTemplate {
   description: string
   tipTemplate: 'PF' | 'PJ' | 'universal'
   outputNameTemplate: string
+  type: 'docx' | 'pdf'
   placeholders: string[]
   clauses: ClauseMeta[]
+  // Prezent doar pentru type === 'pdf' — numele tuturor câmpurilor AcroForm
+  // din PDF, în ordinea din document.
+  pdfFields: string[]
 }
 
 export interface DocGeneration {

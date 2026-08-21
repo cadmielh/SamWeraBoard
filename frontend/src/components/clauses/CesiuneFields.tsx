@@ -113,9 +113,9 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
-      <div>
-        <label style={LABEL}>Cedent</label>
-        <select style={INPUT} value={fields.CEDENT_NUME ?? ''} onChange={e => onField('CEDENT_NUME', e.target.value)}>
+      <div className="field">
+        <label className="field-label">Cedent</label>
+        <select className="field-input" value={fields.CEDENT_NUME ?? ''} onChange={e => onField('CEDENT_NUME', e.target.value)}>
           <option value="">— alege —</option>
           {asociati.map((a, i) => (
             <option key={i} value={`${a.nume} ${a.prenume}`.trim()}>{a.nume} {a.prenume}</option>
@@ -123,14 +123,14 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
         </select>
       </div>
 
-      <div>
-        <label style={LABEL}>Cesionar</label>
+      <div className="field">
+        <label className="field-label">Cesionar</label>
         <div style={{ display: 'flex', gap: '.375rem', marginBottom: '.3rem' }}>
           <button type="button" className={`btn btn-sm ${cesionarMode === 'existent' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setCesionarMode('existent')}>Asociat existent</button>
           <button type="button" className={`btn btn-sm ${cesionarMode === 'nou' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => setCesionarMode('nou')}>+ Persoană nouă</button>
         </div>
         {cesionarMode === 'existent' ? (
-          <select style={INPUT} value={fields.CESIONAR_NUME ?? ''} onChange={e => onField('CESIONAR_NUME', e.target.value)}>
+          <select className="field-input" value={fields.CESIONAR_NUME ?? ''} onChange={e => onField('CESIONAR_NUME', e.target.value)}>
             <option value="">— alege —</option>
             {asociati.map((a, i) => (
               <option key={i} value={`${a.nume} ${a.prenume}`.trim()}>{a.nume} {a.prenume}</option>
@@ -138,26 +138,26 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
           </select>
         ) : (
           <div style={{ display: 'flex', gap: '.375rem' }}>
-            <input style={INPUT} placeholder="Nume" value={nouNume} onChange={e => handleCesionarNou(e.target.value, nouPrenume)} />
-            <input style={INPUT} placeholder="Prenume" value={nouPrenume} onChange={e => handleCesionarNou(nouNume, e.target.value)} />
+            <input className="field-input" placeholder="Nume" value={nouNume} onChange={e => handleCesionarNou(e.target.value, nouPrenume)} />
+            <input className="field-input" placeholder="Prenume" value={nouPrenume} onChange={e => handleCesionarNou(nouNume, e.target.value)} />
           </div>
         )}
       </div>
 
       <div style={{ display: 'flex', gap: '.5rem' }}>
-        <div style={{ flex: 1 }}>
-          <label style={LABEL}>Nr. părți cedate</label>
-          <input style={INPUT} value={fields.NR_PARTI_CEDATE ?? ''} onChange={e => onField('NR_PARTI_CEDATE', e.target.value)} />
+        <div className="field" style={{ flex: 1, minWidth: 0 }}>
+          <label className="field-label">Nr. părți cedate</label>
+          <input className="field-input" value={fields.NR_PARTI_CEDATE ?? ''} onChange={e => onField('NR_PARTI_CEDATE', e.target.value)} />
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={LABEL}>Valoare nominală (lei/parte)</label>
-          <input style={INPUT} value={fields.VALOARE_NOMINALA ?? '10'} onChange={e => onField('VALOARE_NOMINALA', e.target.value)} />
+        <div className="field" style={{ flex: 1, minWidth: 0 }}>
+          <label className="field-label">Valoare nominală (lei/parte)</label>
+          <input className="field-input" value={fields.VALOARE_NOMINALA ?? '10'} onChange={e => onField('VALOARE_NOMINALA', e.target.value)} />
         </div>
       </div>
 
-      <div>
-        <label style={LABEL}>Data contractului de cesiune</label>
-        <input style={INPUT} value={fields.DATA_CONTRACT_CESIUNE ?? today()} onChange={e => onField('DATA_CONTRACT_CESIUNE', e.target.value)} />
+      <div className="field">
+        <label className="field-label">Data contractului de cesiune</label>
+        <input className="field-input" value={fields.DATA_CONTRACT_CESIUNE ?? today()} onChange={e => onField('DATA_CONTRACT_CESIUNE', e.target.value)} />
       </div>
 
       <button type="button" className="btn btn-outline-primary btn-sm" onClick={handleCalculeaza} style={{ alignSelf: 'flex-start' }} disabled={!fields.CEDENT_NUME || !fields.NR_PARTI_CEDATE}>
@@ -166,13 +166,13 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
 
       {rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <label style={LABEL}>Structură rezultată (editabilă)</label>
+          <label className="field-label">Structură rezultată (editabilă)</label>
           {rows.map((r, i) => (
             <div key={i} style={{ display: 'flex', gap: '.3rem', alignItems: 'center', fontSize: '.8rem' }}>
-              <input style={{ ...INPUT, flex: 2 }} value={r.NUME ?? ''} onChange={e => updateRow(i, { NUME: e.target.value })} placeholder="nume" />
-              <input style={{ ...INPUT, flex: 1 }} value={r.PARTI_SOCIALE ?? ''} onChange={e => updateRow(i, { PARTI_SOCIALE: e.target.value })} placeholder="părți" />
-              <input style={{ ...INPUT, flex: 1 }} value={r.CAPITAL_SOCIAL ?? ''} onChange={e => updateRow(i, { CAPITAL_SOCIAL: e.target.value })} placeholder="lei" />
-              <input style={{ ...INPUT, flex: 1 }} value={r.COTA_PARTICIPARE ?? ''} onChange={e => updateRow(i, { COTA_PARTICIPARE: e.target.value })} placeholder="%" />
+              <input className="field-input" style={{ flex: 2, minWidth: 0 }} value={r.NUME ?? ''} onChange={e => updateRow(i, { NUME: e.target.value })} placeholder="nume" />
+              <input className="field-input" style={{ flex: 1, minWidth: 0 }} value={r.PARTI_SOCIALE ?? ''} onChange={e => updateRow(i, { PARTI_SOCIALE: e.target.value })} placeholder="părți" />
+              <input className="field-input" style={{ flex: 1, minWidth: 0 }} value={r.CAPITAL_SOCIAL ?? ''} onChange={e => updateRow(i, { CAPITAL_SOCIAL: e.target.value })} placeholder="lei" />
+              <input className="field-input" style={{ flex: 1, minWidth: 0 }} value={r.COTA_PARTICIPARE ?? ''} onChange={e => updateRow(i, { COTA_PARTICIPARE: e.target.value })} placeholder="%" />
               <button type="button" onClick={() => onRows(rows.filter((_, idx) => idx !== i))} style={BTN_X}>×</button>
             </div>
           ))}
@@ -182,6 +182,4 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
   )
 }
 
-const LABEL: CSSProperties = { fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.04em', textTransform: 'uppercase', display: 'block', marginBottom: '.25rem' }
-const INPUT: CSSProperties = { padding: '.375rem .625rem', borderRadius: 'var(--r-sm)', border: '1.5px solid var(--s300)', fontSize: '.85rem', color: 'var(--s800)', background: '#fff', width: '100%', fontFamily: 'var(--font)', outline: 'none', boxSizing: 'border-box' }
 const BTN_X: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--s400)', fontSize: '1rem', lineHeight: 1, padding: '.125rem .25rem' }

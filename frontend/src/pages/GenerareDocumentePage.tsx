@@ -1,12 +1,12 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import type { IDFields } from '../lib/api'
-import type { Client, Persoana, ScannedPerson } from '../types'
+import type { Client, ScannedPerson } from '../types'
 import { inferTipClient } from '../types'
-import { useApp } from '../AppLayout'
-import { useClienti, EMPTY_PERSOANA } from '../lib/clienti'
+import { useApp } from '../AppContext'
+import { useClienti, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from '../lib/clienti'
 import { EMPTY_ID_FIELDS, idFieldsToPersoana, persoanaToIDFields } from '../lib/idFields'
 import UploadZone from '../components/UploadZone'
 import DriveFilePicker from '../components/DriveFilePicker'
@@ -15,41 +15,58 @@ import TemplateFiller from '../components/TemplateFiller'
 import History from '../components/History'
 import ScanQueue from '../components/ScanQueue'
 import ClientDocSelector from '../components/ClientDocSelector'
-import MultiPersonPreview from '../components/MultiPersonPreview'
-import CompanyInfoForm, { type CompanyData } from '../components/CompanyInfoForm'
+import MultiPersonPreview, { type MultiPersonPreviewHandle } from '../components/MultiPersonPreview'
+import ClientModal from '../components/ClientModal'
 import PersonScanModal from '../components/PersonScanModal'
+import ConfirmModal from '../components/ConfirmModal'
 
 // Internal source modes — 'buletin' = nou PF, 'societate' = nou PJ, 'client' = din portofoliu
 type SourceMode = 'buletin' | 'societate' | 'client'
 type Step = 1 | 2 | 3
 
-function scannedPersonsToPersoane(persons: ScannedPerson[]): Persoana[] {
-  return persons
-    .filter(p => p.role === 'asociat')
-    .map(p => idFieldsToPersoana(p.fields, { ...EMPTY_PERSOANA, calitate: 'Asociat', cotaParticipare: p.cotaParticipare }))
+// Echipa scanată la Pasul 1 devine profilul inițial pentru ClientModal la
+// Pasul 2 — același formular complet (date fiscale, verificare unicitate
+// denumire) folosit peste tot, nu un formular trunchiat separat, ca să nu mai
+// existe două surse divergente de date pentru o entitate nouă.
+function scannedPersonsToClientInitial(persons: ScannedPerson[]): Client {
+  const toPersoana = (p: ScannedPerson, calitate: string) =>
+    idFieldsToPersoana(p.fields, { ...EMPTY_PERSOANA, calitate, cotaParticipare: p.cotaParticipare })
+  return {
+    id: '', createdAt: null, createdBy: '', denumireLower: '',
+    ...EMPTY_CLIENT,
+    tipClient: 'PJ',
+    asociati: persons.filter(p => p.role === 'asociat').map(p => toPersoana(p, 'Asociat')),
+    administratori: persons.filter(p => p.role === 'administrator').map(p => toPersoana(p, 'Administrator')),
+  } as Client
 }
 
-const EMPTY_COMPANY_DATA: CompanyData = {
-  denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
-  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], puncteLucru: [], capitalSocial: null,
-}
-
+// Containerul <main> are mereu aceeași lățime, indiferent de pas sau de
+// conținutul intern — altfel orice element care refuză să se comprimă undeva
+// în interior (ex. un formular cu mai multe câmpuri pe rând) putea forța tot
+// cadrul, inclusiv poziția lui, să se schimbe de la un ecran la altul.
+// Ecranele care nu au nevoie de atâta lățime (landing, pașii 1-2) își
+// centrează propriul conținut în COMPACT_STYLE; Pasul 3 (TemplateFiller)
+// folosește tot spațiul, fără alt wrapper.
 const CONTENT_STYLE = {
-  maxWidth: 860, margin: '0 auto', padding: '2rem 1.5rem',
+  // <main> e el însuși un element flex, copil al .main-area (tot flex,
+  // coloană) — margin:'0 auto' pune margini orizontale "auto", care în
+  // flexbox DEZACTIVEAZĂ explicit stretch-ul implicit pe axa respectivă.
+  // Fără width explicit, <main> cădea pe dimensionare "shrink-to-fit" după
+  // propriul conținut, exact sursa reală a instabilității de la Pasul 3 —
+  // nu ceva din interiorul cardului, ci <main> însuși.
+  width: '100%', maxWidth: 1400, margin: '0 auto', padding: '2rem 1.5rem',
   display: 'flex', flexDirection: 'column' as const, gap: '1.5rem',
 }
+const COMPACT_STYLE = { maxWidth: 860, margin: '0 auto', width: '100%' }
 
 export default function GenerareDocumentePage() {
-  const { user, accessToken, toast, ocrMode, activeWorkspace } = useApp()
+  const { user, accessToken, toast, activeWorkspace } = useApp()
   const workspaceId = activeWorkspace?.id ?? ''
   const { clienti, loading: clientiLoading, add: addClient, update: updateClient } = useClienti(workspaceId || null)
 
   const [hasStarted, setHasStarted] = useState(false)
   const [sourceMode, setSourceMode] = useState<SourceMode>('client')
   const [step, setStep] = useState<Step>(1)
-
-  // Landing: sub-selecție pentru "Entitate nouă"
-  const [newEntityHover, setNewEntityHover] = useState(false)
 
   // Buletin (nou PF) mode state
   const [fields, setFields] = useState<IDFields | null>(null)
@@ -59,32 +76,54 @@ export default function GenerareDocumentePage() {
   // Societate / Client mode state
   const [scannedPersons, setScannedPersons] = useState<ScannedPerson[]>([])
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
-  const [companyInfo, setCompanyInfo] = useState<CompanyData>(EMPTY_COMPANY_DATA)
+  // Datele complete de client colectate prin ClientModal la Pasul 2 — nu se
+  // salvează încă în Firestore (asta rămâne opțional, la Pasul 3, ca înainte),
+  // doar alimentează TemplateFiller.
+  const [societateClientInput, setSocietateClientInput] = useState<ClientInput | null>(null)
+  // ClientModal apelează mereu onClose imediat după un onSave reușit (se
+  // comportă ca un modal obișnuit) — fără acest flag, acel onClose ar anula
+  // imediat avansarea la Pasul 3 declanșată chiar de acel onSave.
+  const societateJustSavedRef = useRef(false)
   const [pfScanMode, setPfScanMode] = useState<'scan' | 'manual' | null>(null)
+  // Buton "Continuă" duplicat sus, lângă "Înapoi" — MultiPersonPreview
+  // decide singur când se poate continua (cotă validă, minim o persoană).
+  const multiPersonRef = useRef<MultiPersonPreviewHandle>(null)
+  const [multiPersonReady, setMultiPersonReady] = useState(false)
+  // Modificările din MultiPersonPreview se aplică local imediat (pentru
+  // completarea template-ului); salvarea în Firestore e opțională, cerută
+  // explicit printr-un modal de confirmare — nu se scrie automat în DB.
+  const [pendingClientSave, setPendingClientSave] = useState<{ id: string; fields: Partial<ClientInput> } | null>(null)
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
+  // Deep-link din ClientView (?clientId=...&mode=client) — calculat sincron,
+  // din primul render, ca să nu se vadă o clipă pagina de start înainte ca
+  // lista de clienți să se încarce și efectul de mai jos să aplice link-ul.
+  const [deepLinkPending, setDeepLinkPending] = useState(
+    () => searchParams.get('mode') === 'client' && !!searchParams.get('clientId')
+  )
+
   // Deep-link: navigare din ClientView (?clientId=...&mode=client) — se aplică
   // o singură dată, la intrarea în pagină. Fără gardă pe `hasStarted`, orice
   // schimbare ulterioară a listei `clienti` (ex. salvarea datelor editate în
-  // pasul de verificare) re-declanșează efectul și trage utilizatorul înapoi
-  // la pasul 2, anulând progresul din "Continuă".
+  // verificare) re-declanșează efectul și anulează progresul din "Continuă".
+  // Rămâne pe pasul 1 — selecția + verificarea sunt comasate acolo.
   useEffect(() => {
-    if (hasStarted) return
+    if (hasStarted || !deepLinkPending) return
     const clientId = searchParams.get('clientId')
     const mode = searchParams.get('mode') as SourceMode | null
-    if (clientId && mode === 'client' && clienti.length > 0) {
-      const found = clienti.find(c => c.id === clientId)
-      if (found) {
-        setSourceMode('client')
-        setSelectedClient(found)
-        setHasStarted(true)
-        setStep(2)
-      }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!clientId || mode !== 'client') { setDeepLinkPending(false); return }
+    if (clientiLoading) return // așteaptă încărcarea listei, fără să renunțe încă
+    const found = clienti.find(c => c.id === clientId)
+    if (found) {
+      setSourceMode('client')
+      setSelectedClient(found)
+      setHasStarted(true)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, clienti, hasStarted])
+    setDeepLinkPending(false)
+  }, [searchParams, clienti, clientiLoading, hasStarted, deepLinkPending])
 
   const startMode = (mode: SourceMode) => {
     setSourceMode(mode)
@@ -92,19 +131,20 @@ export default function GenerareDocumentePage() {
     setSourceFile('')
     setScannedPersons([])
     setSelectedClient(null)
-    setCompanyInfo(EMPTY_COMPANY_DATA)
+    setSocietateClientInput(null)
     setShowDrivePicker(false)
     setStep(1)
     setHasStarted(true)
   }
 
   const goToLanding = () => {
+    setDeepLinkPending(false)
     setHasStarted(false)
     setFields(null)
     setSourceFile('')
     setScannedPersons([])
     setSelectedClient(null)
-    setCompanyInfo(EMPTY_COMPANY_DATA)
+    setSocietateClientInput(null)
     setShowDrivePicker(false)
     setStep(1)
   }
@@ -113,11 +153,16 @@ export default function GenerareDocumentePage() {
   // mereu vizibil din bara de sus, cât și de butoanele locale din fiecare card,
   // ca să nu existe două căi de întoarcere cu comportamente diferite.
   const handleStepBack = () => {
-    if (step === 3) { setStep(2); return }
+    if (step === 3) {
+      // "client" comasează selectarea + verificarea pe pasul 1 — nu există
+      // pas 2 vizual la care să se întoarcă, sare direct la 1 (selecția
+      // rămâne, ca userul să nu reintroducă nimic).
+      setStep(sourceMode === 'client' ? 1 : 2)
+      return
+    }
     if (step !== 2) return
     if (sourceMode === 'buletin') { setStep(1); setFields(null); return }
-    if (sourceMode === 'societate') { setStep(1); return }
-    setStep(1); setSelectedClient(null)
+    setStep(1)
   }
 
   // ── Buletin (nou PF) handlers ─────────────────────────────────────────────────
@@ -154,62 +199,92 @@ export default function GenerareDocumentePage() {
 
   // ── Client din portofoliu handlers ────────────────────────────────────────────
 
+  // Selectarea nu mai schimbă pasul — verificarea apare inline, sub selector,
+  // pe același ecran (Pasul 1).
   const handleClientSelect = (c: Client) => {
     setSelectedClient(c)
-    setStep(2)
   }
 
-  const handleMultiPersonContinue = async (persons: ScannedPerson[], updatedClient: Client) => {
+  const handleMultiPersonContinue = (persons: ScannedPerson[], updatedClient: Client) => {
+    const syncedFields: Partial<ClientInput> = {
+      denumire: updatedClient.denumire,
+      formaJuridica: updatedClient.formaJuridica,
+      codFiscal: updatedClient.codFiscal,
+      nrRegistrul: updatedClient.nrRegistrul,
+      sediuSocial: updatedClient.sediuSocial,
+      caenCod: updatedClient.caenCod,
+      caenDescriere: updatedClient.caenDescriere,
+      caenSecundare: updatedClient.caenSecundare,
+      capitalSocial: updatedClient.capitalSocial,
+      asociati: updatedClient.asociati,
+      administratori: updatedClient.administratori,
+    }
+    const originalFields = selectedClient && {
+      denumire: selectedClient.denumire,
+      formaJuridica: selectedClient.formaJuridica,
+      codFiscal: selectedClient.codFiscal,
+      nrRegistrul: selectedClient.nrRegistrul,
+      sediuSocial: selectedClient.sediuSocial,
+      caenCod: selectedClient.caenCod,
+      caenDescriere: selectedClient.caenDescriere,
+      caenSecundare: selectedClient.caenSecundare,
+      capitalSocial: selectedClient.capitalSocial,
+      asociati: selectedClient.asociati,
+      administratori: selectedClient.administratori,
+    }
+    const hasChanges = JSON.stringify(originalFields) !== JSON.stringify(syncedFields)
+
     setScannedPersons(persons)
     setSelectedClient(updatedClient)
     setStep(3)
-    if (workspaceId && updatedClient.id) {
-      try {
-        await updateClient(workspaceId, updatedClient.id, {
-          denumire: updatedClient.denumire,
-          formaJuridica: updatedClient.formaJuridica,
-          codFiscal: updatedClient.codFiscal,
-          nrRegistrul: updatedClient.nrRegistrul,
-          sediuSocial: updatedClient.sediuSocial,
-          caenCod: updatedClient.caenCod,
-          caenDescriere: updatedClient.caenDescriere,
-          caenSecundare: updatedClient.caenSecundare,
-          capitalSocial: updatedClient.capitalSocial,
-          asociati: updatedClient.asociati,
-          administratori: updatedClient.administratori,
-        })
-        toast('Datele clientului au fost actualizate', 'ok')
-      } catch (err: unknown) {
-        toast((err as Error).message ?? 'Eroare la actualizarea clientului', 'err')
-      }
+
+    if (hasChanges && workspaceId && updatedClient.id) {
+      setPendingClientSave({ id: updatedClient.id, fields: syncedFields })
     }
   }
 
-  // PF client din portofoliu: scanare/editare CI → merge în selectedClient.titular,
-  // rămâne pe pasul de verificare (nu sare automat la template)
+  const confirmPendingClientSave = async () => {
+    if (!pendingClientSave || !workspaceId) return
+    const { id, fields } = pendingClientSave
+    setPendingClientSave(null)
+    try {
+      await updateClient(workspaceId, id, fields)
+      toast('Datele clientului au fost actualizate', 'ok')
+    } catch (err: unknown) {
+      toast((err as Error).message ?? 'Eroare la actualizarea clientului', 'err')
+    }
+  }
+
+  // PF client din portofoliu: scanare/editare CI → merge local în
+  // selectedClient.titular, rămâne pe pasul de verificare. Nu se mai
+  // salvează automat aici — la fel ca la PJ, salvarea în Firestore se cere
+  // explicit (modal de confirmare) o singură dată, la "Continuă la template".
   const handlePFPersonUpdate = useCallback(async (result: IDFields) => {
     if (!selectedClient) return
     const updatedTitular = idFieldsToPersoana(result, selectedClient.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' })
-    const updated = { ...selectedClient, titular: updatedTitular }
-    setSelectedClient(updated)
+    setSelectedClient({ ...selectedClient, titular: updatedTitular })
     setPfScanMode(null)
     toast('Date actualizate', 'ok')
 
-    if (workspaceId) {
-      try {
-        await updateClient(workspaceId, updated.id, { titular: updatedTitular })
-      } catch (err: unknown) {
-        toast((err as Error).message ?? 'Eroare la actualizarea clientului', 'err')
-      }
-    }
     if (user) {
       try {
         await addDoc(collection(db, 'users', user.uid, 'extractions'), {
           createdAt: serverTimestamp(), sourceFile: pfScanMode === 'manual' ? 'manual' : 'scan', fields: result,
         })
-      } catch {}
+      } catch { /* log non-critic — nu blocăm fluxul dacă eșuează */ }
     }
-  }, [user, toast, selectedClient, workspaceId, updateClient, pfScanMode])
+  }, [user, toast, selectedClient, pfScanMode])
+
+  const handlePFContinue = () => {
+    if (!selectedClient) return
+    const original = clienti.find(c => c.id === selectedClient.id)
+    const hasChanges = JSON.stringify(original?.titular ?? null) !== JSON.stringify(selectedClient.titular ?? null)
+
+    setStep(3)
+    if (hasChanges && workspaceId && selectedClient.id) {
+      setPendingClientSave({ id: selectedClient.id, fields: { titular: selectedClient.titular } })
+    }
+  }
 
   // ── Save client from TemplateFiller ──────────────────────────────────────────
 
@@ -227,21 +302,29 @@ export default function GenerareDocumentePage() {
 
   const getModeLabel = () => {
     if (sourceMode === 'client') return '📂 Client din portofoliu'
-    if (sourceMode === 'societate') return '👥 Entitate nouă — PJ'
-    return '📄 Entitate nouă — PF'
+    if (sourceMode === 'societate') return '🏢 Entitate nouă — PJ'
+    return '🪪 Entitate nouă — PF'
   }
 
-  const getStepLabels = (): string[] => {
-    if (sourceMode === 'buletin') return ['Scanează CI', 'Verifică', 'Completează']
-    if (sourceMode === 'societate') return ['Configurează echipa', 'Date societate', 'Completează']
-    return ['Selectează client', 'Verifică date', 'Completează']
+  // `num` e valoarea reală a pasului (comparată cu `step`), nu poziția din
+  // listă — pentru "client din portofoliu", selectarea și verificarea sunt
+  // comasate pe un singur ecran (pasul 1), deci pasul 2 nu mai există vizual
+  // și se sare direct la 3.
+  const getStepLabels = (): { num: Step; label: string }[] => {
+    if (sourceMode === 'buletin') return [
+      { num: 1, label: 'Scanează CI' }, { num: 2, label: 'Verifică' }, { num: 3, label: 'Completează' },
+    ]
+    if (sourceMode === 'societate') return [
+      { num: 1, label: 'Configurează echipa' }, { num: 2, label: 'Date client' }, { num: 3, label: 'Completează' },
+    ]
+    return [{ num: 1, label: 'Selectează și verifică' }, { num: 3, label: 'Completează' }]
   }
 
   return (
     <>
       {/* ══ TOP BAR — sticky, ca navigarea înapoi să rămână mereu vizibilă, indiferent de scroll ══ */}
       <div style={{
-        background: '#fff', borderBottom: '1px solid var(--s200)',
+        background: 'var(--surface)', borderBottom: '1px solid var(--s200)',
         padding: '.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
         position: 'sticky', top: 0, zIndex: 10,
       }}>
@@ -271,8 +354,7 @@ export default function GenerareDocumentePage() {
             </div>
 
             <nav style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flex: 1 }}>
-              {getStepLabels().map((label, i) => {
-                const s = i + 1
+              {getStepLabels().map(({ num: s, label }, i) => {
                 const active = step === s
                 const done = step > s
                 return (
@@ -287,7 +369,7 @@ export default function GenerareDocumentePage() {
                         fontSize: '.65rem', fontWeight: 700,
                         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       }}>
-                        {done ? '✓' : s}
+                        {done ? '✓' : i + 1}
                       </span>
                       <span style={{ fontSize: '.78rem', fontWeight: active ? 600 : 400, color: active ? 'var(--s800)' : 'var(--s400)', whiteSpace: 'nowrap' }}>
                         {label}
@@ -304,19 +386,28 @@ export default function GenerareDocumentePage() {
           </span>
         )}
 
-        <span className={`chip ${ocrMode === 'claude' ? 'chip-primary' : 'chip-muted'}`} style={{ fontSize: '.68rem' }}>
-          {ocrMode === 'claude' ? '✦ Claude' : '⚙ OCR Local'}
-        </span>
         <button className="btn btn-ghost btn-sm" onClick={() => setHistoryOpen(h => !h)}>
           {historyOpen ? 'Închide' : 'Istoric'}
         </button>
       </div>
 
       <main style={CONTENT_STYLE}>
+        {/* key nou la fiecare schimbare de ecran → React remontează, deci
+            animația de fade rulează din nou; orientează vizual userul că s-a
+            schimbat conținutul, fără o tranziție bruscă. */}
+        <div key={`${hasStarted ? sourceMode : 'landing'}-${step}`} className="step-transition">
+
+        {/* Deep-link în curs de rezolvare — evită să se vadă o clipă pagina
+            de start înainte ca lista de clienți să se încarce. */}
+        {!hasStarted && deepLinkPending && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+            <span className="spin spin-dark" style={{ width: 22, height: 22, borderWidth: 3 }} />
+          </div>
+        )}
 
         {/* ══════════════ LANDING ══════════════ */}
-        {!hasStarted && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {!hasStarted && !deepLinkPending && (
+          <div style={{ ...COMPACT_STYLE, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ textAlign: 'center', paddingTop: '.5rem' }}>
               <h2 style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--s800)', margin: 0 }}>
                 Generare documente
@@ -326,7 +417,7 @@ export default function GenerareDocumentePage() {
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', maxWidth: 640, margin: '0 auto', width: '100%' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', width: '100%' }}>
 
               {/* Card 1: Client din portofoliu */}
               <LandingCard
@@ -341,57 +432,35 @@ export default function GenerareDocumentePage() {
                 onClick={() => startMode('client')}
               />
 
-              {/* Card 2: Entitate nouă — cu sub-selecție PF/PJ */}
-              <div
-                style={{
-                  background: '#fff', border: `2px solid ${newEntityHover ? 'var(--p400)' : 'var(--s200)'}`,
-                  borderRadius: 'var(--r-lg, 12px)', padding: '1.5rem 1.25rem',
-                  display: 'flex', flexDirection: 'column', gap: '1rem',
-                  boxShadow: newEntityHover ? '0 4px 16px rgba(99,102,241,.12)' : 'none',
-                  transition: 'border-color .15s, box-shadow .15s',
-                }}
-                onMouseEnter={() => setNewEntityHover(true)}
-                onMouseLeave={() => setNewEntityHover(false)}
-              >
-                <div style={{ fontSize: '2rem', lineHeight: 1 }}>➕</div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--s800)', marginBottom: '.2rem' }}>
-                    Entitate nouă
-                  </div>
-                  <div style={{ fontSize: '.78rem', color: 'var(--p600)', fontWeight: 600 }}>
-                    Fără client salvat
-                  </div>
-                </div>
-                <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
-                  {['Persoană fizică sau juridică', 'Scanează CI sau introdu manual', 'Opțional: salvează ca client nou'].map(b => (
-                    <li key={b} style={{ fontSize: '.8rem', color: 'var(--s500)', lineHeight: 1.4 }}>{b}</li>
-                  ))}
-                </ul>
-                <div style={{ display: 'flex', gap: '.5rem', marginTop: 'auto' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => startMode('buletin')}
-                    style={{
-                      flex: 1, background: 'var(--b50, #eff6ff)', color: 'var(--b700, #1d4ed8)',
-                      border: '1.5px solid var(--b200, #bfdbfe)', fontWeight: 700,
-                    }}
-                  >
-                    Persoană Fizică
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => startMode('societate')}
-                    style={{
-                      flex: 1, background: 'var(--g50, #f0fdf4)', color: 'var(--g700, #15803d)',
-                      border: '1.5px solid var(--g200, #bbf7d0)', fontWeight: 700,
-                    }}
-                  >
-                    Persoană Juridică
-                  </button>
-                </div>
-              </div>
+              {/* Card 2: Entitate nouă — PJ */}
+              <LandingCard
+                icon="🏢"
+                title="Entitate nouă — PJ"
+                desc="Fără client salvat"
+                examples="SRL, SA, SCS, etc."
+                accent="g"
+                bullets={[
+                  'Scanează echipa (asociați, administratori)',
+                  'Completezi datele complete ale firmei',
+                  'Opțional: salvează ca client nou',
+                ]}
+                onClick={() => startMode('societate')}
+              />
+
+              {/* Card 3: Entitate nouă — PF */}
+              <LandingCard
+                icon="🪪"
+                title="Entitate nouă — PF"
+                desc="Fără client salvat"
+                examples="PFA, II, IF, etc."
+                accent="b"
+                bullets={[
+                  'Scanează buletinul (CI)',
+                  'Verifici și completezi datele',
+                  'Opțional: salvează ca client nou',
+                ]}
+                onClick={() => startMode('buletin')}
+              />
             </div>
           </div>
         )}
@@ -400,29 +469,34 @@ export default function GenerareDocumentePage() {
         {hasStarted && sourceMode === 'buletin' && (
           <>
             {step === 1 && (
-              showDrivePicker
-                ? <DriveFilePicker
-                    accessToken={accessToken}
-                    onExtracted={handleExtracted}
-                    onToast={toast}
-                    onClose={() => setShowDrivePicker(false)}
-                  />
-                : <UploadZone
-                    accessToken={accessToken}
-                    onExtracted={handleExtracted}
-                    onToast={toast}
-                    onShowDrivePicker={() => setShowDrivePicker(true)}
-                    onManualEntry={() => { setFields(EMPTY_ID_FIELDS); setSourceFile('manual'); setStep(2) }}
-                  />
+              <div style={COMPACT_STYLE}>
+                {showDrivePicker
+                  ? <DriveFilePicker
+                      accessToken={accessToken}
+                      onExtracted={handleExtracted}
+                      onToast={toast}
+                      onClose={() => setShowDrivePicker(false)}
+                    />
+                  : <UploadZone
+                      accessToken={accessToken}
+                      onExtracted={handleExtracted}
+                      onToast={toast}
+                      onShowDrivePicker={() => setShowDrivePicker(true)}
+                      onManualEntry={() => { setFields(EMPTY_ID_FIELDS); setSourceFile('manual'); setStep(2) }}
+                    />
+                }
+              </div>
             )}
             {step === 2 && fields && (
-              <FieldsForm
-                fields={fields}
-                sourceFile={sourceFile}
-                onFieldsChange={setFields}
-                onNext={() => setStep(3)}
-                onBack={handleStepBack}
-              />
+              <div style={COMPACT_STYLE}>
+                <FieldsForm
+                  fields={fields}
+                  sourceFile={sourceFile}
+                  onFieldsChange={setFields}
+                  onNext={() => setStep(3)}
+                  onBack={handleStepBack}
+                />
+              </div>
             )}
             {step === 3 && fields && (
               <TemplateFiller
@@ -447,7 +521,7 @@ export default function GenerareDocumentePage() {
         {hasStarted && sourceMode === 'societate' && (
           <>
             {step === 1 && (
-              <div className="card">
+              <div style={COMPACT_STYLE} className="card">
                 <div className="card-head">
                   <span className="card-title">
                     <span className="step-chip">1</span>
@@ -465,29 +539,33 @@ export default function GenerareDocumentePage() {
               </div>
             )}
             {step === 2 && (
-              <div className="card">
-                <div className="card-head">
-                  <div>
+              <>
+                <div style={COMPACT_STYLE} className="card">
+                  <div className="card-head">
                     <span className="card-title">
                       <span className="step-chip">2</span>
-                      Date societate
+                      Date client
                     </span>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={handleStepBack}>← Înapoi</button>
-                </div>
-                <div className="card-body">
-                  <CompanyInfoForm
-                    value={companyInfo}
-                    onChange={patch => setCompanyInfo(prev => ({ ...prev, ...patch }))}
-                    asociati={scannedPersonsToPersoane(scannedPersons)}
-                    accessToken={accessToken}
-                    onToast={toast}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                    <button className="btn btn-primary" onClick={() => setStep(3)}>Continuă la template →</button>
+                  <div className="card-body">
+                    <p className="card-sub" style={{ margin: 0 }}>
+                      Completează profilul complet al societății — aceleași câmpuri ca la un client din portofoliu.
+                    </p>
                   </div>
                 </div>
-              </div>
+                <ClientModal
+                  initial={scannedPersonsToClientInitial(scannedPersons)}
+                  onSave={async data => {
+                    societateJustSavedRef.current = true
+                    setSocietateClientInput(data)
+                    setStep(3)
+                  }}
+                  onClose={() => {
+                    if (societateJustSavedRef.current) { societateJustSavedRef.current = false; return }
+                    handleStepBack()
+                  }}
+                />
+              </>
             )}
             {step === 3 && (
               <TemplateFiller
@@ -495,7 +573,7 @@ export default function GenerareDocumentePage() {
                 user={user}
                 fields={null}
                 scannedPersons={scannedPersons}
-                client={{ tipClient: 'PJ', ...companyInfo }}
+                client={societateClientInput}
                 accessToken={accessToken}
                 onToast={toast}
                 onBack={handleStepBack}
@@ -509,107 +587,103 @@ export default function GenerareDocumentePage() {
         {hasStarted && sourceMode === 'client' && (
           <>
             {step === 1 && (
-              <div className="card">
-                <div className="card-head">
-                  <span className="card-title">
-                    <span className="step-chip">1</span>
-                    Selectează client din portofoliu
-                  </span>
-                </div>
-                <div className="card-body">
-                  <ClientDocSelector
-                    clients={clienti}
-                    loading={clientiLoading}
-                    onSelect={handleClientSelect}
-                  />
-                  {clienti.length === 0 && !clientiLoading && (
-                    <p style={{ fontSize: '.85rem', color: 'var(--s400)', marginTop: '.75rem' }}>
-                      Niciun client în portofoliu. Adaugă clienți din pagina Clienți.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: PF → verifică/completează date CI */}
-            {step === 2 && selectedClient && inferTipClient(selectedClient) === 'PF' && (
-              <div className="card">
-                <div className="card-head">
-                  <div>
+              <>
+                <div style={COMPACT_STYLE} className="card">
+                  <div className="card-head">
                     <span className="card-title">
-                      <span className="step-chip">2</span>
-                      Verifică datele persoanei
+                      <span className="step-chip">1</span>
+                      Selectează client din portofoliu
                     </span>
-                    <p className="card-sub">{selectedClient.denumire}</p>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={handleStepBack}>← Înapoi</button>
+                  <div className="card-body">
+                    <ClientDocSelector
+                      clients={clienti}
+                      loading={clientiLoading}
+                      onSelect={handleClientSelect}
+                      value={selectedClient?.denumire}
+                    />
+                    {clienti.length === 0 && !clientiLoading && (
+                      <p style={{ fontSize: '.85rem', color: 'var(--s400)', marginTop: '.75rem' }}>
+                        Niciun client în portofoliu. Adaugă clienți din pagina Clienți.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="card-body">
-                  <div className="persoana-card" style={{ marginBottom: '1rem' }}>
-                    <div>
-                      <div className="persoana-card-name">
-                        {selectedClient.titular?.nume || selectedClient.titular?.prenume
-                          ? `${selectedClient.titular.prenume} ${selectedClient.titular.nume}`
-                          : 'Fără date completate'}
+
+                {/* Verificare inline — apare imediat sub selector, fără schimbare de pas */}
+                {selectedClient && inferTipClient(selectedClient) === 'PF' && (
+                  <div style={COMPACT_STYLE} className="card">
+                    <div className="card-head">
+                      <span className="card-title">Verifică datele persoanei</span>
+                      <button className="btn btn-primary btn-sm" onClick={handlePFContinue}>Continuă la template →</button>
+                    </div>
+                    <div className="card-body">
+                      <div className="persoana-card" style={{ marginBottom: '1rem' }}>
+                        <div>
+                          <div className="persoana-card-name">
+                            {selectedClient.titular?.nume || selectedClient.titular?.prenume
+                              ? `${selectedClient.titular.prenume} ${selectedClient.titular.nume}`
+                              : 'Fără date completate'}
+                          </div>
+                          <div className="persoana-card-sub">
+                            {selectedClient.titular?.cnp ? `CNP: ${selectedClient.titular.cnp}` : ''}
+                            {selectedClient.titular?.adresa ? ` · ${selectedClient.titular.adresa}${selectedClient.titular.judet ? `, ${selectedClient.titular.judet}` : ''}` : ''}
+                            {selectedClient.titular?.data_nasterii ? ` · Născut: ${selectedClient.titular.data_nasterii}` : ''}
+                            {selectedClient.titular?.serie_numar ? ` · CI: ${selectedClient.titular.serie_numar}` : ''}
+                          </div>
+                        </div>
                       </div>
-                      <div className="persoana-card-sub">
-                        {selectedClient.titular?.cnp ? `CNP: ${selectedClient.titular.cnp}` : ''}
-                        {selectedClient.titular?.adresa ? ` · ${selectedClient.titular.adresa}${selectedClient.titular.judet ? `, ${selectedClient.titular.judet}` : ''}` : ''}
-                        {selectedClient.titular?.data_nasterii ? ` · Născut: ${selectedClient.titular.data_nasterii}` : ''}
-                        {selectedClient.titular?.serie_numar ? ` · CI: ${selectedClient.titular.serie_numar}` : ''}
+
+                      <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                        <button className="btn btn-outline-primary btn-sm" onClick={() => setPfScanMode('scan')}>📷 Scanează CI</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setPfScanMode('manual')}>✏️ Editează manual</button>
                       </div>
                     </div>
                   </div>
+                )}
 
-                  <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
-                    <button className="btn btn-outline-primary btn-sm" onClick={() => setPfScanMode('scan')}>📷 Scanează CI</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setPfScanMode('manual')}>✏️ Editează manual</button>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                    <button className="btn btn-primary" onClick={() => setStep(3)}>Continuă la template →</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {pfScanMode && selectedClient && (
-              <PersonScanModal
-                personLabel={selectedClient.denumire}
-                accessToken={accessToken}
-                initialFields={pfScanMode === 'manual' ? persoanaToIDFields(selectedClient.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' }) : undefined}
-                mode={pfScanMode}
-                onConfirm={handlePFPersonUpdate}
-                onClose={() => setPfScanMode(null)}
-                onToast={toast}
-              />
-            )}
-
-            {/* Step 2: PJ → MultiPersonPreview */}
-            {step === 2 && selectedClient && inferTipClient(selectedClient) === 'PJ' && (
-              <div className="card">
-                <div className="card-head">
-                  <div>
-                    <span className="card-title">
-                      <span className="step-chip">2</span>
-                      Verifică datele persoanelor
-                    </span>
-                    <p className="card-sub">{selectedClient.denumire}</p>
-                  </div>
-                  <button className="btn btn-ghost btn-sm" onClick={handleStepBack}>← Înapoi</button>
-                </div>
-                <div className="card-body">
-                  <MultiPersonPreview
-                    client={selectedClient}
+                {pfScanMode && selectedClient && (
+                  <PersonScanModal
+                    personLabel={selectedClient.denumire}
                     accessToken={accessToken}
-                    onContinue={handleMultiPersonContinue}
+                    initialFields={pfScanMode === 'manual' ? persoanaToIDFields(selectedClient.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' }) : undefined}
+                    mode={pfScanMode}
+                    onConfirm={handlePFPersonUpdate}
+                    onClose={() => setPfScanMode(null)}
                     onToast={toast}
                   />
-                </div>
-              </div>
+                )}
+
+                {selectedClient && inferTipClient(selectedClient) === 'PJ' && (
+                  <div style={COMPACT_STYLE} className="card">
+                    <div className="card-head">
+                      <span className="card-title">Verifică datele persoanelor</span>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => multiPersonRef.current?.continue()}
+                        disabled={!multiPersonReady}
+                      >
+                        Continuă la template →
+                      </button>
+                    </div>
+                    <div className="card-body">
+                      <MultiPersonPreview
+                        key={selectedClient.id}
+                        ref={multiPersonRef}
+                        client={selectedClient}
+                        accessToken={accessToken}
+                        onContinue={handleMultiPersonContinue}
+                        onToast={toast}
+                        onReadyChange={setMultiPersonReady}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Step 3: TemplateFiller */}
+            {/* Step 3 intern, dar afișat ca pasul 2 — "client" comasează
+                selecția+verificarea pe un singur ecran. */}
             {step === 3 && selectedClient && (
               <TemplateFiller
                 workspaceId={workspaceId}
@@ -621,10 +695,12 @@ export default function GenerareDocumentePage() {
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
+                stepNumber={2}
               />
             )}
           </>
         )}
+        </div>
       </main>
 
       {historyOpen && user && (
@@ -635,16 +711,32 @@ export default function GenerareDocumentePage() {
           onClose={() => setHistoryOpen(false)}
         />
       )}
+
+      {pendingClientSave && (
+        <ConfirmModal
+          title="Salvează modificările?"
+          message="Ai modificat datele clientului (societate, asociați sau administratori). Salvezi aceste modificări în profilul clientului din baza de date?"
+          confirmLabel="Salvează"
+          cancelLabel="Nu salva"
+          onConfirm={confirmPendingClientSave}
+          onCancel={() => setPendingClientSave(null)}
+        />
+      )}
     </>
   )
 }
 
-function LandingCard({ icon, title, desc, bullets, onClick }: {
+// accent — familia de culoare (indigo implicit, albastru pentru PF, verde
+// pentru PJ), aceeași convenție ca în restul aplicației, ca alegerea să se
+// simtă imediat, dintr-o privire, nu doar din text.
+function LandingCard({ icon, title, desc, examples, bullets, onClick, accent = 'p' }: {
   icon: string
   title: string
   desc: string
+  examples?: string
   bullets: string[]
   onClick: () => void
+  accent?: 'p' | 'b' | 'g'
 }) {
   const [hovered, setHovered] = useState(false)
   return (
@@ -653,7 +745,7 @@ function LandingCard({ icon, title, desc, bullets, onClick }: {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        background: '#fff', border: `2px solid ${hovered ? 'var(--p400)' : 'var(--s200)'}`,
+        background: 'var(--surface)', border: `2px solid ${hovered ? `var(--${accent}400)` : 'var(--s200)'}`,
         borderRadius: 'var(--r-lg, 12px)', padding: '1.5rem 1.25rem',
         cursor: 'pointer', textAlign: 'left', display: 'flex',
         flexDirection: 'column', gap: '1rem',
@@ -665,7 +757,8 @@ function LandingCard({ icon, title, desc, bullets, onClick }: {
       <div style={{ fontSize: '2rem', lineHeight: 1 }}>{icon}</div>
       <div>
         <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--s800)', marginBottom: '.2rem' }}>{title}</div>
-        <div style={{ fontSize: '.78rem', color: 'var(--p600)', fontWeight: 600 }}>{desc}</div>
+        <div style={{ fontSize: '.78rem', color: `var(--${accent}600)`, fontWeight: 600 }}>{desc}</div>
+        {examples && <div style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.15rem' }}>{examples}</div>}
       </div>
       <ul style={{ margin: 0, paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
         {bullets.map(b => (
@@ -674,7 +767,7 @@ function LandingCard({ icon, title, desc, bullets, onClick }: {
       </ul>
       <div style={{
         marginTop: 'auto', fontSize: '.825rem', fontWeight: 700,
-        color: 'var(--p600)', display: 'flex', alignItems: 'center', gap: '.3rem',
+        color: `var(--${accent}600)`, display: 'flex', alignItems: 'center', gap: '.3rem',
       }}>
         Pornește <span style={{ fontSize: '1rem' }}>→</span>
       </div>

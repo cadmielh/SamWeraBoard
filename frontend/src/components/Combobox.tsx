@@ -30,7 +30,9 @@ export default function Combobox({ value, options, onChange, placeholder, disabl
     matchTriggerWidth: true, onScroll: 'reposition',
   })
 
+  // Sincronizează afișarea când `value` se schimbă din exterior.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery(value)
   }, [value])
 
@@ -69,6 +71,10 @@ export default function Combobox({ value, options, onChange, placeholder, disabl
         disabled={disabled}
         onChange={e => { setQuery(e.target.value); handleOpen() }}
         onFocus={handleOpen}
+        // La selectare, focusul rămâne pe input (preventDefault mai jos) —
+        // un al doilea click pe input, deja focalizat, nu mai declanșează
+        // onFocus. onClick acoperă exact acest caz.
+        onClick={handleOpen}
         onBlur={() => setTimeout(commitTyped, 150)}
         onKeyDown={e => {
           if (e.key === 'Enter') { e.preventDefault(); commitTyped() }

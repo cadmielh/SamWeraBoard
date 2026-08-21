@@ -17,6 +17,7 @@ interface Props {
   onEdit: () => void
   onDelete: () => void
   onSaveNotite: (notite: string) => Promise<void>
+  onSaveField: (patch: Partial<Client>) => Promise<void>
   embedded?: boolean
 }
 
@@ -50,6 +51,76 @@ function InfoRow({ label, value, link }: { label: string; value?: string; link?:
         : <span className="cv2-info-value cv2-info-empty">—</span>
       }
     </div>
+  )
+}
+
+// Direct data manipulation — click pe valoare, editezi pe loc, Enter/✓ salvează,
+// Esc/✕ anulează. Fără modal, fără să navigheze departe de restul profilului.
+function EditableInfoRow({ label, value, onSave, type = 'text', multiline = false }: {
+  label?: string
+  value: string
+  onSave: (v: string) => Promise<void>
+  type?: 'text' | 'tel' | 'email'
+  multiline?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(value)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Sincronizează valoarea afișată cu prop-ul, cât timp nu editează userul.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (!editing) setVal(value) }, [value, editing])
+  useEffect(() => { if (editing) (multiline ? textareaRef.current : inputRef.current)?.focus() }, [editing, multiline])
+
+  const commit = async () => {
+    if (val === value) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await onSave(val)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+  const cancel = () => { setVal(value); setEditing(false) }
+
+  if (editing) {
+    return (
+      <div className="cv2-info-row">
+        {label && <span className="cv2-info-label">{label}</span>}
+        <div className="cv2-inline-edit">
+          {multiline ? (
+            <textarea
+              ref={textareaRef} className="field-textarea" value={val} rows={2}
+              onChange={e => setVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') cancel() }}
+            />
+          ) : (
+            <input
+              ref={inputRef} className="field-input" type={type} value={val}
+              onChange={e => setVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit() } else if (e.key === 'Escape') cancel() }}
+            />
+          )}
+          <button className="btn btn-ghost btn-xs" onClick={cancel} disabled={saving} title="Anulează">✕</button>
+          <button className="btn btn-primary btn-xs" onClick={commit} disabled={saving} title="Salvează">
+            {saving ? <span className="spin" /> : '✓'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <button type="button" className="cv2-info-row cv2-info-row--editable" onClick={() => setEditing(true)}>
+      {label && <span className="cv2-info-label">{label}</span>}
+      <span className={`cv2-info-value${value ? '' : ' cv2-info-empty'}`}>
+        {value || 'Apasă pentru a completa…'}
+        <span className="cv2-info-edit-hint">✏️</span>
+      </span>
+    </button>
   )
 }
 
@@ -97,7 +168,7 @@ function PersoanaCard({ p }: { p: Persoana }) {
   )
 }
 
-export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNotite, embedded }: Props) {
+export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNotite, onSaveField, embedded }: Props) {
   const navigate = useNavigate()
   const tipClient = inferTipClient(client)
   const isPF = tipClient === 'PF'
@@ -110,7 +181,9 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
   const [savingNotite, setSavingNotite] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Sincronizează notițele afișate cu clientul curent, cât timp nu editează userul.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!editingNotite) setNotiteValue(client.notite)
   }, [client.notite, editingNotite])
 
@@ -136,13 +209,13 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
   const headerBadge = isPF
     ? <span style={{
         padding: '.125rem .5rem', borderRadius: '4px', fontSize: '.6875rem', fontWeight: 700,
-        background: 'var(--b100, #dbeafe)', color: 'var(--b700, #1d4ed8)', border: '1px solid var(--b200, #bfdbfe)',
+        background: 'var(--b100)', color: 'var(--b700)', border: '1px solid var(--b200)',
       }}>
         {SUBTIP_LABELS[client.subtipPF ?? 'PFA'] ?? 'PF'}
       </span>
     : <span style={{
         padding: '.125rem .5rem', borderRadius: '4px', fontSize: '.6875rem', fontWeight: 700,
-        background: 'var(--g100, #dcfce7)', color: 'var(--g700, #15803d)', border: '1px solid var(--g200, #bbf7d0)',
+        background: 'var(--g100)', color: 'var(--g700)', border: '1px solid var(--g200)',
       }}>
         {client.formaJuridica || 'PJ'}
       </span>
@@ -200,7 +273,7 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
         {/* ── Bloc Date persoană (CI) — orice PF ── */}
         {isPF && client.titular && (
           <div className="cv2-section">
-            <div className="cv2-section-label" style={{ color: 'var(--b600, #2563eb)' }}>
+            <div className="cv2-section-label" style={{ color: 'var(--b600)' }}>
               Date persoană (CI)
             </div>
             <PersoanaCard p={client.titular} />
@@ -231,8 +304,8 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
             </div>
             <div className="cv2-col">
               <div className="cv2-col-title">Contact</div>
-              <InfoRow label="Telefon" value={client.telefon} />
-              <InfoRow label="Email" value={client.email} link={!!client.email} />
+              <EditableInfoRow label="Telefon" value={client.telefon} type="tel" onSave={v => onSaveField({ telefon: v })} />
+              <EditableInfoRow label="Email" value={client.email ?? ''} type="email" onSave={v => onSaveField({ email: v })} />
             </div>
           </div>
         </div>
@@ -240,10 +313,7 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
         {/* Sediu social / profesional */}
         <div className="cv2-section">
           <div className="cv2-section-label">{isPF ? 'Sediu profesional' : 'Sediu social'}</div>
-          {client.sediuSocial
-            ? <div className="cv2-address">{client.sediuSocial}</div>
-            : <span className="cv2-info-empty">—</span>
-          }
+          <EditableInfoRow value={client.sediuSocial} multiline onSave={v => onSaveField({ sediuSocial: v })} />
         </div>
 
         {/* Date fiscale */}

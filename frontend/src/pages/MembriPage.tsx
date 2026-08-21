@@ -1,4 +1,4 @@
-import { useApp } from '../AppLayout'
+import { useApp } from '../AppContext'
 import MembriPanel from '../components/MembriPanel'
 
 export default function MembriPage() {

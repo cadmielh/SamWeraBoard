@@ -24,9 +24,12 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
     matchTriggerWidth: true, onScroll: 'reposition',
   })
 
-  // Keep display in sync if value changes externally
+  // Keep display in sync if value changes externally (ex. selecție într-un
+  // alt câmp, resetare formular) — cât timp userul tastează (focused),
+  // rămâne intact.
   useEffect(() => {
     if (!focused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery(value ? `${value} - ${descriere}` : '')
     }
   }, [value, descriere, focused])
@@ -79,6 +82,9 @@ export default function CAENCombobox({ value, descriere, onChange, disabled }: P
           disabled={disabled}
           onChange={e => { setQuery(e.target.value); handleOpen() }}
           onFocus={() => { setFocused(true); handleOpen(); if (value) setQuery('') }}
+          // Vezi Combobox.tsx — selectarea ține focusul pe input, deci un al
+          // doilea click pe input, deja focalizat, nu mai declanșează onFocus.
+          onClick={handleOpen}
           onBlur={() => setTimeout(() => {
             setFocused(false)
             setQuery(value ? `${value} - ${descriere}` : '')

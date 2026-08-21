@@ -1,38 +1,17 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, auth, signIn, signOut } from './lib/firebase'
 import { useWorkspace } from './lib/workspace'
-import type { ToastItem, Workspace } from './types'
-
-type WorkspaceReturn = ReturnType<typeof useWorkspace>
+import type { ToastItem } from './types'
+import { AppCtx, type AppContextType } from './AppContext'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
-
-export interface AppContextType {
-  user: User
-  accessToken: string
-  ocrMode: string
-  toast: (msg: string, type?: ToastItem['type']) => void
-  activeWorkspace: Workspace | null
-  userRole: 'admin' | 'member' | null
-  workspaceCtx: WorkspaceReturn
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AppCtx = createContext<AppContextType | null>(null)
-
-export function useApp(): AppContextType {
-  const ctx = useContext(AppCtx)
-  if (!ctx) throw new Error('useApp must be used inside AppLayout')
-  return ctx
-}
 
 export default function AppLayout() {
   const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
   const [accessToken, setAccessToken] = useState(() => sessionStorage.getItem('gat') ?? '')
-  const [ocrMode, setOcrMode] = useState('local')
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [authLoading, setAuthLoading] = useState(true)
 
@@ -61,14 +40,6 @@ export default function AppLayout() {
       }
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // OCR mode
-  useEffect(() => {
-    const base = import.meta.env.VITE_API_URL ?? 'http://localhost:5000'
-    fetch(`${base}/health`).then(r => r.json()).then(d => {
-      if (d.ocr_mode) setOcrMode(d.ocr_mode as string)
-    }).catch(() => {})
   }, [])
 
   // Redirect to workspace setup if no workspace
@@ -125,7 +96,6 @@ export default function AppLayout() {
   const ctx: AppContextType = {
     user,
     accessToken,
-    ocrMode,
     toast,
     activeWorkspace,
     userRole,

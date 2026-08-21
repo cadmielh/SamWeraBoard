@@ -38,6 +38,7 @@ export function useClienti(workspaceId: string | null) {
 
   useEffect(() => {
     if (!workspaceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setClienti([]); setLoading(false); setHasMore(false); lastDocRef.current = null
       return
     }
@@ -85,6 +86,11 @@ export function useClienti(workspaceId: string | null) {
     return snap.docs.map(d => ({ ...d.data(), id: d.id } as Client))
   }, [])
 
+  // add/update/remove sunt optimiste: starea locală (deci ecranul) se
+  // actualizează sincron, înainte de scrierea reală în Firestore — userul
+  // vede efectul instant, fără să aștepte răspunsul rețelei. Dacă scrierea
+  // eșuează, modificarea locală se anulează și eroarea e retrimisă mai
+  // departe (apelantul își păstrează exact același catch/toast ca înainte).
   const add = useCallback(async (workspaceId: string, data: ClientInput, uid: string) => {
     const displayName = resolveDisplayName(data)
     const payload: Record<string, unknown> = {}
@@ -101,8 +107,16 @@ export function useClienti(workspaceId: string | null) {
     payload.denumireLower = displayName.toLowerCase()
     payload.createdAt = serverTimestamp()
     payload.createdBy = uid
-    const ref = await addDoc(clientiCol(workspaceId), payload)
-    setClienti(prev => [{ ...(payload as unknown as Client), id: ref.id, createdAt: new Date().toISOString() }, ...prev])
+
+    const tempId = `temp-${crypto.randomUUID()}`
+    setClienti(prev => [{ ...(payload as unknown as Client), id: tempId, createdAt: new Date().toISOString() }, ...prev])
+    try {
+      const ref = await addDoc(clientiCol(workspaceId), payload)
+      setClienti(prev => prev.map(c => c.id === tempId ? { ...c, id: ref.id } : c))
+    } catch (err) {
+      setClienti(prev => prev.filter(c => c.id !== tempId))
+      throw err
+    }
   }, [])
 
   const update = useCallback(async (workspaceId: string, clientId: string, data: Partial<ClientInput>) => {
@@ -120,13 +134,44 @@ export function useClienti(workspaceId: string | null) {
       patch.denumire = displayName
       patch.denumireLower = displayName.toLowerCase()
     }
-    await updateDoc(doc(clientiCol(workspaceId), clientId), patch)
-    setClienti(prev => prev.map(c => c.id === clientId ? { ...c, ...(data as Partial<Client>) } : c))
+
+    let previous: Client | undefined
+    setClienti(prev => prev.map(c => {
+      if (c.id !== clientId) return c
+      previous = c
+      return { ...c, ...(data as Partial<Client>) }
+    }))
+    try {
+      await updateDoc(doc(clientiCol(workspaceId), clientId), patch)
+    } catch (err) {
+      if (previous) { const p = previous; setClienti(prev => prev.map(c => c.id === clientId ? p : c)) }
+      throw err
+    }
   }, [])
 
   const remove = useCallback(async (workspaceId: string, clientId: string) => {
-    await deleteDoc(doc(clientiCol(workspaceId), clientId))
-    setClienti(prev => prev.filter(c => c.id !== clientId))
+    let removed: Client | undefined
+    let removedAt = -1
+    setClienti(prev => {
+      const idx = prev.findIndex(c => c.id === clientId)
+      if (idx === -1) return prev
+      removed = prev[idx]
+      removedAt = idx
+      return prev.filter(c => c.id !== clientId)
+    })
+    try {
+      await deleteDoc(doc(clientiCol(workspaceId), clientId))
+    } catch (err) {
+      if (removed) {
+        const r = removed
+        setClienti(prev => {
+          const next = [...prev]
+          next.splice(Math.min(removedAt, next.length), 0, r)
+          return next
+        })
+      }
+      throw err
+    }
   }, [])
 
   return { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove }

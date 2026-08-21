@@ -5,7 +5,7 @@ import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
 import { useClienti } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
-import { useApp } from '../AppLayout'
+import { useApp } from '../AppContext'
 import ClientModal from '../components/ClientModal'
 import ClientView from '../components/ClientView'
 import Modal from '../components/Modal'
@@ -104,14 +104,15 @@ function renderCellContent(c: Client, key: string): React.ReactNode {
   switch (key) {
     case 'formaJuridica': {
       const v = getColValue(c, 'formaJuridica')
-      if (isPF) return (
+      if (!v) return null
+      return (
         <span style={{
           padding: '.0625rem .375rem', borderRadius: '4px', fontSize: '.7rem', fontWeight: 700,
-          background: 'var(--b100, #dbeafe)', color: 'var(--b700, #1d4ed8)', border: '1px solid var(--b200, #bfdbfe)',
+          background: isPF ? 'var(--b100)' : 'var(--g100)', color: isPF ? 'var(--b700)' : 'var(--g700)',
+          border: `1px solid ${isPF ? 'var(--b200)' : 'var(--g200)'}`,
           whiteSpace: 'nowrap',
         }}>{v}</span>
       )
-      return v || null
     }
     case 'codFiscal': {
       const v = getColValue(c, 'codFiscal')
@@ -259,6 +260,7 @@ export default function ClientiPage() {
   const debouncedQ = useDebounce(searchQuery, 300)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!workspaceId || debouncedQ.length < 2) { setSearchResults(null); return }
     search(workspaceId, debouncedQ).then(setSearchResults).catch(() => {})
   }, [debouncedQ, workspaceId, search])
@@ -286,7 +288,7 @@ export default function ClientiPage() {
     try {
       const raw = localStorage.getItem('samwera-hidden-cols')
       if (raw) return new Set(JSON.parse(raw) as string[])
-    } catch {}
+    } catch { /* localStorage indisponibil sau valoare coruptă — folosim implicitul */ }
     return new Set(EXTRA_COL_KEYS)
   })
 
@@ -362,7 +364,7 @@ export default function ClientiPage() {
   const toggleColVisibility = useCallback((key: string) => {
     setHiddenCols(prev => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) next.delete(key); else next.add(key)
       localStorage.setItem('samwera-hidden-cols', JSON.stringify([...next]))
       return next
     })
@@ -440,13 +442,13 @@ export default function ClientiPage() {
                     fontSize: '.75rem',
                     fontWeight: typeFilter === val ? 700 : 400,
                     borderColor: typeFilter === val
-                      ? (val === 'PF' ? 'var(--b400, #60a5fa)' : val === 'PJ' ? 'var(--g400, #4ade80)' : 'var(--s400)')
+                      ? (val === 'PF' ? 'var(--b400)' : val === 'PJ' ? 'var(--g400)' : 'var(--s400)')
                       : 'var(--s200)',
                     background: typeFilter === val
-                      ? (val === 'PF' ? 'var(--b50, #eff6ff)' : val === 'PJ' ? 'var(--g50, #f0fdf4)' : 'var(--s100)')
+                      ? (val === 'PF' ? 'var(--b50)' : val === 'PJ' ? 'var(--g50)' : 'var(--s100)')
                       : 'transparent',
                     color: typeFilter === val
-                      ? (val === 'PF' ? 'var(--b700, #1d4ed8)' : val === 'PJ' ? 'var(--g700, #15803d)' : 'var(--s700)')
+                      ? (val === 'PF' ? 'var(--b700)' : val === 'PJ' ? 'var(--g700)' : 'var(--s700)')
                       : 'var(--s400)',
                   }}
                 >
@@ -538,6 +540,11 @@ export default function ClientiPage() {
                   if (!workspaceId) return
                   await update(workspaceId, activeClient.id, { notite })
                   toast('Notițe salvate', 'ok')
+                }}
+                onSaveField={async (patch) => {
+                  if (!workspaceId) return
+                  await update(workspaceId, activeClient.id, patch)
+                  toast('Actualizat', 'ok')
                 }}
               />
             ) : (
@@ -668,7 +675,7 @@ function ClientTable({
         ]
         return merged
       }
-    } catch {}
+    } catch { /* localStorage indisponibil sau valoare coruptă — folosim implicitul */ }
     return COLUMNS.map(c => c.key)
   })
 
@@ -698,6 +705,7 @@ function ClientTable({
   const [openFilterKey, setOpenFilterKey] = useState<string | null>(null)
   const filterDropdown = usePositionedDropdown<HTMLDivElement>({ clampWidth: 240, onScroll: 'close' })
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!filterDropdown.open) setOpenFilterKey(null)
   }, [filterDropdown.open])
 

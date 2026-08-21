@@ -10,6 +10,7 @@ export function useBuiltinTemplates(accessToken: string) {
 
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!accessToken) { setLoading(false); return }
     setLoading(true)
     fetchBuiltinTemplates(accessToken)

@@ -31,7 +31,7 @@ function scanStatus(p: ScannedPerson) {
   if (p.scanStatus === 'empty') return { icon: '⏳', color: 'var(--s400)', label: 'Nescanat' }
   const filled = Object.values(p.fields).filter(v => v.trim()).length
   if (filled >= 8) return { icon: '✅', color: 'var(--g600)', label: `${p.fields.prenume} ${p.fields.nume}`.trim() || 'Complet' }
-  return { icon: '⚠️', color: 'var(--y600, #ca8a04)', label: `${p.fields.prenume} ${p.fields.nume}`.trim() || 'Date parțiale' }
+  return { icon: '⚠️', color: 'var(--y600)', label: `${p.fields.prenume} ${p.fields.nume}`.trim() || 'Date parțiale' }
 }
 
 function personLabel(p: ScannedPerson, idx: number, role: string): string {
@@ -193,12 +193,13 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
         {/* Cotă participare (asociați doar) */}
         {p.role === 'asociat' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-            <label style={LABEL_S}>Cotă participare</label>
+            <label className="field-label" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>Cotă participare</label>
             <input
+              className="field-input"
               value={p.cotaParticipare}
               onChange={e => updatePerson(p.id, { cotaParticipare: e.target.value })}
               placeholder="ex: 50%"
-              style={INPUT_S}
+              style={{ width: 120 }}
             />
           </div>
         )}
@@ -258,7 +259,7 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
           {asociati.length > 0 && (
             <div style={{
               fontSize: '.8125rem', fontWeight: 600,
-              color: cotaValid ? 'var(--g700, #15803d)' : 'var(--r600, #dc2626)',
+              color: cotaValid ? 'var(--g700)' : 'var(--r600)',
             }}>
               Cotă totală: {cotaTotal}% {cotaValid ? '✓' : '— ar trebui să fie 100%'}
             </div>
@@ -390,16 +391,6 @@ const BTN_ICON: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',
   color: 'var(--s400)', fontSize: '1rem', lineHeight: 1,
   padding: '.125rem .3rem', borderRadius: 4,
-}
-const LABEL_S: React.CSSProperties = {
-  fontSize: '.72rem', fontWeight: 700, color: 'var(--s500)',
-  letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0,
-}
-const INPUT_S: React.CSSProperties = {
-  padding: '.275rem .5rem', borderRadius: 'var(--r-sm)',
-  border: '1.5px solid var(--s300)', fontSize: '.85rem',
-  color: 'var(--s800)', background: '#fff', fontFamily: 'var(--font)',
-  outline: 'none', width: 120,
 }
 const SECTION_TITLE: React.CSSProperties = {
   fontSize: '.75rem', fontWeight: 700, color: 'var(--s500)',

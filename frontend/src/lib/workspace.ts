@@ -35,6 +35,8 @@ export function useWorkspace(uid: string | null) {
     }
   }, [uid])
 
+  // Încarcă spațiile de lucru ale utilizatorului la mount / schimbare uid.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadWorkspaces() }, [loadWorkspaces])
 
   const setActiveWorkspace = useCallback(async (workspace: Workspace) => {

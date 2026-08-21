@@ -7,10 +7,15 @@ interface Props {
   clients: Client[]
   loading: boolean
   onSelect: (client: Client) => void
+  // Denumirea clientului curent selectat — afișată când input-ul nu e activ.
+  // Separată de textul de căutare, ca la fiecare focus/click să pornească
+  // mereu de la o listă curată, nu filtrată după selecția anterioară.
+  value?: string
 }
 
-export default function ClientDocSelector({ clients, loading, onSelect }: Props) {
+export default function ClientDocSelector({ clients, loading, onSelect, value }: Props) {
   const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { open, position, containerRef, openAt, close } = usePositionedDropdown({
     matchTriggerWidth: true, onScroll: 'reposition',
@@ -23,14 +28,20 @@ export default function ClientDocSelector({ clients, loading, onSelect }: Props)
         c.codFiscal.includes(query)
       ).slice(0, 30)
 
-  const handleOpen = () => {
+  const handleFocus = () => {
+    setSearching(true)
+    setQuery('')
     if (inputRef.current) openAt(inputRef.current)
+  }
+
+  const handleBlur = () => {
+    setTimeout(() => { setSearching(false); close() }, 150)
   }
 
   const dropdown = open && (
     <div style={{
       position: 'fixed', top: position?.top, left: position?.left, width: position?.width, zIndex: 9999,
-      background: '#fff', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)',
+      background: 'var(--surface)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)',
       boxShadow: 'var(--sh-md)', maxHeight: 300, overflow: 'auto',
     }}>
       {loading && (
@@ -49,16 +60,17 @@ export default function ClientDocSelector({ clients, loading, onSelect }: Props)
           onMouseDown={e => {
             e.preventDefault()
             onSelect(c)
-            setQuery(c.denumire)
+            setQuery('')
+            setSearching(false)
             close()
           }}
           style={{
-            width: '100%', textAlign: 'left', background: 'none', border: 'none',
+            width: '100%', textAlign: 'left', background: c.denumire === value ? 'var(--p50)' : 'none', border: 'none',
             padding: '.5rem .75rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '.15rem',
             borderBottom: '1px solid var(--s100)',
           }}
           onMouseEnter={e => (e.currentTarget.style.background = 'var(--p50)')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+          onMouseLeave={e => (e.currentTarget.style.background = c.denumire === value ? 'var(--p50)' : 'none')}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
             {c.formaJuridica && (
@@ -67,6 +79,7 @@ export default function ClientDocSelector({ clients, loading, onSelect }: Props)
               </span>
             )}
             <span style={{ fontWeight: 600, fontSize: '.875rem', color: 'var(--s800)' }}>{c.denumire}</span>
+            {c.denumire === value && <span style={{ fontSize: '.7rem', color: 'var(--p600)' }}>✓ selectat</span>}
           </div>
           <div style={{ fontSize: '.75rem', color: 'var(--s400)', display: 'flex', gap: '.75rem' }}>
             {c.codFiscal && <span>CIF: {c.codFiscal}</span>}
@@ -82,16 +95,21 @@ export default function ClientDocSelector({ clients, loading, onSelect }: Props)
     <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: 480 }}>
       <input
         ref={inputRef}
-        value={query}
-        onChange={e => { setQuery(e.target.value); handleOpen() }}
-        onFocus={handleOpen}
-        onBlur={() => setTimeout(() => close(), 150)}
+        value={searching ? query : (value ?? query)}
+        onChange={e => { setQuery(e.target.value); if (!open && inputRef.current) openAt(inputRef.current) }}
+        onFocus={handleFocus}
+        // Selectarea unui rezultat ține focusul pe input (preventDefault în
+        // onMouseDown de mai jos), ca să nu sară în altă parte — dar asta
+        // înseamnă că un al doilea click pe input, deja focalizat, nu mai
+        // declanșează onFocus. onClick acoperă exact acest caz.
+        onClick={handleFocus}
+        onBlur={handleBlur}
         placeholder="Caută client după denumire sau CIF…"
         style={{
           width: '100%', padding: '.5rem .75rem',
           borderRadius: 'var(--r-sm)', border: '1.5px solid var(--s300)',
           fontSize: '.875rem', fontFamily: 'var(--font)', color: 'var(--s800)',
-          background: '#fff', outline: 'none', boxSizing: 'border-box',
+          background: 'var(--surface)', outline: 'none', boxSizing: 'border-box',
         }}
       />
       {dropdown && createPortal(dropdown, document.body)}

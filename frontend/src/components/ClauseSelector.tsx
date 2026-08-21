@@ -130,7 +130,7 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
               <input type="checkbox" checked={isSelected} onChange={() => toggle(c.tag)} />
               <span style={{ fontWeight: 600, fontSize: '.85rem', color: 'var(--s800)' }}>{c.label}</span>
               {isSelected && !isClauseComplete(c) && (
-                <span style={{ marginLeft: 'auto', fontSize: '.72rem', color: 'var(--y700, #a16207)' }}>⚠️ incomplet</span>
+                <span style={{ marginLeft: 'auto', fontSize: '.72rem', color: 'var(--y700)' }}>⚠️ incomplet</span>
               )}
             </label>
 
@@ -194,10 +194,10 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     const auto = baseReplacements[ph]
                     const { field: label } = parsePlaceholder(ph)
                     return (
-                      <div key={ph}>
-                        <label style={LABEL}>{label}</label>
+                      <div key={ph} className="field">
+                        <label className="field-label">{label}</label>
                         <input
-                          style={INPUT}
+                          className="field-input"
                           value={fieldsByClause[c.tag]?.[key] ?? auto ?? ''}
                           onChange={e => setField(c.tag, key, e.target.value)}
                         />
@@ -212,14 +212,4 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
       })}
     </div>
   )
-}
-
-const LABEL = {
-  fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.04em',
-  textTransform: 'uppercase' as const, display: 'block', marginBottom: '.25rem',
-}
-const INPUT = {
-  padding: '.375rem .625rem', borderRadius: 'var(--r-sm)', border: '1.5px solid var(--s300)',
-  fontSize: '.85rem', color: 'var(--s800)', background: '#fff', width: '100%',
-  fontFamily: 'var(--font)', outline: 'none', boxSizing: 'border-box' as const,
 }

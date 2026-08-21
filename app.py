@@ -39,6 +39,7 @@ import local_extractor
 import azure_extractor
 import gdrive
 from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx
+from pdf_filler import fill_pdf, list_pdf_fields
 
 # Pre-load EasyOCR models at container startup so requests don't time out waiting
 # for model download. Runs in a background thread — module import must return
@@ -225,12 +226,21 @@ def _load_builtin_templates() -> dict[str, dict]:
     result: dict[str, dict] = {}
     for entry in entries:
         file_bytes = (BUILTIN_TEMPLATE_DIR / entry["filename"]).read_bytes()
-        result[entry["key"]] = {
-            **entry,
-            "bytes": file_bytes,
-            "placeholders": list_placeholders_in_docx(file_bytes),
-            "clauses": list_clauses_in_docx(file_bytes),
-        }
+        if entry.get("type", "docx") == "pdf":
+            result[entry["key"]] = {
+                **entry,
+                "bytes": file_bytes,
+                "placeholders": [],
+                "clauses": [],
+                "pdfFields": list_pdf_fields(file_bytes),
+            }
+        else:
+            result[entry["key"]] = {
+                **entry,
+                "bytes": file_bytes,
+                "placeholders": list_placeholders_in_docx(file_bytes),
+                "clauses": list_clauses_in_docx(file_bytes),
+            }
     return result
 
 
@@ -257,8 +267,10 @@ def get_builtin_template(key: str):
     tpl = BUILTIN_TEMPLATES.get(key)
     if not tpl:
         return jsonify({"error": "Unknown built-in template"}), 404
+    mimetype = "application/pdf" if tpl.get("type") == "pdf" \
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return send_file(io.BytesIO(tpl["bytes"]), as_attachment=True, download_name=tpl["filename"],
-                     mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                     mimetype=mimetype)
 
 
 # ── Template filling ──────────────────────────────────────────────────────────
@@ -311,6 +323,44 @@ def fill_docx_route():
     out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
     return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.route("/fill/pdf", methods=["POST"])
+def fill_pdf_route():
+    try:
+        _verify()
+    except PermissionError as e:
+        return _auth_error(e)
+
+    template_builtin_key = request.form.get("template_builtin_key")
+    if template_builtin_key:
+        tpl = BUILTIN_TEMPLATES.get(template_builtin_key)
+        if not tpl:
+            return jsonify({"error": "Unknown built-in template"}), 400
+        file_bytes, original_name = tpl["bytes"], tpl["filename"]
+    elif "template" in request.files:
+        template_file = request.files["template"]
+        if Path(template_file.filename).suffix.lower() != ".pdf":
+            return jsonify({"error": "Template must be a .pdf file"}), 400
+        file_bytes    = template_file.read()
+        original_name = template_file.filename
+    else:
+        return jsonify({"error": "No template provided (upload file or set template_builtin_key)"}), 400
+
+    try:
+        fields = request.form.to_dict()
+        fields.pop("template_builtin_key", None)
+        output_name = fields.pop("_output_name", None) or None
+        # Spre deosebire de /fill/docx, aici nu filtrăm valorile goale — un
+        # câmp PDF necompletat rămâne pur și simplu gol, nu apare vreun text
+        # de tip {{CAMP}} needefinit care ar trebui evitat.
+        filled_bytes = fill_pdf(file_bytes, fields)
+    except Exception as e:
+        return jsonify({"error": f"Fill failed: {e}"}), 500
+
+    out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
+    return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
+                     mimetype="application/pdf")
 
 
 @app.route("/fill/docx/upload-to-drive", methods=["POST"])

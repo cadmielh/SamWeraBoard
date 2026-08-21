@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import type { IDFields } from '../lib/api'
 import { extractFile } from '../lib/api'
-import { useApp } from '../AppLayout'
+import { useApp } from '../AppContext'
 
 interface Props {
   onExtracted: (fields: IDFields) => void

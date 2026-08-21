@@ -4,6 +4,7 @@ import GenerareDocumentePage from './pages/GenerareDocumentePage'
 import WorkspaceSetupPage from './pages/WorkspaceSetupPage'
 import ClientiPage from './pages/ClientiPage'
 import MembriPage from './pages/MembriPage'
+import SetariPage from './pages/SetariPage'
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route path="extragere" element={<GenerareDocumentePage />} />
           <Route path="workspace/setup" element={<WorkspaceSetupPage />} />
           <Route path="utilizatori" element={<MembriPage />} />
+          <Route path="setari" element={<SetariPage />} />
         </Route>
         <Route path="/signin" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

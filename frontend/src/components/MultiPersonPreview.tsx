@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import type { Client, Persoana, ScannedPerson, ToastItem } from '../types'
 import { persoanaToIDFields, idFieldsToPersoana } from '../lib/idFields'
 import { EMPTY_PERSOANA } from '../lib/clienti'
@@ -11,6 +11,13 @@ interface Props {
   accessToken: string
   onContinue: (persons: ScannedPerson[], updatedClient: Client) => void
   onToast: (msg: string, type: ToastItem['type']) => void
+  // Anunță părintele dacă "Continuă" e apăsabil acum — folosit pentru butonul
+  // duplicat din antetul paginii (lângă "Înapoi"), separat de cel de jos.
+  onReadyChange?: (ready: boolean) => void
+}
+
+export interface MultiPersonPreviewHandle {
+  continue: () => void
 }
 
 function companyDataFromClient(client: Client): CompanyData {
@@ -64,7 +71,7 @@ function PersonCard({
     <>
       <div style={{
         background: 'var(--s50)', borderRadius: 'var(--r-sm)',
-        border: `1.5px solid ${isEmpty ? 'var(--s200)' : isPartial ? 'var(--y400, #fbbf24)' : 'var(--g300, #86efac)'}`,
+        border: `1.5px solid ${isEmpty ? 'var(--s200)' : isPartial ? 'var(--y400)' : 'var(--g300)'}`,
         padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.5rem',
       }}>
         {/* Header row */}
@@ -80,7 +87,7 @@ function PersonCard({
             {fullName || <span style={{ color: 'var(--s400)', fontWeight: 400 }}>Fără date</span>}
           </span>
           {isComplete && <span title="Date complete" style={{ color: 'var(--g600)' }}>✅</span>}
-          {isPartial && <span title="Date parțiale" style={{ color: 'var(--y600, #ca8a04)' }}>⚠️</span>}
+          {isPartial && <span title="Date parțiale" style={{ color: 'var(--y600)' }}>⚠️</span>}
           {isEmpty && <span title="Fără date" style={{ color: 'var(--s400)' }}>⏳</span>}
           {role === 'asociat' && onCotaChange && (
             <input
@@ -91,7 +98,7 @@ function PersonCard({
               style={{
                 width: 56, fontSize: '.72rem', textAlign: 'center', padding: '.15rem .3rem',
                 borderRadius: 3, border: '1.5px solid var(--s300)', color: 'var(--s700)',
-                background: '#fff', fontFamily: 'var(--font)', outline: 'none',
+                background: 'var(--surface)', fontFamily: 'var(--font)', outline: 'none',
               }}
             />
           )}
@@ -122,7 +129,7 @@ function PersonCard({
 
         {/* Missing fields warning */}
         {isPartial && (
-          <div style={{ fontSize: '.75rem', color: 'var(--y700, #a16207)', background: 'var(--y50, #fefce8)', padding: '.3rem .5rem', borderRadius: 4 }}>
+          <div style={{ fontSize: '.75rem', color: 'var(--y700)', background: 'var(--y50)', padding: '.3rem .5rem', borderRadius: 4 }}>
             Câmpuri lipsă:{' '}
             {(['cnp', 'serie_numar', 'adresa', 'data_nasterii', 'locul_nasterii', 'cetatenia'] as (keyof Persoana)[])
               .filter(k => !persoana[k])
@@ -157,7 +164,9 @@ function PersonCard({
   )
 }
 
-export default function MultiPersonPreview({ client, accessToken, onContinue, onToast }: Props) {
+export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonPreview(
+  { client, accessToken, onContinue, onToast, onReadyChange }, ref,
+) {
   // Cotă neintrodusă explicit → default egal proporțional între asociați
   const [asociati, setAsociati] = useState<Persoana[]>(() => {
     const share = equalShare(client.asociati.length)
@@ -191,6 +200,18 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
   const addAdministrator = () => setAdmini(prev => [...prev, { ...EMPTY_PERSOANA, calitate: 'Administrator' }])
   const removeAdministrator = (i: number) => setAdmini(prev => { const next = [...prev]; next.splice(i, 1); return next })
 
+  // Cazul uzual la SRL — asociatul e și administrator. Candidații sunt
+  // asociații care nu apar deja printre administratori (după nume complet);
+  // persoana rămâne și în lista de asociați, doar se adaugă o copie aici.
+  const asociatiCandidati = asociati.filter(a => {
+    const full = `${a.nume} ${a.prenume}`.trim()
+    return full && !admini.some(ad => `${ad.nume} ${ad.prenume}`.trim() === full)
+  })
+  const addAdministratorDinAsociat = (idx: number) => {
+    const a = asociatiCandidati[idx]
+    if (a) setAdmini(prev => [...prev, { ...a, calitate: 'Administrator' }])
+  }
+
   // O societate trebuie să aibă minim un asociat și un administrator, iar
   // cotele asociaților trebuie să însumeze mereu 100%
   const asociatAtMin = asociati.length <= 1
@@ -219,6 +240,10 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
     const updatedClient: Client = { ...client, ...companyData, asociati, administratori: admini }
     onContinue(persons, updatedClient)
   }
+
+  const canContinue = hasMinPeople && cotaValid
+  useImperativeHandle(ref, () => ({ continue: handleContinue }))
+  useEffect(() => { onReadyChange?.(canContinue) }, [canContinue, onReadyChange])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -264,7 +289,7 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
         {asociati.length > 0 && (
           <div style={{
             fontSize: '.8125rem', fontWeight: 600,
-            color: cotaValid ? 'var(--g700, #15803d)' : 'var(--r600, #dc2626)',
+            color: cotaValid ? 'var(--g700)' : 'var(--r600)',
           }}>
             Cotă totală: {cotaTotal}% {cotaValid ? '✓' : '— ar trebui să fie 100%'}
           </div>
@@ -275,7 +300,22 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
       <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={SECTION_TITLE}>Administratori <span style={COUNT_CHIP}>{admini.length}</span></div>
-          <button type="button" className="btn btn-success btn-sm" onClick={addAdministrator}>+ Adaugă administrator</button>
+          <div style={{ display: 'flex', gap: '.375rem' }}>
+            {asociatiCandidati.length > 0 && (
+              <select
+                className="field-input"
+                style={{ width: 'auto', fontSize: '.8125rem', padding: '.3rem .5rem' }}
+                value=""
+                onChange={e => { if (e.target.value !== '') addAdministratorDinAsociat(Number(e.target.value)) }}
+              >
+                <option value="" disabled>+ Dintre asociați…</option>
+                {asociatiCandidati.map((a, i) => (
+                  <option key={i} value={i}>{a.nume} {a.prenume}</option>
+                ))}
+              </select>
+            )}
+            <button type="button" className="btn btn-success btn-sm" onClick={addAdministrator}>+ Adaugă administrator</button>
+          </div>
         </div>
         {admini.length === 0 && (
           <p style={{ fontSize: '.8125rem', color: 'var(--s400)', margin: 0 }}>Niciun administrator adăugat.</p>
@@ -306,13 +346,13 @@ export default function MultiPersonPreview({ client, accessToken, onContinue, on
       )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '.25rem' }}>
-        <button className="btn btn-primary" onClick={handleContinue} disabled={!hasMinPeople || !cotaValid}>
+        <button className="btn btn-primary" onClick={handleContinue} disabled={!canContinue}>
           Continuă la template →
         </button>
       </div>
     </div>
   )
-}
+})
 
 const BTN_ICON: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',

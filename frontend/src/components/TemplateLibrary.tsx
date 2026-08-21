@@ -247,7 +247,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     <Modal
       onClose={onClose}
       ariaLabel="Biblioteca de șabloane"
-      backdropStyle={{ background: 'rgba(15,23,42,.4)', alignItems: 'stretch', justifyContent: 'flex-end', padding: 0 }}
+      backdropStyle={{ background: 'var(--backdrop)', alignItems: 'stretch', justifyContent: 'flex-end', padding: 0 }}
       boxStyle={{
         width: '100%', maxWidth: 520, borderRadius: 0, boxShadow: '-4px 0 24px rgba(0,0,0,.12)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'none',
@@ -308,14 +308,14 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
               {templates.map(tpl => (
                 <div key={tpl.id} style={{ background: 'var(--s50)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: tpl.type === 'docx' ? 'var(--b50, #eff6ff)' : 'var(--p50)', color: tpl.type === 'docx' ? 'var(--b700, #1d4ed8)' : 'var(--p700)' }}>
+                    <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: tpl.type === 'docx' ? 'var(--b50)' : 'var(--p50)', color: tpl.type === 'docx' ? 'var(--b700)' : 'var(--p700)' }}>
                       {tpl.type === 'docx' ? 'DOCX' : 'GDoc'}
                     </span>
                     {tpl.tipTemplate && tpl.tipTemplate !== 'universal' && (
                       <span style={{
                         fontSize: '.68rem', fontWeight: 700, padding: '.1rem .35rem', borderRadius: 3,
-                        background: tpl.tipTemplate === 'PF' ? 'var(--b100, #dbeafe)' : 'var(--g100, #dcfce7)',
-                        color: tpl.tipTemplate === 'PF' ? 'var(--b700, #1d4ed8)' : 'var(--g700, #15803d)',
+                        background: tpl.tipTemplate === 'PF' ? 'var(--b100)' : 'var(--g100)',
+                        color: tpl.tipTemplate === 'PF' ? 'var(--b700)' : 'var(--g700)',
                       }}>
                         {tpl.tipTemplate}
                       </span>
@@ -338,7 +338,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                     const src = builtins.find(b => b.key === tpl.sourceKey)
                     if (!src || src.version <= tpl.sourceVersion!) return null
                     return (
-                      <div style={{ fontSize: '.72rem', color: 'var(--o700, #c2410c)' }}>
+                      <div style={{ fontSize: '.72rem', color: 'var(--o700)' }}>
                         ⚠️ bazat pe "{src.name}" v{tpl.sourceVersion} — există o versiune mai nouă (v{src.version})
                       </div>
                     )
@@ -369,7 +369,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                 {(['docx', 'gdoc'] as AddTab[]).map(t => (
                   <button key={t} onClick={() => setAddTab(t)} style={{
                     flex: 1, padding: '.35rem .75rem', borderRadius: 6, border: 'none', cursor: 'pointer',
-                    background: addTab === t ? '#fff' : 'transparent',
+                    background: addTab === t ? 'var(--surface)' : 'transparent',
                     boxShadow: addTab === t ? 'var(--sh-sm)' : 'none',
                     color: addTab === t ? 'var(--s800)' : 'var(--s400)',
                     fontWeight: addTab === t ? 600 : 400, fontSize: '.85rem', fontFamily: 'var(--font)',
@@ -382,8 +382,8 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
               {addTab === 'docx' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '.875rem' }}>
                   {/* File picker */}
-                  <div>
-                    <label style={LABEL}>Fișier .docx</label>
+                  <div className="field">
+                    <label className="field-label">Fișier .docx</label>
                     <div
                       onClick={() => fileInputRef.current?.click()}
                       style={{ border: '2px dashed var(--s300)', borderRadius: 'var(--r-sm)', padding: '1.25rem', textAlign: 'center', cursor: 'pointer', background: 'var(--s50)' }}
@@ -406,7 +406,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                   {detecting && <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}><span className="spin" /> Detectare placeholder-e…</div>}
                   {!detecting && docxPlaceholders.length > 0 && (
                     <div>
-                      <div style={LABEL}>Placeholder-e detectate ({docxPlaceholders.length})</div>
+                      <div className="field-label">Placeholder-e detectate ({docxPlaceholders.length})</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.3rem', marginTop: '.25rem' }}>
                         {docxPlaceholders.map(ph => <PlaceholderBadge key={ph} ph={ph} />)}
                       </div>
@@ -416,23 +416,23 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                     <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Nu s-au detectat placeholder-e. Asigură-te că folosești formatul <code style={{ background: 'var(--s100)', padding: '.1rem .3rem', borderRadius: 3 }}>{'{{CAMP}}'}</code>.</div>
                   )}
 
-                  <div>
-                    <label style={LABEL}>Nume șablon *</label>
-                    <input value={docxName} onChange={e => setDocxName(e.target.value)} placeholder="ex: Contract de asociere" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Nume șablon *</label>
+                    <input className="field-input" value={docxName} onChange={e => setDocxName(e.target.value)} placeholder="ex: Contract de asociere" />
                   </div>
-                  <div>
-                    <label style={LABEL}>Descriere (opțional)</label>
-                    <input value={docxDesc} onChange={e => setDocxDesc(e.target.value)} placeholder="Scurtă descriere…" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Descriere (opțional)</label>
+                    <input className="field-input" value={docxDesc} onChange={e => setDocxDesc(e.target.value)} placeholder="Scurtă descriere…" />
                   </div>
-                  <div>
-                    <label style={LABEL}>Tip șablon</label>
-                    <select value={docxTip} onChange={e => setDocxTip(e.target.value as TipTemplate)} style={{ ...INPUT, appearance: 'auto' }}>
+                  <div className="field">
+                    <label className="field-label">Tip șablon</label>
+                    <select className="field-input" value={docxTip} onChange={e => setDocxTip(e.target.value as TipTemplate)} style={{ appearance: 'auto' }}>
                       {TIP_TEMPLATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label style={LABEL}>Numele fișierului generat</label>
-                    <input value={docxOutput} onChange={e => setDocxOutput(e.target.value)} placeholder="ex: contract_{{SOCIETATE_DENUMIRE}}_{{DATA_AZI}}.docx" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Numele fișierului generat</label>
+                    <input className="field-input" value={docxOutput} onChange={e => setDocxOutput(e.target.value)} placeholder="ex: contract_{{SOCIETATE_DENUMIRE}}_{{DATA_AZI}}.docx" />
                     <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>Poți folosi placeholder-e și în numele fișierului.</p>
                   </div>
 
@@ -444,30 +444,30 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
 
               {addTab === 'gdoc' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '.875rem' }}>
-                  <div>
-                    <label style={LABEL}>Nume șablon *</label>
-                    <input value={gdocName} onChange={e => setGdocName(e.target.value)} placeholder="ex: Contract SRL" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Nume șablon *</label>
+                    <input className="field-input" value={gdocName} onChange={e => setGdocName(e.target.value)} placeholder="ex: Contract SRL" />
                   </div>
-                  <div>
-                    <label style={LABEL}>Google Doc ID *</label>
-                    <input value={gdocDocId} onChange={e => setGdocDocId(e.target.value)} placeholder="ID din URL: /document/d/ID/edit" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Google Doc ID *</label>
+                    <input className="field-input" value={gdocDocId} onChange={e => setGdocDocId(e.target.value)} placeholder="ID din URL: /document/d/ID/edit" />
                     <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>
                       Copiază ID-ul din: docs.google.com/document/d/<strong>ID</strong>/edit
                     </p>
                   </div>
-                  <div>
-                    <label style={LABEL}>Descriere (opțional)</label>
-                    <input value={gdocDesc} onChange={e => setGdocDesc(e.target.value)} placeholder="Scurtă descriere…" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Descriere (opțional)</label>
+                    <input className="field-input" value={gdocDesc} onChange={e => setGdocDesc(e.target.value)} placeholder="Scurtă descriere…" />
                   </div>
-                  <div>
-                    <label style={LABEL}>Tip șablon</label>
-                    <select value={gdocTip} onChange={e => setGdocTip(e.target.value as TipTemplate)} style={{ ...INPUT, appearance: 'auto' }}>
+                  <div className="field">
+                    <label className="field-label">Tip șablon</label>
+                    <select className="field-input" value={gdocTip} onChange={e => setGdocTip(e.target.value as TipTemplate)} style={{ appearance: 'auto' }}>
                       {TIP_TEMPLATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label style={LABEL}>Numele documentului generat</label>
-                    <input value={gdocOutput} onChange={e => setGdocOutput(e.target.value)} placeholder="ex: contract_{{SOCIETATE_DENUMIRE}}" style={INPUT} />
+                  <div className="field">
+                    <label className="field-label">Numele documentului generat</label>
+                    <input className="field-input" value={gdocOutput} onChange={e => setGdocOutput(e.target.value)} placeholder="ex: contract_{{SOCIETATE_DENUMIRE}}" />
                   </div>
                   <button className="btn btn-primary" onClick={handleAddGdoc} disabled={saving || !gdocName.trim() || !gdocDocId.trim()}>
                     {saving ? <><span className="spin" />&nbsp;Salvează…</> : '💾 Salvează șablon'}
@@ -500,15 +500,4 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
         </div>
     </Modal>
   )
-}
-
-const LABEL: React.CSSProperties = {
-  fontSize: '.695rem', fontWeight: 700, color: 'var(--s500)',
-  letterSpacing: '.05em', textTransform: 'uppercase', display: 'block', marginBottom: '.35rem',
-}
-const INPUT: React.CSSProperties = {
-  padding: '.375rem .625rem', borderRadius: 'var(--r-sm)',
-  border: '1.5px solid var(--s300)', fontSize: '.875rem',
-  color: 'var(--s800)', background: '#fff', width: '100%',
-  fontFamily: 'var(--font)', outline: 'none', boxSizing: 'border-box',
 }

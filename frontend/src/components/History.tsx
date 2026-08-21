@@ -23,8 +23,10 @@ export default function History({ user, open, onSelect, onClose }: Props) {
   const [items, setItems] = useState<Extraction[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Abonare la extracțiile recente din Firestore, cât timp panoul e deschis.
   useEffect(() => {
     if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
     const q = query(
       collection(db, 'users', user.uid, 'extractions'),

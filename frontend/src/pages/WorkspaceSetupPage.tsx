@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useApp } from '../AppLayout'
+import { useApp } from '../AppContext'
 
 export default function WorkspaceSetupPage() {
   const { user, workspaceCtx, toast } = useApp()

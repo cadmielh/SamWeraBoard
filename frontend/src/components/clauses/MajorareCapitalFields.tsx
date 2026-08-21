@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import type { CSSProperties } from 'react'
 import type { Client, Persoana } from '../../types'
 import { parsePercent } from '../../lib/cota'
 import type { ClientPatchProposal } from '../../lib/clauseFieldSpecs'
@@ -67,23 +66,23 @@ export default function MajorareCapitalFields({ client, fields, onField, onClien
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
-      <div>
-        <label style={LABEL}>Asociat care aportă</label>
-        <select style={INPUT} value={aportatorNume} onChange={e => onField('ASOCIAT_APORT_NUME', e.target.value)}>
+      <div className="field">
+        <label className="field-label">Asociat care aportă</label>
+        <select className="field-input" value={aportatorNume} onChange={e => onField('ASOCIAT_APORT_NUME', e.target.value)}>
           <option value="">— alege —</option>
           {asociati.map((a, i) => (
             <option key={i} value={`${a.nume} ${a.prenume}`.trim()}>{a.nume} {a.prenume}</option>
           ))}
         </select>
       </div>
-      <div>
-        <label style={LABEL}>Capital social nou (total) — actual: {capitalVechi} RON</label>
-        <input style={INPUT} value={fields.CAPITAL_SOCIAL_NOU ?? ''} onChange={e => onField('CAPITAL_SOCIAL_NOU', e.target.value)} placeholder={`> ${capitalVechi}`} />
+      <div className="field">
+        <label className="field-label">Capital social nou (total) — actual: {capitalVechi} RON</label>
+        <input className="field-input" value={fields.CAPITAL_SOCIAL_NOU ?? ''} onChange={e => onField('CAPITAL_SOCIAL_NOU', e.target.value)} placeholder={`> ${capitalVechi}`} />
       </div>
 
       {calc && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.2rem' }}>
-          <label style={LABEL}>Structură rezultată (informativ)</label>
+          <label className="field-label">Structură rezultată (informativ)</label>
           {calc.rezultat.map((r, i) => (
             <div key={i} style={{ display: 'flex', gap: '.5rem', fontSize: '.8rem', color: 'var(--s700)' }}>
               <span style={{ flex: 1 }}>{r.nume}</span>
@@ -94,13 +93,10 @@ export default function MajorareCapitalFields({ client, fields, onField, onClien
         </div>
       )}
       {fields.CAPITAL_SOCIAL_NOU && !calc && (
-        <p style={{ fontSize: '.78rem', color: 'var(--y700, #a16207)' }}>
+        <p style={{ fontSize: '.78rem', color: 'var(--y700)' }}>
           Capitalul nou trebuie să fie mai mare decât cel actual ({capitalVechi} RON) și trebuie ales asociatul care aportă.
         </p>
       )}
     </div>
   )
 }
-
-const LABEL: CSSProperties = { fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.04em', textTransform: 'uppercase', display: 'block', marginBottom: '.25rem' }
-const INPUT: CSSProperties = { padding: '.375rem .625rem', borderRadius: 'var(--r-sm)', border: '1.5px solid var(--s300)', fontSize: '.85rem', color: 'var(--s800)', background: '#fff', width: '100%', fontFamily: 'var(--font)', outline: 'none', boxSizing: 'border-box' }

@@ -100,7 +100,7 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
                 type="button"
                 className="persoana-card"
                 disabled={!adresaFull}
-                style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s150, #e5e7eb)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
+                style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
                 onClick={() => { set('sediuSocial', adresaFull); setSediuPicker(false) }}
               >
                 <div>
