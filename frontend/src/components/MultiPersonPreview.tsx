@@ -5,6 +5,7 @@ import { EMPTY_PERSOANA } from '../lib/clienti'
 import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import PersonScanModal from './PersonScanModal'
 import CompanyInfoForm, { type CompanyData } from './CompanyInfoForm'
+import IconTrash from './IconTrash'
 
 interface Props {
   client: Client
@@ -111,7 +112,7 @@ function PersonCard({
               style={{ ...BTN_ICON, color: atMin ? 'var(--s300)' : 'var(--r500)' }}
               title={atMin ? `Trebuie să existe cel puțin un ${role === 'asociat' ? 'asociat' : 'administrator'}` : 'Elimină'}
             >
-              🗑️
+              <IconTrash />
             </button>
           </div>
         </div>

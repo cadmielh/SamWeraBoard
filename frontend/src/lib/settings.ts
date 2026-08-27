@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 
 export type Theme = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
-export type FontKey = 'inter' | 'manrope' | 'jakarta' | 'system'
+export type FontKey = 'inter' | 'manrope' | 'jakarta' | 'montserrat'
 
 export const FONT_OPTIONS: { key: FontKey; label: string; stack: string }[] = [
   { key: 'inter', label: 'Inter', stack: "'Inter', system-ui, sans-serif" },
   { key: 'manrope', label: 'Manrope', stack: "'Manrope', system-ui, sans-serif" },
   { key: 'jakarta', label: 'Plus Jakarta Sans', stack: "'Plus Jakarta Sans', system-ui, sans-serif" },
-  { key: 'system', label: 'Sistem', stack: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
+  { key: 'montserrat', label: 'Montserrat', stack: "'Montserrat', system-ui, sans-serif" },
 ]
 
 const THEME_KEY = 'swb_theme'

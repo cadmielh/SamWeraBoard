@@ -73,6 +73,16 @@ service cloud.firestore {
       match /docTemplates/{templateId} {
         allow read, write, delete: if isMember(wid);
       }
+
+      // Dosare (registru ONRC) — any workspace member can CRUD
+      match /dosare/{dosarId} {
+        allow read, write, delete: if isMember(wid);
+      }
+
+      // Sarcini (task board) — any workspace member can CRUD
+      match /sarcini/{sarcinaId} {
+        allow read, write, delete: if isMember(wid);
+      }
     }
 
     // Invitations — keyed by encoded email (@ -> _AT_, . -> _DOT_)

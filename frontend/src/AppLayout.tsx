@@ -49,9 +49,9 @@ export default function AppLayout() {
     }
   }, [workspaceCtx.loading, workspaceCtx.workspaces.length, user, navigate])
 
-  const toast = useCallback((message: string, type: ToastItem['type'] = 'info') => {
+  const toast = useCallback((message: string, type: ToastItem['type'] = 'info', opts?: Pick<ToastItem, 'onExpire' | 'action'>) => {
     const id = Math.random().toString(36).slice(2)
-    setToasts(t => [...t, { id, message, type }])
+    setToasts(t => [...t, { id, message, type, onExpire: opts?.onExpire, action: opts?.action }])
   }, [])
 
   const dismissToast = useCallback((id: string) => {

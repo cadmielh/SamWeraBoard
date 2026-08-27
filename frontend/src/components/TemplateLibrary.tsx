@@ -3,6 +3,7 @@ import type { BuiltinTemplate, ClauseMeta, DocTemplate, ToastItem } from '../typ
 import type { TemplateInput } from '../lib/templates'
 import { useBuiltinTemplates } from '../lib/builtinTemplates'
 import { fetchBuiltinTemplateBytes } from '../lib/api'
+import IconTrash from './IconTrash'
 
 type TipTemplate = 'universal' | 'PF' | 'PJ'
 const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
@@ -327,10 +328,10 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                     <button
                       onClick={() => handleRemove(tpl.id)}
                       disabled={removingId === tpl.id}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--r500)', fontSize: '1rem', padding: '.125rem .3rem', borderRadius: 4 }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--r500)', padding: '.125rem .3rem', borderRadius: 4, display: 'inline-flex', alignItems: 'center' }}
                       title="Șterge"
                     >
-                      {removingId === tpl.id ? <span className="spin" /> : '🗑'}
+                      {removingId === tpl.id ? <span className="spin" /> : <IconTrash />}
                     </button>
                   </div>
                   {tpl.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{tpl.description}</div>}

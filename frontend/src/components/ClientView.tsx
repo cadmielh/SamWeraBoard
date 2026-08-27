@@ -5,6 +5,10 @@ import { inferTipClient } from '../types'
 import { computeScadente } from '../lib/scadente'
 import { findCaenDescriere } from '../data/caen'
 import { formatDateRo } from '../lib/dates'
+import { getInitials, getAvatarColor } from '../lib/avatar'
+import IconTrash from './IconTrash'
+import IconPencil from './IconPencil'
+import ClientDosareSarcini from './ClientDosareSarcini'
 
 const REGIM_FISCAL_LABELS: Record<string, string> = {
   microintreprindere: 'Microîntreprindere',
@@ -13,7 +17,6 @@ const REGIM_FISCAL_LABELS: Record<string, string> = {
 
 interface Props {
   client: Client
-  onClose: () => void
   onEdit: () => void
   onDelete: () => void
   onSaveNotite: (notite: string) => Promise<void>
@@ -25,19 +28,6 @@ const SUBTIP_LABELS: Record<string, string> = {
   PFA: 'PFA',
   IF: 'IF',
   II: 'II',
-}
-
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
-  return name.slice(0, 2).toUpperCase()
-}
-
-function getAvatarColor(seed: string): string {
-  const palette = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#0ea5e9', '#d97706', '#16a34a']
-  let h = 0
-  for (const ch of seed) h = ((h << 5) - h) + ch.charCodeAt(0)
-  return palette[Math.abs(h) % palette.length]
 }
 
 function InfoRow({ label, value, link }: { label: string; value?: string; link?: boolean }) {
@@ -168,7 +158,7 @@ function PersoanaCard({ p }: { p: Persoana }) {
   )
 }
 
-export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNotite, onSaveField, embedded }: Props) {
+export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onSaveField, embedded }: Props) {
   const navigate = useNavigate()
   const tipClient = inferTipClient(client)
   const isPF = tipClient === 'PF'
@@ -226,7 +216,6 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
       {/* ── Header ── */}
       <div className="cv2-header">
         <div className="cv2-header-row">
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ flexShrink: 0 }}>← Înapoi</button>
           <div className="cv2-header-title">
             {headerBadge}
             <span className="cv2-company-name" title={client.denumire}>{client.denumire}</span>
@@ -239,8 +228,8 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
             >
               📄 Generează documente
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={onEdit} title="Editează">✏️ Editează</button>
-            <button className="btn btn-ghost btn-sm" onClick={onDelete} title="Șterge" style={{ color: 'var(--r500)' }}>🗑️</button>
+            <button className="btn btn-primary btn-sm" onClick={onEdit} title="Editează"><IconPencil /> Editează</button>
+            <button className="btn btn-danger btn-sm" onClick={onDelete} title="Șterge"><IconTrash /> Șterge</button>
           </div>
         </div>
 
@@ -269,6 +258,8 @@ export default function ClientView({ client, onClose, onEdit, onDelete, onSaveNo
 
       {/* ── Body ── */}
       <div className="cv2-body">
+
+        <ClientDosareSarcini client={client} />
 
         {/* ── Bloc Date persoană (CI) — orice PF ── */}
         {isPF && client.titular && (

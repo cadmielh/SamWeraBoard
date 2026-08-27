@@ -24,3 +24,27 @@ export function formatDateRo(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`
 }
+
+/**
+ * Câmpurile "createdAt"/"completedAt" sunt tipate `string | null` dar, la
+ * runtime, conțin un Firestore `Timestamp` (obiect cu `.toDate()`/`.seconds`)
+ * imediat după citirea din Firestore — devin string ISO doar în starea
+ * optimistă locală, între scriere și confirmare. `.slice()`/`new Date(str)`
+ * pe valoarea brută ar crăpa pe Timestamp-uri reale; această funcție
+ * normalizează ambele forme.
+ */
+export function toDateSafe(value: unknown): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'string') {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate()
+  }
+  if (typeof value === 'object' && value !== null && 'seconds' in value) {
+    return new Date((value as { seconds: number }).seconds * 1000)
+  }
+  return null
+}

@@ -5,6 +5,7 @@ import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import CAENCombobox from './CAENCombobox'
 import Modal from './Modal'
+import IconTrash from './IconTrash'
 
 export interface CompanyData {
   denumire: string
@@ -172,7 +173,7 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
             <div style={{ flex: 1 }}>
               <CAENCombobox value={a.cod} descriere={a.descriere || findCaenDescriere(a.cod)} onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
             </div>
-            <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}><IconTrash /></button>
           </div>
         ))}
       </div>
@@ -198,7 +199,7 @@ export default function CompanyInfoForm({ value, onChange, asociati, accessToken
           <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
             <input className="field-input" style={{ flex: 1 }} value={adresa}
               onChange={e => updatePunctLucru(i, e.target.value)} placeholder="Adresă punct de lucru" />
-            <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}><IconTrash /></button>
           </div>
         ))}
       </div>

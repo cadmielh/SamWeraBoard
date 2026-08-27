@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Montserrat:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   --p50:  #eef2ff; --p100: #e0e7ff; --p200: #c7d2fe;
@@ -41,6 +41,7 @@
   --sh-xl: 0 20px 25px -5px rgb(0 0 0/.08),0 8px 10px -6px rgb(0 0 0/.08);
   --sh-p:  0 4px 14px rgb(99 102 241/.28);
   --sh-g:  0 4px 14px rgb(16 185 129/.25);
+  --sh-r:  0 4px 14px rgb(239 68 68/.28);
 
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-full: 9999px;
   --font: 'Inter', system-ui, sans-serif;
@@ -49,6 +50,7 @@
   --t-md: 220ms var(--ease);
 
   --sidebar-w: 240px;
+  --sidebar-w-collapsed: 68px;
   --row-h: 48px;
   --col-action-w: 130px;
 }
@@ -138,6 +140,10 @@ body {
 .btn-primary:hover { background: linear-gradient(135deg,var(--p600),var(--p700)); }
 .btn-success { background: linear-gradient(135deg,var(--g500),var(--g600)); color:#fff; box-shadow:var(--sh-g); }
 .btn-success:hover { background: linear-gradient(135deg,var(--g600),var(--g700)); }
+.btn-danger { background: linear-gradient(135deg,var(--r400),var(--r500)); color:#fff; box-shadow:var(--sh-r); }
+.btn-danger:hover { background: linear-gradient(135deg,var(--r500),#dc2626); }
+.btn-slate { background: linear-gradient(135deg,#475569,#334155); color:#fff; }
+.btn-slate:hover { background: linear-gradient(135deg,#334155,#1e293b); }
 .btn-ghost { background: transparent; color:var(--s600); border: 1.5px solid var(--s200); }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-outline-primary { background:var(--p50); color:var(--p600); border:1.5px solid var(--p200); }
@@ -171,12 +177,78 @@ body {
 .chip-success { background:var(--g50); color:var(--g600); }
 .chip-muted { background:var(--s100); color:var(--s500); border:1px solid var(--s200); }
 
-/* ── Inline status ── */
-.inline-status { display:none; font-size:.8125rem; padding:.625rem .875rem; border-radius:var(--r-sm); margin-top:.875rem; align-items:center; gap:.5rem; }
-.inline-status.show { display:flex; }
-.inline-status.ok  { background:var(--g50);  color:var(--g600); border:1px solid var(--g200); }
-.inline-status.err { background:var(--r50);  color:var(--r600); border:1px solid var(--r200); }
-.inline-status.info{ background:var(--p50);  color:var(--p700); border:1px solid var(--p200); }
+/* ── Toast (notificări de confirmare) ──────────────────────────────────────
+   Glassmorphism + intrare cu spring, iconiță în cerc-gradient, bară de
+   progres pentru auto-dismiss (pauzată la hover, sincron cu setTimeout-ul
+   din Toast.tsx). */
+.toast-stack {
+  position:fixed; bottom:1rem; right:1rem; z-index:9999;
+  display:flex; flex-direction:column; gap:.625rem; pointer-events:none;
+}
+.toast-item {
+  position:relative; overflow:hidden; pointer-events:auto;
+  display:flex; align-items:center; gap:.7rem;
+  min-width:260px; max-width:380px; padding:.75rem 1rem .8rem .8rem;
+  border-radius:14px; border:1px solid var(--s200);
+  background:color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter:blur(16px) saturate(160%);
+  -webkit-backdrop-filter:blur(16px) saturate(160%);
+  box-shadow:0 10px 30px rgb(0 0 0/.14), 0 2px 8px rgb(0 0 0/.06);
+  animation:toast-in .38s cubic-bezier(.34,1.56,.64,1);
+}
+.toast-item--leaving { animation:toast-out .2s var(--ease) forwards; }
+.toast-item--ok   { border-color:color-mix(in srgb, var(--g500) 40%, var(--s200)); }
+.toast-item--err  { border-color:color-mix(in srgb, var(--r500) 40%, var(--s200)); }
+.toast-item--info { border-color:color-mix(in srgb, var(--p500) 40%, var(--s200)); }
+
+.toast-icon {
+  flex-shrink:0; width:26px; height:26px; border-radius:50%; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:800;
+}
+.toast-icon--ok   { background:linear-gradient(135deg,var(--g500),var(--g600)); box-shadow:0 0 14px color-mix(in srgb, var(--g500) 55%, transparent); }
+.toast-icon--err  { background:linear-gradient(135deg,var(--r400),var(--r500)); box-shadow:0 0 14px color-mix(in srgb, var(--r500) 55%, transparent); }
+.toast-icon--info { background:linear-gradient(135deg,var(--p500),var(--p600)); box-shadow:0 0 14px color-mix(in srgb, var(--p500) 55%, transparent); }
+
+.toast-message { flex:1; font-size:.8125rem; font-weight:600; color:var(--s800); line-height:1.4; }
+
+.toast-action {
+  flex-shrink:0; background:none; border:none; cursor:pointer; font-family:var(--font);
+  font-size:.75rem; font-weight:700; text-decoration:underline; text-underline-offset:2px;
+  padding:.15rem .3rem; border-radius:4px; transition:opacity var(--t);
+}
+.toast-item--ok .toast-action   { color:var(--g600); }
+.toast-item--err .toast-action  { color:var(--r600); }
+.toast-item--info .toast-action { color:var(--p600); }
+.toast-action:hover { opacity:.7; }
+
+.toast-close {
+  flex-shrink:0; background:none; border:none; cursor:pointer; color:var(--s400);
+  width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:.9rem; line-height:1; transition:background var(--t), color var(--t);
+}
+.toast-close:hover { background:var(--s100); color:var(--s700); }
+
+.toast-progress {
+  position:absolute; left:0; bottom:0; height:2.5px; width:100%; transform-origin:left;
+  animation-name:toast-progress; animation-timing-function:linear; animation-fill-mode:forwards;
+}
+.toast-item:hover .toast-progress { animation-play-state:paused; }
+.toast-item--ok .toast-progress   { background:linear-gradient(90deg,var(--g500),var(--g400)); }
+.toast-item--err .toast-progress  { background:linear-gradient(90deg,var(--r500),var(--r400)); }
+.toast-item--info .toast-progress { background:linear-gradient(90deg,var(--p500),var(--p400, var(--p500))); }
+
+@keyframes toast-in {
+  from { opacity:0; transform:translateY(18px) scale(.92); }
+  to   { opacity:1; transform:translateY(0) scale(1); }
+}
+@keyframes toast-out {
+  from { opacity:1; transform:translateX(0) scale(1); }
+  to   { opacity:0; transform:translateX(28px) scale(.94); }
+}
+@keyframes toast-progress {
+  from { transform:scaleX(1); }
+  to   { transform:scaleX(0); }
+}
 
 /* ── Spinner ── */
 .spin { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%; animation:rotate .65s linear infinite; flex-shrink:0; }
@@ -214,13 +286,24 @@ body {
 .sidebar {
   width: var(--sidebar-w); min-height:100vh; background:var(--surface);
   border-right:1px solid var(--border); display:flex; flex-direction:column;
-  flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto;
+  flex-shrink:0; position:sticky; top:0; height:100vh; overflow-y:auto; overflow-x:hidden;
   box-shadow: 1px 0 0 var(--s100);
-  transition: background-color var(--t-md), border-color var(--t-md);
+  transition: background-color var(--t-md), border-color var(--t-md), width var(--t-md);
 }
-.sidebar-logo { padding:1.125rem 1.25rem .875rem; border-bottom:1px solid var(--s100); }
-.sidebar-logo span { font-weight:800; font-size:1.0625rem; color:var(--s900); letter-spacing:-.025em; }
-.sidebar-logo span b { color:var(--p500); font-weight:800; }
+.sidebar--collapsed { width: var(--sidebar-w-collapsed); }
+.sidebar-logo { position:relative; padding:1rem .875rem; border-bottom:1px solid var(--s100); display:flex; align-items:center; justify-content:center; }
+.sidebar-logo-text { margin-right:1.25rem; text-align:center; font-weight:800; font-size:1.1875rem; color:var(--s900); letter-spacing:-.025em; white-space:nowrap; overflow:hidden; }
+.sidebar-logo-text b { color:var(--p500); font-weight:800; }
+.sidebar-collapse-btn {
+  flex-shrink:0; width:32px; height:32px; border-radius:var(--r-sm); border:1px solid var(--s200);
+  background:var(--surface-2); color:var(--s500); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  transition:background var(--t), color var(--t), border-color var(--t);
+  position:absolute; right:.875rem; top:50%; transform:translateY(-50%);
+}
+.sidebar--collapsed .sidebar-collapse-btn { position:static; transform:none; order:-1; width:36px; height:36px; }
+.sidebar--collapsed .sidebar-collapse-btn svg { width:20px; height:20px; }
+.sidebar-collapse-btn svg { width:18px; height:18px; transition:transform var(--t-md); }
+.sidebar-collapse-btn:hover { background:var(--p50); color:var(--p600); border-color:var(--p200); }
 .sidebar-ws { padding:.625rem 1rem .5rem; position:relative; }
 .sidebar-ws-label { font-size:.7rem; font-weight:600; color:var(--s400); text-transform:uppercase; letter-spacing:.06em; margin-bottom:.3rem; }
 .sidebar-ws-btn {
@@ -251,18 +334,26 @@ body {
 }
 .sidebar-nav { padding:.75rem .75rem; flex:1; display:flex; flex-direction:column; }
 .sidebar-nav-item {
-  display:flex; align-items:center; gap:.625rem; padding:.55rem .75rem;
-  border-radius:var(--r-sm); font-size:.875rem; font-weight:500; color:var(--s600);
+  display:flex; align-items:center; gap:.7rem; padding:.6rem .75rem;
+  border-radius:var(--r-sm); font-size:.9375rem; font-weight:500; color:var(--s600);
   text-decoration:none; cursor:pointer; transition:background var(--t), color var(--t);
   margin-bottom:.125rem; border:none; background:transparent; width:100%; text-align:left;
 }
 .sidebar-nav-item:hover { background:var(--s100); color:var(--s900); }
 .sidebar-nav-item.active { background:var(--p50); color:var(--p600); font-weight:600; }
-.sidebar-nav-item svg, .sidebar-nav-item .nav-icon { width:17px; height:17px; flex-shrink:0; }
+.sidebar-nav-item svg, .sidebar-nav-item .nav-icon { width:20px; height:20px; flex-shrink:0; }
+.sidebar-nav-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-section { font-size:.68rem; font-weight:700; color:var(--s400); text-transform:uppercase; letter-spacing:.07em; padding:.75rem .75rem .25rem; }
 .sidebar-footer { padding:.75rem 1rem 1rem; border-top:1px solid var(--s100); }
 .sidebar-user { display:flex; align-items:center; gap:.625rem; margin-bottom:.625rem; }
 .sidebar-user img { width:28px; height:28px; border-radius:50%; border:1.5px solid var(--s200); flex-shrink:0; }
+
+/* ── Sidebar restrâns — doar iconițe ── */
+.sidebar--collapsed .sidebar-nav-item { justify-content:center; padding:.6rem; gap:0; }
+.sidebar--collapsed .sidebar-nav-label { display:none; }
+.sidebar--collapsed .sidebar-user { justify-content:center; margin-bottom:.5rem; }
+.sidebar--collapsed .sidebar-footer { padding:.75rem .5rem 1rem; }
+.sidebar--collapsed .btn-full { padding-left:0; padding-right:0; }
 .sidebar-user-info { min-width:0; }
 .sidebar-user-name { font-size:.8rem; font-weight:600; color:var(--s800); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sidebar-user-email { font-size:.7rem; color:var(--s400); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -282,7 +373,7 @@ body {
 .search-box:focus-within { border-color:var(--p500); }
 .search-box input { border:none; outline:none; font:inherit; font-size:.875rem; color:var(--s800); background:transparent; flex:1; min-width:0; }
 .search-box input::placeholder { color:var(--s400); }
-.table-controls { display:flex; align-items:center; gap:.75rem; margin-top:.625rem; font-size:.8rem; color:var(--s500); }
+.table-controls { display:flex; align-items:center; gap:.75rem; margin-top:.625rem; margin-bottom:.625rem; font-size:.8rem; color:var(--s500); }
 .page-body { flex:1; overflow:hidden; padding:1.25rem 1.5rem; display:flex; flex-direction:column; }
 .table-card {
   flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column;
@@ -460,7 +551,28 @@ body {
 .modal-title { font-size:1rem; font-weight:700; color:var(--s900); }
 .modal-body { padding:1.25rem 1.5rem; }
 .modal-footer { padding:.875rem 1.5rem; border-top:1px solid var(--s100); display:flex; justify-content:flex-end; gap:.625rem; }
-.modal-close { background:transparent; border:none; cursor:pointer; color:var(--s400); padding:.25rem; border-radius:var(--r-sm); font-size:1.25rem; line-height:1; display:flex; align-items:center; justify-content:center; transition:color var(--t), background var(--t); }
+.modal-close { background:transparent; border:none; cursor:pointer; color:var(--s400); padding:.25rem; border-radius:var(--r-sm); font-family:var(--font); font-size:1.25rem; line-height:1; display:flex; align-items:center; justify-content:center; transition:color var(--t), background var(--t); }
+
+/* Comutator light/dark — rând dedicat, sub logo, în sidebar (vizibil din
+   orice pagină, ca sidebar-ul însuși). Track+thumb, ca un switch nativ; se
+   reduce la o iconiță simplă când sidebar-ul e restrâns. */
+.sidebar-theme-row { padding:.625rem .875rem; border-bottom:1px solid var(--s100); display:flex; align-items:center; justify-content:center; }
+.theme-toggle-switch {
+  position:relative; display:inline-flex; align-items:center; width:52px; height:28px;
+  border-radius:var(--r-full); background:var(--s200); border:none; cursor:pointer; flex-shrink:0;
+  padding:3px; transition:background var(--t);
+}
+.theme-toggle-switch[data-dark="true"] { background:var(--p600); }
+.theme-toggle-switch-thumb {
+  width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:var(--sh-sm);
+  display:flex; align-items:center; justify-content:center; color:var(--a500);
+  transition:transform var(--t); flex-shrink:0;
+}
+.theme-toggle-switch[data-dark="true"] .theme-toggle-switch-thumb { transform:translateX(24px); color:var(--p600); }
+.sidebar--collapsed .theme-toggle-switch { width:30px; height:30px; padding:0; align-items:center; justify-content:center; background:transparent; border:1.5px solid var(--s200); }
+.sidebar--collapsed .theme-toggle-switch[data-dark="true"] { background:transparent; border-color:var(--p300, var(--p200)); }
+.sidebar--collapsed .theme-toggle-switch-thumb { width:16px; height:16px; background:transparent; box-shadow:none; transform:none !important; color:var(--s600); }
+.sidebar--collapsed .theme-toggle-switch[data-dark="true"] .theme-toggle-switch-thumb { color:var(--p600); }
 .modal-close:hover { background:var(--s100); color:var(--s700); }
 
 /* ── Form fields ── */
@@ -550,6 +662,28 @@ body {
 .cv2-header-title { flex:1; min-width:0; display:flex; align-items:baseline; gap:.5rem; overflow:hidden; }
 .cv2-forma-badge { flex-shrink:0; display:inline-block; padding:.15rem .5rem; font-size:.68rem; font-weight:700; color:var(--s600); background:var(--s100); border-radius:var(--r-full); letter-spacing:.04em; }
 .cv2-company-name { font-size:1rem; font-weight:700; color:var(--s900); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+/* Butonul-control (.stadiu-select-wrap, cu clasa .stadiu-badge-* aplicată
+   dinamic) rămâne colorat pe stadiu, ca celelalte badge-uri din aplicație.
+   Lista de opțiuni (popup-ul deschis) e stilizată separat, pe fiecare
+   <option>, cu aceleași culori simple/lizibile ca orice alt <select> din
+   aplicație (.field-input) — altfel popup-ul moștenea background:transparent
+   + color:inherit de la control și devenea ilizibil în anumite combinații. */
+.stadiu-select-wrap {
+  position:relative; display:inline-flex; align-items:center; flex-shrink:0;
+  border-radius:var(--r-full); transition:filter var(--t);
+}
+.stadiu-select-wrap:hover { filter:brightness(.94); }
+.stadiu-select {
+  flex-shrink:0; appearance:none; border:none; background:transparent; color:inherit;
+  border-radius:var(--r-full); padding:.55rem 2.5rem .55rem 1.25rem; text-align:center;
+  font-size:1.0625rem; font-weight:700; font-family:var(--font); letter-spacing:.02em; cursor:pointer;
+}
+.stadiu-select:focus-visible { outline:2px solid var(--p400); outline-offset:1px; }
+.stadiu-select option { background:var(--surface); color:var(--s900); font-family:var(--font); font-weight:500; text-align:left; }
+.stadiu-select-wrap::after {
+  content:'▾'; position:absolute; right:1rem; top:50%; transform:translateY(-50%);
+  font-size:.85rem; color:inherit; opacity:.7; pointer-events:none;
+}
 .cv2-header-actions { display:flex; gap:.25rem; flex-shrink:0; }
 .cv2-header-anaf { display:flex; align-items:center; gap:.625rem; flex-wrap:wrap; padding-top:.125rem; }
 .cv2-status-badges { display:flex; align-items:center; gap:.375rem; flex-wrap:wrap; }
@@ -559,6 +693,10 @@ body {
 .cv2-body { flex:1; overflow-y:auto; padding:.875rem 1.125rem; display:flex; flex-direction:column; gap:.625rem; }
 .cv2-section { background:var(--surface); border:1px solid var(--s200); border-radius:var(--r-md); padding:1rem 1.125rem; display:flex; flex-direction:column; gap:.75rem; }
 .cv2-section--notes { background:var(--a50); border-color:var(--a200); }
+.cv2-section--compact { padding:.75rem 1.125rem; gap:.5rem; }
+.cv2-section--compact .cv2-two-col { gap:.75rem; }
+.cv2-section--compact .cv2-info-label { font-size:.64rem; }
+.cv2-section--compact .cv2-info-value { font-size:.8125rem; }
 .cv2-section-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.08em; display:flex; align-items:center; gap:.35rem; }
 .cv2-count-chip { background:var(--p100); color:var(--p700); font-size:.68rem; font-weight:700; padding:.1rem .45rem; border-radius:var(--r-full); }
 
@@ -687,6 +825,128 @@ body {
 .tf-detail-panel * { min-width:0; }
 .tf-empty { display:flex; align-items:center; justify-content:center; min-height:260px; color:var(--s400); font-size:.875rem; text-align:center; padding:1.5rem; border:1.5px dashed var(--s300); border-radius:var(--r-md); }
 
+/* ── Dosare — statistici lunare ── */
+.dosar-stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.875rem; }
+.stat-tile { background:var(--surface); border:1px solid var(--s200); border-radius:var(--r-md); padding:.875rem 1rem; display:flex; flex-direction:column; gap:.3rem; }
+.stat-tile-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.05em; }
+.stat-tile-value { font-size:1.375rem; font-weight:800; color:var(--s900); letter-spacing:-.02em; }
+.stat-tile-trend { font-size:.7rem; font-weight:700; }
+
+/* ── Stadiu dosar — o badge per familie din STADIU_DOSAR_COLOR (types.ts) ── */
+.stadiu-badge-blue    { background:var(--b50);  color:var(--b700); }
+.stadiu-badge-amber   { background:var(--a50);  color:var(--a800); }
+.stadiu-badge-primary { background:var(--p50);  color:var(--p700); }
+.stadiu-badge-orange  { background:var(--o50);  color:var(--o700); }
+.stadiu-badge-yellow  { background:var(--y50);  color:var(--y700); }
+.stadiu-badge-green   { background:var(--g50);  color:var(--g700); }
+.stadiu-badge-muted   { background:var(--s100); color:var(--s500); }
+
+/* ── Prioritate sarcini — chips (PRIORITATE_COLOR din types.ts) ── */
+.priority-chip-muted { background:var(--s100); color:var(--s500); }
+.priority-chip-blue  { background:var(--b50);  color:var(--b700); }
+.priority-chip-amber { background:var(--a50);  color:var(--a800); }
+.priority-chip-red   { background:var(--r50);  color:var(--r600); }
+
+/* ── Etichete (chips) — Obiectul cererii (Dosare) ── */
+.tags-input-wrap {
+  display:flex; flex-wrap:wrap; align-items:center; gap:.375rem;
+  padding:.4rem .5rem; border:1.5px solid var(--s200); border-radius:var(--r-sm);
+  background:var(--surface); transition:border-color var(--t); min-height:2.375rem;
+}
+.tags-input-wrap:focus-within { border-color:var(--p500); box-shadow:0 0 0 3px rgba(99,102,241,.1); }
+.tags-input-wrap--disabled { background:var(--surface-2); }
+.tags-chip { display:inline-flex; align-items:center; gap:.3rem; }
+.tags-chip-remove {
+  background:transparent; border:none; cursor:pointer; color:inherit; opacity:.6;
+  font-size:.9rem; line-height:1; padding:0; display:inline-flex; transition:opacity var(--t);
+}
+.tags-chip-remove:hover { opacity:1; }
+.tags-input { flex:1; min-width:120px; border:none; outline:none; background:transparent; font:inherit; font-size:.875rem; color:var(--s900); }
+.tags-input::placeholder { color:var(--s400); }
+
+/* ── Kanban board (Sarcini) ── */
+.kanban-board { display:flex; gap:1rem; align-items:flex-start; height:100%; overflow-x:auto; padding-bottom:.5rem; }
+.kanban-col {
+  /* Fără max-width — cele 3 coloane se împart egal toată lățimea disponibilă
+     a paginii (altfel, pe ecrane late, rămânea spațiu gol după Finalizat). */
+  flex:1 1 0; min-width:280px; max-height:100%;
+  background:var(--surface-2); border:1px solid var(--s200); border-radius:var(--r-lg);
+  display:flex; flex-direction:column; overflow:hidden;
+  transition:background var(--t), border-color var(--t);
+}
+.kanban-col--over { background:var(--p50); border-color:var(--p200); }
+.kanban-col-accent { height:3px; flex-shrink:0; }
+.kanban-col-header { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.75rem .875rem .5rem; flex-shrink:0; }
+.kanban-col-title { font-size:.8125rem; font-weight:700; color:var(--s700); text-transform:uppercase; letter-spacing:.04em; }
+.kanban-col-body { flex:1; overflow-y:auto; padding:.5rem .625rem .75rem; display:flex; flex-direction:column; gap:.5rem; }
+.kanban-col-empty { text-align:center; padding:1.5rem .5rem; font-size:.8rem; color:var(--s400); border:1.5px dashed var(--s300); border-radius:var(--r-md); }
+
+.kanban-quickadd { padding:0 .875rem .5rem; }
+.kanban-quickadd .field-input { font-size:.8125rem; padding:.4rem .625rem; }
+
+.kanban-card {
+  position:relative;
+  background:var(--surface); border:1px solid var(--s200); border-left:4px solid var(--s300);
+  border-radius:var(--r-md); padding:.75rem .875rem; cursor:grab; box-shadow:var(--sh-sm);
+  display:flex; flex-direction:column; gap:.4rem;
+  transition:box-shadow var(--t), opacity var(--t), background-color .35s var(--ease);
+}
+.kanban-card:hover { box-shadow:var(--sh-md); }
+.kanban-card:active { cursor:grabbing; }
+.kanban-card--dragging { opacity:.4; }
+.kanban-card--priority-scazuta  { border-left-color:var(--s300); }
+.kanban-card--priority-medie    { border-left-color:var(--b400); }
+.kanban-card--priority-ridicata { border-left-color:var(--a500); }
+.kanban-card--priority-urgenta  { border-left-color:var(--r500); }
+/* Puls scurt la plasarea unui card în Finalizat — feedback de confirmare fără toast/popup. */
+.kanban-card--just-completed { animation:kanbanCompletePulse .5s var(--ease); }
+@keyframes kanbanCompletePulse {
+  0%   { transform:scale(1);     background:var(--g50); }
+  50%  { transform:scale(1.03);  background:var(--g50); }
+  100% { transform:scale(1);     background:var(--surface); }
+}
+
+.kanban-card-title { font-size:.875rem; font-weight:600; color:var(--s900); line-height:1.35; padding-right:1.75rem; }
+.kanban-card-client { font-size:.75rem; color:var(--s500); }
+.kanban-card-dosar-badge { align-self:flex-start; }
+.kanban-card-footer { display:flex; align-items:center; gap:.375rem; flex-wrap:wrap; }
+.kanban-card-due { font-size:.7rem; font-weight:600; color:var(--s500); }
+.kanban-card-due--today { color:var(--a800); }
+.kanban-card-due--overdue { color:var(--r600); }
+.kanban-card-avatar { width:24px; height:24px; border-radius:50%; color:#fff; font-size:.65rem; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+
+/* ── Shortcut-uri rapide pe card (mută la starea următoare / finalizează) —
+   vizibile la hover/focus, ca restul acțiunilor de rând din aplicație (ex.
+   .action-row din tabelul Clienți), ca să nu aglomereze cardul implicit. */
+.kanban-card-actions { display:flex; gap:.375rem; flex-wrap:wrap; opacity:0; transition:opacity var(--t); margin-top:.1rem; }
+.kanban-card:hover .kanban-card-actions,
+.kanban-card:focus-within .kanban-card-actions { opacity:1; }
+.kanban-card-action-btn {
+  flex:1; min-width:0; padding:.3rem .5rem; border-radius:6px; border:1px solid var(--s200);
+  background:var(--surface-2); color:var(--s600); font-family:var(--font); font-size:.7rem; font-weight:600;
+  cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  transition:background var(--t), border-color var(--t), color var(--t);
+}
+.kanban-card-action-btn:hover { background:var(--p50); border-color:var(--p200); color:var(--p700); }
+.kanban-card-action-btn--finish:hover { background:var(--g50); border-color:var(--g200); color:var(--g700); }
+
+/* ── Buton de ștergere pe card, colț dreapta-sus — vizibil la hover/focus, ca restul acțiunilor. ── */
+.kanban-card-delete-btn {
+  position:absolute; top:.45rem; right:.45rem; width:26px; height:26px; border-radius:7px;
+  border:none; background:var(--surface); color:var(--s400); cursor:pointer;
+  display:flex; align-items:center; justify-content:center; line-height:1;
+  box-shadow:var(--sh-sm); opacity:0; transition:opacity var(--t), background var(--t), color var(--t);
+}
+.kanban-card:hover .kanban-card-delete-btn,
+.kanban-card:focus-within .kanban-card-delete-btn { opacity:1; }
+.kanban-card-delete-btn:hover { background:var(--r50); color:var(--r600); }
+
+/* ── Bara sumar deasupra board-ului (restante/azi/active) ── */
+.tasks-summary-strip { display:flex; align-items:center; gap:.5rem; font-size:.75rem; color:var(--s500); }
+.tasks-summary-item { padding:.15rem .55rem; border-radius:var(--r-full); background:var(--s100); font-weight:600; }
+.tasks-summary-item--overdue { background:var(--r50); color:var(--r600); }
+.tasks-summary-item--today { background:var(--a50); color:var(--a800); }
+
 /* ── Responsive ── */
 @media (max-width:900px) {
   .tf-layout { grid-template-columns:1fr; }
@@ -698,4 +958,5 @@ body {
   .cv2-panel { width:100%; }
   .cv2-two-col { grid-template-columns:1fr; }
   .form-grid { grid-template-columns:1fr; }
+  .kanban-col { min-width:85vw; }
 }

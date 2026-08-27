@@ -8,7 +8,7 @@ type WorkspaceReturn = ReturnType<typeof useWorkspace>
 export interface AppContextType {
   user: User
   accessToken: string
-  toast: (msg: string, type?: ToastItem['type']) => void
+  toast: (msg: string, type?: ToastItem['type'], opts?: Pick<ToastItem, 'onExpire' | 'action'>) => void
   activeWorkspace: Workspace | null
   userRole: 'admin' | 'member' | null
   workspaceCtx: WorkspaceReturn

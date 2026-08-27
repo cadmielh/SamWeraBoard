@@ -10,6 +10,8 @@ import { formatDateRo } from '../lib/dates'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
 import Modal from './Modal'
+import IconTrash from './IconTrash'
+import IconPencil from './IconPencil'
 
 interface Props {
   initial: Client | null
@@ -651,7 +653,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                       <CAENCombobox value={a.cod} descriere={a.descriere || findCaenDescriere(a.cod)}
                         onChange={(cod, desc) => updateCaenSecundar(i, cod, desc)} />
                     </div>
-                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}><IconTrash /></button>
                   </div>
                 ))}
               </div>
@@ -680,7 +682,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
                     <input className="field-input" style={{ flex: 1 }} value={adresa}
                       onChange={e => updatePunctLucru(i, e.target.value)} placeholder="Adresă punct de lucru" />
-                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}>🗑️</button>
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}><IconTrash /></button>
                   </div>
                 ))}
               </div>
@@ -847,7 +849,7 @@ function PersonSection({
               <div className="persoana-card-sub">{p.calitate}{p.cotaParticipare ? ` — ${p.cotaParticipare}` : ''}{p.cnp ? ` · CNP: ${p.cnp}` : ''}</div>
             </div>
             <div className="persoana-card-actions">
-              <button className="btn btn-ghost btn-xs" onClick={() => onEdit(i)}>✏️</button>
+              <button className="btn btn-ghost btn-xs" onClick={() => onEdit(i)}><IconPencil /></button>
               <button
                 className="btn btn-ghost btn-xs"
                 onClick={() => onRemove(i)}
@@ -855,7 +857,7 @@ function PersonSection({
                 title={atMin ? `Trebuie să existe cel puțin un ${label}` : undefined}
                 style={{ color: atMin ? 'var(--s300)' : 'var(--r500)' }}
               >
-                🗑️
+                <IconTrash />
               </button>
             </div>
           </div>

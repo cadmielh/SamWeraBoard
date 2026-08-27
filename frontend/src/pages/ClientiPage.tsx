@@ -9,6 +9,8 @@ import { useApp } from '../AppContext'
 import ClientModal from '../components/ClientModal'
 import ClientView from '../components/ClientView'
 import Modal from '../components/Modal'
+import IconTrash from '../components/IconTrash'
+import IconPencil from '../components/IconPencil'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -265,7 +267,11 @@ export default function ClientiPage() {
     search(workspaceId, debouncedQ).then(setSearchResults).catch(() => {})
   }, [debouncedQ, workspaceId, search])
 
-  const rawDisplayed = searchResults ?? clienti
+  // Ștergere amânată (Undo din toast) — id-urile "șterse" dispar peste tot din
+  // UI imediat, dar rămân în datele reale până expiră toast-ul (sau se anulează).
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set())
+
+  const rawDisplayed = (searchResults ?? clienti).filter(c => !pendingDeleteIds.has(c.id))
 
   const [typeFilter, setTypeFilter] = useState<'all' | 'PF' | 'PJ'>(() => {
     return (localStorage.getItem('samwera-type-filter') as 'all' | 'PF' | 'PJ') ?? 'all'
@@ -310,8 +316,8 @@ export default function ClientiPage() {
     Object.values(colFilters).some(v => v.length > 0) || sortState.col !== null
 
   const openClients = useMemo(
-    () => openClientIds.map(id => clienti.find(c => c.id === id)).filter(Boolean) as Client[],
-    [openClientIds, clienti]
+    () => openClientIds.map(id => clienti.find(c => c.id === id)).filter(c => c && !pendingDeleteIds.has(c.id)) as Client[],
+    [openClientIds, clienti, pendingDeleteIds]
   )
 
   useEffect(() => {
@@ -336,19 +342,33 @@ export default function ClientiPage() {
     }
   }, [modal, workspaceId, user, add, update, toast])
 
-  const handleDelete = useCallback(async () => {
+  // Ștergere amânată — clientul dispare imediat din UI (via pendingDeleteIds,
+  // filtrat în rawDisplayed/openClients), dar scrierea reală în Firestore se
+  // întâmplă abia când expiră toast-ul; "Anulează" doar scoate id-ul din
+  // pendingDeleteIds — nimic n-a fost șters vreodată.
+  const handleDelete = useCallback(() => {
     if (!deleteConf || !workspaceId) return
-    try {
-      await remove(workspaceId, deleteConf.id)
-      // rezultatele de căutare sunt un instantaneu separat — nu se actualizează singure la ștergere
-      setSearchResults(prev => prev ? prev.filter(c => c.id !== deleteConf.id) : prev)
-      toast('Client șters', 'ok')
-      setOpenClientIds(prev => prev.filter(id => id !== deleteConf.id))
-      if (activeTab === deleteConf.id) setActiveTab('list')
-      setDeleteConf(null)
-    } catch (err: unknown) {
-      toast((err as Error).message ?? 'Eroare la ștergerea clientului', 'err')
-    }
+    const id = deleteConf.id
+    const denumire = deleteConf.denumire
+    setPendingDeleteIds(prev => new Set(prev).add(id))
+    if (activeTab === id) setActiveTab('list')
+    setDeleteConf(null)
+    toast(`„${denumire}" a fost șters`, 'ok', {
+      onExpire: async () => {
+        try {
+          await remove(workspaceId, id)
+          // rezultatele de căutare sunt un instantaneu separat — nu se actualizează singure la ștergere
+          setSearchResults(prev => prev ? prev.filter(c => c.id !== id) : prev)
+        } catch (err: unknown) {
+          setPendingDeleteIds(prev => { const next = new Set(prev); next.delete(id); return next })
+          toast((err as Error).message ?? 'Eroare la ștergerea clientului', 'err')
+        }
+      },
+      action: {
+        label: 'Anulează',
+        onClick: () => setPendingDeleteIds(prev => { const next = new Set(prev); next.delete(id); return next }),
+      },
+    })
   }, [deleteConf, workspaceId, remove, toast, activeTab])
 
   const openTab = useCallback((c: Client) => {
@@ -426,114 +446,115 @@ export default function ClientiPage() {
             </div>
           </div>
 
-          <div className="toolbar">
-            {/* Filtrare tip: Toți / Persoane Fizice / Persoane Juridice */}
-            <div style={{ display: 'flex', gap: '.25rem', marginRight: '.75rem', flexShrink: 0 }}>
-              {([['all', 'Toți'], ['PF', 'PF'], ['PJ', 'PJ']] as const).map(([val, label]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setTypeFilterPersisted(val)}
-                  style={{
-                    padding: '.25rem .625rem',
-                    borderRadius: '5px',
-                    border: '1.5px solid',
-                    cursor: 'pointer',
-                    fontSize: '.75rem',
-                    fontWeight: typeFilter === val ? 700 : 400,
-                    borderColor: typeFilter === val
-                      ? (val === 'PF' ? 'var(--b400)' : val === 'PJ' ? 'var(--g400)' : 'var(--s400)')
-                      : 'var(--s200)',
-                    background: typeFilter === val
-                      ? (val === 'PF' ? 'var(--b50)' : val === 'PJ' ? 'var(--g50)' : 'var(--s100)')
-                      : 'transparent',
-                    color: typeFilter === val
-                      ? (val === 'PF' ? 'var(--b700)' : val === 'PJ' ? 'var(--g700)' : 'var(--s700)')
-                      : 'var(--s400)',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="search-box">
-              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="var(--s400)" strokeWidth="2" strokeLinecap="round">
-                <circle cx="9" cy="9" r="6" /><path d="M15 15l3 3" />
-              </svg>
-              <input
-                placeholder="Caută după denumire..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button onClick={() => { setSearchQuery(''); setSearchResults(null) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--s400)', fontSize: '1rem', lineHeight: 1, padding: 0 }}>×</button>
-              )}
-            </div>
-          </div>
-
-          <div className="table-controls">
-            <span>
-              {loading
-                ? 'Se încarcă...'
-                : `${processedClients.length}${processedClients.length !== displayed.length ? ` / ${displayed.length}` : ''} client${displayed.length !== 1 ? 'i' : ''}`}
-              {searchResults !== null && ` · rezultate pentru „${debouncedQ}"`}
-              {searchResults === null && hasMore && !loading && ' (nu toți sunt încărcați încă)'}
-            </span>
-            <div style={{ flex: 1 }} />
-            {hasActiveFiltersOrSort && (
-              <button className="btn btn-ghost btn-sm" onClick={resetAll}>
-                × Resetează filtre
-              </button>
-            )}
-            <div style={{ position: 'relative' }}>
-              <button
-                className={`btn btn-ghost btn-sm${hiddenCols.size > 0 ? ' btn--cols-active' : ''}`}
-                onClick={() => setShowColsPanel(p => !p)}
-              >
-                Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
-              </button>
-              {showColsPanel && (
-                <ColumnsPanel
-                  hiddenCols={hiddenCols}
-                  onToggle={toggleColVisibility}
-                  onClose={() => setShowColsPanel(false)}
-                />
-              )}
-            </div>
-          </div>
         </div>
 
-        {/* Tab bar */}
-        {openClientIds.length > 0 && (
-          <div className="page-tabs">
+        {/* Tab bar — mereu vizibilă (nu doar cu tab-uri deschise), la fel ca la Dosare */}
+        <div className="page-tabs">
+          <button
+            className={`page-tab${activeTab === 'list' ? ' page-tab--active' : ''}`}
+            onClick={() => setActiveTab('list')}
+          >
+            Listă
+          </button>
+          {openClients.map(c => (
             <button
-              className={`page-tab${activeTab === 'list' ? ' page-tab--active' : ''}`}
-              onClick={() => setActiveTab('list')}
+              key={c.id}
+              className={`page-tab${activeTab === c.id ? ' page-tab--active' : ''}`}
+              onClick={() => setActiveTab(c.id)}
             >
-              Listă
+              <span className="page-tab__label">{c.denumire}</span>
+              <span className="page-tab__close" onClick={e => { e.stopPropagation(); closeTab(c.id) }}>×</span>
             </button>
-            {openClients.map(c => (
-              <button
-                key={c.id}
-                className={`page-tab${activeTab === c.id ? ' page-tab--active' : ''}`}
-                onClick={() => setActiveTab(c.id)}
-              >
-                <span className="page-tab__label">{c.denumire}</span>
-                <span className="page-tab__close" onClick={e => { e.stopPropagation(); closeTab(c.id) }}>×</span>
-              </button>
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
 
         {/* Body */}
         <div className="page-body">
+          {activeTab === 'list' && (
+            <>
+              <div className="toolbar" style={{ flexShrink: 0 }}>
+                <div className="search-box">
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="var(--s400)" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="9" cy="9" r="6" /><path d="M15 15l3 3" />
+                  </svg>
+                  <input
+                    placeholder="Caută după denumire..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery && (
+                    <button onClick={() => { setSearchQuery(''); setSearchResults(null) }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--s400)', fontSize: '1rem', lineHeight: 1, padding: 0 }}>×</button>
+                  )}
+                </div>
+
+                {/* Filtrare tip: Toți / Persoane Fizice / Persoane Juridice */}
+                <div style={{ display: 'flex', gap: '.25rem', flexShrink: 0 }}>
+                  {([['all', 'Toți'], ['PF', 'PF'], ['PJ', 'PJ']] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setTypeFilterPersisted(val)}
+                      style={{
+                        padding: '.25rem .625rem',
+                        borderRadius: '5px',
+                        border: '1.5px solid',
+                        cursor: 'pointer',
+                        fontSize: '.75rem',
+                        fontWeight: typeFilter === val ? 700 : 400,
+                        borderColor: typeFilter === val
+                          ? (val === 'PF' ? 'var(--b400)' : val === 'PJ' ? 'var(--g400)' : 'var(--s400)')
+                          : 'var(--s200)',
+                        background: typeFilter === val
+                          ? (val === 'PF' ? 'var(--b50)' : val === 'PJ' ? 'var(--g50)' : 'var(--s100)')
+                          : 'transparent',
+                        color: typeFilter === val
+                          ? (val === 'PF' ? 'var(--b700)' : val === 'PJ' ? 'var(--g700)' : 'var(--s700)')
+                          : 'var(--s400)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="table-controls" style={{ flexShrink: 0 }}>
+                <span>
+                  {loading
+                    ? 'Se încarcă...'
+                    : `${processedClients.length}${processedClients.length !== displayed.length ? ` / ${displayed.length}` : ''} client${displayed.length !== 1 ? 'i' : ''}`}
+                  {searchResults !== null && ` · rezultate pentru „${debouncedQ}"`}
+                  {searchResults === null && hasMore && !loading && ' (nu toți sunt încărcați încă)'}
+                </span>
+                <div style={{ flex: 1 }} />
+                {hasActiveFiltersOrSort && (
+                  <button className="btn btn-ghost btn-sm" onClick={resetAll}>
+                    × Resetează filtre
+                  </button>
+                )}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className={`btn btn-ghost btn-sm${hiddenCols.size > 0 ? ' btn--cols-active' : ''}`}
+                    onClick={() => setShowColsPanel(p => !p)}
+                  >
+                    Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
+                  </button>
+                  {showColsPanel && (
+                    <ColumnsPanel
+                      hiddenCols={hiddenCols}
+                      onToggle={toggleColVisibility}
+                      onClose={() => setShowColsPanel(false)}
+                    />
+                  )}
+                </div>
+              </div>
+            </>
+          )}
           <div className="table-card">
             {activeTab !== 'list' && activeClient ? (
               <ClientView
                 client={activeClient}
                 embedded
-                onClose={() => setActiveTab('list')}
                 onEdit={() => setModal(activeClient)}
                 onDelete={() => setDeleteConf(activeClient)}
                 onSaveNotite={async (notite) => {
@@ -623,7 +644,7 @@ export default function ClientiPage() {
             </div>
             <div className="modal-body">
               <p style={{ color: 'var(--s600)', fontSize: '.9375rem' }}>
-                Ești sigur că vrei să ștergi <strong>{deleteConf.denumire}</strong>? Acțiunea nu poate fi anulată.
+                Ești sigur că vrei să ștergi <strong>{deleteConf.denumire}</strong>?
               </p>
             </div>
             <div className="modal-footer">
@@ -876,8 +897,8 @@ function ClientTable({
     const c = clients[index]
     return (
       <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '.25rem', padding: '0 .5rem', borderBottom: '1px solid var(--s100)' }}>
-        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onEdit(c) }} title="Editare">✏️</button>
-        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onDelete(c) }} title="Șterge" style={{ color: 'var(--r500)' }}>🗑️</button>
+        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onEdit(c) }} title="Editare"><IconPencil /></button>
+        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onDelete(c) }} title="Șterge" style={{ color: 'var(--r500)' }}><IconTrash /></button>
       </div>
     )
   }, [clients, onEdit, onDelete])
