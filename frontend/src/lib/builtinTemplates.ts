@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { BuiltinTemplate } from '../types'
 import { fetchBuiltinTemplates } from './api'
+import { auth } from './firebase'
 
 /** Șabloanele de bază — servite din backend, aceleași în orice workspace, deci
- * un simplu fetch la mount e suficient (nu se schimbă decât la deploy). */
+ * un simplu fetch la mount e suficient (nu se schimbă decât la deploy).
+ * Endpoint-ul cere doar tokenul Firebase (verificat server-side), nu accessToken
+ * Google — acela lipsește adesea la reload/sesiune nouă și nu trebuie să blocheze
+ * fetch-ul, altfel șabloanele dispar tăcut pentru orice utilizator fără popup-ul
+ * de login încă activ în sessionStorage. */
 export function useBuiltinTemplates(accessToken: string) {
   const [builtins, setBuiltins] = useState<BuiltinTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -11,7 +16,7 @@ export function useBuiltinTemplates(accessToken: string) {
   useEffect(() => {
     let cancelled = false
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!accessToken) { setLoading(false); return }
+    if (!auth.currentUser) { setLoading(false); return }
     setLoading(true)
     fetchBuiltinTemplates(accessToken)
       .then(list => { if (!cancelled) setBuiltins(list) })

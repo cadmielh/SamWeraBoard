@@ -1,9 +1,9 @@
-import { useState, useCallback, useMemo } from 'react'
-import type { StadiuDosar } from '../../types'
-import { STADIU_DOSAR_LABELS, obiecteCereriiText } from '../../types'
-import { useArchivedDosare, restoreDosar } from '../../lib/dosare'
-import { useApp } from '../../AppContext'
+import { useState, useMemo, useCallback } from 'react'
+import type { Dosar } from '../../types'
+import { obiecteCereriiText } from '../../types'
+import { useArchivedDosare } from '../../lib/dosare'
 import { formatDateRo, toDateSafe } from '../../lib/dates'
+import { useApp } from '../../AppContext'
 
 function fmtDocumentePredate(value: unknown): string {
   const d = toDateSafe(value)
@@ -12,52 +12,53 @@ function fmtDocumentePredate(value: unknown): string {
 
 interface Props {
   workspaceId: string
-  /** Incrementat de DosarePage după o arhivare/restaurare reușită, ca noul
-   * item să apară fără reload — hook-ul de dedesubt e one-shot. */
+  /** Incrementat de DosarePage după o schimbare de stadiu, ca noul item să
+   * apară/dispară din arhivă fără reload — hook-ul de dedesubt e one-shot. */
   refreshKey?: number
+  /** Deschide dosarul ca tab, cu toate detaliile (DosarView). */
+  onOpenDosar: (dosar: Dosar) => void
+  /** Restaurare rapidă, direct în „În lucru", fără a deschide dosarul —
+   * pentru restaurări cu alt stadiu decât „În lucru", se deschide dosarul și
+   * se schimbă din selectorul obișnuit de stadiu. */
+  onRestore: (dosar: Dosar) => Promise<void>
 }
 
 /**
  * Secțiune pliabilă de arhivă, jos de tot pe DosarePage — dosarele ajunse în
- * „Documente predate client" intră aici automat la finalul săptămânii
- * (useArchivedDosare), sau imediat dacă au fost arhivate manual din
- * DosarView. Căutare client-side (nu server-side, ca la arhiva de Sarcini) —
- * Dosar nu are un câmp *Lower pentru prefix-search, iar volumul e modest.
+ * „Documente predate client" intră aici instant (useArchivedDosare). Căutare
+ * client-side (nu server-side, ca la arhiva de Sarcini) — Dosar nu are un
+ * câmp *Lower pentru prefix-search, iar volumul e modest. Rândurile sunt doar
+ * clicabile (deschid dosarul complet) — nicio stare/acțiune de restaurare
+ * afișată aici, ca să nu dubleze selectorul de stadiu din DosarView.
  */
-export default function ArchivedDosareSection({ workspaceId, refreshKey = 0 }: Props) {
+export default function ArchivedDosareSection({ workspaceId, refreshKey = 0, onOpenDosar, onRestore }: Props) {
   const { toast } = useApp()
   const { dosare, loading, loadingMore, hasMore, loadMore } = useArchivedDosare(workspaceId, refreshKey)
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
-  const [restoreStadiu, setRestoreStadiu] = useState<Record<string, StadiuDosar>>({})
   const [restoringId, setRestoringId] = useState<string | null>(null)
 
   const displayed = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return dosare
-      .filter(d => !removedIds.has(d.id))
-      .filter(d => !q ||
-        (d.clientDenumire || d.clientDenumireLibera || '').toLowerCase().includes(q) ||
-        obiecteCereriiText(d.obiecteCererii).toLowerCase().includes(q) ||
-        d.nrInregistrareDosar.toLowerCase().includes(q)
-      )
-  }, [dosare, removedIds, query])
+    return dosare.filter(d => !q ||
+      (d.clientDenumire || d.clientDenumireLibera || '').toLowerCase().includes(q) ||
+      obiecteCereriiText(d.obiecteCererii).toLowerCase().includes(q) ||
+      d.nrInregistrareDosar.toLowerCase().includes(q)
+    )
+  }, [dosare, query])
 
-  const handleRestore = useCallback(async (id: string) => {
-    const target = restoreStadiu[id] ?? 'depus_in_solutionare'
-    setRestoringId(id)
+  const handleRestore = useCallback(async (e: React.MouseEvent, d: Dosar) => {
+    e.stopPropagation()
+    setRestoringId(d.id)
     try {
-      await restoreDosar(workspaceId, id, target)
-      setRemovedIds(prev => new Set(prev).add(id))
-      toast(`Dosar restaurat — ${STADIU_DOSAR_LABELS[target]}`, 'ok')
-    } catch (e: unknown) {
-      toast((e as Error).message ?? 'Eroare la restaurare', 'err')
+      await onRestore(d)
+    } catch (err: unknown) {
+      toast((err as Error).message ?? 'Eroare la restaurare', 'err')
     } finally {
       setRestoringId(null)
     }
-  }, [workspaceId, restoreStadiu, toast])
+  }, [onRestore, toast])
 
   return (
     <div className="card" style={{ marginTop: '1rem', flexShrink: 0 }}>
@@ -107,26 +108,25 @@ export default function ArchivedDosareSection({ workspaceId, refreshKey = 0 }: P
                   </thead>
                   <tbody>
                     {displayed.map(d => (
-                      <tr key={d.id} style={{ borderBottom: '1px solid var(--s100)' }}>
+                      <tr
+                        key={d.id}
+                        onClick={() => onOpenDosar(d)}
+                        style={{ borderBottom: '1px solid var(--s100)', cursor: 'pointer' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                      >
                         <td style={{ padding: '.625rem .75rem', fontWeight: 600, color: 'var(--s900)' }}>{d.clientDenumire || d.clientDenumireLibera || '—'}</td>
                         <td style={{ padding: '.625rem .75rem', color: 'var(--s500)' }}>{d.nrInregistrareDosar || '—'}</td>
                         <td style={{ padding: '.625rem .75rem', color: 'var(--s500)' }}>{fmtDocumentePredate(d.documentePredateAt)}</td>
                         <td style={{ padding: '.625rem .75rem', textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '.35rem', alignItems: 'center' }}>
-                            <select
-                              className="field-input"
-                              style={{ padding: '.2rem .4rem', fontSize: '.75rem' }}
-                              value={restoreStadiu[d.id] ?? 'depus_in_solutionare'}
-                              onChange={e => setRestoreStadiu(prev => ({ ...prev, [d.id]: e.target.value as StadiuDosar }))}
-                            >
-                              {(Object.entries(STADIU_DOSAR_LABELS) as [StadiuDosar, string][]).map(([key, label]) => (
-                                <option key={key} value={key}>{label}</option>
-                              ))}
-                            </select>
-                            <button className="btn btn-ghost btn-xs" disabled={restoringId === d.id} onClick={() => handleRestore(d.id)}>
-                              {restoringId === d.id ? <span className="spin" /> : '↩️ Restaurează'}
-                            </button>
-                          </div>
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            disabled={restoringId === d.id}
+                            onClick={e => handleRestore(e, d)}
+                            title="Restaurează în «În lucru»"
+                          >
+                            {restoringId === d.id ? <span className="spin" /> : '↩️ Restaurează'}
+                          </button>
                         </td>
                       </tr>
                     ))}

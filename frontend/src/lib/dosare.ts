@@ -7,7 +7,6 @@ import {
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Dosar, DosarInput, StadiuDosar } from '../types'
-import { startOfWeek } from './dateWeek'
 
 const PAGE_SIZE = 100
 
@@ -120,7 +119,7 @@ export function useDosare(workspaceId: string | null) {
       const localExtras: Partial<Dosar> = transition === 'enter'
         ? { documentePredateAt: new Date().toISOString() }
         : transition === 'leave'
-          ? { documentePredateAt: null, arhivatManual: undefined }
+          ? { documentePredateAt: null }
           : {}
       return { ...d, ...(data as Partial<Dosar>), ...localExtras }
     }))
@@ -141,7 +140,6 @@ export function useDosare(workspaceId: string | null) {
       patch.documentePredateAt = serverTimestamp()
     } else if (transition === 'leave') {
       patch.documentePredateAt = deleteField()
-      patch.arhivatManual = deleteField()
     }
 
     try {
@@ -235,36 +233,14 @@ export async function updateDosarStadiu(workspaceId: string, dosarId: string, st
     patch.documentePredateAt = serverTimestamp()
   } else {
     patch.documentePredateAt = deleteField()
-    patch.arhivatManual = deleteField()
   }
   await updateDoc(doc(dosareCol(workspaceId), dosarId), patch)
 }
 
-/** Arhivează un dosar imediat, fără să aștepte finalul săptămânii — vezi
- * regula de arhivare din types.ts (Dosar.arhivatManual). Fără efect vizibil
- * dacă dosarul nu e deja în TRIGGER_STADIU (UI-ul nu ar trebui să ofere
- * acțiunea în afara acelui caz). */
-export async function archiveDosarNow(workspaceId: string, dosarId: string) {
-  await updateDoc(doc(dosareCol(workspaceId), dosarId), { arhivatManual: true })
-}
-
-/** Scoate un dosar din arhivă cu stadiul ales de utilizator — niciodată
- * implicit TRIGGER_STADIU, ca să nu reintre imediat în arhivă la următoarea
- * evaluare a regulii. */
-export async function restoreDosar(workspaceId: string, dosarId: string, newStadiu: StadiuDosar) {
-  await updateDoc(doc(dosareCol(workspaceId), dosarId), {
-    stadiu: newStadiu,
-    documentePredateAt: deleteField(),
-    arhivatManual: deleteField(),
-  })
-}
-
-/** Dosare arhivate — stadiu === TRIGGER_STADIU și (arhivatManual === true SAU
- * documentePredateAt < startOfWeek()). Two-query merge (una paginată pentru
- * arhivarea naturală săptămânală, una mică pentru cele arhivate manual încă
- * în săptămâna curentă), deduplicate după id — pattern identic cu
- * useArchivedSarcini din lib/sarcini.ts. `refreshKey` — one-shot, nu live
- * (onSnapshot); paginile de mai sus îl incrementează după o arhivare/
+/** Dosare arhivate — instant ce stadiu === TRIGGER_STADIU, paginat separat de
+ * lista activă (un cabinet poate avea mii de dosare vechi arhivate, dar doar
+ * cele recente contează în lista principală). `refreshKey` — one-shot, nu live
+ * (onSnapshot); DosarePage îl incrementează după o schimbare de stadiu/
  * restaurare reușită, ca noul item să apară fără reload de pagină. */
 export function useArchivedDosare(workspaceId: string | null, refreshKey = 0) {
   const [dosare, setDosare] = useState<Dosar[]>([])
@@ -281,25 +257,14 @@ export function useArchivedDosare(workspaceId: string | null, refreshKey = 0) {
     }
     let cancelled = false
     setLoading(true)
-    const weekStart = Timestamp.fromDate(startOfWeek())
-    Promise.all([
-      getDocs(query(
-        dosareCol(workspaceId), where('stadiu', '==', TRIGGER_STADIU),
-        where('documentePredateAt', '<', weekStart),
-        orderBy('documentePredateAt', 'desc'), limit(PAGE_SIZE),
-      )),
-      getDocs(query(
-        dosareCol(workspaceId), where('stadiu', '==', TRIGGER_STADIU),
-        where('arhivatManual', '==', true),
-      )),
-    ]).then(([naturalSnap, manualSnap]) => {
+    getDocs(query(
+      dosareCol(workspaceId), where('stadiu', '==', TRIGGER_STADIU),
+      orderBy('documentePredateAt', 'desc'), limit(PAGE_SIZE),
+    )).then(snap => {
       if (cancelled) return
-      const byId = new Map<string, Dosar>()
-      for (const d of naturalSnap.docs) byId.set(d.id, { ...d.data(), id: d.id } as Dosar)
-      for (const d of manualSnap.docs) byId.set(d.id, { ...d.data(), id: d.id } as Dosar)
-      setDosare([...byId.values()])
-      lastDocRef.current = naturalSnap.docs[naturalSnap.docs.length - 1] ?? null
-      setHasMore(naturalSnap.docs.length === PAGE_SIZE)
+      setDosare(snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar)))
+      lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null
+      setHasMore(snap.docs.length === PAGE_SIZE)
       setLoading(false)
     }).catch(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -311,13 +276,9 @@ export function useArchivedDosare(workspaceId: string | null, refreshKey = 0) {
     try {
       const snap = await getDocs(query(
         dosareCol(wid), where('stadiu', '==', TRIGGER_STADIU),
-        where('documentePredateAt', '<', Timestamp.fromDate(startOfWeek())),
         orderBy('documentePredateAt', 'desc'), startAfter(lastDocRef.current), limit(PAGE_SIZE),
       ))
-      setDosare(prev => {
-        const ids = new Set(prev.map(d => d.id))
-        return [...prev, ...snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar)).filter(d => !ids.has(d.id))]
-      })
+      setDosare(prev => [...prev, ...snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar))])
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? lastDocRef.current
       setHasMore(snap.docs.length === PAGE_SIZE)
     } finally {

@@ -122,6 +122,17 @@ export default function TemplateFiller({
   })()
   const effectiveActiveKey = activeKey ?? defaultActiveKey
 
+  // Doar șabloanele fără clauze au checkbox (vezi renderTemplateRow) — cele cu
+  // tip incompatibil clientului sunt oricum disabled, excluse din select-all.
+  const selectableInTab = currentTabTemplates.filter(t => !t.clauses?.length && !tipMismatchMsg(t.tipTemplate, t.name))
+  const allSelectableSelected = selectableInTab.length > 0 && selectableInTab.every(t => selectedIds.has(t.id))
+  const selectAllInTab = () => setSelectedIds(prev => {
+    const next = new Set(prev); selectableInTab.forEach(t => next.add(t.id)); return next
+  })
+  const deselectAllInTab = () => setSelectedIds(prev => {
+    const next = new Set(prev); selectableInTab.forEach(t => next.delete(t.id)); return next
+  })
+
   const toggleSelect = (id: string) =>
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -793,7 +804,18 @@ export default function TemplateFiller({
 
               {!tplLoading && currentTabTemplates.length > 0 && (
                 <>
-                  <div className="tf-list-label">Șabloanele mele</div>
+                  <div className="tf-list-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Șabloanele mele</span>
+                    {selectableInTab.length > 1 && (
+                      <button
+                        type="button" className="btn btn-ghost btn-xs"
+                        style={{ textTransform: 'none', letterSpacing: 'normal', fontWeight: 600 }}
+                        onClick={allSelectableSelected ? deselectAllInTab : selectAllInTab}
+                      >
+                        {allSelectableSelected ? 'Deselectează tot' : 'Selectează tot'}
+                      </button>
+                    )}
+                  </div>
                   <div className="tf-rows">{currentTabTemplates.map(renderTemplateRow)}</div>
                 </>
               )}

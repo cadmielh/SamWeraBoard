@@ -66,6 +66,10 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
     return next
   })
 
+  const allSelected = clauses.length > 0 && clauses.every(c => selected.has(c.tag))
+  const selectAll = () => setSelected(new Set(clauses.map(c => c.tag)))
+  const deselectAll = () => setSelected(new Set())
+
   const setField = (tag: string, key: string, value: string) =>
     setFieldsByClause(prev => ({ ...prev, [tag]: { ...prev[tag], [key]: value } }))
 
@@ -116,6 +120,13 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+      {clauses.length > 1 && (
+        <div style={{ display: 'flex', gap: '.5rem' }}>
+          <button type="button" className="btn btn-ghost btn-xs" onClick={allSelected ? deselectAll : selectAll}>
+            {allSelected ? 'Deselectează tot' : 'Selectează tot'}
+          </button>
+        </div>
+      )}
       {clauses.map(c => {
         const isSelected = selected.has(c.tag)
         const spec = CLAUSE_FIELD_SPECS[c.tag]

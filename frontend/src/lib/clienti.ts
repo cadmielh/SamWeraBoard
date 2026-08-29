@@ -12,6 +12,27 @@ export type ClientInput = Omit<Client, 'id' | 'denumireLower' | 'createdAt' | 'c
 
 const PAGE_SIZE = 100
 
+/** Câmpurile de societate obligatorii pentru generarea documentelor — folosit
+ * atât de ClientModal (creare/editare client), cât și de MultiPersonPreview
+ * (societate nouă din acte scanate), ca lista de câmpuri lipsă afișată
+ * utilizatorului să nu diveargă între cele două fluxuri. */
+export function missingCompanyFields(data: {
+  codFiscal: string
+  formaJuridica: string
+  nrRegistrul: string
+  sediuSocial: string
+  capitalSocial: number | null
+}): string[] {
+  const cif = data.codFiscal.trim()
+  const missing: string[] = []
+  if (!cif || !/^(RO)?\d{2,10}$/i.test(cif)) missing.push('CIF')
+  if (!data.formaJuridica.trim()) missing.push('forma juridică')
+  if (!data.nrRegistrul.trim()) missing.push('nr. registrul comerțului')
+  if (!data.sediuSocial.trim()) missing.push('sediul social')
+  if (data.capitalSocial == null || data.capitalSocial <= 0) missing.push('capitalul social')
+  return missing
+}
+
 function resolveDisplayName(data: ClientInput): string {
   return data.denumire
 }
@@ -194,8 +215,7 @@ export const EMPTY_CLIENT: ClientInput = {
   statutFiscal: '', platitorTva: false, periodaTva: '',
   tvaLaIncasare: false, inactivAnaf: false, splitTva: false, eFactura: false,
   administratoriAnaf: [],
-  plafonTvaAnual: null, regimFiscal: '',
-  nrSalariati: null, capitalSocial: null, anFiscal: '',
+  capitalSocial: null,
   dataAnafActualizat: null, notite: '',
   asociati: [], administratori: [],
 }

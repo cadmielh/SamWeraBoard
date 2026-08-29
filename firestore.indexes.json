@@ -55,14 +55,6 @@
         { "fieldPath": "stadiu", "order": "ASCENDING" },
         { "fieldPath": "documentePredateAt", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "dosare",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "stadiu", "order": "ASCENDING" },
-        { "fieldPath": "arhivatManual", "order": "ASCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []

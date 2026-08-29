@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { Client, Persoana, TipClient, SubtipPF } from '../types'
-import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, type ClientInput } from '../lib/clienti'
+import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, missingCompanyFields, type ClientInput } from '../lib/clienti'
 import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
@@ -70,11 +70,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       splitTva: initial.splitTva ?? false,
       eFactura: initial.eFactura ?? false,
       administratoriAnaf: initial.administratoriAnaf ?? [],
-      plafonTvaAnual: initial.plafonTvaAnual ?? null,
-      regimFiscal: initial.regimFiscal ?? '',
-      nrSalariati: initial.nrSalariati ?? null,
       capitalSocial: initial.capitalSocial ?? null,
-      anFiscal: initial.anFiscal ?? '',
       dataAnafActualizat: initial.dataAnafActualizat,
       notite: initial.notite,
       asociati: [...initial.asociati],
@@ -90,6 +86,16 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   // targetIndex = i → administratorul existent de la indexul i este înlocuit cu datele asociatului ales
   const [adminPicker, setAdminPicker] = useState<{ targetIndex: number | null } | false>(false)
   const [sediuPicker, setSediuPicker] = useState(false)
+
+  // Referințe pentru "sari la primul câmp obligatoriu necompletat" la submit —
+  // ordinea din array-ul `checks` (mai jos) urmează ordinea vizuală din formular.
+  const asociatiSectionRef = useRef<HTMLDivElement>(null)
+  const denumireRef = useRef<HTMLInputElement>(null)
+  const formaJuridicaRef = useRef<HTMLSelectElement>(null)
+  const codFiscalRef = useRef<HTMLInputElement>(null)
+  const nrRegistrulRef = useRef<HTMLInputElement>(null)
+  const sediuSocialRef = useRef<HTMLTextAreaElement>(null)
+  const capitalSocialRef = useRef<HTMLInputElement>(null)
 
   const set = (key: keyof ClientInput, val: unknown) => setForm(prev => ({ ...prev, [key]: val }))
 
@@ -201,10 +207,39 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   const cotaValid = isPF || isCotaTotalValid(form.asociati.map(a => a.cotaParticipare))
   const hasMinPeople = isPF || (form.asociati.length > 0 && form.administratori.length > 0)
 
-  const canSave = !cifError && !!form.denumire.trim() && hasMinPeople && cotaValid
+  // Câmpuri obligatorii pentru generarea documentelor unei societăți — părțile
+  // sociale nu sunt validate separat, sunt derivate din capitalSocial.
+  const missingCompany = isPF ? [] : missingCompanyFields(form)
+
+  // Verificări în ordinea vizuală din formular — la submit, prima invalidă
+  // decide unde se derulează/focalizează pagina; mesajul din toast le listează
+  // pe toate, nu doar prima, ca userul să nu completeze pe rând, la nesfârșit.
+  type Check = { invalid: boolean; ref: React.RefObject<HTMLElement | null>; message: string }
+  const checks: Check[] = [
+    ...(!isPF ? [
+      { invalid: !hasMinPeople, ref: asociatiSectionRef, message: 'cel puțin un asociat și un administrator' },
+      { invalid: hasMinPeople && !cotaValid, ref: asociatiSectionRef, message: 'cota asociaților să însumeze 100%' },
+    ] : []),
+    { invalid: !form.denumire.trim(), ref: denumireRef, message: 'denumirea' },
+    ...(!isPF ? [
+      { invalid: !form.formaJuridica.trim(), ref: formaJuridicaRef, message: 'forma juridică' },
+      { invalid: !cifTrimmed || !!cifError, ref: codFiscalRef, message: 'CIF' },
+      { invalid: !form.nrRegistrul.trim(), ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
+      { invalid: !form.sediuSocial.trim(), ref: sediuSocialRef, message: 'sediul social' },
+      { invalid: form.capitalSocial == null || form.capitalSocial <= 0, ref: capitalSocialRef, message: 'capitalul social' },
+    ] : [
+      { invalid: !!cifError, ref: codFiscalRef, message: 'CIF valid' },
+    ]),
+  ]
 
   const handleSave = async () => {
-    if (!canSave) return
+    const failing = checks.filter(c => c.invalid)
+    if (failing.length > 0) {
+      failing[0].ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      failing[0].ref.current?.focus()
+      toast(`Completează: ${failing.map(c => c.message).join(', ')}.`, 'err')
+      return
+    }
     setSaving(true)
     setDenumireError('')
     try {
@@ -495,7 +530,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
           {/* ── Asociați / Administratori (doar PJ) — determină firma, deci se completează primele ── */}
           {!isPF && (
-            <>
+            <div ref={asociatiSectionRef}>
               <PersonSection title="Asociați" persons={form.asociati}
                 minCount={1}
                 onAdd={() => setPersonaModal({ type: 'asociati', index: null })}
@@ -533,7 +568,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   Este necesar cel puțin un asociat și un administrator.
                 </p>
               )}
-            </>
+            </div>
           )}
 
           {/* ANAF strip (doar dacă avem date ANAF) */}
@@ -593,7 +628,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 <label className="field-label">
                   Denumire <span style={{ color: 'var(--r500)' }}>*</span>
                 </label>
-                <input className="field-input" autoFocus={!isPF} value={form.denumire}
+                <input ref={denumireRef} className="field-input" autoFocus={!isPF} value={form.denumire}
                   onChange={e => { set('denumire', e.target.value); if (denumireError) setDenumireError('') }}
                   placeholder={isPF ? 'ex: Popescu Ion PFA' : 'Denumirea firmei'}
                   aria-invalid={!!denumireError}
@@ -604,8 +639,8 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
               {/* Forma juridică — doar PJ */}
               {!isPF && (
                 <div className="field">
-                  <label className="field-label">Forma juridică</label>
-                  <select className="field-input" value={form.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
+                  <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
+                  <select ref={formaJuridicaRef} className="field-input" value={form.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
                     <option value="">— selectați —</option>
                     {FORME_JURIDICE_PJ.map(f => <option key={f}>{f}</option>)}
                   </select>
@@ -614,9 +649,9 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
               {/* Cod fiscal cu buton ANAF */}
               <div className="field">
-                <label className="field-label">Cod fiscal (CIF)</label>
+                <label className="field-label">Cod fiscal (CIF) {!isPF && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
                 <div className="field-with-btn">
-                  <input className="field-input" placeholder="ex: RO12345678"
+                  <input ref={codFiscalRef} className="field-input" placeholder="ex: RO12345678"
                     value={form.codFiscal} onChange={e => set('codFiscal', e.target.value)}
                     aria-invalid={!!cifError} />
                   <button type="button" className="btn btn-outline-primary btn-sm"
@@ -630,8 +665,8 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
               {/* Nr. registrul comerțului */}
               <div className="field">
-                <label className="field-label">Nr. registrul comerțului</label>
-                <input className="field-input" placeholder="ex: J40/123/2020" value={form.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
+                <label className="field-label">Nr. registrul comerțului {!isPF && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
+                <input ref={nrRegistrulRef} className="field-input" placeholder="ex: J40/123/2020" value={form.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
               </div>
 
               {/* CAEN */}
@@ -643,10 +678,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
               {/* CAEN secundare — opțional, nelimitat (PJ și PF/PFA-II-IF au coduri CAEN) */}
               <div className="field full">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
-                  <label className="field-label" style={{ margin: 0 }}>Activități secundare (CAEN)</label>
-                  <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
-                </div>
+                <label className="field-label">Activități secundare (CAEN)</label>
                 {form.caenSecundare.map((a, i) => (
                   <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
                     <div style={{ flex: 1 }}>
@@ -656,28 +688,28 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => removeCaenSecundar(i)} style={{ color: 'var(--r500)' }}><IconTrash /></button>
                   </div>
                 ))}
+                <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
               </div>
 
               {/* Sediu */}
               <div className="field full">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <label className="field-label" style={{ margin: 0 }}>{isPF ? 'Sediu profesional' : 'Sediu social'}</label>
+                  <label className="field-label" style={{ margin: 0 }}>
+                    {isPF ? 'Sediu profesional' : 'Sediu social'} {!isPF && <span style={{ color: 'var(--r500)' }}>*</span>}
+                  </label>
                   {!isPF && form.asociati.length > 0 && (
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
                       📍 Folosește adresa unui asociat
                     </button>
                   )}
                 </div>
-                <textarea className="field-textarea" value={form.sediuSocial}
+                <textarea ref={sediuSocialRef} className="field-textarea" value={form.sediuSocial}
                   onChange={e => set('sediuSocial', e.target.value)} rows={2} />
               </div>
 
               {/* Puncte de lucru — opțional, nelimitat */}
               <div className="field full">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.375rem' }}>
-                  <label className="field-label" style={{ margin: 0 }}>Puncte de lucru</label>
-                  <button type="button" className="btn btn-ghost btn-xs" onClick={addPunctLucru}>+ Adaugă punct de lucru</button>
-                </div>
+                <label className="field-label">Puncte de lucru</label>
                 {form.puncteLucru.map((adresa, i) => (
                   <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
                     <input className="field-input" style={{ flex: 1 }} value={adresa}
@@ -685,6 +717,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                     <button type="button" className="btn btn-ghost btn-xs" onClick={() => removePunctLucru(i)} style={{ color: 'var(--r500)' }}><IconTrash /></button>
                   </div>
                 ))}
+                <button type="button" className="btn btn-ghost btn-xs" onClick={addPunctLucru}>+ Adaugă punct de lucru</button>
               </div>
             </div>
           </SectionCard>
@@ -692,19 +725,6 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
           {/* ── Bloc Date fiscale ── */}
           <SectionCard title="Date fiscale">
             <div className="form-grid">
-              <div className="field">
-                <label className="field-label">Regim de impunere</label>
-                <select className="field-input" value={form.regimFiscal} onChange={e => set('regimFiscal', e.target.value)}>
-                  <option value="">— necunoscut —</option>
-                  <option value="microintreprindere">Microîntreprindere</option>
-                  <option value="impozit_profit">Impozit pe profit</option>
-                </select>
-              </div>
-              <div className="field">
-                <label className="field-label">An fiscal</label>
-                <input className="field-input" placeholder="ex: calendaristic" value={form.anFiscal} onChange={e => set('anFiscal', e.target.value)} />
-              </div>
-
               {form.platitorTva && (
                 <div className="field" style={{ justifyContent: 'flex-end' }}>
                   <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
@@ -713,23 +733,10 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                   </label>
                 </div>
               )}
-              <div className="field">
-                <label className="field-label">Plafon TVA anual (lei)</label>
-                <input className="field-input" type="number" min={0} placeholder="ex: 300000"
-                  value={form.plafonTvaAnual ?? ''}
-                  onChange={e => set('plafonTvaAnual', e.target.value === '' ? null : Number(e.target.value))} />
-              </div>
-
-              <div className="field">
-                <label className="field-label">Nr. salariați</label>
-                <input className="field-input" type="number" min={0} placeholder="0"
-                  value={form.nrSalariati ?? ''}
-                  onChange={e => set('nrSalariati', e.target.value === '' ? null : Number(e.target.value))} />
-              </div>
               {!isPF && (
                 <div className="field">
-                  <label className="field-label">Capital social (lei)</label>
-                  <input className="field-input" type="number" min={0} placeholder="ex: 200"
+                  <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
+                  <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
                     value={form.capitalSocial ?? ''}
                     onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))} />
                 </div>
@@ -743,6 +750,11 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 </div>
               )}
             </div>
+            {!isPF && missingCompany.length > 0 && (
+              <p className="field-error" style={{ marginTop: '.75rem', marginBottom: 0 }}>
+                Pentru generarea documentelor completează: {missingCompany.join(', ')}.
+              </p>
+            )}
           </SectionCard>
 
           {/* ── Câmpuri comune (telefon, email, notițe) ── */}
@@ -776,7 +788,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
 
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Anulează</button>
-          <button type="submit" className="btn btn-primary" disabled={!canSave || saving}>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? <><span className="spin" />Se salvează...</> : (isEditing ? 'Salvează' : 'Adaugă client')}
           </button>
         </div>

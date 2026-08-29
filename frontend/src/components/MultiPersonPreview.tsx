@@ -1,10 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import type { Client, Persoana, ScannedPerson, ToastItem } from '../types'
 import { persoanaToIDFields, idFieldsToPersoana } from '../lib/idFields'
-import { EMPTY_PERSOANA } from '../lib/clienti'
+import { EMPTY_PERSOANA, missingCompanyFields } from '../lib/clienti'
 import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import PersonScanModal from './PersonScanModal'
-import CompanyInfoForm, { type CompanyData } from './CompanyInfoForm'
+import CompanyInfoForm, { type CompanyData, type CompanyInfoFormHandle } from './CompanyInfoForm'
 import IconTrash from './IconTrash'
 
 interface Props {
@@ -12,9 +12,6 @@ interface Props {
   accessToken: string
   onContinue: (persons: ScannedPerson[], updatedClient: Client) => void
   onToast: (msg: string, type: ToastItem['type']) => void
-  // Anunță părintele dacă "Continuă" e apăsabil acum — folosit pentru butonul
-  // duplicat din antetul paginii (lângă "Înapoi"), separat de cel de jos.
-  onReadyChange?: (ready: boolean) => void
 }
 
 export interface MultiPersonPreviewHandle {
@@ -166,7 +163,7 @@ function PersonCard({
 }
 
 export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonPreview(
-  { client, accessToken, onContinue, onToast, onReadyChange }, ref,
+  { client, accessToken, onContinue, onToast }, ref,
 ) {
   // Cotă neintrodusă explicit → default egal proporțional între asociați
   const [asociati, setAsociati] = useState<Persoana[]>(() => {
@@ -175,6 +172,8 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
   })
   const [admini, setAdmini] = useState<Persoana[]>([...client.administratori])
   const [companyData, setCompanyData] = useState<CompanyData>(() => companyDataFromClient(client))
+  const companyFormRef = useRef<CompanyInfoFormHandle>(null)
+  const asociatiSectionRef = useRef<HTMLElement>(null)
 
   const moveInArray = <T,>(arr: T[], from: number, to: number): T[] => {
     const next = [...arr]
@@ -221,7 +220,28 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
   const cotaValid = isCotaTotalValid(asociati.map(a => a.cotaParticipare))
   const hasMinPeople = asociati.length > 0 && admini.length > 0
 
+  // Câmpuri obligatorii pentru generarea documentelor unei societăți — vezi
+  // aceeași regulă în ClientModal.tsx.
+  const missingCompany = missingCompanyFields(companyData)
+
   const handleContinue = () => {
+    // Ordinea vizuală din pagină: întâi datele societății (CompanyInfoForm își
+    // gestionează singur câmpurile și ref-urile), apoi asociați/administratori.
+    // Butonul rămâne mereu activ — la click sărim la primul câmp lipsă în loc
+    // să-l ținem disabled cu un tooltip greu de descoperit.
+    const missingFromCompany = companyFormRef.current?.scrollToFirstMissing() ?? []
+    if (missingFromCompany.length > 0) {
+      onToast(`Completează: ${missingFromCompany.join(', ')}.`, 'err')
+      return
+    }
+    if (!hasMinPeople || !cotaValid) {
+      asociatiSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const reasons: string[] = []
+      if (!hasMinPeople) reasons.push('cel puțin un asociat și un administrator')
+      if (!cotaValid) reasons.push('cota asociaților să însumeze 100%')
+      onToast(`Completează: ${reasons.join(', ')}.`, 'err')
+      return
+    }
     const persons: ScannedPerson[] = [
       ...asociati.map(p => ({
         id: crypto.randomUUID(),
@@ -242,9 +262,7 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
     onContinue(persons, updatedClient)
   }
 
-  const canContinue = hasMinPeople && cotaValid
   useImperativeHandle(ref, () => ({ continue: handleContinue }))
-  useEffect(() => { onReadyChange?.(canContinue) }, [canContinue, onReadyChange])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -252,6 +270,7 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
       <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
         <div style={SECTION_TITLE}>Date societate</div>
         <CompanyInfoForm
+          ref={companyFormRef}
           value={companyData}
           onChange={patch => setCompanyData(prev => ({ ...prev, ...patch }))}
           asociati={asociati}
@@ -261,7 +280,7 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
       </section>
 
       {/* Asociați */}
-      <section style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+      <section ref={asociatiSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={SECTION_TITLE}>Asociați <span style={COUNT_CHIP}>{asociati.length}</span></div>
           <button type="button" className="btn btn-success btn-sm" onClick={addAsociat}>+ Adaugă asociat</button>
@@ -345,9 +364,14 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
           Este necesar cel puțin un asociat și un administrator.
         </p>
       )}
+      {missingCompany.length > 0 && (
+        <p className="field-error" style={{ margin: 0 }}>
+          Pentru generarea documentelor completează: {missingCompany.join(', ')}.
+        </p>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '.25rem' }}>
-        <button className="btn btn-primary" onClick={handleContinue} disabled={!canContinue}>
+        <button className="btn btn-primary" onClick={handleContinue}>
           Continuă la template →
         </button>
       </div>

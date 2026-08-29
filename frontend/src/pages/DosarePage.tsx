@@ -4,27 +4,21 @@ import type { Dosar, DosarInput } from '../types'
 import { obiecteCereriiText } from '../types'
 import { useDosare } from '../lib/dosare'
 import { useSarcini } from '../lib/sarcini'
-import { buildSarcinaForObiect } from '../lib/dosarSarcini'
+import { buildSarcinaForDosar } from '../lib/dosarSarcini'
 import { useApp } from '../AppContext'
-import { startOfWeek } from '../lib/dateWeek'
-import { toDateSafe } from '../lib/dates'
 import DosarModal from '../components/DosarModal'
 import DosarView from '../components/DosarView'
 import DosarTable, { DosarColumnsPanel } from '../components/dosare/DosarTable'
-import { applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS } from '../components/dosare/dosarColumns'
+import { applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, COLUMNS } from '../components/dosare/dosarColumns'
 import DosarStatsPanel from '../components/dosare/DosarStatsPanel'
 import ArchivedDosareSection from '../components/dosare/ArchivedDosareSection'
 import { LUNI, type StatsPeriod } from '../lib/dosareStats'
 import Modal from '../components/Modal'
 
-/** Un dosar e arhivat dacă a ajuns în „Documente predate client" și fie a
- * fost arhivat manual, fie a trecut deja săptămâna în care a intrat în acest
- * stadiu — vezi documentePredateAt/arhivatManual din types.ts. */
+/** Un dosar e arhivat instant ce ajunge în „Documente predate client" — vezi
+ * lib/dosare.ts. */
 function isDosarArhivat(d: Dosar): boolean {
-  if (d.stadiu !== 'documente_predate_client') return false
-  if (d.arhivatManual) return true
-  const dt = toDateSafe(d.documentePredateAt)
-  return !!dt && dt < startOfWeek()
+  return d.stadiu === 'documente_predate_client'
 }
 
 type ModalState = 'add' | Dosar | null
@@ -86,9 +80,18 @@ export default function DosarePage() {
   /* Tab-uri per dosar deschis — mai multe dosare pot fi deschise simultan,
      ca la Clienți; „lista" rămâne tab-ul static implicit. */
   const [openDosarIds, setOpenDosarIds] = useState<string[]>([])
+  // Dosare deschise ca tab dar absente din pagina curentă de `dosare` (ex.
+  // unul arhivat, deschis direct din ArchivedDosareSection — care are propria
+  // interogare, separată de paginarea listei principale). Fallback la
+  // openDosare de mai jos; patch-uite manual în onSaveField mai jos, ca update()
+  // din useDosare (care scrie doar în `dosare`) să nu le lase desincronizate.
+  const [extraDosare, setExtraDosare] = useState<Record<string, Dosar>>({})
+
   const openDosare = useMemo(
-    () => openDosarIds.map(id => dosare.find(d => d.id === id)).filter(d => d && !pendingDeleteIds.has(d.id)) as Dosar[],
-    [openDosarIds, dosare, pendingDeleteIds]
+    () => openDosarIds
+      .map(id => dosare.find(d => d.id === id) ?? extraDosare[id])
+      .filter(d => d && !pendingDeleteIds.has(d.id)) as Dosar[],
+    [openDosarIds, dosare, extraDosare, pendingDeleteIds]
   )
 
   const openTab = useCallback((d: Dosar) => {
@@ -96,9 +99,20 @@ export default function DosarePage() {
     setTab(d.id)
   }, [])
 
+  // Deschide un dosar din arhivă — reține obiectul complet în extraDosare,
+  // fiindcă useArchivedDosare nu partajează pagina cu useDosare.
+  const openArchivedTab = useCallback((d: Dosar) => {
+    setExtraDosare(prev => ({ ...prev, [d.id]: d }))
+    openTab(d)
+  }, [openTab])
+
   const closeTab = useCallback((id: string) => {
     setOpenDosarIds(prev => prev.filter(x => x !== id))
     setTab(prev => prev === id ? 'lista' : prev)
+    setExtraDosare(prev => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }; delete next[id]; return next
+    })
   }, [])
 
   useEffect(() => {
@@ -172,6 +186,17 @@ export default function DosarePage() {
     })
   }, [])
 
+  const showAllColumns = useCallback(() => {
+    localStorage.setItem('samwera-dosare-hidden-cols', JSON.stringify([]))
+    setHiddenCols(new Set())
+  }, [])
+
+  const hideAllColumns = useCallback(() => {
+    const next = new Set(COLUMNS.filter(c => !c.fixed).map(c => c.key))
+    localStorage.setItem('samwera-dosare-hidden-cols', JSON.stringify([...next]))
+    setHiddenCols(next)
+  }, [])
+
   const handleFilterToggle = useCallback((key: string, val: string) => {
     setColFilters(prev => {
       const curr = prev[key] ?? []
@@ -198,6 +223,18 @@ export default function DosarePage() {
     dispatchSort({ type: 'RESET' })
   }, [])
 
+  // Restaurare rapidă din arhivă — direct în „În lucru", fără a deschide
+  // dosarul. Trece prin update() din useDosare (nu o scriere Firestore
+  // directă), ca lista principală să se actualizeze imediat, la fel ca orice
+  // altă editare de stadiu.
+  const handleQuickRestore = useCallback(async (d: Dosar) => {
+    if (!workspaceId) return
+    await update(workspaceId, d.id, { stadiu: 'in_lucru' })
+    setExtraDosare(prev => prev[d.id] ? { ...prev, [d.id]: { ...prev[d.id], stadiu: 'in_lucru' } } : prev)
+    setArchiveRefreshKey(k => k + 1)
+    toast('Dosar restaurat — În lucru', 'ok')
+  }, [workspaceId, update, toast])
+
   const handleSave = useCallback(async (data: DosarInput, creeazaSarcina: boolean) => {
     if (!workspaceId || !user) return
     if (modal && typeof modal === 'object') {
@@ -207,14 +244,11 @@ export default function DosarePage() {
     }
     const dosarId = await add(workspaceId, data, user.uid)
     toast('Dosar adăugat', 'ok')
-    if (creeazaSarcina) {
+    if (creeazaSarcina && data.obiecteCererii.length > 0) {
       // Relația Dosar↔Sarcină e 1:N, citită din Sarcina.dosarId — nu mai
-      // scriem înapoi un id pe Dosar. O sarcină separată per obiect al
-      // cererii (nu una combinată), ca fiecare să poată fi urmărită/avansată
-      // independent — vezi buildSarcinaForObiect pentru maparea câmpurilor.
-      await Promise.all(
-        data.obiecteCererii.map(o => sarciniCtx.add(workspaceId, buildSarcinaForObiect(data, dosarId, o.label), user.uid))
-      )
+      // scriem înapoi un id pe Dosar. O singură sarcină combinată, cu toate
+      // obiectele cererii listate în descriere — vezi buildSarcinaForDosar.
+      await sarciniCtx.add(workspaceId, buildSarcinaForDosar(data, dosarId), user.uid)
     }
   }, [modal, workspaceId, user, add, update, sarciniCtx, toast])
 
@@ -363,7 +397,13 @@ export default function DosarePage() {
                     Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
                   </button>
                   {showColsPanel && (
-                    <DosarColumnsPanel hiddenCols={hiddenCols} onToggle={toggleColVisibility} onClose={() => setShowColsPanel(false)} />
+                    <DosarColumnsPanel
+                      hiddenCols={hiddenCols}
+                      onToggle={toggleColVisibility}
+                      onSelectAll={showAllColumns}
+                      onDeselectAll={hideAllColumns}
+                      onClose={() => setShowColsPanel(false)}
+                    />
                   )}
                 </div>
               </div>
@@ -379,12 +419,16 @@ export default function DosarePage() {
                 onDelete={() => setDeleteConf(viewing)}
                 onSaveField={async patch => {
                   await update(workspaceId, viewing.id, patch)
-                  // Arhivarea manuală are propriul toast în DosarView — aici
-                  // doar semnalăm secțiunii de arhivă să se reîncarce.
-                  if (patch.arhivatManual !== undefined) {
+                  // update() scrie optimist doar în `dosare` — un dosar deschis
+                  // din arhivă (extraDosare) trebuie ținut la zi separat.
+                  setExtraDosare(prev => prev[viewing.id]
+                    ? { ...prev, [viewing.id]: { ...prev[viewing.id], ...patch } as Dosar }
+                    : prev)
+                  toast('Dosar actualizat', 'ok')
+                  // Arhivarea/restaurarea e instant legată de stadiu — dacă
+                  // s-a schimbat, semnalăm secțiunii de arhivă să se reîncarce.
+                  if (patch.stadiu !== undefined) {
                     setArchiveRefreshKey(k => k + 1)
-                  } else {
-                    toast('Dosar actualizat', 'ok')
                   }
                 }}
               />
@@ -435,7 +479,7 @@ export default function DosarePage() {
               </>
             )}
           </div>
-          {tab === 'lista' && <ArchivedDosareSection workspaceId={workspaceId} refreshKey={archiveRefreshKey} />}
+          {tab === 'lista' && <ArchivedDosareSection workspaceId={workspaceId} refreshKey={archiveRefreshKey} onOpenDosar={openArchivedTab} onRestore={handleQuickRestore} />}
         </div>
       </div>
 

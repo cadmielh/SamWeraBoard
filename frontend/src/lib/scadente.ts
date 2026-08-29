@@ -49,15 +49,6 @@ function nextAnnualDeadline(month0: number, day: number, from: Date): Date {
 export function computeScadente(client: Client, from: Date = new Date()): Scadenta[] {
   const scadente: Scadenta[] = []
 
-  if ((client.nrSalariati ?? 0) > 0) {
-    scadente.push({
-      cod: 'D112',
-      titlu: 'D112 — declarație contribuții sociale și salarii',
-      descriere: 'Lunar, până pe 25 ale lunii următoare, dacă societatea are salariați.',
-      urmatoarea: nextMonthlyDeadline(25, from),
-    })
-  }
-
   if (client.platitorTva) {
     const perioada = client.periodaTva
     const urmatoareaTva =
@@ -80,30 +71,6 @@ export function computeScadente(client: Client, from: Date = new Date()): Scaden
       titlu: 'D394 — declarație informativă TVA',
       descriere: `Declarație informativă privind livrările/achizițiile, ${frecventaLabel}, până pe 25 ale lunii următoare.`,
       urmatoarea: urmatoareaTva,
-    })
-  }
-
-  if (client.regimFiscal === 'microintreprindere') {
-    scadente.push({
-      cod: 'IMPOZIT_MICRO',
-      titlu: 'Impozit pe veniturile microîntreprinderilor',
-      descriere: 'Trimestrial, până pe 25 ale lunii următoare încheierii trimestrului.',
-      urmatoarea: nextQuarterlyDeadline(from),
-    })
-  }
-
-  if (client.regimFiscal === 'impozit_profit') {
-    scadente.push({
-      cod: 'IMPOZIT_PROFIT_TRIM',
-      titlu: 'Impozit pe profit (plată anticipată trimestrială)',
-      descriere: 'Trimestrial, până pe 25 ale lunii următoare încheierii trimestrului.',
-      urmatoarea: nextQuarterlyDeadline(from),
-    })
-    scadente.push({
-      cod: 'D101',
-      titlu: 'D101 — declarație anuală impozit pe profit',
-      descriere: 'Anual, termen orientativ 25 iunie anul următor (pot exista termene diferite pentru cazuri speciale).',
-      urmatoarea: nextAnnualDeadline(5, 25, from),
     })
   }
 

@@ -4,7 +4,6 @@ import os
 import re
 import sys
 import threading
-import time
 from datetime import date
 from pathlib import Path
 
@@ -457,9 +456,8 @@ def get_placeholders():
     })
 
 
-_ANAF_POST       = "https://webservicesp.anaf.ro/AsynchWebService/api/v8/ws/tva"
-_ANAF_GET        = "https://webservicesp.anaf.ro/AsynchWebService/api/v7/ws/tva"
-_DEMOANAF_BASE   = "https://demoanaf.ro/api/company"
+_ANAF_URL        = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
+_CUISCAN_URL     = "https://cuiscan.ro/api.php"
 
 # Ordinea contează: formele mai lungi/specifice înaintea celor mai scurte
 _FORME_JURIDICE = [
@@ -524,105 +522,69 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
     }
 
 
-def _query_demoanaf(cif_str: str) -> dict | None:
-    """Returnează dict cu date firmă din demoanaf.ro (proxy live pe date ANAF+ONRC),
-    sau None dacă nu e configurată cheia sau serviciul e indisponibil."""
-    api_key = os.getenv("DEMOANAF_API_KEY", "")
-    if not api_key:
-        return None
-    try:
-        resp = http_requests.get(
-            f"{_DEMOANAF_BASE}/{cif_str}",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=8,
-        )
-        if resp.status_code != 200:
-            return None
-        body = resp.json()
-        if not body.get("success"):
-            return None
-        return body.get("data")
-    except Exception:
-        return None
-
-
 def _pad_caen(cod) -> str:
-    """Codurile CAEN au mereu 4 cifre — demoanaf.ro serializează uneori codul ca număr JSON,
-    ceea ce pierde zero-ul din faţă la codurile din secţiuni ca 0610, 0620 etc."""
+    """Codurile CAEN au mereu 4 cifre — sursele externe serializează uneori codul ca număr
+    JSON, ceea ce pierde zero-ul din faţă la codurile din secţiuni ca 0610, 0620 etc."""
     s = str(cod or "").strip()
     return s.zfill(4) if s else ""
 
 
-def _parse_demoanaf_response(data: dict) -> dict:
-    stare = f'{data.get("registrationState") or ""} {data.get("onrcStatusLabel") or ""}'.strip()
-    caen_cod = _pad_caen(data.get("caenCode"))
-    # authorizedCaenCodes include şi codul principal — restul sunt activităţile secundare
-    caen_secundare = [
-        padded for c in (data.get("authorizedCaenCodes") or [])
-        if (padded := _pad_caen(c)) != caen_cod
-    ]
-    result = _parse_company_response(
-        denumire     = data.get("name") or "",
-        adresa       = data.get("address") or "",
-        nr_reg_com   = data.get("registrationNumber") or "",
-        telefon      = data.get("phone") or "",
-        caen_cod     = caen_cod,
-        stare        = stare,
-        radiata      = False,
-        platitor_tva = bool(data.get("vatRegistered")),
-        perioada_tva = "",
-        forma_juridica   = data.get("legalForm") or None,
-        tva_la_incasare  = bool(data.get("cashBasisVat")),
-        inactiv_anaf     = bool(data.get("inactive")),
-        split_tva        = bool(data.get("splitVat")),
-        e_factura        = bool(data.get("eFacturaRegistered")),
-        caen_secundare   = caen_secundare,
-    )
-    # Doar nume + rol — API-ul nu oferă CNP/CI, deci e strict informativ
-    # (nu se poate mapa fiabil pe structura Persoana folosită la generarea documentelor).
-    result["administratoriAnaf"] = [
-        {"nume": a.get("name") or "", "rol": a.get("role") or ""}
-        for a in (data.get("administrators") or []) if not a.get("gdprHidden") and a.get("name")
-    ]
-    return result
-
-
 def _query_anaf(cif_int: int) -> dict | None:
-    """Returnează răspunsul brut ANAF async v8, sau None dacă serviciul e indisponibil."""
+    """Returnează răspunsul brut ANAF v9 (sincron), sau None dacă serviciul e indisponibil.
+    Sursă critică — fără ea nu putem servi cererea deloc."""
     payload = [{"cui": cif_int, "data": date.today().isoformat()}]
     try:
-        post_resp = http_requests.post(
-            _ANAF_POST,
+        resp = http_requests.post(
+            _ANAF_URL,
             json=payload,
             headers={
                 "Content-Type": "application/json",
                 "User-Agent": "Mozilla/5.0 (compatible; SamWeraBoard/1.0)",
             },
-            timeout=8,
+            timeout=10,
         )
-        post_resp.raise_for_status()
-        correlation_id = post_resp.json().get("correlationId")
-        if not correlation_id:
-            return None
+        resp.raise_for_status()
+        body = resp.json()
+        return body if "found" in body else None
     except Exception:
         return None
 
-    # Polling GET — răspunsul se poate descărca o singură dată
-    for attempt in range(4):
-        time.sleep(3 if attempt == 0 else 2)
-        try:
-            get_resp = http_requests.get(
-                _ANAF_GET,
-                params={"id": correlation_id},
-                timeout=8,
-            )
-            if get_resp.status_code == 200:
-                body = get_resp.json()
-                if "found" in body:
-                    return body
-        except Exception:
-            continue
-    return None
+
+def _query_cuiscan(cif_str: str) -> dict | None:
+    """Date enrichment de la cuiscan.ro — administratori și sediul social structurat,
+    best-effort peste sursa critică ANAF. Dacă cuiscan.ro pică sau dispare, cererea tot
+    reuşeşte, doar câmpurile respective rămân necompletate/preiau fallback-ul de la ANAF."""
+    try:
+        resp = http_requests.get(
+            _CUISCAN_URL,
+            params={"action": "company", "cui": cif_str},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _format_adresa_sediu(strada, numar, localitate, judet, detalii=None) -> str:
+    """Compune un rând de adresă lizibil dintr-o adresă structurată (sediu social),
+    în acelaşi stil cu textul liber întors de ANAF pentru domiciliul fiscal."""
+    parts = []
+    if judet:
+        parts.append(str(judet).strip())
+    if localitate:
+        parts.append(str(localitate).strip())
+    strada_s = str(strada).strip() if strada else ""
+    if strada_s and numar:
+        parts.append(f"{strada_s}, NR.{str(numar).strip()}")
+    elif strada_s:
+        parts.append(strada_s)
+    elif numar:
+        parts.append(f"NR.{str(numar).strip()}")
+    if detalii:
+        parts.append(str(detalii).strip())
+    return ", ".join(p for p in parts if p)
 
 
 @app.route("/anaf/company")
@@ -640,47 +602,72 @@ def anaf_company():
 
     cif_int = int(cif_str)
 
-    # --- Sursă 1: demoanaf.ro — proxy live pe date ANAF+ONRC, rapid, un singur apel ---
-    ddata = _query_demoanaf(cif_str)
-    if ddata is not None:
-        return jsonify(_parse_demoanaf_response(ddata))
-
-    # --- Sursă 2: ANAF async v8 oficial ---
+    # --- Sursă critică: ANAF v9 oficial (sincron, gratuit, fără cheie) ---
     anaf_data = _query_anaf(cif_int)
-    if anaf_data is not None:
-        found = anaf_data.get("found", [])
-        if not found:
-            return jsonify({"found": False}), 200
+    if anaf_data is None:
+        return jsonify({"error": "Serviciile de date fiscale sunt indisponibile momentan"}), 502
 
-        dg            = found[0].get("date_generale", {}) or {}
-        inreg         = found[0].get("inregistrare_scop_Tva", {}) or {}
-        inreg_rtvai   = found[0].get("inregistrare_RTVAI", {}) or {}
-        stare_inactiv = found[0].get("stare_inactiv", {}) or {}
-        split_tva     = found[0].get("inregistrare_SplitTVA", {}) or {}
+    found = anaf_data.get("found", [])
+    if not found:
+        return jsonify({"found": False}), 200
 
-        # API-ul public ANAF nu expune periodicitatea declarării TVA (lunar/trimestrial) —
-        # câmpul rămâne necompletat din această sursă, nu se ghicește.
-        platitor_tva    = bool(inreg.get("scpTVA"))
-        tva_la_incasare = bool(inreg_rtvai.get("statusTvaIncasare"))
+    dg            = found[0].get("date_generale", {}) or {}
+    inreg         = found[0].get("inregistrare_scop_Tva", {}) or {}
+    inreg_rtvai   = found[0].get("inregistrare_RTVAI", {}) or {}
+    stare_inactiv = found[0].get("stare_inactiv", {}) or {}
+    split_tva     = found[0].get("inregistrare_SplitTVA", {}) or {}
 
-        radiata = bool(stare_inactiv.get("dataRadiere"))
-        return jsonify(_parse_company_response(
-            denumire     = dg.get("denumire") or "",
-            adresa       = dg.get("adresa") or "",
-            nr_reg_com   = dg.get("nrRegCom") or "",
-            telefon      = dg.get("telefon") or "",
-            caen_cod     = _pad_caen(dg.get("cod_CAEN")),
-            stare        = dg.get("stare_inregistrare") or "",
-            radiata      = radiata,
-            platitor_tva = platitor_tva,
-            perioada_tva = "",
-            tva_la_incasare = tva_la_incasare,
-            inactiv_anaf = bool(stare_inactiv.get("statusInactivi")),
-            split_tva    = bool(split_tva.get("statusSplitTVA")),
-            e_factura    = bool(dg.get("statusRO_e_Factura")),
-        ))
+    # API-ul public ANAF nu expune periodicitatea declarării TVA (lunar/trimestrial) —
+    # câmpul rămâne necompletat din această sursă, nu se ghicește.
+    platitor_tva    = bool(inreg.get("scpTVA"))
+    tva_la_incasare = bool(inreg_rtvai.get("statusTvaIncasare"))
+    radiata = bool(stare_inactiv.get("dataRadiere"))
 
-    return jsonify({"error": "Serviciile de date fiscale sunt indisponibile momentan"}), 502
+    cuiscan_data = _query_cuiscan(cif_str)
+
+    # "adresa" trebuie să fie sediul social, nu domiciliul fiscal (pot diferi) — ANAF
+    # v9 îl oferă structurat în adresa_sediu_social; dacă lipseşte, încercăm acelaşi
+    # câmp de la cuiscan.ro; ca ultim fallback folosim domiciliul fiscal (mai bine
+    # decât un câmp gol).
+    sediu_anaf = found[0].get("adresa_sediu_social") or {}
+    adresa_sediu = _format_adresa_sediu(
+        sediu_anaf.get("sdenumire_Strada"), sediu_anaf.get("snumar_Strada"),
+        sediu_anaf.get("sdenumire_Localitate"), sediu_anaf.get("sdenumire_Judet"),
+        sediu_anaf.get("sdetalii_Adresa"),
+    )
+    if not adresa_sediu and cuiscan_data:
+        cs_sediu = cuiscan_data.get("adresaSediu") or {}
+        adresa_sediu = _format_adresa_sediu(
+            cs_sediu.get("strada"), cs_sediu.get("numar"),
+            cs_sediu.get("localitate"), cs_sediu.get("judet"),
+        )
+    if not adresa_sediu:
+        adresa_sediu = dg.get("adresa") or ""
+
+    result = _parse_company_response(
+        denumire     = dg.get("denumire") or "",
+        adresa       = adresa_sediu,
+        nr_reg_com   = dg.get("nrRegCom") or "",
+        telefon      = dg.get("telefon") or "",
+        caen_cod     = _pad_caen(dg.get("cod_CAEN")),
+        stare        = dg.get("stare_inregistrare") or "",
+        radiata      = radiata,
+        platitor_tva = platitor_tva,
+        perioada_tva = "",
+        tva_la_incasare = tva_la_incasare,
+        inactiv_anaf = bool(stare_inactiv.get("statusInactivi")),
+        split_tva    = bool(split_tva.get("statusSplitTVA")),
+        e_factura    = bool(dg.get("statusRO_e_Factura")),
+    )
+
+    # --- Enrichment opţional: administratori, de la cuiscan.ro (best-effort) ---
+    administratori = (cuiscan_data or {}).get("administratori") or []
+    result["administratoriAnaf"] = [
+        {"nume": a.get("name") or "", "rol": a.get("role") or ""}
+        for a in administratori if a.get("name")
+    ]
+
+    return jsonify(result)
 
 
 @app.route("/health")

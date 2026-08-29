@@ -92,25 +92,8 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
     ? dosar.obiecteCererii.filter(o => o.clauseTag && !!CLAUSE_FIELD_SPECS[o.clauseTag])
     : []
   const [creatingClient, setCreatingClient] = useState(false)
-  const [archiving, setArchiving] = useState(false)
-  const canArchiveNow = dosar.stadiu === 'documente_predate_client' && !dosar.arhivatManual
 
   const num = (v: number | null) => v == null ? '' : String(v)
-
-  const handleArchiveNow = async () => {
-    setArchiving(true)
-    try {
-      // Prin onSaveField (nu archiveDosarNow direct) — trece prin update()
-      // din useDosare, deci starea locală optimistă a listei din DosarePage
-      // se actualizează imediat, fără să aștepte un reload.
-      await onSaveField({ arhivatManual: true })
-      toast('Dosar arhivat', 'ok')
-    } catch (e: unknown) {
-      toast((e as Error).message ?? 'Eroare la arhivare', 'err')
-    } finally {
-      setArchiving(false)
-    }
-  }
 
   const handleUpgradeToClient = async () => {
     if (!workspaceId || !user || !dosar.clientDenumireLibera) return
@@ -171,12 +154,9 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
           </div>
         )}
 
-        {canArchiveNow && (
-          <div className="cv2-section" style={{ background: 'var(--s100)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem' }}>
-            <span style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>Documentele au fost predate — dosarul se arhivează automat la finalul săptămânii.</span>
-            <button className="btn btn-slate btn-xs" onClick={handleArchiveNow} disabled={archiving} style={{ flexShrink: 0 }}>
-              {archiving ? <span className="spin" /> : '📥 Arhivează acum'}
-            </button>
+        {dosar.stadiu === 'documente_predate_client' && (
+          <div className="cv2-section" style={{ background: 'var(--s100)', flexDirection: 'row', alignItems: 'center', gap: '.75rem' }}>
+            <span style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>📥 Documentele au fost predate — dosarul e arhivat (vizibil în „Arhivă dosare", restaurabil oricând).</span>
           </div>
         )}
 

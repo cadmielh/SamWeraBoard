@@ -85,10 +85,9 @@ export default function GenerareDocumentePage() {
   // imediat avansarea la Pasul 3 declanșată chiar de acel onSave.
   const societateJustSavedRef = useRef(false)
   const [pfScanMode, setPfScanMode] = useState<'scan' | 'manual' | null>(null)
-  // Buton "Continuă" duplicat sus, lângă "Înapoi" — MultiPersonPreview
-  // decide singur când se poate continua (cotă validă, minim o persoană).
+  // Buton "Continuă" duplicat sus, lângă "Înapoi" — mereu activ; la click,
+  // MultiPersonPreview validează singur și sare la primul câmp lipsă dacă e cazul.
   const multiPersonRef = useRef<MultiPersonPreviewHandle>(null)
-  const [multiPersonReady, setMultiPersonReady] = useState(false)
   // Modificările din MultiPersonPreview se aplică local imediat (pentru
   // completarea template-ului); salvarea în Firestore e opțională, cerută
   // explicit printr-un modal de confirmare — nu se scrie automat în DB.
@@ -661,7 +660,6 @@ export default function GenerareDocumentePage() {
                       <button
                         className="btn btn-primary btn-sm"
                         onClick={() => multiPersonRef.current?.continue()}
-                        disabled={!multiPersonReady}
                       >
                         Continuă la template →
                       </button>
@@ -674,7 +672,6 @@ export default function GenerareDocumentePage() {
                         accessToken={accessToken}
                         onContinue={handleMultiPersonContinue}
                         onToast={toast}
-                        onReadyChange={setMultiPersonReady}
                       />
                     </div>
                   </div>

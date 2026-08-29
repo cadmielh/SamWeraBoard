@@ -6,7 +6,6 @@ from firebase_functions import https_fn, params
 from app import app as flask_app
 
 _azure_docint_key = params.SecretParam("AZURE_DOCUMENT_INTELLIGENCE_KEY")
-_demoanaf_key     = params.SecretParam("DEMOANAF_API_KEY")
 
 
 @https_fn.on_request(
@@ -15,7 +14,7 @@ _demoanaf_key     = params.SecretParam("DEMOANAF_API_KEY")
     timeout_sec=300,
     max_instances=10,
     concurrency=1,
-    secrets=[_azure_docint_key, _demoanaf_key],
+    secrets=[_azure_docint_key],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
     environ = dict(req.environ)

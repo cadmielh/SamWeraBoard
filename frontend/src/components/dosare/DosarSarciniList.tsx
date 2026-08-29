@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Dosar, SarcinaStatus, StadiuDosar } from '../../types'
 import { SARCINA_STATUS_LABELS, STADIU_DOSAR_LABELS, PRIORITATE_LABELS, PRIORITATE_COLOR, STADII_DOSAR_FINALE, nextSarcinaStatus } from '../../types'
 import type { Sarcina } from '../../types'
 import { fetchSarciniByDosar, moveSarcina, useSarcini } from '../../lib/sarcini'
-import { buildSarcinaForObiect } from '../../lib/dosarSarcini'
+import { serializeObiecte, descriereObiecte } from '../../lib/dosarSarcini'
 import { useApp } from '../../AppContext'
 
 interface Props {
@@ -21,16 +21,16 @@ const STATUS_BADGE_CLASS: Record<SarcinaStatus, string> = {
 /**
  * Sarcinile legate de acest dosar — relația e 1:N, deci citită live din
  * Sarcina.dosarId (nu dintr-un id singular ținut pe Dosar). Cu acțiuni rapide
- * per sarcină (avansare/finalizare), creare rapidă a uneia noi, și sugestii
- * (nu automatisme) când obiectele cererii se editează ulterior pe dosar:
- * un obiect nou fără sarcină corespunzătoare → propune crearea ei; o sarcină
- * al cărei obiect a fost șters din dosar → propune ștergerea ei. Potrivirea
- * se face prin Sarcina.obiectCererii, nu prin titlu (editabil liber).
+ * per sarcină (avansare/finalizare) și creare rapidă a uneia noi. Sarcina
+ * auto-generată la crearea dosarului (una singură, cu toate obiectele cererii
+ * în descriere — identificată prin Sarcina.obiectCererii nevid) e resincro-
+ * nizată automat, fără confirmare, când obiectele cererii dosarului se editează
+ * ulterior — vezi efectul de mai jos.
  */
 export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
   const { user, activeWorkspace, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
-  const { add: addSarcina, remove: removeSarcina } = useSarcini(workspaceId)
+  const { add: addSarcina, update: updateSarcina } = useSarcini(workspaceId)
   const navigate = useNavigate()
 
   const [sarcini, setSarcini] = useState<Sarcina[]>([])
@@ -39,9 +39,7 @@ export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
   const [suggestDismissed, setSuggestDismissed] = useState(false)
   const [suggestStadiu, setSuggestStadiu] = useState<StadiuDosar>('depus_in_solutionare')
   const [updatingStadiu, setUpdatingStadiu] = useState(false)
-  const [dismissedAdd, setDismissedAdd] = useState<Set<string>>(new Set())
-  const [dismissedRemove, setDismissedRemove] = useState<Set<string>>(new Set())
-  const [busyLabel, setBusyLabel] = useState<string | null>(null)
+  const syncingObiectRef = useRef<string | null>(null)
 
   const reload = useCallback(async () => {
     if (!workspaceId) return
@@ -56,48 +54,25 @@ export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { reload() }, [reload])
 
+  // Resincronizează silențios descrierea sarcinii auto-generate (dacă există)
+  // când obiectele cererii dosarului diferă de instantaneul stocat pe sarcină
+  // la ultima generare/sincronizare — syncingObiectRef evită bucla infinită
+  // (reload() aduce sarcina cu obiectCererii deja la zi, deci al doilea
+  // rulaj al efectului nu mai găsește diferență).
+  useEffect(() => {
+    const expected = serializeObiecte(dosar.obiecteCererii)
+    const autoTask = sarcini.find(s => s.obiectCererii)
+    if (!workspaceId || !autoTask || autoTask.obiectCererii === expected) return
+    if (syncingObiectRef.current === autoTask.id + expected) return
+    syncingObiectRef.current = autoTask.id + expected
+    updateSarcina(workspaceId, autoTask.id, {
+      descriere: descriereObiecte(dosar.obiecteCererii),
+      obiectCererii: expected,
+    }).then(reload)
+  }, [dosar.obiecteCererii, sarcini, workspaceId, updateSarcina, reload])
+
   const isFinalStadiu = STADII_DOSAR_FINALE.includes(dosar.stadiu)
   const allFinalized = sarcini.length > 0 && sarcini.every(s => s.status === 'finalizat')
-
-  // Obiecte ale dosarului fără nicio sarcină legată prin obiectCererii.
-  const obiecteFaraSarcina = useMemo(() => {
-    const legate = new Set(sarcini.map(s => s.obiectCererii).filter(Boolean))
-    return dosar.obiecteCererii.filter(o => !legate.has(o.label) && !dismissedAdd.has(o.label))
-  }, [dosar.obiecteCererii, sarcini, dismissedAdd])
-
-  // Sarcini generate pentru un obiect care nu mai există în dosar.
-  const sarciniOrfane = useMemo(() => {
-    const curente = new Set(dosar.obiecteCererii.map(o => o.label))
-    return sarcini.filter(s => s.obiectCererii && !curente.has(s.obiectCererii) && !dismissedRemove.has(s.id))
-  }, [dosar.obiecteCererii, sarcini, dismissedRemove])
-
-  const handleCreateForObiect = async (label: string) => {
-    if (!workspaceId || !user) return
-    setBusyLabel(label)
-    try {
-      await addSarcina(workspaceId, buildSarcinaForObiect(dosar, dosar.id, label), user.uid)
-      toast(`Sarcină creată pentru „${label}"`, 'ok')
-      await reload()
-    } catch (e: unknown) {
-      toast((e as Error).message ?? 'Eroare la crearea sarcinii', 'err')
-    } finally {
-      setBusyLabel(null)
-    }
-  }
-
-  const handleDeleteOrphan = async (s: Sarcina) => {
-    if (!workspaceId) return
-    setBusyLabel(s.id)
-    try {
-      await removeSarcina(workspaceId, s.id)
-      toast('Sarcină ștearsă', 'ok')
-      setSarcini(prev => prev.filter(x => x.id !== s.id))
-    } catch (e: unknown) {
-      toast((e as Error).message ?? 'Eroare la ștergere', 'err')
-    } finally {
-      setBusyLabel(null)
-    }
-  }
 
   const handleQuickCreate = async () => {
     if (!workspaceId || !user) return
@@ -134,30 +109,6 @@ export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
         Sarcini legate
         {sarcini.length > 0 && <span className="cv2-count-chip">{sarcini.length}</span>}
       </div>
-
-      {!loading && obiecteFaraSarcina.map(o => (
-        <div key={o.label} style={{ background: 'var(--p50)', border: '1px solid var(--p200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.5rem' }}>
-          <span style={{ fontSize: '.8125rem', color: 'var(--p700)' }}>„{o.label}" e un obiect nou al cererii — creezi o sarcină pentru el?</span>
-          <div style={{ display: 'flex', gap: '.4rem', flexShrink: 0 }}>
-            <button className="btn btn-ghost btn-xs" onClick={() => setDismissedAdd(prev => new Set(prev).add(o.label))}>Ignoră</button>
-            <button className="btn btn-primary btn-xs" onClick={() => handleCreateForObiect(o.label)} disabled={busyLabel === o.label}>
-              {busyLabel === o.label ? <span className="spin" /> : 'Creează'}
-            </button>
-          </div>
-        </div>
-      ))}
-
-      {!loading && sarciniOrfane.map(s => (
-        <div key={s.id} style={{ background: 'var(--a50)', border: '1px solid var(--a200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.5rem' }}>
-          <span style={{ fontSize: '.8125rem', color: 'var(--a800)' }}>„{s.obiectCererii}" nu mai e în obiectele cererii — ștergi sarcina „{s.titlu}"?</span>
-          <div style={{ display: 'flex', gap: '.4rem', flexShrink: 0 }}>
-            <button className="btn btn-ghost btn-xs" onClick={() => setDismissedRemove(prev => new Set(prev).add(s.id))}>Păstrează</button>
-            <button className="btn btn-xs" style={{ background: 'var(--r500)', color: '#fff' }} onClick={() => handleDeleteOrphan(s)} disabled={busyLabel === s.id}>
-              {busyLabel === s.id ? <span className="spin" /> : 'Șterge'}
-            </button>
-          </div>
-        </div>
-      ))}
 
       {allFinalized && !isFinalStadiu && !suggestDismissed && (
         <div style={{ background: 'var(--g50)', border: '1px solid var(--g200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>

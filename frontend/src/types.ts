@@ -100,7 +100,6 @@ export interface CaenActivitate {
 
 export type TipClient = 'PF' | 'PJ'
 export type SubtipPF = 'PFA' | 'IF' | 'II'
-export type RegimFiscal = '' | 'microintreprindere' | 'impozit_profit'
 
 export interface Client {
   id: string
@@ -132,11 +131,7 @@ export interface Client {
   eFactura: boolean
   // Strict informativ, din ANAF — nu înlocuiește lista structurată `administratori`
   administratoriAnaf: { nume: string; rol: string }[]
-  plafonTvaAnual: number | null
-  regimFiscal: RegimFiscal
-  nrSalariati: number | null
   capitalSocial: number | null
-  anFiscal: string
   dataAnafActualizat: string | null
   notite: string
   asociati: Persoana[]
@@ -242,11 +237,9 @@ export interface Dosar {
   // Relația cu Sarcini e 1:N — un dosar poate avea mai multe sarcini legate,
   // deci nu ținem un id singular aici; lista se derivă din Sarcina.dosarId
   // (sursă unică de adevăr, fără risc de desincronizare) via fetchSarciniByDosar().
-  // Arhivare (vezi lib/dosare.ts) — un dosar e arhivat dacă stadiu ===
-  // 'documente_predate_client' și (arhivatManual === true SAU
-  // documentePredateAt < startOfWeek()); calculat, nu un status separat.
+  // Arhivare (vezi lib/dosare.ts) — un dosar e arhivat instant ce stadiu
+  // devine 'documente_predate_client'; calculat din stadiu, nu un status separat.
   documentePredateAt: string | null   // serverTimestamp() la tranziția în acest stadiu; șters la ieșire
-  arhivatManual?: boolean             // arhivare forțată devreme, indiferent de săptămână
   createdAt: string | null
   createdBy: string
 }
@@ -315,12 +308,13 @@ export interface Sarcina {
   // "Creează client din acest nume" în TaskModal pentru conversia la clientId.
   clientDenumireLibera?: string
   dosarId?: string       // legătură opțională la un Dosar
-  dosarLabel?: string    // denormalizat (nrInregistrareDosar || obiectulCererii)
-  // Eticheta exactă a obiectului cererii (din Dosar.obiecteCererii) pentru care
-  // a fost creată automat această sarcină — prezentă doar pe sarcinile
-  // generate 1:1 per obiect (la crearea dosarului sau prin sugestia din
-  // DosarSarciniList), absentă pe sarcinile adăugate manual. Permite
-  // potrivirea sarcină↔obiect când obiectele unui dosar se editează ulterior.
+  dosarLabel?: string    // denormalizat (nrInregistrareDosar || clientul dosarului)
+  // Instantaneu serializat (vezi serializeObiecte în lib/dosarSarcini.ts) al
+  // Dosar.obiecteCererii la ultima sincronizare — prezent doar pe sarcina
+  // unică auto-generată per dosar (una singură, cu toate obiectele cererii în
+  // descriere), absent pe sarcinile adăugate manual. Compararea cu
+  // serializarea curentă a obiectelor dosarului (în DosarSarciniList) arată
+  // dacă descrierea trebuie resincronizată după o editare a obiectelor.
   obiectCererii?: string
   order: number           // poziție manuală în coloană
   completedAt: string | null   // setat (serverTimestamp) la trecerea în 'finalizat', șters altfel

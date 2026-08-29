@@ -150,16 +150,29 @@ function AdresaFields({ value, onChange, judet }: {
   )
 }
 
-function CaenChecklist({ options, selected, onToggle }: {
+function CaenChecklist({ options, selected, onSelectAll, onDeselectAll, onToggle }: {
   options: { cod: string; descriere: string }[]
   selected: string[]
   onToggle: (cod: string) => void
+  // Absent pentru checklist-urile cu limită de selecție (ex. max. 2 la sediu
+  // secundar) — "selectează tot" n-ar avea sens acolo.
+  onSelectAll?: () => void
+  onDeselectAll?: () => void
 }) {
   if (options.length === 0) {
     return <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Clientul nu are niciun cod CAEN înregistrat în profil.</div>
   }
+  const allSelected = selected.length >= options.length
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+      {onSelectAll && onDeselectAll && options.length > 1 && (
+        <button
+          type="button" className="btn btn-ghost btn-xs" style={{ alignSelf: 'flex-start' }}
+          onClick={allSelected ? onDeselectAll : onSelectAll}
+        >
+          {allSelected ? 'Deselectează tot' : 'Selectează tot'}
+        </button>
+      )}
       {options.map(o => (
         <label key={o.cod} style={{ display: 'flex', alignItems: 'center', gap: '.5rem', fontSize: '.83rem', cursor: 'pointer' }}>
           <input type="checkbox" checked={selected.includes(o.cod)} onChange={() => onToggle(o.cod)} />
@@ -320,11 +333,19 @@ export default function PdfFormFiller({ client, onChange }: Props) {
       </SectionCard>
 
       <SectionCard title="3.1 Sediu social/profesional — coduri CAEN">
-        <CaenChecklist options={caenOptions} selected={caenSediu} onToggle={cod => toggleCaen(caenSediu, setCaenSediu, cod)} />
+        <CaenChecklist
+          options={caenOptions} selected={caenSediu} onToggle={cod => toggleCaen(caenSediu, setCaenSediu, cod)}
+          onSelectAll={() => setCaenSediu(caenOptions.map(o => o.cod))}
+          onDeselectAll={() => setCaenSediu([])}
+        />
       </SectionCard>
 
       <SectionCard title="3.2 Activități desfășurate la terți">
-        <CaenChecklist options={caenOptions} selected={caenTerti} onToggle={cod => toggleCaen(caenTerti, setCaenTerti, cod)} />
+        <CaenChecklist
+          options={caenOptions} selected={caenTerti} onToggle={cod => toggleCaen(caenTerti, setCaenTerti, cod)}
+          onSelectAll={() => setCaenTerti(caenOptions.map(o => o.cod))}
+          onDeselectAll={() => setCaenTerti([])}
+        />
       </SectionCard>
 
       <SectionCard title="3.3 Sedii secundare">

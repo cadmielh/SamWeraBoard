@@ -54,10 +54,12 @@ function renderCellContent(d: Dosar, key: string): React.ReactNode {
 interface ColumnsPanelProps {
   hiddenCols: Set<string>
   onToggle: (key: string) => void
+  onSelectAll: () => void
+  onDeselectAll: () => void
   onClose: () => void
 }
 
-export function DosarColumnsPanel({ hiddenCols, onToggle, onClose }: ColumnsPanelProps) {
+export function DosarColumnsPanel({ hiddenCols, onToggle, onSelectAll, onDeselectAll, onClose }: ColumnsPanelProps) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -67,9 +69,16 @@ export function DosarColumnsPanel({ hiddenCols, onToggle, onClose }: ColumnsPane
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
+  const allVisible = COLUMNS.every(c => c.fixed || !hiddenCols.has(c.key))
+
   return (
     <div ref={ref} className="cols-panel">
-      <div className="cols-panel__head">Coloane vizibile</div>
+      <div className="cols-panel__head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>Coloane vizibile</span>
+        <button type="button" className="btn btn-ghost btn-xs" onClick={allVisible ? onDeselectAll : onSelectAll}>
+          {allVisible ? 'Deselectează tot' : 'Selectează tot'}
+        </button>
+      </div>
       {COLUMNS.map(col => (
         <label key={col.key} className="cols-panel__item">
           <input

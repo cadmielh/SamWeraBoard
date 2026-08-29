@@ -34,6 +34,10 @@
   --text: var(--s800);
   --text-muted: var(--s400);
   --backdrop: rgba(0,0,0,.35);
+  /* Bordura butoanelor ghost — separat de --border, fiindcă --s200 devine
+     identic cu --surface-2 în tema întunecată (vezi mai jos), ceea ce ar face
+     bordura invizibilă pe orice fundal --surface-2 (ex. panouri, dropdown-uri). */
+  --btn-ghost-border: var(--s200);
 
   --sh-sm: 0 1px 3px rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1);
   --sh-md: 0 4px 6px -1px rgb(0 0 0/.08),0 2px 4px -2px rgb(0 0 0/.08);
@@ -101,6 +105,7 @@
   --surface: var(--s100);
   --surface-2: var(--s200);
   --backdrop: rgba(0,0,0,.6);
+  --btn-ghost-border: var(--s300);
 
   color-scheme: dark;
 }
@@ -144,7 +149,7 @@ body {
 .btn-danger:hover { background: linear-gradient(135deg,var(--r500),#dc2626); }
 .btn-slate { background: linear-gradient(135deg,#475569,#334155); color:#fff; }
 .btn-slate:hover { background: linear-gradient(135deg,#334155,#1e293b); }
-.btn-ghost { background: transparent; color:var(--s600); border: 1.5px solid var(--s200); }
+.btn-ghost { background: transparent; color:var(--s600); border: 1.5px solid var(--btn-ghost-border); }
 .btn-ghost:hover { background: var(--surface-2); }
 .btn-outline-primary { background:var(--p50); color:var(--p600); border:1.5px solid var(--p200); }
 .btn-outline-primary:hover { background:var(--p100); }

@@ -10,11 +10,6 @@ import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
 
-const REGIM_FISCAL_LABELS: Record<string, string> = {
-  microintreprindere: 'Microîntreprindere',
-  impozit_profit: 'Impozit pe profit',
-}
-
 interface Props {
   client: Client
   onEdit: () => void
@@ -311,18 +306,16 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
         <div className="cv2-section">
           <div className="cv2-two-col">
             <div className="cv2-col">
-              <div className="cv2-col-title">Regim fiscal</div>
-              <InfoRow label="Regim de impunere" value={client.regimFiscal ? REGIM_FISCAL_LABELS[client.regimFiscal] : undefined} />
+              <div className="cv2-col-title">TVA</div>
               <InfoRow label="TVA la încasare" value={client.platitorTva ? (client.tvaLaIncasare ? 'Da' : 'Nu') : undefined} />
-              <InfoRow label="Plafon TVA anual" value={client.plafonTvaAnual != null ? `${client.plafonTvaAnual.toLocaleString('ro-RO')} lei` : undefined} />
             </div>
-            <div className="cv2-col">
-              <div className="cv2-col-title">Altele</div>
-              <InfoRow label="Nr. salariați" value={client.nrSalariati != null ? String(client.nrSalariati) : undefined} />
-              {!isPF && <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />}
-              {!isPF && <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / 10).toLocaleString('ro-RO') : undefined} />}
-              <InfoRow label="An fiscal" value={client.anFiscal || undefined} />
-            </div>
+            {!isPF && (
+              <div className="cv2-col">
+                <div className="cv2-col-title">Capital</div>
+                <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />
+                <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / 10).toLocaleString('ro-RO') : undefined} />
+              </div>
+            )}
           </div>
         </div>
 
