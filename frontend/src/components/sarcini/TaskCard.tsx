@@ -3,6 +3,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Sarcina } from '../../types'
 import { PRIORITATE_LABELS, PRIORITATE_COLOR, SARCINA_STATUS_LABELS, nextSarcinaStatus, previousSarcinaStatus } from '../../types'
 import { getInitials, getAvatarColor } from '../../lib/avatar'
+import { isoDateToRo } from '../../lib/dates'
 import IconTrash from '../IconTrash'
 
 interface Props {
@@ -31,11 +32,6 @@ function dueUrgency(task: Sarcina): DueUrgency {
   if (task.termenLimita < today) return 'overdue'
   if (task.termenLimita === today) return 'today'
   return 'none'
-}
-
-function fmtDue(iso: string): string {
-  const [, m, d] = iso.split('-')
-  return `${d}.${m}`
 }
 
 /** Oprește propagarea la nivel de pointerdown (nu doar click) — altfel
@@ -94,7 +90,7 @@ export default function TaskCard({ task, onOpen, onAdvance, onFinish, onBack, on
         <span className={`chip priority-chip-${PRIORITATE_COLOR[task.prioritate]}`}>{PRIORITATE_LABELS[task.prioritate]}</span>
         {task.termenLimita && (
           <span className={`kanban-card-due${urgency !== 'none' ? ` kanban-card-due--${urgency}` : ''}`}>
-            📅 {fmtDue(task.termenLimita)}
+            📅 {isoDateToRo(task.termenLimita)}
           </span>
         )}
         <div style={{ flex: 1 }} />

@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useReducer, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { Dosar, DosarInput } from '../types'
 import { obiecteCereriiText } from '../types'
-import { useDosare } from '../lib/dosare'
+import { useDosare, isDosarArhivat } from '../lib/dosare'
 import { useSarcini } from '../lib/sarcini'
 import { buildSarcinaForDosar } from '../lib/dosarSarcini'
 import { useApp } from '../AppContext'
@@ -14,12 +14,6 @@ import DosarStatsPanel from '../components/dosare/DosarStatsPanel'
 import ArchivedDosareSection from '../components/dosare/ArchivedDosareSection'
 import { LUNI, type StatsPeriod } from '../lib/dosareStats'
 import Modal from '../components/Modal'
-
-/** Un dosar e arhivat instant ce ajunge în „Documente predate client" — vezi
- * lib/dosare.ts. */
-function isDosarArhivat(d: Dosar): boolean {
-  return d.stadiu === 'documente_predate_client'
-}
 
 type ModalState = 'add' | Dosar | null
 type Tab = 'lista' | string
@@ -240,6 +234,7 @@ export default function DosarePage() {
     if (modal && typeof modal === 'object') {
       await update(workspaceId, modal.id, data)
       toast('Dosar actualizat', 'ok')
+      setArchiveRefreshKey(k => k + 1)
       return
     }
     const dosarId = await add(workspaceId, data, user.uid)
@@ -418,16 +413,21 @@ export default function DosarePage() {
                 onEdit={() => setModal(viewing)}
                 onDelete={() => setDeleteConf(viewing)}
                 onSaveField={async patch => {
-                  await update(workspaceId, viewing.id, patch)
+                  try {
+                    await update(workspaceId, viewing.id, patch)
+                  } catch (err: unknown) {
+                    toast((err as Error).message ?? 'Eroare la actualizarea dosarului', 'err')
+                    return
+                  }
                   // update() scrie optimist doar în `dosare` — un dosar deschis
                   // din arhivă (extraDosare) trebuie ținut la zi separat.
                   setExtraDosare(prev => prev[viewing.id]
                     ? { ...prev, [viewing.id]: { ...prev[viewing.id], ...patch } as Dosar }
                     : prev)
                   toast('Dosar actualizat', 'ok')
-                  // Arhivarea/restaurarea e instant legată de stadiu — dacă
+                  // Arhivarea depinde de stadiu ȘI facturat — dacă oricare
                   // s-a schimbat, semnalăm secțiunii de arhivă să se reîncarce.
-                  if (patch.stadiu !== undefined) {
+                  if (patch.stadiu !== undefined || patch.facturat !== undefined) {
                     setArchiveRefreshKey(k => k + 1)
                   }
                 }}

@@ -1,6 +1,7 @@
 import type { Dosar } from '../../types'
 import { STADIU_DOSAR_LABELS, obiecteCereriiText } from '../../types'
 import { dosarProfit } from '../../lib/dosareStats'
+import { toDateSafe, formatDateRo } from '../../lib/dates'
 
 /* ── Column definitions — același tipar ca ClientiPage.tsx, pentru consistență ── */
 export interface ColDef {
@@ -14,6 +15,7 @@ export interface ColDef {
 
 export const COLUMNS: ColDef[] = [
   { key: 'clientDenumire',     label: 'Client',            width: 200, fixed: true, sortable: true,  filterable: true  },
+  { key: 'createdAt',          label: 'Data creării',      width: 120, sortable: true,  filterable: false },
   { key: 'clientCui',          label: 'CUI',                width: 120, sortable: true,  filterable: true  },
   { key: 'nrInregistrareDosar', label: 'Nr. dosar',         width: 160, sortable: true,  filterable: true  },
   { key: 'obiecteCererii',     label: 'Obiectul cererii',   width: 240, sortable: true,  filterable: false },
@@ -44,6 +46,7 @@ export function getColValue(d: Dosar, key: string): string {
     case 'obiecteCererii': return obiecteCereriiText(d.obiecteCererii)
     case 'facturat': return d.facturat ? 'Da' : 'Nu'
     case 'profit': return String(dosarProfit(d))
+    case 'createdAt': { const dt = toDateSafe(d.createdAt); return dt ? formatDateRo(dt) : '' }
     default: {
       const val = (d as unknown as Record<string, unknown>)[key]
       if (val === null || val === undefined) return ''
@@ -55,6 +58,7 @@ export function getColValue(d: Dosar, key: string): string {
 function getSortValue(d: Dosar, key: string): string | number {
   if (key === 'profit') return dosarProfit(d)
   if (key === 'taxeOnrc' || key === 'tarifClient') return d[key] ?? Number.NEGATIVE_INFINITY
+  if (key === 'createdAt') return toDateSafe(d.createdAt)?.getTime() ?? Number.NEGATIVE_INFINITY
   return getColValue(d, key)
 }
 

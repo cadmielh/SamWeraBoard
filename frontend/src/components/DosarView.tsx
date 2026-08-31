@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Dosar, DosarInput, ObiectCerereItem, StadiuDosar } from '../types'
 import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR } from '../types'
 import { dosarProfit } from '../lib/dosareStats'
+import { isoDateToRo } from '../lib/dates'
 import { CLAUSE_FIELD_SPECS } from '../lib/clauseFieldSpecs'
 import { useClienti, EMPTY_CLIENT } from '../lib/clienti'
 import { useApp } from '../AppContext'
@@ -21,13 +22,16 @@ interface Props {
   onSaveField: (patch: Partial<DosarInput>) => Promise<void>
 }
 
-function EditableRow({ label, value, onSave, type = 'text', multiline = false, suffix }: {
+function EditableRow({ label, value, onSave, type = 'text', multiline = false, suffix, displayValue }: {
   label: string
   value: string
   onSave: (v: string) => Promise<void>
   type?: string
   multiline?: boolean
   suffix?: string
+  /** Text afișat în modul citire, dacă diferă de `value` (ex. ISO → DD.MM.YYYY
+   * pentru câmpuri de tip dată — inputul tot are nevoie de `value` în format ISO). */
+  displayValue?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(value)
@@ -73,7 +77,7 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
     <button type="button" className="cv2-info-row cv2-info-row--editable" onClick={() => setEditing(true)}>
       <span className="cv2-info-label">{label}</span>
       <span className={`cv2-info-value${value ? '' : ' cv2-info-empty'}`}>
-        {value ? `${value}${suffix ?? ''}` : 'Apasă pentru a completa…'}
+        {value ? `${displayValue ?? value}${suffix ?? ''}` : 'Apasă pentru a completa…'}
         <span className="cv2-info-edit-hint">✏️</span>
       </span>
     </button>
@@ -156,7 +160,11 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
 
         {dosar.stadiu === 'documente_predate_client' && (
           <div className="cv2-section" style={{ background: 'var(--s100)', flexDirection: 'row', alignItems: 'center', gap: '.75rem' }}>
-            <span style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>📥 Documentele au fost predate — dosarul e arhivat (vizibil în „Arhivă dosare", restaurabil oricând).</span>
+            <span style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>
+              {dosar.facturat
+                ? '📥 Documentele au fost predate — dosarul e arhivat (vizibil în „Arhivă dosare", restaurabil oricând).'
+                : '📥 Documentele au fost predate — dosarul se arhivează automat după ce e marcat „Facturat".'}
+            </span>
           </div>
         )}
 
@@ -192,8 +200,8 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
           </div>
 
           <div className="cv2-two-col">
-            <EditableRow label="Data admiterii" type="date" value={dosar.dataAdmiterii ?? ''} onSave={v => onSaveField({ dataAdmiterii: v || null })} />
-            <EditableRow label="Data planificare" type="date" value={dosar.dataPlanificare ?? ''} onSave={v => onSaveField({ dataPlanificare: v || null })} />
+            <EditableRow label="Data admiterii" type="date" value={dosar.dataAdmiterii ?? ''} displayValue={isoDateToRo(dosar.dataAdmiterii ?? '')} onSave={v => onSaveField({ dataAdmiterii: v || null })} />
+            <EditableRow label="Data planificare" type="date" value={dosar.dataPlanificare ?? ''} displayValue={isoDateToRo(dosar.dataPlanificare ?? '')} onSave={v => onSaveField({ dataPlanificare: v || null })} />
           </div>
         </div>
 

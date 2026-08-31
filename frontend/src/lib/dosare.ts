@@ -14,6 +14,15 @@ const PAGE_SIZE = 100
  * 'dosar_eliberat', deși ambele sunt în STADII_DOSAR_FINALE). */
 const TRIGGER_STADIU: StadiuDosar = 'documente_predate_client'
 
+/** Un dosar e considerat arhivat abia când, pe lângă TRIGGER_STADIU, e și
+ * facturat — sursa unică a acestei reguli, folosită atât de DosarePage
+ * (filtrarea listei active) cât și de useArchivedDosare() mai jos. Stadiul
+ * însuși rămâne liber de setat oricând, indiferent de facturat; doar
+ * vizibilitatea (listă activă vs. Arhivă) depinde de ambele condiții. */
+export function isDosarArhivat(d: Pick<Dosar, 'stadiu' | 'facturat'>): boolean {
+  return d.stadiu === TRIGGER_STADIU && d.facturat === true
+}
+
 function dosareCol(workspaceId: string) {
   return collection(db, 'workspaces', workspaceId, 'dosare')
 }
@@ -237,11 +246,15 @@ export async function updateDosarStadiu(workspaceId: string, dosarId: string, st
   await updateDoc(doc(dosareCol(workspaceId), dosarId), patch)
 }
 
-/** Dosare arhivate — instant ce stadiu === TRIGGER_STADIU, paginat separat de
- * lista activă (un cabinet poate avea mii de dosare vechi arhivate, dar doar
- * cele recente contează în lista principală). `refreshKey` — one-shot, nu live
+/** Dosare arhivate — stadiu === TRIGGER_STADIU ȘI facturat === true (vezi
+ * isDosarArhivat), paginat separat de lista activă (un cabinet poate avea
+ * mii de dosare vechi arhivate, dar doar cele recente contează în lista
+ * principală). Filtrarea pe `facturat` se face client-side, pe pagina deja
+ * încărcată — un al doilea `where()` ar cere un index compus Firestore nou;
+ * un dosar cu documente predate dar nefacturat rămâne astfel afară din
+ * Arhivă (rămâne vizibil în lista activă). `refreshKey` — one-shot, nu live
  * (onSnapshot); DosarePage îl incrementează după o schimbare de stadiu/
- * restaurare reușită, ca noul item să apară fără reload de pagină. */
+ * facturat/restaurare reușită, ca noul item să apară fără reload de pagină. */
 export function useArchivedDosare(workspaceId: string | null, refreshKey = 0) {
   const [dosare, setDosare] = useState<Dosar[]>([])
   const [loading, setLoading] = useState(true)
@@ -262,7 +275,7 @@ export function useArchivedDosare(workspaceId: string | null, refreshKey = 0) {
       orderBy('documentePredateAt', 'desc'), limit(PAGE_SIZE),
     )).then(snap => {
       if (cancelled) return
-      setDosare(snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar)))
+      setDosare(snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar)).filter(d => d.facturat === true))
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null
       setHasMore(snap.docs.length === PAGE_SIZE)
       setLoading(false)
@@ -278,7 +291,7 @@ export function useArchivedDosare(workspaceId: string | null, refreshKey = 0) {
         dosareCol(wid), where('stadiu', '==', TRIGGER_STADIU),
         orderBy('documentePredateAt', 'desc'), startAfter(lastDocRef.current), limit(PAGE_SIZE),
       ))
-      setDosare(prev => [...prev, ...snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar))])
+      setDosare(prev => [...prev, ...snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar)).filter(d => d.facturat === true)])
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? lastDocRef.current
       setHasMore(snap.docs.length === PAGE_SIZE)
     } finally {
