@@ -9,8 +9,9 @@ import {
 } from './dosarColumns'
 import IconTrash from '../IconTrash'
 import IconPencil from '../IconPencil'
+import IconEye from '../IconEye'
 
-const ACTION_W = 116
+const ACTION_W = 152
 const HEADER_H = 36
 const ROW_H = 48
 
@@ -308,7 +309,7 @@ export default function DosarTable({
       {dosare.map(d => {
         const profit = dosarProfit(d)
         return (
-          <div key={d.id} className="vrow" style={{ width: minW, minWidth: '100%', height: ROW_H }} onClick={() => onView(d)}>
+          <div key={d.id} className="vrow" style={{ width: minW, minWidth: '100%', height: ROW_H }}>
             {orderedVisibleColumns.map(col => (
               <div
                 key={col.key}
@@ -324,10 +325,10 @@ export default function DosarTable({
             <div
               className="td"
               style={{ width: ACTION_W, flexShrink: 0, marginLeft: 'auto', position: 'sticky', right: 0, background: 'var(--surface)', display: 'flex', justifyContent: 'flex-end', gap: '.25rem' }}
-              onClick={e => e.stopPropagation()}
             >
-              <button className="btn btn-ghost btn-xs" onClick={() => onEdit(d)} title="Editează" style={{ padding: '.4rem .6rem' }}><IconPencil size={15} /></button>
-              <button className="btn btn-ghost btn-xs" onClick={() => onDelete(d)} title="Șterge" style={{ padding: '.4rem .6rem', color: 'var(--r500)' }}><IconTrash size={15} /></button>
+              <button className="btn btn-ghost btn-xs" onClick={() => onView(d)} title="Vizualizează"><IconEye /></button>
+              <button className="btn btn-ghost btn-xs" onClick={() => onEdit(d)} title="Editează"><IconPencil /></button>
+              <button className="btn btn-ghost btn-xs" onClick={() => onDelete(d)} title="Șterge" style={{ color: 'var(--r500)' }}><IconTrash /></button>
             </div>
           </div>
         )

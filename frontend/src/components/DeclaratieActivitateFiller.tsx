@@ -1,33 +1,38 @@
-import { useEffect, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Client, Persoana } from '../types'
 import {
   companyCaenOptions, extractJudet, parseAdresa, splitSerieNumar,
-  buildPdfFieldValues, EMPTY_DECLARANT,
-} from '../lib/pdfFiller'
-import type { AdresaParsed, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/pdfFiller'
+  buildDeclaratieDocxData, EMPTY_DECLARANT,
+} from '../lib/declaratieActivitateFiller'
+import type { AdresaParsed, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/declaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { JUDETE_ROMANIA } from '../lib/counties'
 import Combobox from './Combobox'
 
-export interface PdfFormValue {
-  fieldValues: Record<string, string>
+export interface DeclaratieFormValue {
+  replacements: Record<string, string>
+  rowGroups: Record<string, Record<string, string>[]>
   isComplete: boolean
   clientPatches: ClientPatchProposal[]
 }
 
 interface Props {
   client?: Partial<Client> | null
-  onChange: (value: PdfFormValue) => void
+  onChange: (value: DeclaratieFormValue) => void
 }
 
-const MAX_SEDII_SECUNDARE = 13
-
-function today(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`
+export interface DeclaratieActivitateFillerHandle {
+  /** Derulează/focalizează primul câmp obligatoriu necompletat; returnează
+   * eticheta fiecărui câmp lipsă (listă goală dacă totul e complet) — același
+   * tipar ca CompanyInfoFormHandle.scrollToFirstMissing, folosit de
+   * TemplateFiller la click pe "Generează" în loc de a ține butonul disabled. */
+  scrollToFirstMissing: () => string[]
 }
+
+type ElRef = (el: HTMLElement | null) => void
+
+const MAX_SEDII_SECUNDARE = 30
 
 function sediuFromClient(client?: Partial<Client> | null): DeclaratieFormState['sediu'] {
   const parsed = parseAdresa(client?.sediuSocial)
@@ -79,9 +84,9 @@ const AUTO_NOTE_STYLE: CSSProperties = {
   border: '1px solid var(--y200)', borderRadius: 4, padding: '.25rem .5rem', marginBottom: '.5rem',
 }
 
-function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+function SectionCard({ title, children, containerRef }: { title: string; children: ReactNode; containerRef?: ElRef }) {
   return (
-    <div style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+    <div ref={containerRef} style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
       <div style={{ fontWeight: 700, fontSize: '.75rem', color: 'var(--s600)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</div>
       {children}
     </div>
@@ -102,43 +107,46 @@ function SubTitle({ children }: { children: ReactNode }) {
   )
 }
 
-function Field({ label, value, onChange, flex = 1, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; flex?: number; placeholder?: string
+function Field({ label, value, onChange, flex = 1, placeholder, fieldRef }: {
+  label: string; value: string; onChange: (v: string) => void; flex?: number; placeholder?: string; fieldRef?: ElRef
 }) {
   return (
     <div className="field" style={{ flex, minWidth: 0 }}>
       <label className="field-label">{label}</label>
-      <input className="field-input" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+      <input ref={fieldRef} className="field-input" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
     </div>
   )
 }
 
-function FieldJudet({ label, value, onChange, flex = 1 }: {
-  label: string; value: string; onChange: (v: string) => void; flex?: number
+function FieldJudet({ label, value, onChange, flex = 1, fieldRef }: {
+  label: string; value: string; onChange: (v: string) => void; flex?: number; fieldRef?: ElRef
 }) {
   return (
-    <div className="field" style={{ flex, minWidth: 0 }}>
+    <div className="field" ref={fieldRef} style={{ flex, minWidth: 0 }}>
       <label className="field-label">{label}</label>
       <Combobox value={value} options={JUDETE_ROMANIA} onChange={onChange} placeholder="Județul" />
     </div>
   )
 }
 
-function AdresaFields({ value, onChange, judet }: {
+function AdresaFields({ value, onChange, judet, fieldRefs }: {
   value: AdresaParsed
   onChange: (v: AdresaParsed) => void
   // Opțional — când e prezent, județul apare ca primul câmp de pe primul
   // rând, iar Stradă/Nr. se restrâng (nu au nevoie de mult spațiu).
-  judet?: { value: string; onChange: (v: string) => void }
+  judet?: { value: string; onChange: (v: string) => void; fieldRef?: ElRef }
+  // Chei posibile: localitate, strada, nr — restul (bloc/scară/etaj/ap) nu
+  // sunt obligatorii, deci n-au nevoie de ref de validare.
+  fieldRefs?: Partial<Record<'localitate' | 'strada' | 'nr', ElRef>>
 }) {
   const set = (k: keyof AdresaParsed, v: string) => onChange({ ...value, [k]: v })
   return (
     <>
       <div style={{ display: 'flex', gap: '.5rem' }}>
-        {judet && <FieldJudet label="Județ/sector" flex={1} value={judet.value} onChange={judet.onChange} />}
-        <Field label="Localitate" flex={2} value={value.localitate} onChange={v => set('localitate', v)} />
-        <Field label="Stradă" flex={judet ? 1 : 2} value={value.strada} onChange={v => set('strada', v)} />
-        <Field label="Nr." flex={judet ? .6 : 1} value={value.nr} onChange={v => set('nr', v)} />
+        {judet && <FieldJudet label="Județ/sector" flex={1} value={judet.value} onChange={judet.onChange} fieldRef={judet.fieldRef} />}
+        <Field label="Localitate" flex={2} value={value.localitate} onChange={v => set('localitate', v)} fieldRef={fieldRefs?.localitate} />
+        <Field label="Stradă" flex={judet ? 1 : 2} value={value.strada} onChange={v => set('strada', v)} fieldRef={fieldRefs?.strada} />
+        <Field label="Nr." flex={judet ? .6 : 1} value={value.nr} onChange={v => set('nr', v)} fieldRef={fieldRefs?.nr} />
       </div>
       <div style={{ display: 'flex', gap: '.5rem' }}>
         <Field label="Bloc" value={value.bloc} onChange={v => set('bloc', v)} />
@@ -154,8 +162,8 @@ function CaenChecklist({ options, selected, onSelectAll, onDeselectAll, onToggle
   options: { cod: string; descriere: string }[]
   selected: string[]
   onToggle: (cod: string) => void
-  // Absent pentru checklist-urile cu limită de selecție (ex. max. 2 la sediu
-  // secundar) — "selectează tot" n-ar avea sens acolo.
+  // Absent pentru checklist-urile fără "selectează tot" (nu e cazul aici,
+  // păstrat pentru compatibilitate cu apelurile existente).
   onSelectAll?: () => void
   onDeselectAll?: () => void
 }) {
@@ -184,7 +192,7 @@ function CaenChecklist({ options, selected, onSelectAll, onDeselectAll, onToggle
   )
 }
 
-export default function PdfFormFiller({ client, onChange }: Props) {
+const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, Props>(function DeclaratieActivitateFiller({ client, onChange }, ref) {
   const candidates = declarantCandidates(client)
   const defaultChoice = candidates.length === 1 ? candidates[0].label : ''
 
@@ -197,7 +205,6 @@ export default function PdfFormFiller({ client, onChange }: Props) {
   const [caenSediu, setCaenSediu] = useState<string[]>(() => companyCaenOptions(client).map(o => o.cod))
   const [caenTerti, setCaenTerti] = useState<string[]>([])
   const [sediiSecundare, setSediiSecundare] = useState<SediuSecundarRow[]>([])
-  const [dataCerere] = useState(today())
   // Nu există niciun efect care re-derivă sediul/declarantul dintr-un `client`
   // schimbat: componenta e montată cu key={client.id} din TemplateFiller, deci
   // un client diferit înseamnă o instanță nouă (stare inițială proaspătă),
@@ -237,19 +244,86 @@ export default function PdfFormFiller({ client, onChange }: Props) {
     setSediiSecundare(prev => prev.map((r, idx) => {
       if (idx !== i) return r
       const has = r.caenCodes.includes(cod)
-      if (has) return { ...r, caenCodes: r.caenCodes.filter(c => c !== cod) }
-      if (r.caenCodes.length >= 2) return r
-      return { ...r, caenCodes: [...r.caenCodes, cod] }
+      return has ? { ...r, caenCodes: r.caenCodes.filter(c => c !== cod) } : { ...r, caenCodes: [...r.caenCodes, cod] }
     }))
+  const setSediuSecundarCaen = (i: number, caenCodes: string[]) =>
+    setSediiSecundare(prev => prev.map((r, idx) => idx === i ? { ...r, caenCodes } : r))
 
   const cnpValid = !declarant.cnp || /^\d{13}$/.test(declarant.cnp)
+  const cnpComplete = !!declarant.cnp && cnpValid
+
+  const fieldRefs = useRef<Record<string, HTMLElement | null>>({})
+  // Callback ref standard React (rulează la commit, nu la render) — regula
+  // nouă react-hooks/refs nu distinge asta de o scriere directă în timpul
+  // randării, deci flagează fals orice fabrică de callback-uri ca aceasta.
+  // eslint-disable-next-line react-hooks/refs
+  const bindRef = (id: string): ElRef => el => { fieldRefs.current[id] = el }
+
+  const anyCaenAnywhere = caenSediu.length > 0 || caenTerti.length > 0 || sediiSecundare.some(r => r.adresa && r.caenCodes.length > 0)
+
+  // Sursă unică pentru validare — folosită atât de scrollToFirstMissing (care
+  // mai și derulează spre primul câmp lipsă), cât și pentru `isComplete`
+  // raportat prin onChange, ca cele două să nu poată ajunge vreodată în dezacord.
+  const buildValidationChecks = (): { invalid: boolean; id: string; message: string }[] => {
+    const checks: { invalid: boolean; id: string; message: string }[] = [
+      { invalid: !sediu.localitate.trim(), id: 'sediu-localitate', message: 'localitatea sediului' },
+      { invalid: !sediu.strada.trim(), id: 'sediu-strada', message: 'strada sediului' },
+      { invalid: !sediu.nr.trim(), id: 'sediu-nr', message: 'numărul sediului' },
+      { invalid: !sediu.judet.trim(), id: 'sediu-judet', message: 'județul sediului' },
+      { invalid: !declarantChoice.trim(), id: 'declarant-choice', message: 'persoana declarantului' },
+    ]
+    // Câmpurile declarantului nu sunt randate până nu se alege o persoană —
+    // n-are sens să le cerem înainte (și n-ar avea nici ref de derulat spre ele).
+    if (declarantChoice.trim()) {
+      checks.push(
+        { invalid: !declarant.nume.trim(), id: 'declarant-nume', message: 'numele declarantului' },
+        { invalid: !declarant.prenume.trim(), id: 'declarant-prenume', message: 'prenumele declarantului' },
+        { invalid: !cnpComplete, id: 'declarant-cnp', message: 'CNP-ul declarantului' },
+        { invalid: !declarant.domiciliu.localitate.trim(), id: 'declarant-domiciliu-localitate', message: 'localitatea domiciliului' },
+        { invalid: !declarant.domiciliu.strada.trim(), id: 'declarant-domiciliu-strada', message: 'strada domiciliului' },
+        { invalid: !declarant.domiciliu.nr.trim(), id: 'declarant-domiciliu-nr', message: 'numărul domiciliului' },
+        { invalid: !declarant.domiciliuJudet.trim(), id: 'declarant-domiciliu-judet', message: 'județul domiciliului' },
+        { invalid: !declarant.tara.trim(), id: 'declarant-tara', message: 'țara domiciliului' },
+        { invalid: !declarant.cetatenia.trim(), id: 'declarant-cetatenia', message: 'cetățenia' },
+        { invalid: !declarant.nasterelocalitate.trim(), id: 'declarant-nastere-localitate', message: 'localitatea nașterii' },
+        { invalid: !declarant.nastereJudet.trim(), id: 'declarant-nastere-judet', message: 'județul nașterii' },
+        { invalid: !declarant.nastereTara.trim(), id: 'declarant-nastere-tara', message: 'țara nașterii' },
+        { invalid: !declarant.nastereData.trim(), id: 'declarant-nastere-data', message: 'data nașterii' },
+        { invalid: !declarant.actTip.trim(), id: 'declarant-act-tip', message: 'tipul actului de identitate' },
+        { invalid: !declarant.actSerie.trim(), id: 'declarant-act-serie', message: 'seria actului' },
+        { invalid: !declarant.actNumar.trim(), id: 'declarant-act-numar', message: 'numărul actului' },
+        { invalid: !declarant.actEmisDe.trim(), id: 'declarant-act-emisde', message: 'emitentul actului' },
+        { invalid: !declarant.actValabilDeLa.trim(), id: 'declarant-act-valabildela', message: 'data emiterii actului' },
+        { invalid: !declarant.actValabilPanaLa.trim(), id: 'declarant-act-valabilpanala', message: 'valabilitatea actului' },
+        { invalid: !declarant.calitate.trim(), id: 'declarant-calitate', message: 'calitatea declarantului' },
+      )
+    }
+    checks.push({ invalid: !anyCaenAnywhere, id: 'caen-section', message: 'cel puțin un cod CAEN (sediu, terți sau sediu secundar)' })
+    sediiSecundare.forEach((row, i) => {
+      if (!row.adresa.trim() || row.caenCodes.length === 0) {
+        checks.push({ invalid: true, id: `sediu-secundar-${i}`, message: `adresa și codul CAEN ale sediului secundar #${i + 1}` })
+      }
+    })
+    return checks
+  }
+
+  useImperativeHandle(ref, () => ({
+    scrollToFirstMissing: () => {
+      const failing = buildValidationChecks().filter(c => c.invalid)
+      if (failing.length > 0) {
+        const el = fieldRefs.current[failing[0].id]
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el?.focus()
+      }
+      return failing.map(c => c.message)
+    },
+  }))
 
   useEffect(() => {
-    const state: DeclaratieFormState = { sediu, declarant, caenSediu, caenTerti, sediiSecundare, dataCerere }
-    const fieldValues = buildPdfFieldValues(state, client)
+    const state: DeclaratieFormState = { sediu, declarant, caenSediu, caenTerti, sediiSecundare }
+    const { replacements, rowGroups } = buildDeclaratieDocxData(state, client)
 
-    const anyCaen = caenSediu.length > 0 || caenTerti.length > 0 || sediiSecundare.some(r => r.adresa && r.caenCodes.length > 0)
-    const isComplete = !!(declarant.nume.trim() && declarant.prenume.trim()) && anyCaen
+    const isComplete = buildValidationChecks().every(c => !c.invalid)
 
     const noiAdrese = sediiSecundare.map(r => r.adresa).filter(Boolean).filter(a => !puncteLucruExistente.includes(a))
     const clientPatches: ClientPatchProposal[] = noiAdrese.length > 0 ? [{
@@ -257,9 +331,9 @@ export default function PdfFormFiller({ client, onChange }: Props) {
       patch: { puncteLucru: [...puncteLucruExistente, ...noiAdrese] },
     }] : []
 
-    onChange({ fieldValues, isComplete, clientPatches })
+    onChange({ replacements, rowGroups, isComplete, clientPatches })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sediu, declarant, caenSediu, caenTerti, sediiSecundare, dataCerere, client])
+  }, [sediu, declarant, declarantChoice, caenSediu, caenTerti, sediiSecundare, client])
 
   const summary = `Declarant: ${declarant.nume || declarant.prenume ? `${declarant.nume} ${declarant.prenume}`.trim() : '—'}` +
     ` · ${caenSediu.length} CAEN la sediu · ${caenTerti.length} la terți · ${sediiSecundare.filter(r => r.adresa).length} sedii secundare`
@@ -271,14 +345,15 @@ export default function PdfFormFiller({ client, onChange }: Props) {
         <AdresaFields
           value={sediu}
           onChange={v => setSediu({ ...sediu, ...v })}
-          judet={{ value: sediu.judet, onChange: v => setSediu({ ...sediu, judet: v }) }}
+          judet={{ value: sediu.judet, onChange: v => setSediu({ ...sediu, judet: v }), fieldRef: bindRef('sediu-judet') }}
+          fieldRefs={{ localitate: bindRef('sediu-localitate'), strada: bindRef('sediu-strada'), nr: bindRef('sediu-nr') }}
         />
       </SectionCard>
 
       <SectionCard title="1. Subsemnatul(a) — declarant">
         <div className="field">
           <label className="field-label">Persoană</label>
-          <select className="field-input" value={declarantChoice} onChange={e => selectDeclarant(e.target.value)}>
+          <select ref={bindRef('declarant-choice')} className="field-input" value={declarantChoice} onChange={e => selectDeclarant(e.target.value)}>
             <option value="">— alege —</option>
             {candidates.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
             <option value="__manual__">+ Reprezentant/altă persoană</option>
@@ -290,49 +365,52 @@ export default function PdfFormFiller({ client, onChange }: Props) {
             {declarantChoice !== '__manual__' && <div style={AUTO_NOTE_STYLE}>Completat automat din profil — verifică.</div>}
 
             <div style={{ display: 'flex', gap: '.5rem' }}>
-              <Field label="Nume" value={declarant.nume} onChange={v => setDeclarant({ ...declarant, nume: v })} />
-              <Field label="Prenume" value={declarant.prenume} onChange={v => setDeclarant({ ...declarant, prenume: v })} />
+              <Field label="Nume" value={declarant.nume} onChange={v => setDeclarant({ ...declarant, nume: v })} fieldRef={bindRef('declarant-nume')} />
+              <Field label="Prenume" value={declarant.prenume} onChange={v => setDeclarant({ ...declarant, prenume: v })} fieldRef={bindRef('declarant-prenume')} />
               <div className="field" style={{ flex: 1, minWidth: 0 }}>
                 <label className="field-label">CNP</label>
-                <input className="field-input" value={declarant.cnp} onChange={e => setDeclarant({ ...declarant, cnp: e.target.value })} />
+                <input ref={bindRef('declarant-cnp')} className="field-input" value={declarant.cnp} onChange={e => setDeclarant({ ...declarant, cnp: e.target.value })} />
                 {!cnpValid && <div style={{ fontSize: '.7rem', color: 'var(--y700)', marginTop: '.15rem' }}>⚠️ CNP-ul nu are 13 cifre</div>}
               </div>
             </div>
 
             <SubTitle>Domiciliul</SubTitle>
-            <AdresaFields value={declarant.domiciliu} onChange={v => setDeclarant({ ...declarant, domiciliu: v })} />
+            <AdresaFields
+              value={declarant.domiciliu} onChange={v => setDeclarant({ ...declarant, domiciliu: v })}
+              fieldRefs={{ localitate: bindRef('declarant-domiciliu-localitate'), strada: bindRef('declarant-domiciliu-strada'), nr: bindRef('declarant-domiciliu-nr') }}
+            />
             <div style={{ display: 'flex', gap: '.5rem' }}>
-              <FieldJudet label="Județ/sector" value={declarant.domiciliuJudet} onChange={v => setDeclarant({ ...declarant, domiciliuJudet: v })} />
-              <Field label="Țara" value={declarant.tara} onChange={v => setDeclarant({ ...declarant, tara: v })} />
-              <Field label="Cetățenia" value={declarant.cetatenia} onChange={v => setDeclarant({ ...declarant, cetatenia: v })} />
+              <FieldJudet label="Județ/sector" value={declarant.domiciliuJudet} onChange={v => setDeclarant({ ...declarant, domiciliuJudet: v })} fieldRef={bindRef('declarant-domiciliu-judet')} />
+              <Field label="Țara" value={declarant.tara} onChange={v => setDeclarant({ ...declarant, tara: v })} fieldRef={bindRef('declarant-tara')} />
+              <Field label="Cetățenia" value={declarant.cetatenia} onChange={v => setDeclarant({ ...declarant, cetatenia: v })} fieldRef={bindRef('declarant-cetatenia')} />
             </div>
 
             <SubTitle>Născut(ă)</SubTitle>
             <div style={{ display: 'flex', gap: '.5rem' }}>
-              <Field label="Localitatea" flex={2} value={declarant.nasterelocalitate} onChange={v => setDeclarant({ ...declarant, nasterelocalitate: v })} />
-              <FieldJudet label="Județ/sector" value={declarant.nastereJudet} onChange={v => setDeclarant({ ...declarant, nastereJudet: v })} />
-              <Field label="Țara" value={declarant.nastereTara} onChange={v => setDeclarant({ ...declarant, nastereTara: v })} />
-              <Field label="Data nașterii" value={declarant.nastereData} onChange={v => setDeclarant({ ...declarant, nastereData: v })} />
+              <Field label="Localitatea" flex={2} value={declarant.nasterelocalitate} onChange={v => setDeclarant({ ...declarant, nasterelocalitate: v })} fieldRef={bindRef('declarant-nastere-localitate')} />
+              <FieldJudet label="Județ/sector" value={declarant.nastereJudet} onChange={v => setDeclarant({ ...declarant, nastereJudet: v })} fieldRef={bindRef('declarant-nastere-judet')} />
+              <Field label="Țara" value={declarant.nastereTara} onChange={v => setDeclarant({ ...declarant, nastereTara: v })} fieldRef={bindRef('declarant-nastere-tara')} />
+              <Field label="Data nașterii" value={declarant.nastereData} onChange={v => setDeclarant({ ...declarant, nastereData: v })} fieldRef={bindRef('declarant-nastere-data')} />
             </div>
 
             <SubTitle>Act de identitate</SubTitle>
             <div style={{ display: 'flex', gap: '.5rem' }}>
-              <Field label="Tip" value={declarant.actTip} onChange={v => setDeclarant({ ...declarant, actTip: v })} />
-              <Field label="Serie" value={declarant.actSerie} onChange={v => setDeclarant({ ...declarant, actSerie: v })} />
-              <Field label="Număr" value={declarant.actNumar} onChange={v => setDeclarant({ ...declarant, actNumar: v })} />
+              <Field label="Tip" value={declarant.actTip} onChange={v => setDeclarant({ ...declarant, actTip: v })} fieldRef={bindRef('declarant-act-tip')} />
+              <Field label="Serie" value={declarant.actSerie} onChange={v => setDeclarant({ ...declarant, actSerie: v })} fieldRef={bindRef('declarant-act-serie')} />
+              <Field label="Număr" value={declarant.actNumar} onChange={v => setDeclarant({ ...declarant, actNumar: v })} fieldRef={bindRef('declarant-act-numar')} />
             </div>
             <div style={{ display: 'flex', gap: '.5rem' }}>
-              <Field label="Emis de" flex={2} value={declarant.actEmisDe} onChange={v => setDeclarant({ ...declarant, actEmisDe: v })} />
-              <Field label="Valabil de la" value={declarant.actValabilDeLa} onChange={v => setDeclarant({ ...declarant, actValabilDeLa: v })} />
-              <Field label="Valabil până la" value={declarant.actValabilPanaLa} onChange={v => setDeclarant({ ...declarant, actValabilPanaLa: v })} />
+              <Field label="Emis de" flex={2} value={declarant.actEmisDe} onChange={v => setDeclarant({ ...declarant, actEmisDe: v })} fieldRef={bindRef('declarant-act-emisde')} />
+              <Field label="Valabil de la" value={declarant.actValabilDeLa} onChange={v => setDeclarant({ ...declarant, actValabilDeLa: v })} fieldRef={bindRef('declarant-act-valabildela')} />
+              <Field label="Valabil până la" value={declarant.actValabilPanaLa} onChange={v => setDeclarant({ ...declarant, actValabilPanaLa: v })} fieldRef={bindRef('declarant-act-valabilpanala')} />
             </div>
 
-            <Field label="Calitate (asociat / administrator / reprezentant...)" value={declarant.calitate} onChange={v => setDeclarant({ ...declarant, calitate: v })} />
+            <Field label="Calitate (asociat / administrator / reprezentant...)" value={declarant.calitate} onChange={v => setDeclarant({ ...declarant, calitate: v })} fieldRef={bindRef('declarant-calitate')} />
           </div>
         )}
       </SectionCard>
 
-      <SectionCard title="3.1 Sediu social/profesional — coduri CAEN">
+      <SectionCard title="3.1 Sediu social/profesional — coduri CAEN" containerRef={bindRef('caen-section')}>
         <CaenChecklist
           options={caenOptions} selected={caenSediu} onToggle={cod => toggleCaen(caenSediu, setCaenSediu, cod)}
           onSelectAll={() => setCaenSediu(caenOptions.map(o => o.cod))}
@@ -355,7 +433,7 @@ export default function PdfFormFiller({ client, onChange }: Props) {
         {sediiSecundare.map((row, i) => {
           const manual = rowManual[i] ?? puncteLucruExistente.length === 0
           return (
-            <div key={i} style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.5rem', display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+            <div key={i} ref={bindRef(`sediu-secundar-${i}`)} style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.5rem', display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
               <div style={{ display: 'flex', gap: '.375rem', alignItems: 'flex-start' }}>
                 <div className="field" style={{ flex: 1, minWidth: 0 }}>
                   <label className="field-label">Adresă</label>
@@ -377,8 +455,12 @@ export default function PdfFormFiller({ client, onChange }: Props) {
                 <button type="button" onClick={() => removeSediuSecundar(i)} style={{ ...BTN_X, marginTop: '1.4rem' }}>×</button>
               </div>
               <div className="field">
-                <label className="field-label">Coduri CAEN (max. 2)</label>
-                <CaenChecklist options={caenOptions} selected={row.caenCodes} onToggle={cod => toggleSediuSecundarCaen(i, cod)} />
+                <label className="field-label">Coduri CAEN</label>
+                <CaenChecklist
+                  options={caenOptions} selected={row.caenCodes} onToggle={cod => toggleSediuSecundarCaen(i, cod)}
+                  onSelectAll={() => setSediuSecundarCaen(i, caenOptions.map(o => o.cod))}
+                  onDeselectAll={() => setSediuSecundarCaen(i, [])}
+                />
               </div>
             </div>
           )
@@ -393,6 +475,8 @@ export default function PdfFormFiller({ client, onChange }: Props) {
       <div style={{ fontSize: '.8rem', color: 'var(--s600)', fontWeight: 600 }}>{summary}</div>
     </div>
   )
-}
+})
+
+export default DeclaratieActivitateFiller
 
 const BTN_X: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--s400)', fontSize: '1rem', lineHeight: 1, padding: '.125rem .25rem' }

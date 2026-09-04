@@ -313,9 +313,11 @@ def fill_docx_route():
         groups       = json.loads(groups_raw) if groups_raw else None
         clauses_raw       = fields.pop("_clauses", None)
         selected_clauses  = json.loads(clauses_raw) if clauses_raw else None
+        row_groups_raw    = fields.pop("_row_groups", None)
+        row_groups        = json.loads(row_groups_raw) if row_groups_raw else None
         # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
         replacements = {k: v for k, v in fields.items() if v}
-        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses)
+        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups)
     except Exception as e:
         return jsonify({"error": f"Fill failed: {e}"}), 500
 
@@ -399,11 +401,13 @@ def fill_docx_and_upload():
     groups      = json.loads(groups_raw) if groups_raw else None
     clauses_raw      = fields.pop("_clauses", None)
     selected_clauses = json.loads(clauses_raw) if clauses_raw else None
+    row_groups_raw   = fields.pop("_row_groups", None)
+    row_groups       = json.loads(row_groups_raw) if row_groups_raw else None
     # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
     replacements = {k: v for k, v in fields.items() if v}
 
     try:
-        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses)
+        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups)
         out_name     = output_name or ("completat_" + secure_filename(original_name))
         meta = gdrive.upload_file(access_token, filled_bytes, out_name,
                                   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

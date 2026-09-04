@@ -59,6 +59,37 @@ def _para_text(paragraph) -> str:
     return "".join(run.text for run in paragraph.runs).strip()
 
 
+def _iter_all_tables(container, _seen: set | None = None):
+    """Yield every table reachable from `container` (a Document or a table
+    cell), recursing into tables nested inside cells. python-docx's own
+    `Document.tables`/`_Cell.tables` are shallow — they only list tables that
+    are *direct* children, so a table nested inside another table's cell (as
+    in the ONRC "Declarație activitate" template, where each 3.1/3.2/3.3
+    section cell holds its own CAEN/sedii table) is otherwise invisible to
+    both placeholder replacement and discovery.
+
+    A horizontally/vertically merged cell (gridSpan/vMerge) is the *same*
+    underlying `<w:tc>` XML element referenced once per spanned grid
+    column/row by python-docx's `row.cells` — walking it naively would visit
+    (and, for row-group expansion, mutate) the same nested table 2-3x. `_seen`
+    dedupes by the nested table's own XML element identity.
+    """
+    if _seen is None:
+        _seen = set()
+    for table in container.tables:
+        if id(table._tbl) in _seen:
+            continue
+        _seen.add(id(table._tbl))
+        yield table
+        for row in table.rows:
+            for cell in row.cells:
+                yield from _iter_all_tables(cell, _seen)
+
+
+def _cell_text(cell) -> str:
+    return "".join("".join(r.text for r in p.runs) for p in cell.paragraphs).strip()
+
+
 def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]) -> None:
     """
     Expand {{#TAG}} ... {{/TAG}} paragraph ranges (top-level body paragraphs) into
@@ -99,6 +130,84 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
                 bp._p.getparent().remove(bp._p)
             paragraphs[end_idx]._p.getparent().remove(paragraphs[end_idx]._p)
             paragraphs[start_idx]._p.getparent().remove(paragraphs[start_idx]._p)
+
+
+def _row_distinct_cells(row) -> list:
+    """`row.cells`, deduplicated — a horizontally/vertically merged cell
+    (gridSpan/vMerge) is the same underlying `<w:tc>` returned once per
+    spanned column/row, which would otherwise process it multiple times."""
+    seen: set[int] = set()
+    cells = []
+    for cell in row.cells:
+        key = id(cell._tc)
+        if key in seen:
+            continue
+        seen.add(key)
+        cells.append(cell)
+    return cells
+
+
+def _row_text(row) -> str:
+    return "".join(_cell_text(c) for c in _row_distinct_cells(row)).strip()
+
+
+def _expand_repeat_table_rows(doc: Document, row_groups: dict[str, list[dict[str, str]]] | None) -> None:
+    """
+    Table-row analogue of _expand_repeat_blocks, needed for templates where the
+    repeatable content lives inside a table (e.g. the ONRC "Declarație
+    activitate" CAEN/sedii secundare tables) rather than as body paragraphs —
+    Word tables can grow to fit however many rows a client actually needs,
+    with none of the fixed AcroForm slot limits the old PDF version had.
+
+    A start row whose own text is exactly "{{#TAG}}" and an end row whose text
+    is exactly "{{/TAG}}" (each typically a single row merged across the full
+    table width) delimit one or more "template rows" carrying the per-item
+    placeholders (e.g. {{CAEN}}, {{CAEN_DESC}}). One copy of the template rows
+    is inserted per item in row_groups[TAG] (substituting {{INDEX}} plus that
+    item's own fields), then the original template rows and both marker rows
+    are removed. Tags with no matching group, or malformed (missing end row),
+    are left as-is. Searches every table reachable via _iter_all_tables, so it
+    works the same whether the marker rows sit in a top-level or nested table.
+    """
+    if not row_groups:
+        return
+    for table in _iter_all_tables(doc):
+        for tag, items in row_groups.items():
+            start_marker = f"{{{{#{tag}}}}}"
+            end_marker = f"{{{{/{tag}}}}}"
+
+            while True:
+                rows = table.rows
+                start_idx = next((i for i, r in enumerate(rows) if _row_text(r) == start_marker), None)
+                if start_idx is None:
+                    break
+                end_idx = next(
+                    (i for i in range(start_idx + 1, len(rows)) if _row_text(rows[i]) == end_marker),
+                    None,
+                )
+                if end_idx is None:
+                    break  # no matching end row — leave the stray start marker as-is
+
+                start_tr = rows[start_idx]._tr
+                end_tr = rows[end_idx]._tr
+                template_trs = [r._tr for r in rows[start_idx + 1:end_idx]]
+
+                for i, item in enumerate(items, start=1):
+                    row_item = {**item, "INDEX": str(i)}
+                    item_replacements = {"{{" + k + "}}": v for k, v in row_item.items()}
+                    for tr in template_trs:
+                        clone = copy.deepcopy(tr)
+                        end_tr.addprevious(clone)
+                        clone_row = next(r for r in table.rows if r._tr is clone)
+                        for cell in _row_distinct_cells(clone_row):
+                            for paragraph in cell.paragraphs:
+                                _replace_in_paragraph(paragraph, item_replacements)
+
+                # Remove the original template rows + both markers
+                for tr in template_trs:
+                    tr.getparent().remove(tr)
+                start_tr.getparent().remove(start_tr)
+                end_tr.getparent().remove(end_tr)
 
 
 _NUMBERED_TAG_RE = re.compile(r"\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_[A-Z_]+\}\}")
@@ -281,13 +390,19 @@ def fill_docx(
     replacements: dict[str, str],
     groups: dict[str, list[dict[str, str]]] | None = None,
     selected_clauses: list[str] | None = None,
+    row_groups: dict[str, list[dict[str, str]]] | None = None,
 ) -> bytes:
     """
     Fill a .docx template by replacing {{PLACEHOLDER}} markers.
 
-    If `groups` is given, {{#TAG}}...{{/TAG}} blocks are expanded first — once
-    per item in groups[TAG] — before the flat placeholder pass runs over the
-    whole (now expanded) document.
+    If `groups` is given, {{#TAG}}...{{/TAG}} paragraph blocks are expanded
+    first — once per item in groups[TAG] — before the flat placeholder pass
+    runs over the whole (now expanded) document.
+
+    If `row_groups` is given, {{#TAG}}...{{/TAG}} *table row* ranges (see
+    _expand_repeat_table_rows) are expanded the same way — used for
+    repeatable content that lives inside a table (e.g. a variable-length list
+    of CAEN codes) rather than as body paragraphs.
 
     If the template contains a {{#CLAUZE}}...{{/CLAUZE}} section (a "clause
     library" — several optional "Denumire: X" articles), only the clauses
@@ -302,14 +417,18 @@ def fill_docx(
     if groups:
         _expand_repeat_blocks(doc, groups)
 
+    _expand_repeat_table_rows(doc, row_groups)
+
     _expand_clause_library(doc, selected_clauses)
 
     # Replace in main body paragraphs
     for paragraph in doc.paragraphs:
         _replace_in_paragraph(paragraph, replacements)
 
-    # Replace in tables
-    for table in doc.tables:
+    # Replace in tables, including tables nested inside a cell (e.g. the
+    # per-section CAEN/sedii tables in the ONRC "Declarație activitate"
+    # template) — plain `doc.tables` only lists top-level tables.
+    for table in _iter_all_tables(doc):
         for row in table.rows:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
@@ -352,7 +471,7 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
                     found.add(match)
 
     scan_paragraphs(doc.paragraphs)
-    for table in doc.tables:
+    for table in _iter_all_tables(doc):
         for row in table.rows:
             for cell in row.cells:
                 scan_paragraphs(cell.paragraphs)

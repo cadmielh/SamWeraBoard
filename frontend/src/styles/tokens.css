@@ -390,7 +390,7 @@ body {
 .table-data-panel { flex:1; overflow-x:auto; overflow-y:hidden; }
 .table-header { display:flex; align-items:center; background:var(--surface-2); border-bottom:1px solid var(--s200); position:sticky; top:0; z-index:5; overflow:visible; flex-shrink:0; }
 .th { padding:.5rem 1rem; font-size:.75rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; flex-shrink:0; user-select:none; display:flex; align-items:center; gap:.25rem; position:relative; overflow:visible; border-right:1px solid var(--s200); }
-.vrow { display:flex; align-items:center; border-bottom:1px solid var(--s200); cursor:pointer; transition:background var(--t); }
+.vrow { display:flex; align-items:center; border-bottom:1px solid var(--s200); transition:background var(--t); }
 .vrow:hover { background:var(--p50); }
 .td { padding:.75rem 1rem; font-size:.875rem; color:var(--s800); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-shrink:0; border-right:1px solid var(--s200); }
 .td-muted { color:var(--s500); }

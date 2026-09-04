@@ -11,6 +11,7 @@ import ClientView from '../components/ClientView'
 import Modal from '../components/Modal'
 import IconTrash from '../components/IconTrash'
 import IconPencil from '../components/IconPencil'
+import IconEye from '../components/IconEye'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -42,7 +43,7 @@ const COLUMNS: ColDef[] = [
 const EXTRA_COL_KEYS = new Set(['email', 'nrRegistrul', 'telefon', 'sediuSocial', 'notite', 'admin'])
 
 const ROW_H = 48
-const ACTION_W = 90
+const ACTION_W = 126
 const HEADER_H = 36
 const EMPTY_PLACEHOLDER = '(Necompletat)'
 
@@ -899,7 +900,6 @@ function ClientTable({
       <div
         className="vrow"
         style={{ ...style, width: totalDisplayW, display: 'flex', alignItems: 'center' }}
-        onClick={() => onView(c)}
       >
         {orderedVisibleColumns.map(col => (
           <div
@@ -913,17 +913,18 @@ function ClientTable({
         ))}
       </div>
     )
-  }, [clients, orderedVisibleColumns, totalDisplayW, getDisplayW, onView])
+  }, [clients, orderedVisibleColumns, totalDisplayW, getDisplayW])
 
   const ActionRow = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
     const c = clients[index]
     return (
       <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '.25rem', padding: '0 .5rem', borderBottom: '1px solid var(--s100)' }}>
+        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onView(c) }} title="Vizualizează"><IconEye /></button>
         <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onEdit(c) }} title="Editare"><IconPencil /></button>
         <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onDelete(c) }} title="Șterge" style={{ color: 'var(--r500)' }}><IconTrash /></button>
       </div>
     )
-  }, [clients, onEdit, onDelete])
+  }, [clients, onView, onEdit, onDelete])
 
   const minW = Math.max(totalDisplayW, 400)
 

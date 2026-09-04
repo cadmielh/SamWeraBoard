@@ -205,6 +205,7 @@ export async function fillDocxFromBuiltinTemplate(
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
+  rowGroups?: Record<string, Record<string, string>[]>,
 ): Promise<{ blob?: Blob; name?: string; link?: string }> {
   const fd = new FormData();
   fd.append("template_builtin_key", builtinKey);
@@ -213,6 +214,7 @@ export async function fillDocxFromBuiltinTemplate(
   if (outputName) fd.append("_output_name", outputName);
   if (groups) fd.append("_groups", JSON.stringify(groups));
   if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
+  if (rowGroups) fd.append("_row_groups", JSON.stringify(rowGroups));
 
   const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
   const res = await fetch(endpoint, {

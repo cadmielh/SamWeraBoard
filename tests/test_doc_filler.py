@@ -128,6 +128,128 @@ def test_fill_docx_repeat_blocks_still_work_alongside_clause_library():
     assert "Art. 1 text" in texts
 
 
+# ── Tabele imbricate + repetare rânduri de tabel ───────────────────────────
+
+def _build_docx_with_table(rows: list[list[str]]) -> bytes:
+    """.docx cu un singur tabel top-level, un rând per element din `rows`,
+    fiecare rând fiind o listă de texte de celulă (o singură celulă -> rândul
+    e "merge-uit" pe toată lățimea, ca rândurile-marcaj din declarația ONRC)."""
+    doc = Document()
+    ncols = max(len(r) for r in rows)
+    table = doc.add_table(rows=len(rows), cols=ncols)
+    for ri, cells in enumerate(rows):
+        for ci, text in enumerate(cells):
+            table.cell(ri, ci).text = text
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
+def _build_docx_with_nested_table(outer_cell_text: str, inner_rows: list[list[str]]) -> bytes:
+    """.docx cu un tabel top-level de un rând/o celulă, care conține la rândul
+    ei un tabel imbricat — reproduce structura reală a declarației ONRC unde
+    tabelele 3.1/3.2/3.3 stau imbricate în celula secțiunii respective."""
+    doc = Document()
+    outer = doc.add_table(rows=1, cols=1)
+    outer_cell = outer.cell(0, 0)
+    outer_cell.paragraphs[0].add_run(outer_cell_text)
+    ncols = max(len(r) for r in inner_rows)
+    inner = outer_cell.add_table(rows=len(inner_rows), cols=ncols)
+    for ri, cells in enumerate(inner_rows):
+        for ci, text in enumerate(cells):
+            inner.cell(ri, ci).text = text
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
+def _read_table_rows(docx_bytes: bytes, table_index: int = 0) -> list[list[str]]:
+    doc = Document(io.BytesIO(docx_bytes))
+    table = doc.tables[table_index]
+    return [[cell.text for cell in df._row_distinct_cells(row)] for row in table.rows]
+
+
+def test_expand_repeat_table_rows_clones_once_per_item():
+    template = _build_docx_with_table([
+        ["{{#CAEN_SEDIU}}"],
+        ["{{CAEN}} - {{CAEN_DESC}}"],
+        ["{{/CAEN_SEDIU}}"],
+    ])
+    row_groups = {"CAEN_SEDIU": [{"CAEN": "6201", "CAEN_DESC": "Activități IT"}, {"CAEN": "6202", "CAEN_DESC": "Consultanță IT"}]}
+    out = df.fill_docx(template, {}, row_groups=row_groups)
+    rows = _read_table_rows(out)
+    assert rows == [["6201 - Activități IT"], ["6202 - Consultanță IT"]]
+
+
+def test_expand_repeat_table_rows_numbers_index_per_item():
+    template = _build_docx_with_table([
+        ["{{#SEDII}}"],
+        ["{{INDEX}}. {{ADRESA}}"],
+        ["{{/SEDII}}"],
+    ])
+    row_groups = {"SEDII": [{"ADRESA": "Str. A"}, {"ADRESA": "Str. B"}]}
+    out = df.fill_docx(template, {}, row_groups=row_groups)
+    rows = _read_table_rows(out)
+    assert rows == [["1. Str. A"], ["2. Str. B"]]
+
+
+def test_expand_repeat_table_rows_empty_group_removes_template_row_entirely():
+    template = _build_docx_with_table([
+        ["Header"],
+        ["{{#CAEN_TERTI}}"],
+        ["{{CAEN}}"],
+        ["{{/CAEN_TERTI}}"],
+        ["Footer"],
+    ])
+    out = df.fill_docx(template, {}, row_groups={"CAEN_TERTI": []})
+    rows = _read_table_rows(out)
+    assert rows == [["Header"], ["Footer"]]
+
+
+def test_expand_repeat_table_rows_no_matching_group_leaves_rows_untouched():
+    template = _build_docx_with_table([
+        ["{{#CAEN_SEDIU}}"],
+        ["{{CAEN}}"],
+        ["{{/CAEN_SEDIU}}"],
+    ])
+    out = df.fill_docx(template, {}, row_groups=None)
+    rows = _read_table_rows(out)
+    assert rows == [["{{#CAEN_SEDIU}}"], ["{{CAEN}}"], ["{{/CAEN_SEDIU}}"]]
+
+
+def test_expand_repeat_table_rows_works_inside_nested_table():
+    """Reproduce structura reală a declarației ONRC — tabelul cu rânduri
+    repetitive stă imbricat într-o celulă a unui tabel exterior, nu la
+    nivelul documentului."""
+    template = _build_docx_with_nested_table("3.1 SEDIU SOCIAL", [
+        ["{{#CAEN_SEDIU}}"],
+        ["{{CAEN}}"],
+        ["{{/CAEN_SEDIU}}"],
+    ])
+    row_groups = {"CAEN_SEDIU": [{"CAEN": "6201"}, {"CAEN": "6202"}, {"CAEN": "6203"}]}
+    out = df.fill_docx(template, {}, row_groups=row_groups)
+    doc = Document(io.BytesIO(out))
+    outer_cell = doc.tables[0].cell(0, 0)
+    nested = outer_cell.tables[0]
+    rows = [[cell.text for cell in df._row_distinct_cells(row)] for row in nested.rows]
+    assert rows == [["6201"], ["6202"], ["6203"]]
+
+
+def test_flat_replacement_reaches_nested_table_cells():
+    """Substituția {{PLACEHOLDER}} plată trebuie să ajungă și în celulele unui
+    tabel imbricat, nu doar la nivelul documentului/tabelului exterior."""
+    template = _build_docx_with_nested_table("Antet", [["{{NUME_FIRMA}}"]])
+    out = df.fill_docx(template, {"{{NUME_FIRMA}}": "ACME SRL"})
+    doc = Document(io.BytesIO(out))
+    nested = doc.tables[0].cell(0, 0).tables[0]
+    assert nested.cell(0, 0).text == "ACME SRL"
+
+
+def test_list_placeholders_in_docx_finds_placeholders_in_nested_table():
+    template = _build_docx_with_nested_table("Antet", [["{{NUME_FIRMA}}"]])
+    assert df.list_placeholders_in_docx(template) == ["{{NUME_FIRMA}}"]
+
+
 def test_fill_docx_nested_repeat_group_inside_a_clause():
     """Un bloc {{#TAG}} imbricat în interiorul unei clauze (ex. structura
     rezultată după cesiune) e expandat corect înainte de filtrarea clauzelor."""

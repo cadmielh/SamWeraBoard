@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc, fillPdfFromBuiltinTemplate } from '../lib/api'
+import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import type { IDFields } from '../lib/api'
 import type { BuiltinTemplate, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
@@ -14,8 +14,8 @@ import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
 import ClauseSelector from './ClauseSelector'
 import type { ClauseSelectorValue } from './ClauseSelector'
-import PdfFormFiller from './PdfFormFiller'
-import type { PdfFormValue } from './PdfFormFiller'
+import DeclaratieActivitateFiller from './DeclaratieActivitateFiller'
+import type { DeclaratieActivitateFillerHandle, DeclaratieFormValue } from './DeclaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import Modal from './Modal'
 
@@ -45,6 +45,12 @@ const builtinCheckablePlaceholders = (b: BuiltinTemplate): string[] =>
 
 const builtinKey = (b: BuiltinTemplate) => `builtin:${b.key}`
 
+// Singurul șablon de bază cu formular dedicat (declarant/CAEN/sedii, cu
+// parsare de adresă) în loc de placeholdere generice — analog cazului special
+// al act_constitutivMode, dar identificat după cheie, nu după `type`, ca un
+// eventual alt șablon docx viitor să nu fie tras din greșeală pe acest formular.
+const DECLARATIE_ACTIVITATE_KEY = 'declaratie_activitate'
+
 export default function TemplateFiller({
   workspaceId, user, fields, client, scannedPersons,
   accessToken, onToast, onBack, onClientSaved, stepNumber = 3,
@@ -58,7 +64,11 @@ export default function TemplateFiller({
 
   const [tab, setTab] = useState<Tab>('docx')
   const [clauseState, setClauseState] = useState<Record<string, ClauseSelectorValue>>({})
-  const [pdfFormState, setPdfFormState] = useState<Record<string, PdfFormValue>>({})
+  const [declaratieFormState, setDeclaratieFormState] = useState<Record<string, DeclaratieFormValue>>({})
+  // Un singur formular de declarație e randat la un moment dat (panoul de
+  // detaliu arată doar șablonul activ) — un singur ref, la fel ca
+  // companyFormRef din MultiPersonPreview.
+  const declaratieFormRef = useRef<DeclaratieActivitateFillerHandle>(null)
   const [pendingClientPatches, setPendingClientPatches] = useState<{ key: string; label: string; patch: Partial<ClientInput> }[] | null>(null)
   const [checkedPatchKeys, setCheckedPatchKeys] = useState<Set<string>>(new Set())
   // Șablonul afișat momentan în panoul din dreapta — 'builtin:<key>' pentru
@@ -255,24 +265,40 @@ export default function TemplateFiller({
     }
   }
 
-  // Șablon de bază PDF (AcroForm) — fără clauze/grupuri, valorile vin deja
-  // asamblate din PdfFormFiller (inclusiv orice corectare făcută de user peste
-  // parsarea automată de adresă/județ).
-  const handleGeneratePdf = async (b: BuiltinTemplate) => {
+  // Șablon de bază "Declarație activitate" — nu are placeholdere/clauze
+  // generice, ci un formular dedicat (DeclaratieActivitateFiller) care
+  // asamblează direct replacements + rowGroups (tabelele CAEN/sedii
+  // secundare, cu lungime variabilă — vezi doc_filler._expand_repeat_table_rows).
+  const handleGenerateDeclaratie = async (b: BuiltinTemplate) => {
     const key = builtinKey(b)
-    const form = pdfFormState[key]
-    if (!form?.isComplete) return
+    const form = declaratieFormState[key]
+    // Butonul rămâne mereu activ — la click sărim la primul câmp lipsă în loc
+    // să-l ținem disabled (același tipar ca CompanyInfoForm.scrollToFirstMissing).
+    const missing = declaratieFormRef.current?.scrollToFirstMissing() ?? []
+    if (missing.length > 0) {
+      onToast(`Completează: ${missing.join(', ')}.`, 'err')
+      return
+    }
+    if (!form) return
     setLoading(key, true)
     try {
       let outputName = b.outputNameTemplate || b.name
       for (const [ph, val] of Object.entries(replacements)) outputName = outputName.replaceAll(ph, val)
-      if (!outputName.endsWith('.pdf')) outputName += '.pdf'
+      // .replace, nu doar un `endsWith` check — un outputNameTemplate moștenit
+      // dintr-o versiune veche (.pdf) ar produce altfel "...pdf.docx".
+      outputName = outputName.replace(/\.(pdf|docx)$/i, '') + '.docx'
 
-      const blob = await fillPdfFromBuiltinTemplate(b.key, form.fieldValues, accessToken, outputName)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
-      URL.revokeObjectURL(url)
-      onToast(`Descărcat: ${outputName}`, 'ok')
+      // {{SOCIETATE_*}}/{{DATA_AZI}} etc. vin din `replacements` (calculate o
+      // singură dată, comun tuturor șabloanelor) — form.replacements le
+      // suprascrie doar pe cele proprii formularului (declarant/sediu).
+      const mergedReplacements = { ...replacements, ...form.replacements }
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, accessToken, false, undefined, outputName, undefined, undefined, form.rowGroups)
+      if (result.blob) {
+        const url = URL.createObjectURL(result.blob)
+        const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
+        URL.revokeObjectURL(url)
+        onToast(`Descărcat: ${outputName}`, 'ok')
+      }
       maybePromptSaveClient()
       offerClientPatchList(form.clientPatches)
     } catch (err: unknown) {
@@ -293,11 +319,11 @@ export default function TemplateFiller({
     setCheckedPatchKeys(new Set(proposals.map(p => p.key)))
   }
 
-  // Variantă pentru PdfFormFiller, care nu are clauze — colectează direct o
-  // listă de propuneri (ex. sedii secundare noi), nu un Record pe tag de clauză.
+  // Variantă pentru DeclaratieActivitateFiller, care nu are clauze — colectează
+  // direct o listă de propuneri (ex. sedii secundare noi), nu un Record pe tag de clauză.
   const offerClientPatchList = (proposals: ClientPatchProposal[]) => {
     if (!client?.id || proposals.length === 0) return
-    const withKeys = proposals.map((p, i) => ({ key: `pdf-${i}`, ...p }))
+    const withKeys = proposals.map((p, i) => ({ key: `declaratie-${i}`, ...p }))
     setPendingClientPatches(withKeys)
     setCheckedPatchKeys(new Set(withKeys.map(p => p.key)))
   }
@@ -538,9 +564,10 @@ export default function TemplateFiller({
     const key = builtinKey(b)
     const isActive = effectiveActiveKey === key
     const link = generatedLinks[key]
-    const mismatch = b.type === 'pdf' ? undefined : asociatiCountMismatch(b.key, asociatiCount)
+    const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
+    const mismatch = isDeclaratie ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = b.type === 'pdf' ? null : readinessPct(builtinCheckablePlaceholders(b))
+    const pct = isDeclaratie ? null : readinessPct(builtinCheckablePlaceholders(b))
     return (
       <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}`}>
         <button
@@ -657,12 +684,12 @@ export default function TemplateFiller({
 
   const renderBuiltinDetail = (b: BuiltinTemplate) => {
     const key = builtinKey(b)
-    const isPdf = b.type === 'pdf'
+    const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
     const isLoading = loadingIds.has(key)
     const link = generatedLinks[key]
-    // Șablonul PDF (fără clauze/#ASOCIATI) nu are legătură cu numărul de
-    // asociați din document — restricția nu se aplică.
-    const mismatch = isPdf ? undefined : asociatiCountMismatch(b.key, asociatiCount)
+    // Declarația (formular dedicat, fără clauze/#ASOCIATI) nu are legătură cu
+    // numărul de asociați din document — restricția nu se aplică.
+    const mismatch = isDeclaratie ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
 
     return (
@@ -672,11 +699,11 @@ export default function TemplateFiller({
           <span className="tf-detail-title" title={b.name}>{b.name}</span>
           <button
             className="btn btn-sm btn-outline-primary"
-            onClick={() => isPdf ? handleGeneratePdf(b) : tryGenerateBuiltinSingle(b)}
-            disabled={isLoading || !!mismatch || !!tipMsg || (isPdf ? !pdfFormState[key]?.isComplete : (b.clauses.length > 0 && !clauseState[key]?.isComplete))}
+            onClick={() => isDeclaratie ? handleGenerateDeclaratie(b) : tryGenerateBuiltinSingle(b)}
+            disabled={isLoading || !!mismatch || !!tipMsg || (!isDeclaratie && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : '↓ '}
-            {!isPdf && uploadToDrive ? 'Upload' : 'Generează'}
+            {!isDeclaratie && uploadToDrive ? 'Upload' : 'Generează'}
           </button>
         </div>
 
@@ -702,11 +729,12 @@ export default function TemplateFiller({
           </div>
         )}
 
-        {!mismatch && (isPdf ? (
-          <PdfFormFiller
+        {!mismatch && (isDeclaratie ? (
+          <DeclaratieActivitateFiller
             key={client?.id ?? 'none'}
+            ref={declaratieFormRef}
             client={client}
-            onChange={v => setPdfFormState(prev => ({ ...prev, [key]: v }))}
+            onChange={v => setDeclaratieFormState(prev => ({ ...prev, [key]: v }))}
           />
         ) : b.clauses.length > 0 ? (
           <ClauseSelector
