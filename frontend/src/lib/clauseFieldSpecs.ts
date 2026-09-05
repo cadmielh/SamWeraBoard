@@ -12,7 +12,7 @@
  * cade automat pe randarea generică (un input text per placeholder găsit).
  */
 
-export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruClose' | 'majorareCapital'
+export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruClose' | 'majorareCapital' | 'identitateAsociat'
 
 export interface ClauseFieldSpec {
   /** Placeholdere plate pe care widget-ul le completează direct. */
@@ -64,6 +64,10 @@ export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
   MAJORARE_CAPITAL_SOCIAL: {
     fields: ['ASOCIAT_APORT_NUME', 'CAPITAL_SOCIAL_NOU', 'PARTI_SOCIALE_NOI', 'ASOCIAT_APORT_COTA_PARTICIPARE'],
     widget: 'majorareCapital',
+  },
+  MODIFICARE_DATE_IDENTIFICARE_ASOCIAT: {
+    fields: ['ASOCIAT_MODIFICAT_NUME', 'ASOCIAT_MODIFICAT_PRENUME', 'ASOCIAT_MODIFICAT_SERIE_NUMAR'],
+    widget: 'identitateAsociat',
   },
 }
 

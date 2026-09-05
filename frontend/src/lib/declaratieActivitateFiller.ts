@@ -110,6 +110,21 @@ export function parseAdresa(text?: string | null): AdresaParsed {
   return result
 }
 
+/** Inversul lui parseAdresa — reasamblează într-un singur șir liber de
+ * adresă, în formatul standard (Str./nr./bl./sc./et./ap.) pe care
+ * parseAdresa știe deja să-l descompună, dacă adresa mai e reeditată ulterior. */
+export function formatAdresa(a: AdresaParsed): string {
+  const parts: string[] = []
+  if (a.localitate) parts.push(a.localitate)
+  if (a.strada) parts.push(`Str. ${a.strada}`)
+  if (a.nr) parts.push(`nr. ${a.nr}`)
+  if (a.bloc) parts.push(`bl. ${a.bloc}`)
+  if (a.scara) parts.push(`sc. ${a.scara}`)
+  if (a.etaj) parts.push(`et. ${a.etaj}`)
+  if (a.ap) parts.push(`ap. ${a.ap}`)
+  return parts.join(', ')
+}
+
 /** Formatul standard CI: literă(e) + cifre, ex. "TM 123456" → { serie: "TM", numar: "123456" }. */
 export function splitSerieNumar(serieNumar?: string | null): { serie: string; numar: string } {
   if (!serieNumar) return { serie: '', numar: '' }
@@ -252,7 +267,12 @@ export function buildDeclaratieDocxData(state: DeclaratieFormState, client?: Par
   const descFor = (cod: string) => options.find(o => o.cod === cod)?.descriere ?? ''
 
   const rowGroups: Record<string, Record<string, string>[]> = {
-    CAEN_SEDIU: state.caenSediu.map(cod => ({ CAEN: cod, CAEN_DESC: descFor(cod) })),
+    // Dacă sediul social n-are niciun cod CAEN bifat, tabelul 3.1 tot trebuie
+    // să aibă un rând — altfel ar rămâne complet gol, ambiguu între "nu s-a
+    // completat" și "nu se desfășoară nicio activitate acolo".
+    CAEN_SEDIU: state.caenSediu.length > 0
+      ? state.caenSediu.map(cod => ({ CAEN: cod, CAEN_DESC: descFor(cod) }))
+      : [{ CAEN: '', CAEN_DESC: 'FĂRĂ ACTIVITATE*' }],
     CAEN_TERTI: state.caenTerti.map(cod => ({ CAEN: cod, CAEN_DESC: descFor(cod) })),
     SEDII_SECUNDARE: state.sediiSecundare
       .filter(row => row.adresa || row.caenCodes.length > 0)
@@ -260,9 +280,12 @@ export function buildDeclaratieDocxData(state: DeclaratieFormState, client?: Par
         const nrCrt = String(i + 1)
         // Un rând de tabel per (adresă, cod CAEN) — dacă un sediu secundar nu
         // are încă niciun cod bifat, tot apare un rând (cu CAEN gol), ca
-        // adresa să nu se piardă din document.
-        return (row.caenCodes.length > 0 ? row.caenCodes : ['']).map(cod => ({
-          NR_CRT: nrCrt, ADRESA: row.adresa, CAEN: cod, CAEN_DESC: descFor(cod),
+        // adresa să nu se piardă din document. Adresa (și nr. crt) apar o
+        // singură dată, pe primul rând CAEN al sediului — rândurile
+        // următoare, pentru celelalte coduri de la aceeași adresă, le lasă
+        // goale, ca într-un tabel ONRC obișnuit.
+        return (row.caenCodes.length > 0 ? row.caenCodes : ['']).map((cod, ci) => ({
+          NR_CRT: ci === 0 ? nrCrt : '', ADRESA: ci === 0 ? row.adresa : '', CAEN: cod, CAEN_DESC: descFor(cod),
         }))
       }),
   }

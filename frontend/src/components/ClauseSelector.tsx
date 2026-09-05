@@ -8,6 +8,7 @@ import SchimbareCaenPrincipalFields from './clauses/SchimbareCaenPrincipalFields
 import SchimbareAdministratorFields from './clauses/SchimbareAdministratorFields'
 import InchiderePunctLucruFields from './clauses/InchiderePunctLucruFields'
 import MajorareCapitalFields from './clauses/MajorareCapitalFields'
+import ModificareIdentitateAsociatFields from './clauses/ModificareIdentitateAsociatFields'
 
 export interface ClauseSelectorValue {
   selectedClauses: string[]
@@ -189,6 +190,14 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                 )}
                 {useWidget && spec.widget === 'majorareCapital' && (
                   <MajorareCapitalFields
+                    client={client}
+                    fields={fieldsByClause[c.tag] ?? {}}
+                    onField={(k, v) => setField(c.tag, k, v)}
+                    onClientPatch={p => setClientPatch(c.tag, p)}
+                  />
+                )}
+                {useWidget && spec.widget === 'identitateAsociat' && (
+                  <ModificareIdentitateAsociatFields
                     client={client}
                     fields={fieldsByClause[c.tag] ?? {}}
                     onField={(k, v) => setField(c.tag, k, v)}

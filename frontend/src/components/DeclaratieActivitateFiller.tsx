@@ -2,12 +2,13 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import type { CSSProperties, ReactNode } from 'react'
 import type { Client, Persoana } from '../types'
 import {
-  companyCaenOptions, extractJudet, parseAdresa, splitSerieNumar,
+  companyCaenOptions, extractJudet, parseAdresa, formatAdresa, splitSerieNumar,
   buildDeclaratieDocxData, EMPTY_DECLARANT,
 } from '../lib/declaratieActivitateFiller'
 import type { AdresaParsed, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/declaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { JUDETE_ROMANIA } from '../lib/counties'
+import { roDateToISO, isoDateToRo } from '../lib/dates'
 import Combobox from './Combobox'
 
 export interface DeclaratieFormValue {
@@ -43,22 +44,30 @@ function sediuFromClient(client?: Partial<Client> | null): DeclaratieFormState['
 interface DeclarantCandidate {
   label: string
   persoana: Persoana
+  // Unde anume trăiește persoana în profilul clientului — necesar ca să
+  // putem propune un patch înapoi (vezi persoanaFromDeclarant) care scrie
+  // exact în locul potrivit, nu doar undeva generic.
+  source: 'asociati' | 'administratori' | 'titular'
+  index: number
 }
 
 function declarantCandidates(client?: Partial<Client> | null): DeclarantCandidate[] {
   const list: DeclarantCandidate[] = []
   const seen = new Set<string>()
-  const addAll = (arr: Persoana[] | undefined) => {
-    for (const p of arr ?? []) {
+  const addAll = (arr: Persoana[] | undefined, source: 'asociati' | 'administratori') => {
+    (arr ?? []).forEach((p, index) => {
       const label = `${p.nume} ${p.prenume}`.trim()
-      if (!label || seen.has(label)) continue
+      if (!label || seen.has(label)) return
       seen.add(label)
-      list.push({ label, persoana: p })
-    }
+      list.push({ label, persoana: p, source, index })
+    })
   }
-  addAll(client?.asociati)
-  addAll(client?.administratori)
-  if (client?.tipClient === 'PF' && client.titular) addAll([client.titular])
+  addAll(client?.asociati, 'asociati')
+  addAll(client?.administratori, 'administratori')
+  if (client?.tipClient === 'PF' && client.titular) {
+    const label = `${client.titular.nume} ${client.titular.prenume}`.trim()
+    if (label && !seen.has(label)) list.push({ label, persoana: client.titular, source: 'titular', index: 0 })
+  }
   return list
 }
 
@@ -76,6 +85,29 @@ function declarantFromPersoana(p: Persoana): DeclarantFormFields {
     actTip: 'Carte de identitate', actSerie: serie, actNumar: numar,
     actEmisDe: p.emisa_de || '', actValabilDeLa: p.valabila_de_la || '', actValabilPanaLa: p.valabila_pana_la || '',
     calitate: p.calitate || '',
+  }
+}
+
+/** Inversul lui declarantFromPersoana — reasamblează Persoana pornind de la
+ * ce a editat userul în formular, ca modificările (CNP, date CI, domiciliu
+ * etc.) să poată fi propuse înapoi în profilul clientului, nu doar folosite
+ * pentru documentul curent. */
+function persoanaFromDeclarant(original: Persoana, d: DeclarantFormFields): Persoana {
+  return {
+    ...original,
+    nume: d.nume,
+    prenume: d.prenume,
+    cnp: d.cnp,
+    serie_numar: (d.actSerie || d.actNumar) ? `${d.actSerie} ${d.actNumar}`.trim() : '',
+    data_nasterii: d.nastereData,
+    locul_nasterii: [d.nasterelocalitate, d.nastereJudet].filter(Boolean).join(', '),
+    cetatenia: d.cetatenia,
+    adresa: formatAdresa(d.domiciliu),
+    judet: d.domiciliuJudet,
+    emisa_de: d.actEmisDe,
+    valabila_de_la: d.actValabilDeLa,
+    valabila_pana_la: d.actValabilPanaLa,
+    calitate: d.calitate,
   }
 }
 
@@ -114,6 +146,21 @@ function Field({ label, value, onChange, flex = 1, placeholder, fieldRef }: {
     <div className="field" style={{ flex, minWidth: 0 }}>
       <label className="field-label">{label}</label>
       <input ref={fieldRef} className="field-input" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+    </div>
+  )
+}
+
+function FieldDate({ label, value, onChange, flex = 1, fieldRef }: {
+  label: string; value: string; onChange: (v: string) => void; flex?: number; fieldRef?: ElRef
+}) {
+  return (
+    <div className="field" style={{ flex, minWidth: 0 }}>
+      <label className="field-label">{label}</label>
+      <input
+        ref={fieldRef} className="field-input" type="date"
+        value={roDateToISO(value)}
+        onChange={e => onChange(isoDateToRo(e.target.value))}
+      />
     </div>
   )
 }
@@ -331,6 +378,26 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
       patch: { puncteLucru: [...puncteLucruExistente, ...noiAdrese] },
     }] : []
 
+    // Datele declarantului (CNP, act de identitate, domiciliu…) completate/corectate
+    // aici nu se salvau nicăieri înapoi în profil — userul le reintroducea la fiecare
+    // generare. Le propunem ca patch, la fel ca adresele noi, doar dacă declarantul
+    // e o persoană existentă (nu "Reprezentant/altă persoană", care n-are unde fi
+    // salvată) și doar dacă a chiar diferă de ce e deja salvat.
+    const selectedCandidate = candidates.find(c => c.label === declarantChoice)
+    if (selectedCandidate) {
+      const updated = persoanaFromDeclarant(selectedCandidate.persoana, declarant)
+      if (JSON.stringify(updated) !== JSON.stringify(selectedCandidate.persoana)) {
+        const numeComplet = `${declarant.nume} ${declarant.prenume}`.trim()
+        if (selectedCandidate.source === 'titular') {
+          clientPatches.push({ label: `Actualizează datele declarantului: ${numeComplet}`, patch: { titular: updated } })
+        } else {
+          const arr = selectedCandidate.source === 'asociati' ? (client?.asociati ?? []) : (client?.administratori ?? [])
+          const noi = arr.map((p, i) => i === selectedCandidate.index ? updated : p)
+          clientPatches.push({ label: `Actualizează datele declarantului: ${numeComplet}`, patch: { [selectedCandidate.source]: noi } })
+        }
+      }
+    }
+
     onChange({ replacements, rowGroups, isComplete, clientPatches })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sediu, declarant, declarantChoice, caenSediu, caenTerti, sediiSecundare, client])
@@ -390,7 +457,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
               <Field label="Localitatea" flex={2} value={declarant.nasterelocalitate} onChange={v => setDeclarant({ ...declarant, nasterelocalitate: v })} fieldRef={bindRef('declarant-nastere-localitate')} />
               <FieldJudet label="Județ/sector" value={declarant.nastereJudet} onChange={v => setDeclarant({ ...declarant, nastereJudet: v })} fieldRef={bindRef('declarant-nastere-judet')} />
               <Field label="Țara" value={declarant.nastereTara} onChange={v => setDeclarant({ ...declarant, nastereTara: v })} fieldRef={bindRef('declarant-nastere-tara')} />
-              <Field label="Data nașterii" value={declarant.nastereData} onChange={v => setDeclarant({ ...declarant, nastereData: v })} fieldRef={bindRef('declarant-nastere-data')} />
+              <FieldDate label="Data nașterii" value={declarant.nastereData} onChange={v => setDeclarant({ ...declarant, nastereData: v })} fieldRef={bindRef('declarant-nastere-data')} />
             </div>
 
             <SubTitle>Act de identitate</SubTitle>
@@ -401,8 +468,8 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
             </div>
             <div style={{ display: 'flex', gap: '.5rem' }}>
               <Field label="Emis de" flex={2} value={declarant.actEmisDe} onChange={v => setDeclarant({ ...declarant, actEmisDe: v })} fieldRef={bindRef('declarant-act-emisde')} />
-              <Field label="Valabil de la" value={declarant.actValabilDeLa} onChange={v => setDeclarant({ ...declarant, actValabilDeLa: v })} fieldRef={bindRef('declarant-act-valabildela')} />
-              <Field label="Valabil până la" value={declarant.actValabilPanaLa} onChange={v => setDeclarant({ ...declarant, actValabilPanaLa: v })} fieldRef={bindRef('declarant-act-valabilpanala')} />
+              <FieldDate label="Valabil de la" value={declarant.actValabilDeLa} onChange={v => setDeclarant({ ...declarant, actValabilDeLa: v })} fieldRef={bindRef('declarant-act-valabildela')} />
+              <FieldDate label="Valabil până la" value={declarant.actValabilPanaLa} onChange={v => setDeclarant({ ...declarant, actValabilPanaLa: v })} fieldRef={bindRef('declarant-act-valabilpanala')} />
             </div>
 
             <Field label="Calitate (asociat / administrator / reprezentant...)" value={declarant.calitate} onChange={v => setDeclarant({ ...declarant, calitate: v })} fieldRef={bindRef('declarant-calitate')} />
