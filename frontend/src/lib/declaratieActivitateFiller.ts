@@ -1,8 +1,6 @@
 // Logică pură (fără JSX) pentru completarea șablonului DOCX "Declarație pe
-// propria răspundere" (ONRC, Anexa nr. 4) — parsare best-effort a
-// adreselor/județului existente în profilul clientului (identică celei
-// folosite anterior pentru varianta PDF/AcroForm) și asamblarea valorilor
-// finale, editate de user în DeclaratieActivitateFiller, în:
+// propria răspundere" (ONRC, Anexa nr. 4) — asamblarea valorilor finale,
+// editate de user în DeclaratieActivitateFiller, în:
 //   - `replacements`: Record<{{PLACEHOLDER}}, valoare> pentru câmpurile plate
 //   - `rowGroups`: Record<TAG, listă de rânduri> pentru tabelele cu lungime
 //     variabilă (coduri CAEN la sediu/terți, sedii secundare) — expandate de
@@ -10,120 +8,9 @@
 //     spre deosebire de PDF-ul AcroForm nu mai există niciun plafon fix de
 //     sloturi (18 coduri CAEN, 13 sedii secundare).
 import type { CaenActivitate, Client } from '../types'
-import { JUDETE_ROMANIA } from './counties'
+import { EMPTY_ADRESA, type AdresaStructurata } from './adresa'
 
-export interface AdresaParsed {
-  localitate: string
-  strada: string
-  nr: string
-  bloc: string
-  scara: string
-  etaj: string
-  ap: string
-}
-
-const EMPTY_ADRESA: AdresaParsed = { localitate: '', strada: '', nr: '', bloc: '', scara: '', etaj: '', ap: '' }
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-// Litere care pot apărea fie cu diacritic corect, fie într-o formă OCR/tastare
-// alternativă des întâlnită (fără diacritic, sau cu sedilă în loc de virgulă
-// dedesubt) — folosit ca să potrivim "Timiș"/"Timis" și "Brăila"/"Braila" cu
-// același pattern, direct pe textul original (fără normalizare prealabilă).
-const DIACRITIC_CLASS: Record<string, string> = {
-  a: 'aăâ', ă: 'aăâ', â: 'aăâ',
-  i: 'iî', î: 'iî',
-  s: 'sșş', ș: 'sșş', ş: 'sșş',
-  t: 'tțţ', ț: 'tțţ', ţ: 'tțţ',
-}
-
-function diacriticInsensitiveSource(word: string): string {
-  return word.toLowerCase().split('').map(ch => {
-    const cls = DIACRITIC_CLASS[ch]
-    return cls ? `[${cls}]` : escapeRegExp(ch)
-  }).join('')
-}
-
-/** Caută în text un nume de județ din lista canonică (diacritic-insensitiv,
- * tolerant la prefixe gen "jud.", "județul") — folosit atât pentru sediul
- * social, cât și pentru domiciliul/locul nașterii declarantului. */
-export function extractJudet(text?: string | null): string {
-  if (!text) return ''
-  for (const judet of JUDETE_ROMANIA) {
-    if (new RegExp(`\\b${diacriticInsensitiveSource(judet)}\\b`, 'i').test(text)) return judet
-  }
-  return ''
-}
-
-const LABELED_PARTS: { key: keyof AdresaParsed; re: RegExp }[] = [
-  { key: 'nr', re: /\bnr\.?\s*([^\s,]+)/i },
-  { key: 'bloc', re: /\b(?:bl\.?|bloc)\s*([^\s,]+)/i },
-  { key: 'scara', re: /\b(?:sc\.?|scara)\s*([^\s,]+)/i },
-  { key: 'etaj', re: /\b(?:et\.?|etaj)\s*([^\s,]+)/i },
-  { key: 'ap', re: /\b(?:ap\.?|apartament)\s*([^\s,]+)/i },
-]
-
-/**
- * Parsare best-effort a unei adrese românești în componente. Tot ce nu se
- * potrivește unei etichete recunoscute (Str./Nr./Bl./Sc./Et./Ap./jud.) cade în
- * `localitate` — informația nu se pierde, doar ajunge în câmpul "greșit",
- * ușor de mutat manual (câmpurile rămân editabile în formular).
- */
-export function parseAdresa(text?: string | null): AdresaParsed {
-  if (!text) return { ...EMPTY_ADRESA }
-  let rest = text
-
-  // Scoate județul/sectorul înainte de orice altceva, ca să nu polueze
-  // "localitate" — județul are propriul câmp în șablon (extractJudet separat).
-  const judet = extractJudet(rest)
-  if (judet) {
-    rest = rest.replace(new RegExp(`\\b(?:jud(?:e[tț]ul)?\\.?\\s*)?${diacriticInsensitiveSource(judet)}\\b`, 'i'), '')
-  }
-  rest = rest.replace(/\bsector\s*\d\b/i, '')
-
-  const result: AdresaParsed = { ...EMPTY_ADRESA }
-  for (const { key, re } of LABELED_PARTS) {
-    const m = rest.match(re)
-    if (m && m.index !== undefined) {
-      result[key] = m[1].trim()
-      rest = rest.slice(0, m.index) + rest.slice(m.index + m[0].length)
-    }
-  }
-
-  // Strada: eticheta explicită dacă există, altfel textul rămas (mai puțin
-  // sigur, dar mai bine decât un câmp gol) — comuna/localitatea rămâne oricum
-  // recognoscibilă lângă ea și userul o poate corecta din formular.
-  const stradaMatch = rest.match(/\b(?:str\.?|strada)\s*([^,]*)/i)
-  if (stradaMatch) {
-    result.strada = stradaMatch[1].trim()
-    rest = rest.slice(0, stradaMatch.index) + rest.slice((stradaMatch.index ?? 0) + stradaMatch[0].length)
-  }
-
-  result.localitate = rest
-    .split(',')
-    .map(p => p.trim().replace(/^(?:mun\.?|municipiul|com\.?|comuna|oraș|orasul)\s+/i, '').trim())
-    .filter(Boolean)
-    .join(', ')
-
-  return result
-}
-
-/** Inversul lui parseAdresa — reasamblează într-un singur șir liber de
- * adresă, în formatul standard (Str./nr./bl./sc./et./ap.) pe care
- * parseAdresa știe deja să-l descompună, dacă adresa mai e reeditată ulterior. */
-export function formatAdresa(a: AdresaParsed): string {
-  const parts: string[] = []
-  if (a.localitate) parts.push(a.localitate)
-  if (a.strada) parts.push(`Str. ${a.strada}`)
-  if (a.nr) parts.push(`nr. ${a.nr}`)
-  if (a.bloc) parts.push(`bl. ${a.bloc}`)
-  if (a.scara) parts.push(`sc. ${a.scara}`)
-  if (a.etaj) parts.push(`et. ${a.etaj}`)
-  if (a.ap) parts.push(`ap. ${a.ap}`)
-  return parts.join(', ')
-}
+export { EMPTY_ADRESA, extractJudet, parseAdresa, formatAdresa, type AdresaStructurata } from './adresa'
 
 /** Formatul standard CI: literă(e) + cifre, ex. "TM 123456" → { serie: "TM", numar: "123456" }. */
 export function splitSerieNumar(serieNumar?: string | null): { serie: string; numar: string } {
@@ -160,7 +47,7 @@ export interface DeclarantFormFields {
   nume: string
   prenume: string
   cnp: string
-  domiciliu: AdresaParsed
+  domiciliu: AdresaStructurata
   domiciliuJudet: string
   tara: string
   cetatenia: string
@@ -195,7 +82,7 @@ export interface DeclaratieFormState {
   // Fără câmp separat pentru Tribunalul — se derivă direct din județ, la
   // asamblare (buildDeclaratieReplacements). Textul tipărit din șablon are
   // deja "...DE PE LÂNGĂ TRIBUNALUL", deci se completează doar cu județul.
-  sediu: AdresaParsed & { judet: string }
+  sediu: AdresaStructurata
   declarant: DeclarantFormFields
   caenSediu: string[]
   caenTerti: string[]
@@ -226,11 +113,11 @@ export function buildDeclaratieDocxData(state: DeclaratieFormState, client?: Par
 
   set('SEDIU_LOCALITATE', state.sediu.localitate)
   set('SEDIU_STRADA', state.sediu.strada)
-  set('SEDIU_NR', state.sediu.nr)
+  set('SEDIU_NR', state.sediu.numar)
   set('SEDIU_BL', state.sediu.bloc)
   set('SEDIU_SC', state.sediu.scara)
   set('SEDIU_ET', state.sediu.etaj)
-  set('SEDIU_AP', state.sediu.ap)
+  set('SEDIU_AP', state.sediu.apartament)
   set('SEDIU_JUDET', state.sediu.judet)
   set('SEDIU_EMAIL', client?.email)
   set('SEDIU_TEL', client?.telefon)
@@ -243,11 +130,11 @@ export function buildDeclaratieDocxData(state: DeclaratieFormState, client?: Par
   set('DECLARANT_CNP', d.cnp)
   set('DECLARANT_LOCALITATE', d.domiciliu.localitate)
   set('DECLARANT_STRADA', d.domiciliu.strada)
-  set('DECLARANT_NR', d.domiciliu.nr)
+  set('DECLARANT_NR', d.domiciliu.numar)
   set('DECLARANT_BL', d.domiciliu.bloc)
   set('DECLARANT_SC', d.domiciliu.scara)
   set('DECLARANT_ET', d.domiciliu.etaj)
-  set('DECLARANT_AP', d.domiciliu.ap)
+  set('DECLARANT_AP', d.domiciliu.apartament)
   set('DECLARANT_JUDET', d.domiciliuJudet)
   set('DECLARANT_TARA', d.tara)
   set('DECLARANT_CETATENIE', d.cetatenia)

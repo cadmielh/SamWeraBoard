@@ -3,16 +3,18 @@ import type { CaenActivitate, Persoana, ToastItem } from '../types'
 import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
+import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet, type AdresaStructurata } from '../lib/adresa'
 import CAENCombobox from './CAENCombobox'
 import Modal from './Modal'
 import IconTrash from './IconTrash'
+import SediuSocialFields from './SediuSocialFields'
 
 export interface CompanyData {
   denumire: string
   formaJuridica: string
   codFiscal: string
   nrRegistrul: string
-  sediuSocial: string
+  sediuSocial: AdresaStructurata
   caenCod: string
   caenDescriere: string
   caenSecundare: CaenActivitate[]
@@ -41,15 +43,22 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
 ) {
   const [anafLoading, setAnafLoading] = useState(false)
   const [sediuPicker, setSediuPicker] = useState(false)
+  // Efemer, doar pentru sesiunea curentă de completare — CompanyData (folosit
+  // și pentru un client nou, fără fișă persistată încă) nu ține proveniența
+  // ANAF; hint-ul dispare dacă formularul se resetează/închide.
+  const [anafSnapshot, setAnafSnapshot] = useState<AdresaStructurata | null>(null)
+  const [anafSyncedAt, setAnafSyncedAt] = useState<string | null>(null)
+  const [anafRawText, setAnafRawText] = useState<string | null>(null)
 
   const denumireRef = useRef<HTMLInputElement>(null)
   const formaJuridicaRef = useRef<HTMLSelectElement>(null)
   const codFiscalRef = useRef<HTMLInputElement>(null)
   const nrRegistrulRef = useRef<HTMLInputElement>(null)
-  const sediuSocialRef = useRef<HTMLTextAreaElement>(null)
+  const sediuSocialRef = useRef<HTMLInputElement>(null)
   const capitalSocialRef = useRef<HTMLInputElement>(null)
 
   const set = <K extends keyof CompanyData>(key: K, val: CompanyData[K]) => onChange({ [key]: val } as Partial<CompanyData>)
+  const setSediu = (patch: Partial<AdresaStructurata>) => onChange({ sediuSocial: { ...value.sediuSocial, ...patch } })
 
   const cifTrimmed = value.codFiscal.trim()
   const cifError = cifTrimmed && !/^(RO)?\d{2,10}$/i.test(cifTrimmed)
@@ -63,7 +72,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         { invalid: !value.formaJuridica.trim(), ref: formaJuridicaRef, message: 'forma juridică' },
         { invalid: !cifTrimmed || !!cifError, ref: codFiscalRef, message: 'CIF' },
         { invalid: !value.nrRegistrul.trim(), ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
-        { invalid: !value.sediuSocial.trim(), ref: sediuSocialRef, message: 'sediul social' },
+        { invalid: !formatAdresa(value.sediuSocial).trim(), ref: sediuSocialRef, message: 'sediul social' },
         { invalid: value.capitalSocial == null || value.capitalSocial <= 0, ref: capitalSocialRef, message: 'capitalul social' },
       ]
       const failing = checks.filter(c => c.invalid)
@@ -81,10 +90,35 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
     try {
       const result = await fetchAnafCompany(value.codFiscal, accessToken)
       if (!result.found) { onToast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
+      const c = result.adresaSediuComponente
+      const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)
+      const dinDetalii = c?.detaliiAdresa ? parseAdresa(c.detaliiAdresa) : null
+      const detaliiNeetichetate = dinDetalii?.localitate
+      const judetRezolvat = c
+        ? extractJudet(`${c.judet ?? ''} ${c.localitate ?? ''}`) || extractJudet(result.adresa) || value.sediuSocial.judet
+        : value.sediuSocial.judet
+      const sediuNou = totalGoale
+        ? (result.adresa ? parseAdresa(result.adresa) : value.sediuSocial)
+        : {
+            localitate: stripAdresaLabel('localitate', c!.localitate)
+              || (judetRezolvat.startsWith('București') ? 'București' : '')
+              || value.sediuSocial.localitate,
+            strada:     stripAdresaLabel('strada', c!.strada)         || value.sediuSocial.strada,
+            numar:      stripAdresaLabel('numar', c!.numar)           || value.sediuSocial.numar,
+            judet:      judetRezolvat,
+            bloc:       dinDetalii?.bloc       || value.sediuSocial.bloc,
+            scara:      dinDetalii?.scara      || value.sediuSocial.scara,
+            etaj:       dinDetalii?.etaj       || value.sediuSocial.etaj,
+            apartament: [dinDetalii?.apartament, detaliiNeetichetate].filter(Boolean).join(' ').trim()
+              || value.sediuSocial.apartament,
+          }
+      setAnafSnapshot(sediuNou)
+      setAnafSyncedAt(new Date().toISOString())
+      setAnafRawText(result.adresa || null)
       onChange({
         denumire: result.denumire || value.denumire,
         formaJuridica: result.formaJuridica || value.formaJuridica,
-        sediuSocial: result.adresa || value.sediuSocial,
+        sediuSocial: sediuNou,
         nrRegistrul: result.nrRegCom || value.nrRegistrul,
         caenCod: result.caenCod || value.caenCod,
         caenDescriere: result.caenCod ? findCaenDescriere(result.caenCod) : value.caenDescriere,
@@ -138,7 +172,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
                 className="persoana-card"
                 disabled={!adresaFull}
                 style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
-                onClick={() => { set('sediuSocial', adresaFull); setSediuPicker(false) }}
+                onClick={() => { setSediu({ ...parseAdresa(a.adresa), judet: a.judet }); setSediuPicker(false) }}
               >
                 <div>
                   <div className="persoana-card-name">{a.prenume} {a.nume}</div>
@@ -212,17 +246,21 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
       </div>
 
-      <div className="field full">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <label className="field-label" style={{ margin: 0 }}>Sediu social <span style={{ color: 'var(--r500)' }}>*</span></label>
-          {asociati.length > 0 && (
-            <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
-              📍 Folosește adresa unui asociat
-            </button>
-          )}
-        </div>
-        <textarea ref={sediuSocialRef} className="field-textarea" value={value.sediuSocial} onChange={e => set('sediuSocial', e.target.value)} rows={2} />
-      </div>
+      <SediuSocialFields
+        value={value.sediuSocial}
+        onChange={setSediu}
+        label="Sediu social"
+        required
+        anafSnapshot={anafSnapshot}
+        anafSyncedAt={anafSyncedAt}
+        anafRawText={anafRawText}
+        firstFieldRef={sediuSocialRef}
+        extraHeaderAction={asociati.length > 0 && (
+          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
+            📍 Folosește adresa unui asociat
+          </button>
+        )}
+      />
 
       <div className="field full">
         <label className="field-label">Puncte de lucru</label>

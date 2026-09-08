@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Client, ClauseMeta } from '../types'
 import { CLAUSE_FIELD_SPECS, specMatchesClause, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { parsePlaceholder } from '../lib/placeholders'
+import { parseAdresa } from '../lib/adresa'
 import CesiuneFields from './clauses/CesiuneFields'
 import AdaugareCaenFields from './clauses/AdaugareCaenFields'
 import SchimbareCaenPrincipalFields from './clauses/SchimbareCaenPrincipalFields'
@@ -38,7 +39,7 @@ function computeInlinePatch(
   tag: string, fields: Record<string, string>, client: Partial<Client> | null | undefined,
 ): ClientPatchProposal | null {
   if (tag === 'SCHIMBARE_SEDIU_SOCIAL' && fields.SEDIU_NOU) {
-    return { label: `Sediul social nou: ${fields.SEDIU_NOU}`, patch: { sediuSocial: fields.SEDIU_NOU } }
+    return { label: `Sediul social nou: ${fields.SEDIU_NOU}`, patch: { sediuSocial: parseAdresa(fields.SEDIU_NOU) } }
   }
   if (tag === 'DESCHIDERE_PUNCT_DE_LUCRU' && fields.PUNCT_LUCRU_NOU_ADRESA) {
     return {

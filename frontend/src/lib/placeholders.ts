@@ -2,6 +2,7 @@ import type { IDFields } from './api'
 import type { Client, Persoana, ScannedPerson } from '../types'
 import { persoanaToIDFields } from './idFields'
 import { parsePercent } from './cota'
+import { formatAdresa } from './adresa'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -124,7 +125,7 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     out['{{SOCIETATE_DENUMIRE}}'] = client.denumire ?? ''
     out['{{SOCIETATE_CIF}}'] = client.codFiscal ?? ''
     out['{{SOCIETATE_NR_REG}}'] = client.nrRegistrul ?? ''
-    out['{{SOCIETATE_SEDIU}}'] = client.sediuSocial ?? ''
+    out['{{SOCIETATE_SEDIU}}'] = client.sediuSocial ? formatAdresa(client.sediuSocial) : ''
     out['{{SOCIETATE_FORMA_JURIDICA}}'] = client.formaJuridica ?? ''
 
     if (client.capitalSocial != null) {

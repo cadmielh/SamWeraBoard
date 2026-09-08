@@ -125,8 +125,8 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               <Combobox value={p.cetatenia} options={CETATENII} onChange={val => set('cetatenia', val)} placeholder="Cetățenia" />
             </div>
             <div className="field">
-              <label className="field-label">Județul</label>
-              <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județul" />
+              <label className="field-label">Județ / Sector</label>
+              <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județ / Sector" />
             </div>
 
             <div className="field full">

@@ -496,7 +496,7 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
                              inactiv_anaf: bool | None = None,
                              split_tva: bool | None = None,
                              e_factura: bool | None = None,
-                             caen_secundare: list[str] | None = None) -> dict:
+                             adresa_componente: dict | None = None) -> dict:
     # Stem-uri, nu forme complete — textul de stare variază după sursă/flexiune
     # ("Radiere" la ONRC vs. "RADIAT" la ANAF, "Suspendare" vs. "SUSPENDAT" etc.).
     stare_up = stare.upper()
@@ -511,11 +511,16 @@ def _parse_company_response(denumire: str, adresa: str, nr_reg_com: str,
         "found":         True,
         "denumire":      denumire.strip(),
         "formaJuridica": forma_juridica if forma_juridica is not None else _detect_forma_juridica(denumire),
-        "adresa":        adresa,
+        "adresa":               adresa,
+        "adresaSediuComponente": adresa_componente,
         "nrRegCom":      nr_reg_com,
         "telefon":       telefon,
         "caenCod":       caen_cod,
-        "caenSecundare": caen_secundare or [],
+        # Fără "caenSecundare" aici — API-ul ANAF v9 gratuit nu oferă lista de
+        # coduri CAEN secundare; cheia lipsește intenționat din răspuns (nu se
+        # trimite listă goală), ca frontend-ul să păstreze codurile secundare
+        # deja completate de user, nu să le șteargă crezând că ANAF a
+        # confirmat "zero coduri secundare".
         "statutFiscal":  statut,
         "platitorTva":   platitor_tva,
         "periodaTva":    perioada_tva,
@@ -569,6 +574,23 @@ def _query_cuiscan(cif_str: str) -> dict | None:
         return resp.json()
     except Exception:
         return None
+
+
+def _optional_fields(**fields) -> dict:
+    """Filtrează un set de câmpuri opționale, păstrând doar cheile cu valoare
+    nevidă — convenție comună pentru date pe care sursele externe (ANAF v9
+    gratuit, cuiscan.ro) nu le oferă mereu (ex. coduri CAEN secundare,
+    administratori). Cheia trebuie să LIPSEASCĂ din răspunsul JSON, nu să
+    apară cu o listă/valoare goală — altfel frontend-ul (care face
+    `result.câmp ? nou : păstrează valoarea existentă a clientului`) ar crede
+    că sursa confirmă explicit "gol" și ar șterge ce completase userul manual.
+    Când o sursă nouă (sau un API ANAF mai complet) chiar oferă un astfel de
+    câmp, adaugă-l aici, ex.:
+        result.update(_optional_fields(caenSecundare=caen_secundare_din_sursa))
+    — fără alte modificări în frontend, care deja tratează corect atât
+    prezența cât și absența cheii.
+    """
+    return {k: v for k, v in fields.items() if v}
 
 
 def _format_adresa_sediu(strada, numar, localitate, judet, detalii=None) -> str:
@@ -634,13 +656,29 @@ def anaf_company():
     # câmp de la cuiscan.ro; ca ultim fallback folosim domiciliul fiscal (mai bine
     # decât un câmp gol).
     sediu_anaf = found[0].get("adresa_sediu_social") or {}
+    cs_sediu = (cuiscan_data or {}).get("adresaSediu") or {}
+    # Componente individuale, cu fallback cuiscan.ro pe fiecare câmp separat —
+    # spre deosebire de "adresa_sediu" (string), care alegea o sursă întreagă
+    # (ANAF sau cuiscan), aici putem combina câmpuri din ambele surse.
+    adresa_sediu_componente = {
+        "strada":        sediu_anaf.get("sdenumire_Strada")     or cs_sediu.get("strada")     or "",
+        "numar":         sediu_anaf.get("snumar_Strada")        or cs_sediu.get("numar")      or "",
+        "localitate":    sediu_anaf.get("sdenumire_Localitate") or cs_sediu.get("localitate") or "",
+        "judet":         sediu_anaf.get("sdenumire_Judet")      or cs_sediu.get("judet")      or "",
+        "detaliiAdresa": sediu_anaf.get("sdetalii_Adresa") or "",  # cuiscan nu oferă echivalent structurat
+    }
+
+    # "adresa" trebuie să fie sediul social, nu domiciliul fiscal (pot diferi) — ANAF
+    # v9 îl oferă structurat în adresa_sediu_social; dacă lipseşte, încercăm acelaşi
+    # câmp de la cuiscan.ro; ca ultim fallback folosim domiciliul fiscal (mai bine
+    # decât un câmp gol). Păstrat ca string aplatizat pentru compatibilitate — frontend-ul
+    # foloseşte acum, în primul rând, adresa_sediu_componente (mai sus).
     adresa_sediu = _format_adresa_sediu(
         sediu_anaf.get("sdenumire_Strada"), sediu_anaf.get("snumar_Strada"),
         sediu_anaf.get("sdenumire_Localitate"), sediu_anaf.get("sdenumire_Judet"),
         sediu_anaf.get("sdetalii_Adresa"),
     )
     if not adresa_sediu and cuiscan_data:
-        cs_sediu = cuiscan_data.get("adresaSediu") or {}
         adresa_sediu = _format_adresa_sediu(
             cs_sediu.get("strada"), cs_sediu.get("numar"),
             cs_sediu.get("localitate"), cs_sediu.get("judet"),
@@ -651,6 +689,7 @@ def anaf_company():
     result = _parse_company_response(
         denumire     = dg.get("denumire") or "",
         adresa       = adresa_sediu,
+        adresa_componente = adresa_sediu_componente,
         nr_reg_com   = dg.get("nrRegCom") or "",
         telefon      = dg.get("telefon") or "",
         caen_cod     = _pad_caen(dg.get("cod_CAEN")),
@@ -666,10 +705,23 @@ def anaf_company():
 
     # --- Enrichment opţional: administratori, de la cuiscan.ro (best-effort) ---
     administratori = (cuiscan_data or {}).get("administratori") or []
-    result["administratoriAnaf"] = [
+    admin_list = [
         {"nume": a.get("name") or "", "rol": a.get("role") or ""}
         for a in administratori if a.get("name")
     ]
+
+    # Câmpuri pe care sursele actuale nu le oferă mereu (sau deloc, în cazul
+    # ANAF v9 gratuit + coduri CAEN secundare) — vezi _optional_fields: cheia
+    # apare în răspuns doar când chiar există o valoare, ca frontend-ul să
+    # păstreze ce avea clientul deja completat, nu să creadă că sursa
+    # confirmă explicit "gol". `caenSecundare` e pregătit aici, gol, exact
+    # pentru ziua în care o sursă (ANAF sau alt enrichment) chiar îl oferă —
+    # se completează variabila cu lista reală, fără alte modificări.
+    caen_secundare: list[str] = []
+    result.update(_optional_fields(
+        administratoriAnaf=admin_list,
+        caenSecundare=caen_secundare,
+    ))
 
     return jsonify(result)
 

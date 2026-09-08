@@ -119,6 +119,13 @@ export interface AnafResult {
   denumire?: string
   formaJuridica?: string
   adresa?: string
+  adresaSediuComponente?: {
+    strada: string
+    numar: string
+    localitate: string
+    judet: string
+    detaliiAdresa: string
+  } | null
   nrRegCom?: string
   telefon?: string
   caenCod?: string

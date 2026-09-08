@@ -7,6 +7,7 @@ import {
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Client, Persoana } from '../types'
+import { EMPTY_ADRESA, formatAdresa, parseAdresa, type AdresaStructurata } from './adresa'
 
 export type ClientInput = Omit<Client, 'id' | 'denumireLower' | 'createdAt' | 'createdBy'>
 
@@ -20,7 +21,7 @@ export function missingCompanyFields(data: {
   codFiscal: string
   formaJuridica: string
   nrRegistrul: string
-  sediuSocial: string
+  sediuSocial: AdresaStructurata
   capitalSocial: number | null
 }): string[] {
   const cif = data.codFiscal.trim()
@@ -28,9 +29,25 @@ export function missingCompanyFields(data: {
   if (!cif || !/^(RO)?\d{2,10}$/i.test(cif)) missing.push('CIF')
   if (!data.formaJuridica.trim()) missing.push('forma juridică')
   if (!data.nrRegistrul.trim()) missing.push('nr. registrul comerțului')
-  if (!data.sediuSocial.trim()) missing.push('sediul social')
+  if (!formatAdresa(data.sediuSocial).trim()) missing.push('sediul social')
   if (data.capitalSocial == null || data.capitalSocial <= 0) missing.push('capitalul social')
   return missing
+}
+
+/** Migrare la citire: documentele vechi au `sediuSocial` ca text liber —
+ * transformat best-effort în componente structurate, fără să scrie nimic
+ * înapoi în Firestore (persistă abia la următorul `update`/`add`). Textul
+ * original e întors separat (`legacyRaw`), nu atașat pe `Client` — altfel ar
+ * ajunge, din greșeală, în payload-ul de `updateDoc` (Firestore aruncă eroare
+ * la scrierea unui câmp cu valoare `undefined` pentru clienții deja migrați). */
+function clientFromDoc(d: QueryDocumentSnapshot<DocumentData>): { client: Client; legacyRaw: string | null } {
+  const raw = d.data() as Record<string, unknown>
+  const rawSediu = raw.sediuSocial
+  const legacyRaw = typeof rawSediu === 'string' ? rawSediu : null
+  const sediuSocial: AdresaStructurata = legacyRaw
+    ? parseAdresa(legacyRaw)
+    : (rawSediu as AdresaStructurata | undefined) ?? { ...EMPTY_ADRESA }
+  return { client: { ...raw, id: d.id, sediuSocial } as Client, legacyRaw }
 }
 
 function resolveDisplayName(data: ClientInput): string {
@@ -56,6 +73,19 @@ export function useClienti(workspaceId: string | null) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const lastDocRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null)
+  // Textul original al sediului social pentru clienții încă nemigrați (format
+  // vechi, string) — folosit doar pentru banner-ul de comparație din
+  // ClientModal, ținut separat de `clienti` (vezi clientFromDoc).
+  const [legacyRawById, setLegacyRawById] = useState<Record<string, string>>({})
+  const mergeLegacyRaw = (rows: { client: Client; legacyRaw: string | null }[]) => {
+    const additions = rows.filter((r): r is { client: Client; legacyRaw: string } => r.legacyRaw !== null)
+    if (additions.length === 0) return
+    setLegacyRawById(prev => {
+      const next = { ...prev }
+      for (const { client, legacyRaw } of additions) next[client.id] = legacyRaw
+      return next
+    })
+  }
 
   useEffect(() => {
     if (!workspaceId) {
@@ -68,7 +98,9 @@ export function useClienti(workspaceId: string | null) {
     const q = query(clientiCol(workspaceId), orderBy('createdAt', 'desc'), limit(PAGE_SIZE))
     getDocs(q).then(snap => {
       if (cancelled) return
-      setClienti(snap.docs.map(d => ({ ...d.data(), id: d.id } as Client)))
+      const rows = snap.docs.map(clientFromDoc)
+      setClienti(rows.map(r => r.client))
+      mergeLegacyRaw(rows)
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null
       setHasMore(snap.docs.length === PAGE_SIZE)
       setLoading(false)
@@ -86,7 +118,9 @@ export function useClienti(workspaceId: string | null) {
         startAfter(lastDocRef.current), limit(PAGE_SIZE)
       )
       const snap = await getDocs(q)
-      setClienti(prev => [...prev, ...snap.docs.map(d => ({ ...d.data(), id: d.id } as Client))])
+      const rows = snap.docs.map(clientFromDoc)
+      setClienti(prev => [...prev, ...rows.map(r => r.client)])
+      mergeLegacyRaw(rows)
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? lastDocRef.current
       setHasMore(snap.docs.length === PAGE_SIZE)
     } finally {
@@ -104,7 +138,9 @@ export function useClienti(workspaceId: string | null) {
       limit(50)
     )
     const snap = await getDocs(q)
-    return snap.docs.map(d => ({ ...d.data(), id: d.id } as Client))
+    const rows = snap.docs.map(clientFromDoc)
+    mergeLegacyRaw(rows)
+    return rows.map(r => r.client)
   }, [])
 
   // add/update/remove sunt optimiste: starea locală (deci ecranul) se
@@ -195,7 +231,7 @@ export function useClienti(workspaceId: string | null) {
     }
   }, [])
 
-  return { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove }
+  return { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove, legacyRawById }
 }
 
 export const EMPTY_PERSOANA: Persoana = {
@@ -211,7 +247,8 @@ export const EMPTY_CLIENT: ClientInput = {
   titular: undefined,
   membriIF: undefined,
   denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
-  sediuSocial: '', caenCod: '', caenDescriere: '', caenSecundare: [], puncteLucru: [], telefon: '', email: '',
+  sediuSocial: { ...EMPTY_ADRESA }, sediuSocialAnaf: null, sediuSocialAnafText: '',
+  caenCod: '', caenDescriere: '', caenSecundare: [], puncteLucru: [], telefon: '', email: '',
   statutFiscal: '', platitorTva: false, periodaTva: '',
   tvaLaIncasare: false, inactivAnaf: false, splitTva: false, eFactura: false,
   administratoriAnaf: [],

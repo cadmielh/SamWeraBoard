@@ -5,6 +5,7 @@ import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
 import { useClienti } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
+import { formatAdresa } from '../lib/adresa'
 import { useApp } from '../AppContext'
 import ClientModal from '../components/ClientModal'
 import ClientView from '../components/ClientView'
@@ -86,6 +87,8 @@ function getColValue(c: Client, key: string): string {
            : c.periodaTva === 'trimestriala' ? 'TVA trim.' : 'TVA'
     case 'statutFiscal':
       return c.statutFiscal
+    case 'sediuSocial':
+      return formatAdresa(c.sediuSocial)
     case 'asoc':
       if (isPF) return ''
       return c.asociati.length > 0 ? String(c.asociati.length) : ''
@@ -265,7 +268,7 @@ export default function ClientiPage() {
   const { user, activeWorkspace, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
 
-  const { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove } = useClienti(workspaceId)
+  const { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove, legacyRawById } = useClienti(workspaceId)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Client[] | null>(null)
@@ -654,6 +657,7 @@ export default function ClientiPage() {
       {modal && (
         <ClientModal
           initial={typeof modal === 'object' ? modal : null}
+          legacyRaw={typeof modal === 'object' ? legacyRawById[modal.id] ?? null : null}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />

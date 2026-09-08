@@ -6,7 +6,7 @@ import { useDosare } from '../../lib/dosare'
 import { useApp } from '../../AppContext'
 import ClientLinkPicker from '../ClientLinkPicker'
 import DosarLinkPicker from '../DosarLinkPicker'
-import MemberSelect from '../MemberSelect'
+import ResponsabilCombobox from '../ResponsabilCombobox'
 import Modal from '../Modal'
 import IconTrash from '../IconTrash'
 
@@ -161,9 +161,9 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
 
             <div className="field full">
               <label className="field-label">Responsabil</label>
-              <MemberSelect
+              <ResponsabilCombobox
                 workspace={activeWorkspace}
-                value={form.assigneeUid}
+                value={form.assigneeNume}
                 onChange={(uid, nume) => { set('assigneeUid', uid); set('assigneeNume', nume) }}
               />
             </div>

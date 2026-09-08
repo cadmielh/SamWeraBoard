@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Client, Persoana } from '../types'
 import { inferTipClient } from '../types'
-import { computeScadente } from '../lib/scadente'
 import { findCaenDescriere } from '../data/caen'
 import { formatDateRo } from '../lib/dates'
 import { getInitials, getAvatarColor } from '../lib/avatar'
+import { formatAdresa } from '../lib/adresa'
+import { missingCompanyFields } from '../lib/clienti'
+import { sumCota, isCotaTotalValid } from '../lib/cota'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
@@ -25,10 +27,10 @@ const SUBTIP_LABELS: Record<string, string> = {
   II: 'II',
 }
 
-function InfoRow({ label, value, link }: { label: string; value?: string; link?: boolean }) {
+function InfoRow({ label, value, link }: { label?: string; value?: string; link?: boolean }) {
   return (
     <div className="cv2-info-row">
-      <span className="cv2-info-label">{label}</span>
+      {label && <span className="cv2-info-label">{label}</span>}
       {value
         ? link
           ? <a className="cv2-info-value cv2-info-link" href={`mailto:${value}`}>{value}</a>
@@ -109,6 +111,34 @@ function EditableInfoRow({ label, value, onSave, type = 'text', multiline = fals
   )
 }
 
+const CAEN_SECUNDARE_VIZIBILE = 4
+
+function CaenSecundareList({ items }: { items: { cod: string; descriere: string }[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const shown = expanded ? items : items.slice(0, CAEN_SECUNDARE_VIZIBILE)
+  const ascunse = items.length - CAEN_SECUNDARE_VIZIBILE
+
+  return (
+    <div className="cv2-info-row" style={{ alignItems: 'flex-start' }}>
+      <span className="cv2-info-label">CAEN secundare</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
+        {shown.map(c => (
+          <span key={c.cod} className="cv2-info-value">{c.cod} — {c.descriere || findCaenDescriere(c.cod)}</span>
+        ))}
+        {ascunse > 0 && (
+          <button
+            type="button" className="btn btn-ghost btn-xs"
+            style={{ alignSelf: 'flex-start', padding: 0, height: 'auto' }}
+            onClick={() => setExpanded(e => !e)}
+          >
+            {expanded ? 'Arată mai puține' : `+ încă ${ascunse}`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PersoanaCard({ p }: { p: Persoana }) {
   const fullName = [p.prenume, p.nume].filter(Boolean).join(' ')
   const initials = fullName ? getInitials(fullName) : '?'
@@ -159,7 +189,9 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
   const isPF = tipClient === 'PF'
   const isIF = isPF && client.subtipPF === 'IF'
   const hasAnaf = !!client.dataAnafActualizat
-  const scadente = useMemo(() => computeScadente(client), [client])
+  const missingCompany = isPF ? [] : missingCompanyFields(client)
+  const cotaTotal = sumCota(client.asociati.map(a => a.cotaParticipare))
+  const cotaValid = isCotaTotalValid(client.asociati.map(a => a.cotaParticipare))
 
   const [editingNotite, setEditingNotite] = useState(false)
   const [notiteValue, setNotiteValue] = useState(client.notite)
@@ -216,6 +248,14 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
             <span className="cv2-company-name" title={client.denumire}>{client.denumire}</span>
           </div>
           <div className="cv2-header-actions">
+            {missingCompany.length > 0 && (
+              <span
+                className="badge badge-inactiv-anaf"
+                title={`Pentru generarea documentelor completează: ${missingCompany.join(', ')}.`}
+              >
+                ⚠ Date incomplete
+              </span>
+            )}
             <button
               className="btn btn-outline-primary btn-sm"
               onClick={() => navigate(`/extragere?clientId=${client.id}&mode=client`)}
@@ -236,10 +276,6 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                   {client.statutFiscal.charAt(0).toUpperCase() + client.statutFiscal.slice(1)}
                 </span>
               )}
-              {client.platitorTva
-                ? <span className="badge badge-tva">TVA {client.periodaTva || ''}</span>
-                : <span className="badge badge-notva">Non-TVA</span>
-              }
               {client.inactivAnaf && <span className="badge badge-inactiv-anaf">⚠ Inactiv fiscal ANAF</span>}
               {client.splitTva && <span className="badge badge-split-tva">Split TVA</span>}
               {client.eFactura && <span className="badge badge-efactura">RO e-Factura</span>}
@@ -282,10 +318,13 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                   : undefined}
               />
               {client.caenSecundare && client.caenSecundare.length > 0 && (
-                <InfoRow
-                  label="CAEN secundare"
-                  value={client.caenSecundare.map(c => `${c.cod} — ${c.descriere || findCaenDescriere(c.cod)}`).join('; ')}
-                />
+                <CaenSecundareList items={client.caenSecundare} />
+              )}
+              {!isPF && (
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />
+                  <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / 10).toLocaleString('ro-RO') : undefined} />
+                </div>
               )}
             </div>
             <div className="cv2-col">
@@ -299,46 +338,23 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
         {/* Sediu social / profesional */}
         <div className="cv2-section">
           <div className="cv2-section-label">{isPF ? 'Sediu profesional' : 'Sediu social'}</div>
-          <EditableInfoRow value={client.sediuSocial} multiline onSave={v => onSaveField({ sediuSocial: v })} />
+          <InfoRow value={formatAdresa(client.sediuSocial)} />
+          {client.sediuSocialAnafText && (
+            <p className="cv2-anaf-note" style={{ marginTop: '.5rem' }}>
+              Conform ANAF, întreg (informativ, verifică câmpurile separate din editare): {client.sediuSocialAnafText}
+            </p>
+          )}
         </div>
 
-        {/* Date fiscale */}
-        <div className="cv2-section">
-          <div className="cv2-two-col">
-            <div className="cv2-col">
-              <div className="cv2-col-title">TVA</div>
-              <InfoRow label="TVA la încasare" value={client.platitorTva ? (client.tvaLaIncasare ? 'Da' : 'Nu') : undefined} />
-            </div>
-            {!isPF && (
-              <div className="cv2-col">
-                <div className="cv2-col-title">Capital</div>
-                <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />
-                <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / 10).toLocaleString('ro-RO') : undefined} />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Scadențe fiscale */}
-        {scadente.length > 0 && (
+        {/* Puncte de lucru */}
+        {client.puncteLucru && client.puncteLucru.length > 0 && (
           <div className="cv2-section">
-            <div className="cv2-section-label">📅 Scadențe fiscale</div>
-            <div className="cv2-scadente-list">
-              {scadente.map(s => (
-                <div key={s.cod} className="cv2-scadenta-row">
-                  <div>
-                    <div className="cv2-scadenta-titlu">{s.titlu}</div>
-                    <div className="cv2-scadenta-descriere">{s.descriere}</div>
-                  </div>
-                  <span className="cv2-scadenta-data">
-                    {formatDateRo(s.urmatoarea)}
-                  </span>
-                </div>
+            <div className="cv2-section-label">Puncte de lucru</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+              {client.puncteLucru.map((adresa, i) => (
+                <span key={i} className="cv2-info-value">{adresa}</span>
               ))}
             </div>
-            <p className="cv2-scadente-disclaimer">
-              Termene orientative, calculate din datele completate mai sus — verifică reglementările ANAF în vigoare pentru cazuri speciale.
-            </p>
           </div>
         )}
 
@@ -380,40 +396,45 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
           )}
         </div>
 
-        {/* ── Asociați (doar PJ) ── */}
+        {/* ── Asociați + Administratori, 2 coloane (doar PJ) ── */}
         {!isPF && (
           <div className="cv2-section">
-            <div className="cv2-section-label">
-              Asociați
-              {client.asociati.length > 0 && <span className="cv2-count-chip">{client.asociati.length}</span>}
-            </div>
-            {client.asociati.length > 0
-              ? <div className="cv2-persons-list">
-                  {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} />)}
+            <div className="cv2-two-col">
+              <div className="cv2-col">
+                <div className="cv2-col-title" style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
+                  Asociați
+                  {client.asociati.length > 0 && <span className="cv2-count-chip">{client.asociati.length}</span>}
                 </div>
-              : <span className="cv2-info-empty">Niciun asociat adăugat.</span>
-            }
-          </div>
-        )}
-
-        {/* ── Administratori (doar PJ) ── */}
-        {!isPF && (
-          <div className="cv2-section">
-            <div className="cv2-section-label">
-              Administratori
-              {client.administratori.length > 0 && <span className="cv2-count-chip">{client.administratori.length}</span>}
-            </div>
-            {client.administratori.length > 0
-              ? <div className="cv2-persons-list">
-                  {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                {client.asociati.length > 0 && (
+                  <div style={{ fontSize: '.75rem', fontWeight: 600, margin: '.5rem 0', color: cotaValid ? 'var(--g700)' : 'var(--r600)' }}>
+                    Cotă totală: {cotaTotal}% {cotaValid ? '✓' : '⚠'}
+                  </div>
+                )}
+                {client.asociati.length > 0
+                  ? <div className="cv2-persons-list">
+                      {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                    </div>
+                  : <span className="cv2-info-empty">Niciun asociat adăugat.</span>
+                }
+              </div>
+              <div className="cv2-col">
+                <div className="cv2-col-title" style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
+                  Administratori
+                  {client.administratori.length > 0 && <span className="cv2-count-chip">{client.administratori.length}</span>}
                 </div>
-              : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
-            }
-            {client.administratoriAnaf && client.administratoriAnaf.length > 0 && (
-              <p className="cv2-anaf-note" style={{ marginTop: '.5rem' }}>
-                Conform ANAF (informativ, verifică CNP/CI separat): {client.administratoriAnaf.map(a => a.nume).join(', ')}
-              </p>
-            )}
+                {client.administratori.length > 0
+                  ? <div className="cv2-persons-list">
+                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                    </div>
+                  : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
+                }
+                {client.administratoriAnaf && client.administratoriAnaf.length > 0 && (
+                  <p className="cv2-anaf-note" style={{ marginTop: '.5rem' }}>
+                    Conform ANAF (informativ, verifică CNP/CI separat): {client.administratoriAnaf.map(a => a.nume).join(', ')}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

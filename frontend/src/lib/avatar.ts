@@ -1,5 +1,5 @@
 // Extras din ClientView.tsx (era privat acolo) — sursă unică pentru inițiale
-// și culoarea avatarului, refolosită de ClientView, TaskCard, MemberSelect etc.
+// și culoarea avatarului, refolosită de ClientView și TaskCard.
 
 export function getInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean)

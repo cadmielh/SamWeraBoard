@@ -33,7 +33,7 @@ const FIELD_LABELS: Record<keyof IDFields, string> = {
   data_nasterii: 'Data nașterii',
   locul_nasterii: 'Locul nașterii',
   cetatenia: 'Cetățenia',
-  judet: 'Județ',
+  judet: 'Județ / Sector',
   adresa: 'Adresa',
   valabila_de_la: 'Valabilă de la',
   valabila_pana_la: 'Valabilă până la',
@@ -161,7 +161,7 @@ export default function PersonScanModal({ personLabel, accessToken, initialField
                       )}
                     </label>
                     {key === 'judet' ? (
-                      <Combobox value={fields.judet} options={JUDETE_ROMANIA} onChange={val => handleFieldChange('judet', val)} placeholder="Județul" />
+                      <Combobox value={fields.judet} options={JUDETE_ROMANIA} onChange={val => handleFieldChange('judet', val)} placeholder="Județ / Sector" />
                     ) : key === 'cetatenia' ? (
                       <Combobox value={fields.cetatenia} options={CETATENII} onChange={val => handleFieldChange('cetatenia', val)} placeholder="Cetățenia" />
                     ) : (

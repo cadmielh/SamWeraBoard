@@ -3,9 +3,9 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { Client, Persoana } from '../types'
 import {
   companyCaenOptions, extractJudet, parseAdresa, formatAdresa, splitSerieNumar,
-  buildDeclaratieDocxData, EMPTY_DECLARANT,
+  buildDeclaratieDocxData, EMPTY_DECLARANT, EMPTY_ADRESA,
 } from '../lib/declaratieActivitateFiller'
-import type { AdresaParsed, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/declaratieActivitateFiller'
+import type { AdresaStructurata, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/declaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { JUDETE_ROMANIA } from '../lib/counties'
 import { roDateToISO, isoDateToRo } from '../lib/dates'
@@ -35,10 +35,11 @@ type ElRef = (el: HTMLElement | null) => void
 
 const MAX_SEDII_SECUNDARE = 30
 
+// Client.sediuSocial e deja structurat (localitate/stradă/nr/bloc/scară/etaj/
+// ap/județ) — nu mai are sens reparsarea unui string, doar fallback la un
+// obiect gol pentru clienți fără sediu completat încă.
 function sediuFromClient(client?: Partial<Client> | null): DeclaratieFormState['sediu'] {
-  const parsed = parseAdresa(client?.sediuSocial)
-  const judet = extractJudet(client?.sediuSocial)
-  return { ...parsed, judet }
+  return client?.sediuSocial ?? { ...EMPTY_ADRESA }
 }
 
 interface DeclarantCandidate {
@@ -171,35 +172,35 @@ function FieldJudet({ label, value, onChange, flex = 1, fieldRef }: {
   return (
     <div className="field" ref={fieldRef} style={{ flex, minWidth: 0 }}>
       <label className="field-label">{label}</label>
-      <Combobox value={value} options={JUDETE_ROMANIA} onChange={onChange} placeholder="Județul" />
+      <Combobox value={value} options={JUDETE_ROMANIA} onChange={onChange} placeholder="Județ / Sector" />
     </div>
   )
 }
 
 function AdresaFields({ value, onChange, judet, fieldRefs }: {
-  value: AdresaParsed
-  onChange: (v: AdresaParsed) => void
+  value: AdresaStructurata
+  onChange: (v: AdresaStructurata) => void
   // Opțional — când e prezent, județul apare ca primul câmp de pe primul
   // rând, iar Stradă/Nr. se restrâng (nu au nevoie de mult spațiu).
   judet?: { value: string; onChange: (v: string) => void; fieldRef?: ElRef }
-  // Chei posibile: localitate, strada, nr — restul (bloc/scară/etaj/ap) nu
+  // Chei posibile: localitate, strada, numar — restul (bloc/scară/etaj/ap) nu
   // sunt obligatorii, deci n-au nevoie de ref de validare.
-  fieldRefs?: Partial<Record<'localitate' | 'strada' | 'nr', ElRef>>
+  fieldRefs?: Partial<Record<'localitate' | 'strada' | 'numar', ElRef>>
 }) {
-  const set = (k: keyof AdresaParsed, v: string) => onChange({ ...value, [k]: v })
+  const set = (k: keyof AdresaStructurata, v: string) => onChange({ ...value, [k]: v })
   return (
     <>
       <div style={{ display: 'flex', gap: '.5rem' }}>
-        {judet && <FieldJudet label="Județ/sector" flex={1} value={judet.value} onChange={judet.onChange} fieldRef={judet.fieldRef} />}
+        {judet && <FieldJudet label="Județ / Sector" flex={1} value={judet.value} onChange={judet.onChange} fieldRef={judet.fieldRef} />}
         <Field label="Localitate" flex={2} value={value.localitate} onChange={v => set('localitate', v)} fieldRef={fieldRefs?.localitate} />
         <Field label="Stradă" flex={judet ? 1 : 2} value={value.strada} onChange={v => set('strada', v)} fieldRef={fieldRefs?.strada} />
-        <Field label="Nr." flex={judet ? .6 : 1} value={value.nr} onChange={v => set('nr', v)} fieldRef={fieldRefs?.nr} />
+        <Field label="Nr." flex={judet ? .6 : 1} value={value.numar} onChange={v => set('numar', v)} fieldRef={fieldRefs?.numar} />
       </div>
       <div style={{ display: 'flex', gap: '.5rem' }}>
         <Field label="Bloc" value={value.bloc} onChange={v => set('bloc', v)} />
         <Field label="Scară" value={value.scara} onChange={v => set('scara', v)} />
         <Field label="Etaj" value={value.etaj} onChange={v => set('etaj', v)} />
-        <Field label="Apartament" value={value.ap} onChange={v => set('ap', v)} />
+        <Field label="Apartament" value={value.apartament} onChange={v => set('apartament', v)} />
       </div>
     </>
   )
@@ -315,7 +316,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
     const checks: { invalid: boolean; id: string; message: string }[] = [
       { invalid: !sediu.localitate.trim(), id: 'sediu-localitate', message: 'localitatea sediului' },
       { invalid: !sediu.strada.trim(), id: 'sediu-strada', message: 'strada sediului' },
-      { invalid: !sediu.nr.trim(), id: 'sediu-nr', message: 'numărul sediului' },
+      { invalid: !sediu.numar.trim(), id: 'sediu-nr', message: 'numărul sediului' },
       { invalid: !sediu.judet.trim(), id: 'sediu-judet', message: 'județul sediului' },
       { invalid: !declarantChoice.trim(), id: 'declarant-choice', message: 'persoana declarantului' },
     ]
@@ -328,7 +329,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
         { invalid: !cnpComplete, id: 'declarant-cnp', message: 'CNP-ul declarantului' },
         { invalid: !declarant.domiciliu.localitate.trim(), id: 'declarant-domiciliu-localitate', message: 'localitatea domiciliului' },
         { invalid: !declarant.domiciliu.strada.trim(), id: 'declarant-domiciliu-strada', message: 'strada domiciliului' },
-        { invalid: !declarant.domiciliu.nr.trim(), id: 'declarant-domiciliu-nr', message: 'numărul domiciliului' },
+        { invalid: !declarant.domiciliu.numar.trim(), id: 'declarant-domiciliu-nr', message: 'numărul domiciliului' },
         { invalid: !declarant.domiciliuJudet.trim(), id: 'declarant-domiciliu-judet', message: 'județul domiciliului' },
         { invalid: !declarant.tara.trim(), id: 'declarant-tara', message: 'țara domiciliului' },
         { invalid: !declarant.cetatenia.trim(), id: 'declarant-cetatenia', message: 'cetățenia' },
@@ -413,7 +414,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
           value={sediu}
           onChange={v => setSediu({ ...sediu, ...v })}
           judet={{ value: sediu.judet, onChange: v => setSediu({ ...sediu, judet: v }), fieldRef: bindRef('sediu-judet') }}
-          fieldRefs={{ localitate: bindRef('sediu-localitate'), strada: bindRef('sediu-strada'), nr: bindRef('sediu-nr') }}
+          fieldRefs={{ localitate: bindRef('sediu-localitate'), strada: bindRef('sediu-strada'), numar: bindRef('sediu-nr') }}
         />
       </SectionCard>
 
@@ -444,10 +445,10 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
             <SubTitle>Domiciliul</SubTitle>
             <AdresaFields
               value={declarant.domiciliu} onChange={v => setDeclarant({ ...declarant, domiciliu: v })}
-              fieldRefs={{ localitate: bindRef('declarant-domiciliu-localitate'), strada: bindRef('declarant-domiciliu-strada'), nr: bindRef('declarant-domiciliu-nr') }}
+              fieldRefs={{ localitate: bindRef('declarant-domiciliu-localitate'), strada: bindRef('declarant-domiciliu-strada'), numar: bindRef('declarant-domiciliu-nr') }}
             />
             <div style={{ display: 'flex', gap: '.5rem' }}>
-              <FieldJudet label="Județ/sector" value={declarant.domiciliuJudet} onChange={v => setDeclarant({ ...declarant, domiciliuJudet: v })} fieldRef={bindRef('declarant-domiciliu-judet')} />
+              <FieldJudet label="Județ / Sector" value={declarant.domiciliuJudet} onChange={v => setDeclarant({ ...declarant, domiciliuJudet: v })} fieldRef={bindRef('declarant-domiciliu-judet')} />
               <Field label="Țara" value={declarant.tara} onChange={v => setDeclarant({ ...declarant, tara: v })} fieldRef={bindRef('declarant-tara')} />
               <Field label="Cetățenia" value={declarant.cetatenia} onChange={v => setDeclarant({ ...declarant, cetatenia: v })} fieldRef={bindRef('declarant-cetatenia')} />
             </div>
@@ -455,7 +456,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
             <SubTitle>Născut(ă)</SubTitle>
             <div style={{ display: 'flex', gap: '.5rem' }}>
               <Field label="Localitatea" flex={2} value={declarant.nasterelocalitate} onChange={v => setDeclarant({ ...declarant, nasterelocalitate: v })} fieldRef={bindRef('declarant-nastere-localitate')} />
-              <FieldJudet label="Județ/sector" value={declarant.nastereJudet} onChange={v => setDeclarant({ ...declarant, nastereJudet: v })} fieldRef={bindRef('declarant-nastere-judet')} />
+              <FieldJudet label="Județ / Sector" value={declarant.nastereJudet} onChange={v => setDeclarant({ ...declarant, nastereJudet: v })} fieldRef={bindRef('declarant-nastere-judet')} />
               <Field label="Țara" value={declarant.nastereTara} onChange={v => setDeclarant({ ...declarant, nastereTara: v })} fieldRef={bindRef('declarant-nastere-tara')} />
               <FieldDate label="Data nașterii" value={declarant.nastereData} onChange={v => setDeclarant({ ...declarant, nastereData: v })} fieldRef={bindRef('declarant-nastere-data')} />
             </div>

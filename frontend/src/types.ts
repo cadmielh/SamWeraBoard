@@ -1,3 +1,5 @@
+import type { AdresaStructurata } from './lib/adresa'
+
 export interface ToastItem {
   id: string
   message: string
@@ -115,7 +117,17 @@ export interface Client {
   formaJuridica: string
   codFiscal: string
   nrRegistrul: string
-  sediuSocial: string
+  sediuSocial: AdresaStructurata
+  // Instantaneu al ultimei valori structurate primite de la ANAF pentru sediul
+  // social — folosit doar pentru hint-ul de proveniență din formular (compară
+  // câmpurile editate manual cu ce a oferit ultima interogare ANAF), nu pentru
+  // afișare directă.
+  sediuSocialAnaf: AdresaStructurata | null
+  // Șirul întreg (necomponentizat) exact cum l-a întors ANAF pentru sediul
+  // social — strict informativ, ca la administratoriAnaf mai jos, ca userul
+  // să poată compara adresa completă originală cu felul în care a fost
+  // împărțită pe cele 8 câmpuri.
+  sediuSocialAnafText: string
   caenCod: string
   caenDescriere: string
   caenSecundare: CaenActivitate[]

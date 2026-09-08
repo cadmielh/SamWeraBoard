@@ -7,14 +7,17 @@ import { findCaenDescriere } from '../data/caen'
 import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import { useApp } from '../AppContext'
 import { formatDateRo } from '../lib/dates'
+import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet } from '../lib/adresa'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
 import Modal from './Modal'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
+import SediuSocialFields from './SediuSocialFields'
 
 interface Props {
   initial: Client | null
+  legacyRaw?: string | null
   onSave: (data: ClientInput) => Promise<void>
   onClose: () => void
 }
@@ -41,7 +44,7 @@ function personKey(p: Persoana): string | null {
   return (nume || prenume) ? `${nume}|${prenume}` : null
 }
 
-export default function ClientModal({ initial, onSave, onClose }: Props) {
+export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Props) {
   const { accessToken, toast, activeWorkspace } = useApp()
 
   const [form, setForm] = useState<ClientInput>(() => {
@@ -56,6 +59,8 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       codFiscal: initial.codFiscal,
       nrRegistrul: initial.nrRegistrul,
       sediuSocial: initial.sediuSocial,
+      sediuSocialAnaf: initial.sediuSocialAnaf ?? null,
+      sediuSocialAnafText: initial.sediuSocialAnafText ?? '',
       caenCod: initial.caenCod,
       caenDescriere: initial.caenDescriere,
       caenSecundare: initial.caenSecundare ? [...initial.caenSecundare] : [],
@@ -94,10 +99,12 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
   const formaJuridicaRef = useRef<HTMLSelectElement>(null)
   const codFiscalRef = useRef<HTMLInputElement>(null)
   const nrRegistrulRef = useRef<HTMLInputElement>(null)
-  const sediuSocialRef = useRef<HTMLTextAreaElement>(null)
+  const sediuSocialRef = useRef<HTMLInputElement>(null)
   const capitalSocialRef = useRef<HTMLInputElement>(null)
 
   const set = (key: keyof ClientInput, val: unknown) => setForm(prev => ({ ...prev, [key]: val }))
+  const setSediu = (patch: Partial<ClientInput['sediuSocial']>) =>
+    setForm(prev => ({ ...prev, sediuSocial: { ...prev.sediuSocial, ...patch } }))
 
   const isEditing = !!initial
   const isPF = form.tipClient === 'PF'
@@ -166,11 +173,51 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
     try {
       const result = await fetchAnafCompany(form.codFiscal, accessToken)
       if (!result.found) { toast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
-      setForm(prev => ({
+      setForm(prev => {
+        const c = result.adresaSediuComponente
+        const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)
+        const dinDetalii = c?.detaliiAdresa ? parseAdresa(c.detaliiAdresa) : null
+        // Text neetichetat rămas din detaliiAdresa (ex. "spatiu E47" — nu se
+        // potrivește cu Bl./Sc./Et./Ap.) — nu se pierde, ajunge tot în
+        // Apartament, cel mai apropiat câmp liber de "identificator de unitate".
+        const detaliiNeetichetate = dinDetalii?.localitate
+        // Doar valori exacte din dropdown-ul JUDETE_ROMANIA — dacă textul ANAF
+        // nu se potrivește cu niciun județ/sector cunoscut, păstrăm ce avea
+        // clientul deja, nu inserăm text arbitrar în Combobox. `sdenumire_Judet`
+        // conține adesea doar "Municipiul București" generic, iar sectorul
+        // apare separat, în localitate (ex. "Sector 6 Mun. București") — le
+        // combinăm înainte de căutare, ca extractJudet să găsească sectorul
+        // (mai specific) chiar dacă județul generic ar "câștiga" altfel primul;
+        // dacă tot nu se potrivește nimic, încercăm adresa completă aplatizată.
+        const judetRezolvat = c
+          ? extractJudet(`${c.judet ?? ''} ${c.localitate ?? ''}`) || extractJudet(result.adresa) || prev.sediuSocial.judet
+          : prev.sediuSocial.judet
+        const sediuNou = totalGoale
+          ? (result.adresa ? parseAdresa(result.adresa) : prev.sediuSocial)
+          : {
+              // Localitatea poate include și sectorul (ex. "Sector 6 Mun.
+              // București") — stripAdresaLabel îl elimină, fiindcă e deja
+              // reflectat în Județ/Sector; dacă nu mai rămâne nimic, dar am
+              // rezolvat un sector, folosim "București" în loc de gol.
+              localitate: stripAdresaLabel('localitate', c!.localitate)
+                || (judetRezolvat.startsWith('București') ? 'București' : '')
+                || prev.sediuSocial.localitate,
+              strada:     stripAdresaLabel('strada', c!.strada)         || prev.sediuSocial.strada,
+              numar:      stripAdresaLabel('numar', c!.numar)           || prev.sediuSocial.numar,
+              judet:      judetRezolvat,
+              bloc:       dinDetalii?.bloc       || prev.sediuSocial.bloc,
+              scara:      dinDetalii?.scara      || prev.sediuSocial.scara,
+              etaj:       dinDetalii?.etaj       || prev.sediuSocial.etaj,
+              apartament: [dinDetalii?.apartament, detaliiNeetichetate].filter(Boolean).join(' ').trim()
+                || prev.sediuSocial.apartament,
+            }
+        return {
         ...prev,
         denumire: result.denumire || prev.denumire,
         formaJuridica: !isPF ? (result.formaJuridica || prev.formaJuridica) : prev.formaJuridica,
-        sediuSocial: result.adresa || prev.sediuSocial,
+        sediuSocial: sediuNou,
+        sediuSocialAnaf: sediuNou,
+        sediuSocialAnafText: result.adresa || prev.sediuSocialAnafText,
         nrRegistrul: result.nrRegCom || prev.nrRegistrul,
         telefon: result.telefon || prev.telefon,
         caenCod: result.caenCod || prev.caenCod,
@@ -187,7 +234,8 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
         eFactura: result.eFactura ?? prev.eFactura,
         administratoriAnaf: result.administratoriAnaf ?? prev.administratoriAnaf,
         dataAnafActualizat: new Date().toISOString(),
-      }))
+        }
+      })
       toast('Date preluate de la ANAF', 'ok')
     } catch (e: unknown) {
       toast((e as Error).message ?? 'Eroare ANAF', 'err')
@@ -225,7 +273,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
       { invalid: !form.formaJuridica.trim(), ref: formaJuridicaRef, message: 'forma juridică' },
       { invalid: !cifTrimmed || !!cifError, ref: codFiscalRef, message: 'CIF' },
       { invalid: !form.nrRegistrul.trim(), ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
-      { invalid: !form.sediuSocial.trim(), ref: sediuSocialRef, message: 'sediul social' },
+      { invalid: !formatAdresa(form.sediuSocial).trim(), ref: sediuSocialRef, message: 'sediul social' },
       { invalid: form.capitalSocial == null || form.capitalSocial <= 0, ref: capitalSocialRef, message: 'capitalul social' },
     ] : [
       { invalid: !!cifError, ref: codFiscalRef, message: 'CIF valid' },
@@ -406,7 +454,7 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 className="persoana-card"
                 disabled={!adresaFull}
                 style={{ width: '100%', textAlign: 'left', cursor: adresaFull ? 'pointer' : 'not-allowed', marginBottom: '.375rem', border: '1px solid var(--s200)', background: 'transparent', opacity: adresaFull ? 1 : .5 }}
-                onClick={() => { set('sediuSocial', adresaFull); setSediuPicker(false) }}
+                onClick={() => { set('sediuSocial', { ...parseAdresa(a.adresa), judet: a.judet }); setSediuPicker(false) }}
               >
                 <div>
                   <div className="persoana-card-name">{a.prenume} {a.nume}</div>
@@ -576,9 +624,6 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
             <div className="anaf-strip" style={{ marginBottom: '1rem' }}>
               ✓ <b>Date ANAF</b> — actualizat la {formatDateRo(new Date(form.dataAnafActualizat))}
               {form.statutFiscal && <span className={`badge badge-${form.statutFiscal}`}>{form.statutFiscal}</span>}
-              {form.platitorTva && <span className="badge badge-tva">TVA {form.periodaTva}</span>}
-              {form.platitorTva && form.tvaLaIncasare && <span className="badge badge-tva">TVA la încasare</span>}
-              {!form.platitorTva && form.dataAnafActualizat && <span className="badge badge-notva">Non-TVA</span>}
               {form.inactivAnaf && <span className="badge badge-inactiv-anaf">⚠ Inactiv fiscal ANAF</span>}
               {form.splitTva && <span className="badge badge-split-tva">Split TVA</span>}
               {form.eFactura && <span className="badge badge-efactura">RO e-Factura</span>}
@@ -691,21 +736,41 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
               </div>
 
+              {/* Capital social — doar PJ, tot dată de înregistrare a firmei, ca CIF/Nr. Reg. Com. */}
+              {!isPF && (
+                <>
+                  <div className="field">
+                    <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
+                    <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
+                      value={form.capitalSocial ?? ''}
+                      onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))} />
+                  </div>
+                  <div className="field">
+                    <label className="field-label">Părți sociale</label>
+                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
+                      {partiSocialeTotal != null ? partiSocialeTotal.toLocaleString('ro-RO') : '—'}
+                    </div>
+                  </div>
+                </>
+              )}
+
               {/* Sediu */}
-              <div className="field full">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <label className="field-label" style={{ margin: 0 }}>
-                    {isPF ? 'Sediu profesional' : 'Sediu social'} {!isPF && <span style={{ color: 'var(--r500)' }}>*</span>}
-                  </label>
-                  {!isPF && form.asociati.length > 0 && (
-                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
-                      📍 Folosește adresa unui asociat
-                    </button>
-                  )}
-                </div>
-                <textarea ref={sediuSocialRef} className="field-textarea" value={form.sediuSocial}
-                  onChange={e => set('sediuSocial', e.target.value)} rows={2} />
-              </div>
+              <SediuSocialFields
+                value={form.sediuSocial}
+                onChange={setSediu}
+                label={isPF ? 'Sediu profesional' : 'Sediu social'}
+                required={!isPF}
+                anafSnapshot={form.sediuSocialAnaf}
+                anafSyncedAt={form.dataAnafActualizat}
+                anafRawText={form.sediuSocialAnafText}
+                legacyRaw={legacyRaw}
+                firstFieldRef={sediuSocialRef}
+                extraHeaderAction={!isPF && form.asociati.length > 0 && (
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
+                    📍 Folosește adresa unui asociat
+                  </button>
+                )}
+              />
 
               {/* Puncte de lucru — opțional, nelimitat */}
               <div className="field full">
@@ -719,36 +784,6 @@ export default function ClientModal({ initial, onSave, onClose }: Props) {
                 ))}
                 <button type="button" className="btn btn-ghost btn-xs" onClick={addPunctLucru}>+ Adaugă punct de lucru</button>
               </div>
-            </div>
-          </SectionCard>
-
-          {/* ── Bloc Date fiscale ── */}
-          <SectionCard title="Date fiscale">
-            <div className="form-grid">
-              {form.platitorTva && (
-                <div className="field" style={{ justifyContent: 'flex-end' }}>
-                  <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={form.tvaLaIncasare} onChange={e => set('tvaLaIncasare', e.target.checked)} />
-                    TVA la încasare
-                  </label>
-                </div>
-              )}
-              {!isPF && (
-                <div className="field">
-                  <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
-                  <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
-                    value={form.capitalSocial ?? ''}
-                    onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))} />
-                </div>
-              )}
-              {!isPF && (
-                <div className="field">
-                  <label className="field-label">Părți sociale</label>
-                  <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
-                    {partiSocialeTotal != null ? partiSocialeTotal.toLocaleString('ro-RO') : '—'}
-                  </div>
-                </div>
-              )}
             </div>
             {!isPF && missingCompany.length > 0 && (
               <p className="field-error" style={{ marginTop: '.75rem', marginBottom: 0 }}>
