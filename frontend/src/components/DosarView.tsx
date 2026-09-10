@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Dosar, DosarInput, ObiectCerereItem, StadiuDosar } from '../types'
-import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR } from '../types'
-import { dosarProfit } from '../lib/dosareStats'
-import { isoDateToRo } from '../lib/dates'
+import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR, resolveFacturareConfig } from '../types'
+import { calculDosarFinanciar } from '../lib/dosareStats'
+import { isoDateToRo, toDateSafe, formatDateRo } from '../lib/dates'
 import { CLAUSE_FIELD_SPECS } from '../lib/clauseFieldSpecs'
 import { useClienti, EMPTY_CLIENT } from '../lib/clienti'
 import { useApp } from '../AppContext'
@@ -89,7 +89,10 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
   const { user, activeWorkspace, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
   const { clienti, add: addClient } = useClienti(workspaceId)
-  const profit = dosarProfit(dosar)
+  const facturareConfig = resolveFacturareConfig(activeWorkspace?.facturareConfig)
+  const financiar = calculDosarFinanciar(dosar, facturareConfig)
+  const cotaSami = dosar.esteClientAdi ? facturareConfig.cotaSamiClientiAdi : facturareConfig.cotaSamiClientiProprii
+  const pct = (v: number) => `${Math.round(v * 1000) / 10}%`
   // Fiecare etichetă cu clauseTag are propriul buton — dar numai dacă există
   // un client real legat (fără clientId, /extragere n-are pe cine pre-selecta).
   const generableObiecte = dosar.clientId
@@ -207,15 +210,11 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
 
         <DosarSarciniList dosar={dosar} onUpdateStadiu={stadiu => onSaveField({ stadiu })} />
 
-        <div className="cv2-section cv2-section--compact">
+        <div className="cv2-section cv2-section--financiar">
           <div className="cv2-section-label">Financiar</div>
 
           <div className="cv2-two-col">
-            <EditableRow label="Taxe ONRC (RON)" type="number" value={num(dosar.taxeOnrc)} onSave={v => onSaveField({ taxeOnrc: v === '' ? null : Number(v) })} />
             <EditableRow label="Tarif client (RON)" type="number" value={num(dosar.tarifClient)} onSave={v => onSaveField({ tarifClient: v === '' ? null : Number(v) })} />
-          </div>
-
-          <div className="cv2-two-col">
             <div className="cv2-info-row">
               <span className="cv2-info-label">Facturat</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
@@ -223,13 +222,84 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
                 <span className="cv2-info-value">{dosar.facturat ? 'Da' : 'Nu'}</span>
               </label>
             </div>
+          </div>
+
+          <div className="cv2-two-col">
             <div className="cv2-info-row">
-              <span className="cv2-info-label">Profit</span>
-              <span className="cv2-info-value" style={{ fontWeight: 700, color: profit >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
-                {profit.toLocaleString('ro-RO')} RON
+              <span className="cv2-info-label" data-tooltip="Completată automat la bifarea „Facturat” — folosită de Sumarul lunar (CAA reală, Barou)">Data facturării</span>
+              <span className="cv2-info-value">
+                {dosar.facturat ? (toDateSafe(dosar.dataFacturarii) ? formatDateRo(toDateSafe(dosar.dataFacturarii)!) : '—') : '—'}
               </span>
             </div>
           </div>
+
+          <div className="cv2-two-col">
+            <EditableRow label="Taxe ONRC (RON)" type="number" value={num(dosar.taxeOnrc)} onSave={v => onSaveField({ taxeOnrc: v === '' ? null : Number(v) })} />
+            <EditableRow label="Taxe Certificat Constatator (RON)" type="number" value={num(dosar.certificatConstatator)} onSave={v => onSaveField({ certificatConstatator: v === '' ? null : Number(v) })} />
+          </div>
+
+          <div className="cv2-two-col">
+            <div className="cv2-info-row">
+              <span className="cv2-info-label">Semnătură electronică</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!dosar.semnaturaElectronica} onChange={e => onSaveField({ semnaturaElectronica: e.target.checked })} />
+                <span className="cv2-info-value">{dosar.semnaturaElectronica ? 'Da' : 'Nu'}</span>
+              </label>
+            </div>
+            <div className="cv2-info-row">
+              <span className="cv2-info-label">Client Adi</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={!!dosar.esteClientAdi} onChange={e => onSaveField({ esteClientAdi: e.target.checked })} />
+                <span className="cv2-info-value">{dosar.esteClientAdi ? 'Da' : 'Nu'}</span>
+              </label>
+            </div>
+          </div>
+
+          {dosar.semnaturaElectronica ? (
+            <>
+              <div className="cv2-two-col">
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label" data-tooltip={`${pct(cotaSami)} din valoare`}>Cuvenit Sami</span>
+                  <span className="cv2-info-value">{financiar.cuvenitSami.toLocaleString('ro-RO')} RON</span>
+                </div>
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label" data-tooltip={`${pct(1 - cotaSami)} din valoare`}>Cuvenit Adi</span>
+                  <span className="cv2-info-value">{financiar.cuvenitAdi.toLocaleString('ro-RO')} RON</span>
+                </div>
+              </div>
+              <div className="cv2-two-col">
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label" data-tooltip={`${pct(facturareConfig.caaProcent)} din valoare`}>CAA</span>
+                  <span className="cv2-info-value">{financiar.caa.toLocaleString('ro-RO')} RON</span>
+                </div>
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label" data-tooltip={`${pct(facturareConfig.impozitProfitCota)} din cuvenit Adi`}>Impozit profit (Adi)</span>
+                  <span className="cv2-info-value">{financiar.impozitProfit.toLocaleString('ro-RO')} RON</span>
+                </div>
+              </div>
+              <div className="cv2-two-col">
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label">Profit Sami</span>
+                  <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
+                    {financiar.profitSami.toLocaleString('ro-RO')} RON
+                  </span>
+                </div>
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label">Profit Adi</span>
+                  <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitAdi >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
+                    {financiar.profitAdi.toLocaleString('ro-RO')} RON
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="cv2-info-row">
+              <span className="cv2-info-label">Profit Sami</span>
+              <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
+                {financiar.profitSami.toLocaleString('ro-RO')} RON
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="cv2-section cv2-section--notes">

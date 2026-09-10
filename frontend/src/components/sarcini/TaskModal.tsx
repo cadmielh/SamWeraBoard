@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { Client, Dosar, Sarcina, SarcinaInput, SarcinaPrioritate } from '../../types'
-import { PRIORITATE_LABELS, STADIU_DOSAR_LABELS, obiecteCereriiText } from '../../types'
+import type { Client, Dosar, Sarcina, SarcinaInput, SarcinaPrioritate, SarcinaStatus } from '../../types'
+import { PRIORITATE_LABELS, SARCINA_STATUS_LABELS, SARCINA_STATUS_ORDER, STADIU_DOSAR_LABELS, obiecteCereriiText } from '../../types'
 import { useClienti, EMPTY_CLIENT } from '../../lib/clienti'
 import { useDosare } from '../../lib/dosare'
 import { useApp } from '../../AppContext'
@@ -143,6 +143,15 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
             <div className="field full">
               <label className="field-label">Descriere</label>
               <textarea className="field-textarea" rows={3} value={form.descriere} onChange={e => set('descriere', e.target.value)} />
+            </div>
+
+            <div className="field">
+              <label className="field-label">Stare</label>
+              <select className="field-input" value={form.status} onChange={e => set('status', e.target.value as SarcinaStatus)}>
+                {SARCINA_STATUS_ORDER.map(key => (
+                  <option key={key} value={key}>{SARCINA_STATUS_LABELS[key]}</option>
+                ))}
+              </select>
             </div>
 
             <div className="field">

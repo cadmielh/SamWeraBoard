@@ -81,8 +81,21 @@ export function useSarcini(workspaceId: string | null) {
     delete patch.id
     delete patch.createdAt
     delete patch.createdBy
+
+    // Status schimbat din formular (TaskModal) — completedAt trebuie să
+    // urmeze tranziția la fel ca la mutarea prin drag (moveSarcina), altfel
+    // o sarcină marcată „Finalizat" din formular n-ar avea completedAt și
+    // n-ar mai apărea în niciun query (board-ul cere fie status activ, fie
+    // completedAt recent).
+    if (data.status !== undefined) {
+      const previous = sarcini.find(s => s.id === sarcinaId)
+      if (previous && previous.status !== data.status) {
+        patch.completedAt = data.status === 'finalizat' ? serverTimestamp() : deleteField()
+      }
+    }
+
     await updateDoc(doc(sarciniCol(workspaceId), sarcinaId), patch)
-  }, [])
+  }, [sarcini])
 
   const remove = useCallback(async (workspaceId: string, sarcinaId: string) => {
     await deleteDoc(doc(sarciniCol(workspaceId), sarcinaId))

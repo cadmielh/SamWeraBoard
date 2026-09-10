@@ -37,6 +37,15 @@ function stadiuTransition(prevStadiu: StadiuDosar | undefined, nextStadiu: Stadi
   return 'none'
 }
 
+/** Analog lui stadiuTransition, pentru bifa "Facturat" — determină când
+ * pornește/oprește ceasul `dataFacturarii`, folosit de Sumarul lunar (CAA
+ * reală, Barou) ca să grupeze dosarele facturate pe luna facturării, nu pe
+ * `createdAt`. */
+function facturatTransition(prevFacturat: boolean | undefined, nextFacturat: boolean | undefined): 'enter' | 'leave' | 'none' {
+  if (nextFacturat === undefined || nextFacturat === prevFacturat) return 'none'
+  return nextFacturat ? 'enter' : 'leave'
+}
+
 export function useDosare(workspaceId: string | null) {
   const [dosare, setDosare] = useState<Dosar[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,9 +112,12 @@ export function useDosare(workspaceId: string | null) {
 
     // Un dosar creat direct în TRIGGER_STADIU (rar, dar posibil — ex. import
     // istoric) tot trebuie să pornească ceasul săptămânii de arhivare.
-    const localCreatedExtra: Partial<Dosar> = data.stadiu === TRIGGER_STADIU
-      ? { documentePredateAt: new Date().toISOString() } : {}
+    const localCreatedExtra: Partial<Dosar> = {
+      ...(data.stadiu === TRIGGER_STADIU ? { documentePredateAt: new Date().toISOString() } : {}),
+      ...(data.facturat ? { dataFacturarii: new Date().toISOString() } : {}),
+    }
     if (data.stadiu === TRIGGER_STADIU) payload.documentePredateAt = serverTimestamp()
+    if (data.facturat) payload.dataFacturarii = serverTimestamp()
 
     const tempId = `temp-${crypto.randomUUID()}`
     setDosare(prev => [{ ...(payload as unknown as Dosar), id: tempId, createdAt: new Date().toISOString(), ...localCreatedExtra }, ...prev])
@@ -125,11 +137,11 @@ export function useDosare(workspaceId: string | null) {
       if (d.id !== dosarId) return d
       previous = d
       const transition = stadiuTransition(d.stadiu, data.stadiu)
-      const localExtras: Partial<Dosar> = transition === 'enter'
-        ? { documentePredateAt: new Date().toISOString() }
-        : transition === 'leave'
-          ? { documentePredateAt: null }
-          : {}
+      const facturatTr = facturatTransition(d.facturat, data.facturat)
+      const localExtras: Partial<Dosar> = {
+        ...(transition === 'enter' ? { documentePredateAt: new Date().toISOString() } : transition === 'leave' ? { documentePredateAt: null } : {}),
+        ...(facturatTr === 'enter' ? { dataFacturarii: new Date().toISOString() } : facturatTr === 'leave' ? { dataFacturarii: null } : {}),
+      }
       return { ...d, ...(data as Partial<Dosar>), ...localExtras }
     }))
 
@@ -149,6 +161,14 @@ export function useDosare(workspaceId: string | null) {
       patch.documentePredateAt = serverTimestamp()
     } else if (transition === 'leave') {
       patch.documentePredateAt = deleteField()
+    }
+
+    // dataFacturarii — analog, pentru Sumarul lunar (vezi facturatTransition).
+    const facturatTr = facturatTransition(previous?.facturat, data.facturat)
+    if (facturatTr === 'enter') {
+      patch.dataFacturarii = serverTimestamp()
+    } else if (facturatTr === 'leave') {
+      patch.dataFacturarii = deleteField()
     }
 
     try {
@@ -211,6 +231,19 @@ export async function fetchDosareByMonth(workspaceId: string, year: number, mont
  * header (fără comparație cu perioada anterioară, care nu are sens aici). */
 export async function fetchAllDosare(workspaceId: string): Promise<Dosar[]> {
   const snap = await getDocs(dosareCol(workspaceId))
+  return snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar))
+}
+
+/** Toate dosarele facturate — pentru Sumarul lunar (CAA reală, Barou), care
+ * grupează pe luna facturării (`dataFacturarii`), nu pe `createdAt` ca restul
+ * cardurilor. Firestore nu poate filtra server-side pe intervalul cerut
+ * (dosarele vechi, facturate înainte de acest câmp, n-au deloc `dataFacturarii`
+ * — un query pe interval le-ar sări), deci se preiau toate și se filtrează pe
+ * lună client-side, în DosarStatsPanel — acceptabil la volumul modest al unui
+ * cabinet (același compromis ca restul modulului, vezi comentariile de mai sus). */
+export async function fetchDosareFacturate(workspaceId: string): Promise<Dosar[]> {
+  const q = query(dosareCol(workspaceId), where('facturat', '==', true))
+  const snap = await getDocs(q)
   return snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar))
 }
 

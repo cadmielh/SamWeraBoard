@@ -72,7 +72,13 @@ export default function SarciniPage() {
       if (filterClientId && denumire) { setClientFilter({ id: filterClientId, denumire }); setAssigneeFilter('toate') }
       if (openId) {
         const target = sarcini.find(s => s.id === openId)
-        if (target) setModal(target)
+        if (target) {
+          setModal(target)
+          // Sarcina poate fi a altcuiva (ex. deep-link din dosarul unui coleg)
+          // — dacă rămâne filtrul implicit „mele", sarcina dispare din board
+          // imediat după orice editare (nemaifiind găsită prin `open`).
+          if (target.assigneeUid !== user?.uid) setAssigneeFilter('toate')
+        }
       }
       setHandledOnce(true)
     }
@@ -326,7 +332,7 @@ export default function SarciniPage() {
           </div>
           <div className="modal-body">
             <p style={{ color: 'var(--s600)', fontSize: '.9375rem', marginBottom: '.875rem' }}>
-              Ultima sarcină legată de dosarul <strong>{suggestDosar.label}</strong> a fost finalizată. Muți dosarul în ce stadiu?
+              Ultima sarcină legată de dosarul <strong>{suggestDosar.label}</strong> a fost finalizată. În ce stadiu dorești să muți dosarul?
             </p>
             <div className="field">
               <label className="field-label">Stadiu nou</label>

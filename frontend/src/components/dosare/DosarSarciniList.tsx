@@ -112,7 +112,7 @@ export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
 
       {allFinalized && !isFinalStadiu && !suggestDismissed && (
         <div style={{ background: 'var(--g50)', border: '1px solid var(--g200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
-          <span style={{ fontSize: '.8125rem', color: 'var(--g700)' }}>Toate sarcinile legate sunt finalizate — muți dosarul în ce stadiu?</span>
+          <span style={{ fontSize: '.8125rem', color: 'var(--g700)' }}>Toate sarcinile legate sunt finalizate — În ce stadiu dorești să muți dosarul?</span>
           <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
             <select className="field-input" style={{ flex: 1 }} value={suggestStadiu} onChange={e => setSuggestStadiu(e.target.value as StadiuDosar)}>
               {(Object.entries(STADIU_DOSAR_LABELS) as [StadiuDosar, string][]).map(([key, label]) => (

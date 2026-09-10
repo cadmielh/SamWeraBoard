@@ -1,6 +1,10 @@
+import { useState } from 'react'
 import { FONT_OPTIONS } from '../lib/settings'
 import type { Theme } from '../lib/settings'
 import { useSettingsCtx } from '../SettingsCtx'
+import { useApp } from '../AppContext'
+import { resolveFacturareConfig } from '../types'
+import type { FacturareConfig } from '../types'
 
 const THEME_OPTIONS: { key: Theme; label: string; desc: string }[] = [
   { key: 'light', label: 'Deschis', desc: 'Fundal alb, potrivit pentru lucru ziua' },
@@ -35,8 +39,100 @@ function ThemeSwatchPreview({ theme }: { theme: Theme }) {
   )
 }
 
+function PercentField({ label, hint, value, onChange }: { label: string; hint: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="field">
+      <label className="field-label">{label}</label>
+      <input
+        className="field-input"
+        type="number"
+        min={0}
+        max={100}
+        step={0.1}
+        value={Math.round(value * 1000) / 10}
+        onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value) / 100)}
+      />
+      <div className="card-sub" style={{ marginTop: '.25rem' }}>{hint}</div>
+    </div>
+  )
+}
+
+function RonField({ label, hint, value, onChange }: { label: string; hint: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="field">
+      <label className="field-label">{label}</label>
+      <input
+        className="field-input"
+        type="number"
+        min={0}
+        step={1}
+        value={value}
+        onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+      />
+      <div className="card-sub" style={{ marginTop: '.25rem' }}>{hint}</div>
+    </div>
+  )
+}
+
+function FacturareConfigCard() {
+  const { activeWorkspace, workspaceCtx, toast } = useApp()
+  const saved = resolveFacturareConfig(activeWorkspace?.facturareConfig)
+  const [form, setForm] = useState<FacturareConfig>(saved)
+  const [saving, setSaving] = useState(false)
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+
+  const set = <K extends keyof FacturareConfig>(key: K, val: number) => setForm(prev => ({ ...prev, [key]: val }))
+
+  const handleSave = async () => {
+    if (!activeWorkspace) return
+    setSaving(true)
+    try {
+      await workspaceCtx.updateFacturareConfig(activeWorkspace.id, form)
+      toast('Procentaje salvate', 'ok')
+    } catch (e: unknown) {
+      toast((e as Error).message ?? 'Eroare la salvare', 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <span className="card-title">💰 Facturare Sami / Adi</span>
+      </div>
+      <div className="card-body">
+        <div className="card-sub" style={{ marginBottom: '.875rem' }}>
+          Cotele folosite la împărțirea profitului dosarelor cu semnătură electronică.
+        </div>
+        <div className="form-grid">
+          <PercentField label="Cota Sami — clienți Adi" hint="Ce revine lui Sami din dosarele clienților lui Adi" value={form.cotaSamiClientiAdi} onChange={v => set('cotaSamiClientiAdi', v)} />
+          <PercentField label="Cota Sami — clienți proprii" hint="Ce revine lui Sami din dosarele proprii" value={form.cotaSamiClientiProprii} onChange={v => set('cotaSamiClientiProprii', v)} />
+          <PercentField label="CAA per dosar (% din valoare)" hint="Contribuția CAA — mereu % din valoarea dosarului (calculul per dosar)" value={form.caaProcent} onChange={v => set('caaProcent', v)} />
+          <PercentField label="Impozit pe profit (Adi)" hint="Se aplică pe partea lui Adi (cuvenit Adi)" value={form.impozitProfitCota} onChange={v => set('impozitProfitCota', v)} />
+        </div>
+
+        <div className="form-subsection-label" style={{ marginTop: '1.25rem' }}>Sumar lunar — CAA reală, cu prag</div>
+        <div className="card-sub" style={{ marginTop: '.5rem', marginBottom: '.625rem' }}>
+          Folosite doar de cardul „Sumar lunar" — CAA lunară reală se calculează cu prag, nu ca simplul % de mai sus.
+        </div>
+        <div className="form-grid">
+          <RonField label="CAA — prag minim (RON/lună)" hint="Sub acest prag, CAA lunară e fixă (nu procentuală)" value={form.caaMin} onChange={v => set('caaMin', v)} />
+          <RonField label="CAA — plafon maxim (RON/lună)" hint="CAA lunară nu depășește această sumă" value={form.caaPlafon} onChange={v => set('caaPlafon', v)} />
+          <RonField label="Barou — taxă fixă (RON/lună)" hint="Taxă lunară fixă, doar în lunile cu venit" value={form.barouFix} onChange={v => set('barouFix', v)} />
+        </div>
+
+        <button className="btn btn-primary btn-sm" style={{ marginTop: '1rem' }} onClick={handleSave} disabled={!dirty || saving}>
+          {saving ? <span className="spin" /> : 'Salvează'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function SetariPage() {
   const { theme, setTheme, font, setFont } = useSettingsCtx()
+  const { userRole } = useApp()
 
   return (
     <div className="page--data">
@@ -101,6 +197,8 @@ export default function SetariPage() {
               </div>
             </div>
           </div>
+
+          {userRole === 'admin' && <FacturareConfigCard />}
         </div>
       </div>
     </div>

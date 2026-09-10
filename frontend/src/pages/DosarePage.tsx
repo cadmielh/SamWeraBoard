@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useReducer, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { Dosar, DosarInput } from '../types'
-import { obiecteCereriiText } from '../types'
+import { obiecteCereriiText, resolveFacturareConfig } from '../types'
 import { useDosare, isDosarArhivat } from '../lib/dosare'
 import { useSarcini } from '../lib/sarcini'
 import { buildSarcinaForDosar } from '../lib/dosarSarcini'
@@ -27,6 +27,7 @@ const STATS_PERIOD_OPTIONS: { key: StatsPeriod; label: string }[] = [
 export default function DosarePage() {
   const { user, activeWorkspace, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
+  const facturareConfig = resolveFacturareConfig(activeWorkspace?.facturareConfig)
 
   const { dosare, loading, hasMore, loadingMore, loadMore, add, update, remove } = useDosare(workspaceId)
   const sarciniCtx = useSarcini(workspaceId)
@@ -43,6 +44,11 @@ export default function DosarePage() {
   // folosește un hook one-shot, nu live, deci fără asta noul item ar apărea
   // doar la reload de pagină.
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0)
+  // Cardurile din DosarStatsPanel fac propriile citiri Firestore (pe
+  // perioadă), separate de `dosare` — nu se actualizează singure la o
+  // adăugare/editare/ștergere. Incrementat la orice mutație, forțează
+  // panoul să refacă citirea, ca la archiveRefreshKey mai jos.
+  const [statsRefreshKey, setStatsRefreshKey] = useState(0)
 
   /* Perioadă + lună navigate pentru statisticile din header — selectorul e
      afișat acolo (nu în DosarStatsPanel), ca să nu mai ocupe un rând separat.
@@ -161,9 +167,9 @@ export default function DosarePage() {
   }, [dosare, searchQuery, pendingDeleteIds])
 
   const processedDosare = useMemo(() => {
-    const filtered = applyFilters(displayed, colFilters)
-    return applySort(filtered, sortState.col, sortState.dir)
-  }, [displayed, colFilters, sortState])
+    const filtered = applyFilters(displayed, colFilters, facturareConfig)
+    return applySort(filtered, sortState.col, sortState.dir, facturareConfig)
+  }, [displayed, colFilters, sortState, facturareConfig])
 
   const hasActiveFiltersOrSort = Object.values(colFilters).some(v => v.length > 0) || sortState.col !== null
 
@@ -200,13 +206,13 @@ export default function DosarePage() {
   }, [])
 
   const handleSelectAllFilter = useCallback((key: string) => {
-    const all = getUniqueValues(displayed, key)
+    const all = getUniqueValues(displayed, key, facturareConfig)
     setColFilters(prev => {
       const curr = prev[key] ?? []
       const allSelected = all.length > 0 && all.every(v => curr.includes(v))
       return { ...prev, [key]: allSelected ? [] : all }
     })
-  }, [displayed])
+  }, [displayed, facturareConfig])
 
   const handleClearFilter = useCallback((key: string) => {
     setColFilters(prev => ({ ...prev, [key]: [] }))
@@ -226,6 +232,7 @@ export default function DosarePage() {
     await update(workspaceId, d.id, { stadiu: 'in_lucru' })
     setExtraDosare(prev => prev[d.id] ? { ...prev, [d.id]: { ...prev[d.id], stadiu: 'in_lucru' } } : prev)
     setArchiveRefreshKey(k => k + 1)
+    setStatsRefreshKey(k => k + 1)
     toast('Dosar restaurat — În lucru', 'ok')
   }, [workspaceId, update, toast])
 
@@ -235,10 +242,12 @@ export default function DosarePage() {
       await update(workspaceId, modal.id, data)
       toast('Dosar actualizat', 'ok')
       setArchiveRefreshKey(k => k + 1)
+      setStatsRefreshKey(k => k + 1)
       return
     }
     const dosarId = await add(workspaceId, data, user.uid)
     toast('Dosar adăugat', 'ok')
+    setStatsRefreshKey(k => k + 1)
     if (creeazaSarcina && data.obiecteCererii.length > 0) {
       // Relația Dosar↔Sarcină e 1:N, citită din Sarcina.dosarId — nu mai
       // scriem înapoi un id pe Dosar. O singură sarcină combinată, cu toate
@@ -263,6 +272,7 @@ export default function DosarePage() {
         try {
           await remove(workspaceId, id)
           setOpenDosarIds(prev => prev.filter(x => x !== id))
+          setStatsRefreshKey(k => k + 1)
         } catch (err: unknown) {
           setPendingDeleteIds(prev => { const next = new Set(prev); next.delete(id); return next })
           toast((err as Error).message ?? 'Eroare la ștergerea dosarului', 'err')
@@ -337,10 +347,10 @@ export default function DosarePage() {
             </div>
           </div>
 
-          <DosarStatsPanel workspaceId={workspaceId} period={statsPeriod} year={year} month0={month0} />
+          <DosarStatsPanel workspaceId={workspaceId} period={statsPeriod} year={year} month0={month0} facturareConfig={facturareConfig} refreshKey={statsRefreshKey} />
         </div>
 
-        <div className="page-tabs">
+        <div className="page-tabs page-tabs--lg">
           <button className={`page-tab${tab === 'lista' ? ' page-tab--active' : ''}`} onClick={() => setTab('lista')}>Listă</button>
           {openDosare.map(d => (
             <button
@@ -430,6 +440,9 @@ export default function DosarePage() {
                   if (patch.stadiu !== undefined || patch.facturat !== undefined) {
                     setArchiveRefreshKey(k => k + 1)
                   }
+                  // Orice câmp editat inline poate afecta cardurile financiare
+                  // (tarif, taxe, facturat, split Adi) — reîncărcăm întotdeauna.
+                  setStatsRefreshKey(k => k + 1)
                 }}
               />
             ) : (
@@ -460,6 +473,7 @@ export default function DosarePage() {
                     sortState={sortState}
                     colFilters={colFilters}
                     hiddenCols={hiddenCols}
+                    facturareConfig={facturareConfig}
                     onColSort={col => dispatchSort({ type: 'TOGGLE', col })}
                     onFilterToggle={handleFilterToggle}
                     onSelectAllFilter={handleSelectAllFilter}

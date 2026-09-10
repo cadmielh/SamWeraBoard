@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import type { Dosar } from '../../types'
-import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR, obiecteCereriiText } from '../../types'
-import { dosarProfit } from '../../lib/dosareStats'
+import type { Dosar, FacturareConfig } from '../../types'
+import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR, obiecteCereriiText, DEFAULT_FACTURARE_CONFIG } from '../../types'
+import { calculDosarFinanciar } from '../../lib/dosareStats'
 import { usePositionedDropdown } from '../../lib/usePositionedDropdown'
 import {
   COLUMNS, type ColDef, EMPTY_PLACEHOLDER, fmtDateShort, getColValue, getUniqueValues,
@@ -15,7 +15,7 @@ const ACTION_W = 152
 const HEADER_H = 36
 const ROW_H = 48
 
-function renderCellContent(d: Dosar, key: string): React.ReactNode {
+function renderCellContent(d: Dosar, key: string, facturareConfig: FacturareConfig = DEFAULT_FACTURARE_CONFIG): React.ReactNode {
   switch (key) {
     case 'clientDenumire':
       return (
@@ -30,11 +30,20 @@ function renderCellContent(d: Dosar, key: string): React.ReactNode {
       return <span className={`badge stadiu-badge-${STADIU_DOSAR_COLOR[d.stadiu]}`}>{STADIU_DOSAR_LABELS[d.stadiu]}</span>
     case 'facturat':
       return <span className={`chip ${d.facturat ? 'chip-success' : 'chip-muted'}`}>{d.facturat ? 'Da' : 'Nu'}</span>
-    case 'profit': {
-      const p = dosarProfit(d)
+    case 'esteClientAdi':
+      return <span className={`chip ${d.esteClientAdi ? 'chip-success' : 'chip-muted'}`}>{d.esteClientAdi ? 'Da' : 'Nu'}</span>
+    case 'semnaturaElectronica':
+      return <span className={`chip ${d.semnaturaElectronica ? 'chip-success' : 'chip-muted'}`}>{d.semnaturaElectronica ? 'Da' : 'Nu'}</span>
+    case 'profitSami': {
+      const p = calculDosarFinanciar(d, facturareConfig).profitSami
+      return <span style={{ fontWeight: 700, color: p >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{p.toLocaleString('ro-RO')} RON</span>
+    }
+    case 'profitAdi': {
+      const p = calculDosarFinanciar(d, facturareConfig).profitAdi
       return <span style={{ fontWeight: 700, color: p >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{p.toLocaleString('ro-RO')} RON</span>
     }
     case 'taxeOnrc':
+    case 'certificatConstatator':
     case 'tarifClient': {
       const v = d[key]
       return v == null ? null : `${v.toLocaleString('ro-RO')} RON`
@@ -103,6 +112,7 @@ interface Props {
   sortState: SortState
   colFilters: Record<string, string[]>
   hiddenCols: Set<string>
+  facturareConfig?: FacturareConfig
   onColSort: (key: string) => void
   onFilterToggle: (key: string, val: string) => void
   onSelectAllFilter: (key: string) => void
@@ -113,7 +123,7 @@ interface Props {
 }
 
 export default function DosarTable({
-  dosare, rawDosare, sortState, colFilters, hiddenCols,
+  dosare, rawDosare, sortState, colFilters, hiddenCols, facturareConfig = DEFAULT_FACTURARE_CONFIG,
   onColSort, onFilterToggle, onSelectAllFilter, onClearFilter,
   onView, onEdit, onDelete,
 }: Props) {
@@ -307,7 +317,6 @@ export default function DosarTable({
       </div>
 
       {dosare.map(d => {
-        const profit = dosarProfit(d)
         return (
           <div key={d.id} className="vrow" style={{ width: minW, minWidth: '100%', height: ROW_H }}>
             {orderedVisibleColumns.map(col => (
@@ -317,9 +326,7 @@ export default function DosarTable({
                 style={{ width: getDisplayW(col.key), flexShrink: 0 }}
                 title={col.key === 'obiecteCererii' ? obiecteCereriiText(d.obiecteCererii) : undefined}
               >
-                {col.key === 'profit'
-                  ? <span style={{ fontWeight: 700, color: profit >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{profit.toLocaleString('ro-RO')} RON</span>
-                  : renderCellContent(d, col.key)}
+                {renderCellContent(d, col.key, facturareConfig)}
               </div>
             ))}
             <div
@@ -337,7 +344,7 @@ export default function DosarTable({
       {openFilterKey && filterDropdown.open && filterDropdown.position && (() => {
         const key = openFilterKey
         const col = colMap.get(key)!
-        const opts = getUniqueValues(rawDosare, key)
+        const opts = getUniqueValues(rawDosare, key, facturareConfig)
         const selected = colFilters[key] ?? []
         const allSel = opts.length > 0 && opts.every(v => selected.includes(v))
         return (

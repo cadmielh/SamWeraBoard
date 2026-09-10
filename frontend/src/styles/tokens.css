@@ -530,6 +530,10 @@ body {
 }
 .page-tab__close:hover { background:var(--s200); color:var(--s700); }
 
+/* ── Tab bar — mărit, pagina Dosare ── */
+.page-tabs--lg .page-tab { font-size:.9rem; padding:.55rem 1.1rem; }
+.page-tabs--lg .page-tab:first-child { font-size:1.05rem; font-weight:700; }
+
 /* ── ClientView embedded mode ── */
 .cv-embed {
   display:flex; flex-direction:column; height:100%; overflow:hidden;
@@ -588,6 +592,9 @@ body {
 .field-input:disabled { background:var(--surface-2); color:var(--s400); cursor:not-allowed; }
 .field-input[aria-invalid="true"] { border-color:var(--r500); }
 .field-error { font-size:.75rem; color:var(--r600); }
+.form-subsection-label { grid-column:1/-1; font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.06em; margin-top:.5rem; padding-top:.75rem; border-top:1px solid var(--s200); }
+.field-checkbox-row { display:flex; align-items:center; gap:.5rem; cursor:pointer; height:2.3rem; font-size:.875rem; font-weight:500; color:var(--s800); text-transform:none; }
+.field-checkbox { width:18px; height:18px; accent-color:var(--p500); cursor:pointer; flex-shrink:0; }
 .field-textarea { padding:.5rem .75rem; border:1.5px solid var(--s200); border-radius:var(--r-sm); font:inherit; font-size:.875rem; color:var(--s900); background:var(--surface); transition:border-color var(--t); outline:none; width:100%; box-sizing:border-box; resize:vertical; min-height:72px; }
 .field-textarea:focus { border-color:var(--p500); box-shadow:0 0 0 3px rgba(99,102,241,.1); }
 .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
@@ -702,6 +709,9 @@ body {
 .cv2-section--compact .cv2-two-col { gap:.75rem; }
 .cv2-section--compact .cv2-info-label { font-size:.64rem; }
 .cv2-section--compact .cv2-info-value { font-size:.8125rem; }
+/* Financiar — mai puține rânduri per lățime decât „Detalii cerere", text mărit ca să nu rămână gol vizual. */
+.cv2-section--financiar .cv2-info-label { font-size:.78rem; }
+.cv2-section--financiar .cv2-info-value { font-size:1rem; }
 .cv2-section-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.08em; display:flex; align-items:center; gap:.35rem; }
 .cv2-count-chip { background:var(--p100); color:var(--p700); font-size:.68rem; font-weight:700; padding:.1rem .45rem; border-radius:var(--r-full); }
 
@@ -830,12 +840,129 @@ body {
 .tf-detail-panel * { min-width:0; }
 .tf-empty { display:flex; align-items:center; justify-content:center; min-height:260px; color:var(--s400); font-size:.875rem; text-align:center; padding:1.5rem; border:1.5px dashed var(--s300); border-radius:var(--r-md); }
 
+/* ── Tooltip aplicație — înlocuiește `title` (stilul browserului, ilizibil pe
+   temă întunecată) cu un bubble care ține de temă și font, ca orice popover
+   din aplicație (.combo-dropdown, .col-filter-dd__opt). */
+[data-tooltip] { position:relative; cursor:help; }
+[data-tooltip]::after {
+  content:attr(data-tooltip);
+  /* centrat sub elementul cu hover, nu ancorat la colțul stânga — pe un
+     trigger mare (un tile întreg, un rând), left:0 putea ieși departe de
+     poziția reală a mouse-ului; centrul e cea mai bună aproximare fără JS
+     care să urmărească efectiv cursorul. */
+  position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); z-index:80;
+  background:var(--surface); color:var(--s700); border:1px solid var(--s200); box-shadow:var(--sh-lg);
+  font-family:var(--font); font-size:.75rem; font-weight:500; line-height:1.45;
+  text-transform:none; letter-spacing:normal; white-space:normal;
+  padding:.5rem .65rem; border-radius:var(--r-sm); width:max-content; max-width:260px;
+  opacity:0; visibility:hidden; pointer-events:none; transition:opacity var(--t), visibility var(--t);
+}
+[data-tooltip]:hover::after, [data-tooltip]:focus-visible::after { opacity:1; visibility:visible; }
+@media (prefers-reduced-motion: reduce) { [data-tooltip]::after { transition:none; } }
+
 /* ── Dosare — statistici lunare ── */
 .dosar-stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.875rem; }
-.stat-tile { background:var(--surface); border:1px solid var(--s200); border-radius:var(--r-md); padding:.875rem 1rem; display:flex; flex-direction:column; gap:.3rem; }
+.stat-tile { background:var(--surface); border:1px solid var(--s200); border-radius:var(--r-md); padding:.875rem 1rem; display:flex; flex-direction:column; gap:.3rem; position:relative; }
 .stat-tile-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.05em; }
 .stat-tile-value { font-size:1.375rem; font-weight:800; color:var(--s900); letter-spacing:-.02em; }
+.stat-tile-value-total { color:var(--s400); font-weight:700; }
+.stat-tile-tag {
+  display:inline-block; font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--g700); background:var(--g50); border:1px solid var(--g200); border-radius:var(--r-full);
+  padding:.1rem .4rem; vertical-align:middle; margin-left:.15rem;
+}
+.stat-tile-secondary { font-size:.8125rem; font-weight:600; color:var(--s500); }
 .stat-tile-trend { font-size:.7rem; font-weight:700; }
+
+/* ── Profit Sami / De facturat Adi — buton spre Sumarul lunar, activ doar
+   când regimul CAA nu e cel procentual (vezi arataButonOficial) ── */
+.stat-tile--flagged { border-color:var(--a200); }
+.stat-tile-discrepancy-btn {
+  position:absolute; top:.7rem; right:.7rem;
+  display:flex; align-items:center; gap:.3rem; font:inherit; font-size:.6875rem; font-weight:700;
+  color:var(--a800); background:var(--a50); border:1px solid var(--a200); border-radius:var(--r-full);
+  padding:.25rem .55rem; cursor:pointer; white-space:nowrap; transition:background var(--t), border-color var(--t);
+}
+.stat-tile-discrepancy-btn svg { width:12px; height:12px; flex-shrink:0; }
+.stat-tile-discrepancy-btn:hover { background:var(--a100); border-color:var(--a300); }
+/* tooltip-ul butonului iese din colțul dreapta-sus — aliniat la dreapta, nu la stânga (ca implicitul [data-tooltip]), ca să nu depășească marginea cardului */
+.stat-tile-discrepancy-btn[data-tooltip]::after { left:auto; right:0; transform:none; }
+
+/* ── Sumar lunar (CAA reală cu prag + Barou) — expandabil, tot cardul e clic ── */
+.sumar-lunar-card {
+  background:var(--surface); border:1px solid var(--s200); border-top:3px solid var(--p500);
+  border-radius:var(--r-md); box-shadow:var(--sh-sm); padding:1.125rem 1.25rem;
+  display:flex; flex-direction:column; gap:1rem; margin-top:.875rem;
+  transition:box-shadow var(--t), border-color var(--t), background-color .6s ease;
+}
+.sumar-lunar-card--clickable { cursor:pointer; }
+.sumar-lunar-card--clickable:hover { box-shadow:var(--sh-md); border-color:var(--p200); }
+.sumar-lunar-card--clickable:focus-visible { outline:2px solid var(--p500); outline-offset:2px; }
+/* excluse de la click-ul de expandare/restrângere */
+.sumar-lunar-card--clickable .caa-compare { cursor:default; }
+/* are propriul tooltip (explicația) — cursor:help, nu pointer de expandare */
+.sumar-lunar-card--clickable .sumar-lunar-profit-tile { cursor:help; }
+.sumar-lunar-card--highlight { background:var(--p50); border-color:var(--p200); box-shadow:var(--sh-md); }
+@media (prefers-reduced-motion: reduce) {
+  .sumar-lunar-card { transition:none; }
+}
+.sumar-lunar-chevron { font-size:.75rem; color:var(--s400); transition:transform var(--t); }
+.sumar-lunar-chevron--up { transform:rotate(180deg); }
+.sumar-lunar-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; }
+.sumar-lunar-head[data-tooltip] { cursor:pointer; }
+.sumar-lunar-title { font-size:.9375rem; font-weight:700; color:var(--s900); letter-spacing:-.01em; }
+.sumar-lunar-sub { font-size:.75rem; color:var(--s400); margin-top:.1rem; }
+.regim-chip {
+  display:inline-flex; align-items:center; gap:.35rem; font-size:.7rem; font-weight:700;
+  background:var(--a50); color:var(--a800); border:1px solid var(--a200);
+  padding:.25rem .6rem; border-radius:var(--r-full); white-space:nowrap; flex-shrink:0;
+}
+.regim-chip::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--a500); flex-shrink:0; }
+
+/* ── rândul unic din modul extins — CAA (mai lată) + cele 2 profituri oficiale (mai restrânse), pe același rând ── */
+.sumar-lunar-cards-row { display:grid; grid-template-columns:2fr 1fr 1fr; gap:.875rem; align-items:stretch; }
+
+.caa-compare {
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:1rem;
+  background:var(--surface-2); border:1px solid var(--s200); border-radius:var(--r-md);
+  padding:.875rem 1.125rem;
+}
+.caa-col { display:flex; flex-direction:column; gap:.2rem; min-width:0; }
+.caa-col--right { text-align:right; align-items:flex-end; }
+.caa-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.04em; }
+.caa-value { font-size:1.125rem; font-weight:800; color:var(--s900); }
+.caa-value--muted { color:var(--s500); font-weight:700; }
+.caa-delta { display:flex; flex-direction:column; align-items:center; gap:.15rem; justify-self:center; }
+.caa-delta-arrow { font-size:.9rem; color:var(--a500); }
+.caa-delta-pill {
+  font-size:.75rem; font-weight:800; border-radius:var(--r-full); padding:.2rem .55rem; white-space:nowrap;
+  color:var(--a800); background:var(--a100); border:1px solid var(--a200);
+}
+.caa-delta-pill--down { color:var(--g700); background:var(--g50); border-color:var(--g200); }
+
+.sumar-lunar-profit-tile {
+  background:var(--surface-2); border:1px solid var(--s200); border-radius:var(--r-md);
+  padding:.875rem 1rem; display:flex; flex-direction:column; gap:.25rem;
+}
+.sumar-lunar-profit-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.04em; }
+.sumar-lunar-profit-value { font-size:1.25rem; font-weight:800; }
+.sumar-lunar-profit-was { font-size:.7rem; color:var(--s400); font-weight:600; }
+.sumar-lunar-profit-was b { color:var(--s600); text-decoration:line-through; text-decoration-color:var(--s300); font-weight:700; }
+
+.sumar-lunar-empty { font-size:.8125rem; color:var(--s400); }
+
+/* ── mod compact (implicit) — 1-2 cifre cheie, restul sub "Detalii ▼" ── */
+.sumar-lunar-compact { display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap; }
+.sumar-lunar-compact-item { display:flex; align-items:baseline; gap:.45rem; }
+.sumar-lunar-compact-label { font-size:.7rem; font-weight:700; color:var(--s500); text-transform:uppercase; letter-spacing:.04em; }
+.sumar-lunar-compact-value { font-size:1rem; font-weight:800; color:var(--s900); }
+
+@media (max-width:720px) {
+  .sumar-lunar-cards-row { grid-template-columns:1fr; }
+  .caa-compare { grid-template-columns:1fr; text-align:left; }
+  .caa-col--right { text-align:left; align-items:flex-start; }
+  .caa-delta { flex-direction:row; }
+}
 
 /* ── Stadiu dosar — o badge per familie din STADIU_DOSAR_COLOR (types.ts) ── */
 .stadiu-badge-blue    { background:var(--b50);  color:var(--b700); }

@@ -167,11 +167,46 @@ export interface WorkspaceMember {
   addedAt: string | null
 }
 
+/** Cote/procentaje pentru împărțirea profitului dosarelor între Sami și Adi —
+ * vezi foaia „Config" din fisiere_template/Facturare_Sami_Adi.xlsx. Editabil
+ * din Setări (doar admin), cu valorile din excel ca implicite. */
+export interface FacturareConfig {
+  cotaSamiClientiAdi: number      // cota Sami din dosarele clienților lui Adi — implicit 0.6
+  cotaSamiClientiProprii: number  // cota Sami din dosarele proprii — implicit 0.9
+  caaProcent: number              // CAA — procent din valoare, folosit mereu per dosar — implicit 0.14
+  impozitProfitCota: number       // impozit pe profit, pe partea Adi — implicit 0.1
+  // Folosite doar de Sumarul lunar (CAA reală, cu prag) — vezi calculSumarLunar.
+  caaMin: number      // CAA — contribuția minimă lunară (prag inferior) — implicit 615
+  caaPlafon: number   // CAA — plafonul maxim lunar — implicit 3073
+  barouFix: number    // taxa lunară fixă de barou — implicit 146
+}
+
+export const DEFAULT_FACTURARE_CONFIG: FacturareConfig = {
+  cotaSamiClientiAdi: 0.6,
+  cotaSamiClientiProprii: 0.9,
+  caaProcent: 0.14,
+  impozitProfitCota: 0.1,
+  caaMin: 615,
+  caaPlafon: 3073,
+  barouFix: 146,
+}
+
+/** Completează cu implicitele orice cheie lipsă din config-ul salvat — un
+ * workspace căruia i s-au adăugat câmpuri noi la FacturareConfig (ex. caaMin/
+ * caaPlafon/barouFix) după ce a fost creat are în Firestore doar cheile mai
+ * vechi; un `??` simplu pe tot obiectul le-ar lăsa `undefined` la runtime în
+ * ciuda tipului, producând NaN în calcule. Se folosește la fiecare citire a
+ * lui Workspace.facturareConfig, nu doar în Setări. */
+export function resolveFacturareConfig(config: FacturareConfig | undefined | null): FacturareConfig {
+  return { ...DEFAULT_FACTURARE_CONFIG, ...(config ?? {}) }
+}
+
 export interface Workspace {
   id: string
   name: string
   ownerId: string
   members: Record<string, WorkspaceMember>
+  facturareConfig?: FacturareConfig
   createdAt: string | null
 }
 
@@ -244,8 +279,19 @@ export interface Dosar {
   dataPlanificare: string | null  // ISO yyyy-mm-dd
   observatii: string
   taxeOnrc: number | null
+  certificatConstatator: number | null
   tarifClient: number | null
+  // Determină cota de split cu Adi (vezi lib/dosareStats.ts calculDosarFinanciar) —
+  // 0.6/0.4 dacă e client Adi, 0.9/0.1 dacă e client propriu Sami.
+  esteClientAdi: boolean
+  // Split-ul cu Adi se aplică DOAR dacă dosarul are semnătură electronică;
+  // altfel tot profitul intră la Sami, indiferent de esteClientAdi.
+  semnaturaElectronica: boolean
   facturat: boolean
+  // serverTimestamp() la trecerea în facturat=true; șters la debifare — vezi
+  // stadiuTransition-ul analog din lib/dosare.ts. Sumarul lunar (CAA reală,
+  // Barou) grupează dosarele facturate pe luna asta, nu pe createdAt.
+  dataFacturarii: string | null
   // Relația cu Sarcini e 1:N — un dosar poate avea mai multe sarcini legate,
   // deci nu ținem un id singular aici; lista se derivă din Sarcina.dosarId
   // (sursă unică de adevăr, fără risc de desincronizare) via fetchSarciniByDosar().

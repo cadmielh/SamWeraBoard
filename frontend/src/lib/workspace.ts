@@ -4,7 +4,7 @@ import {
   setDoc, updateDoc, addDoc, deleteField, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { Workspace, WorkspaceMember } from '../types'
+import type { FacturareConfig, Workspace, WorkspaceMember } from '../types'
 
 function encodeEmail(email: string) {
   return email.replace(/\./g, '_DOT_').replace(/@/g, '_AT_')
@@ -98,6 +98,12 @@ export function useWorkspace(uid: string | null) {
     setActiveWorkspaceState(prev => prev?.id === workspaceId ? { ...prev, name: newName } : prev)
   }, [])
 
+  const updateFacturareConfig = useCallback(async (workspaceId: string, config: FacturareConfig) => {
+    await updateDoc(doc(db, 'workspaces', workspaceId), { facturareConfig: config })
+    setWorkspaces(prev => prev.map(w => w.id === workspaceId ? { ...w, facturareConfig: config } : w))
+    setActiveWorkspaceState(prev => prev?.id === workspaceId ? { ...prev, facturareConfig: config } : prev)
+  }, [])
+
   const checkAndJoinInvitations = useCallback(async (user: { uid: string; email: string; displayName: string }) => {
     const encoded = encodeEmail(user.email)
     const invRef = doc(db, 'invitations', encoded)
@@ -128,6 +134,7 @@ export function useWorkspace(uid: string | null) {
     removeMember,
     changeMemberRole,
     renameWorkspace,
+    updateFacturareConfig,
     checkAndJoinInvitations,
     reload: loadWorkspaces,
   }

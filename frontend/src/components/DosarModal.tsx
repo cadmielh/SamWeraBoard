@@ -25,8 +25,10 @@ const EMPTY: DosarInput = {
   stadiu: 'in_lucru',
   dataAdmiterii: null, dataPlanificare: null,
   observatii: '',
-  taxeOnrc: null, tarifClient: null,
+  taxeOnrc: null, certificatConstatator: null, tarifClient: null,
+  esteClientAdi: false, semnaturaElectronica: false,
   facturat: false,
+  dataFacturarii: null,
   documentePredateAt: null,
 }
 
@@ -43,11 +45,11 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
   const workspaceId = activeWorkspace?.id ?? null
   const { clienti, loading: clientiLoading, add: addClient } = useClienti(workspaceId)
 
-  // Dosar are toate câmpurile lui DosarInput plus id/createdAt/createdBy —
-  // atribuirea e validă structural fără destructurare (excess property check
-  // se aplică doar literalilor obiect, nu variabilelor).
+  // { ...EMPTY, ...initial } (nu doar initial) — dosarele salvate înainte de
+  // introducerea unor câmpuri noi (ex. esteClientAdi) nu le au în Firestore,
+  // și un checkbox controlat cu value undefined dă avertisment React.
   const [form, setForm] = useState<DosarInput>(() => {
-    if (initial) return initial
+    if (initial) return { ...EMPTY, ...initial }
     if (prefillClient) return { ...EMPTY, clientId: prefillClient.id, clientDenumire: prefillClient.denumire, clientCui: prefillClient.cui }
     return { ...EMPTY }
   })
@@ -173,19 +175,39 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                 <input className="field-input" type="date" value={form.dataPlanificare ?? ''} onChange={e => set('dataPlanificare', e.target.value || null)} />
               </div>
 
+              <div className="form-subsection-label">Financiar</div>
+
+              <div className="field">
+                <label className="field-label">Tarif client (RON)</label>
+                <input className="field-input" type="number" min={0} value={form.tarifClient ?? ''} onChange={e => set('tarifClient', e.target.value === '' ? null : Number(e.target.value))} />
+              </div>
+              <div className="field">
+                <label className="field-label" style={{ visibility: 'hidden' }}>Facturat</label>
+                <label className="field-checkbox-row">
+                  <input type="checkbox" className="field-checkbox" checked={form.facturat} onChange={e => set('facturat', e.target.checked)} />
+                  Facturat
+                </label>
+              </div>
+
               <div className="field">
                 <label className="field-label">Taxe ONRC (RON)</label>
                 <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} />
               </div>
               <div className="field">
-                <label className="field-label">Tarif client (RON)</label>
-                <input className="field-input" type="number" min={0} value={form.tarifClient ?? ''} onChange={e => set('tarifClient', e.target.value === '' ? null : Number(e.target.value))} />
+                <label className="field-label">Taxe Certificat Constatator (RON)</label>
+                <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} />
               </div>
 
               <div className="field">
-                <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer', textTransform: 'none' }}>
-                  <input type="checkbox" checked={form.facturat} onChange={e => set('facturat', e.target.checked)} />
-                  Facturat
+                <label className="field-checkbox-row">
+                  <input type="checkbox" className="field-checkbox" checked={form.semnaturaElectronica} onChange={e => set('semnaturaElectronica', e.target.checked)} />
+                  Semnătură electronică
+                </label>
+              </div>
+              <div className="field">
+                <label className="field-checkbox-row">
+                  <input type="checkbox" className="field-checkbox" checked={form.esteClientAdi} onChange={e => set('esteClientAdi', e.target.checked)} />
+                  Client Adi
                 </label>
               </div>
 
