@@ -131,10 +131,12 @@ export function useDosare(workspaceId: string | null) {
     }
   }, [])
 
-  const update = useCallback(async (workspaceId: string, dosarId: string, data: Partial<DosarInput>) => {
+  const update = useCallback(async (workspaceId: string, dosarId: string, data: Partial<DosarInput>, knownCurrent?: Dosar) => {
     let previous: Dosar | undefined
+    let foundInState = false
     setDosare(prev => prev.map(d => {
       if (d.id !== dosarId) return d
+      foundInState = true
       previous = d
       const transition = stadiuTransition(d.stadiu, data.stadiu)
       const facturatTr = facturatTransition(d.facturat, data.facturat)
@@ -144,6 +146,11 @@ export function useDosare(workspaceId: string | null) {
       }
       return { ...d, ...(data as Partial<Dosar>), ...localExtras }
     }))
+    // Un dosar deschis din afara stării locale (ex. Arhivă, ținută separat în
+    // extraDosare din DosarePage) nu apare în `dosare` — fără valoarea curentă
+    // reală, stadiuTransition/facturatTransition ar interpreta greșit un câmp
+    // neschimbat (facturat rămas true) ca tranziție și ar reseta timestamp-ul.
+    if (!foundInState) previous = knownCurrent
 
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(data)) {
@@ -174,7 +181,7 @@ export function useDosare(workspaceId: string | null) {
     try {
       await updateDoc(doc(dosareCol(workspaceId), dosarId), patch)
     } catch (err) {
-      if (previous) { const p = previous; setDosare(prev => prev.map(d => d.id === dosarId ? p : d)) }
+      if (foundInState && previous) { const p = previous; setDosare(prev => prev.map(d => d.id === dosarId ? p : d)) }
       throw err
     }
   }, [])

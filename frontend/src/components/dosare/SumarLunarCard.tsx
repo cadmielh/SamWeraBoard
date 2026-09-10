@@ -1,30 +1,21 @@
 import type { SumarLunarStats } from '../../lib/dosareStats'
 import { LUNI, REGIM_CAA_LABEL } from '../../lib/dosareStats'
 import type { FacturareConfig } from '../../types'
+import { formatRon as ron } from '../../lib/format'
 
 interface Props {
-  id?: string
   stats: SumarLunarStats
   facturareConfig: FacturareConfig
-  /** Sumele "per dosar" deja afișate în cardurile de mai sus — pentru
-   * comparația "cardul de mai sus arată X RON" și eticheta de discrepanță. */
-  profitSamiPerDosar: number
-  profitAdiPerDosar: number
   expanded: boolean
   onToggleExpanded: () => void
-  /** Puls scurt — declanșat de link-ul "vezi oficial ↓" din cardul Profit
-   * Sami, ca utilizatorul să găsească imediat cardul spre care a fost trimis. */
-  highlight: boolean
 }
-
-const ron = (v: number) => v.toLocaleString('ro-RO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
 function lunaLabel(luna: string): string {
   const [y, m] = luna.split('-')
   return `${LUNI[Number(m) - 1]} ${y}`
 }
 
-export default function SumarLunarCard({ id, stats, facturareConfig, profitSamiPerDosar, profitAdiPerDosar, expanded, onToggleExpanded, highlight }: Props) {
+export default function SumarLunarCard({ stats, facturareConfig, expanded, onToggleExpanded }: Props) {
   const luniActive = stats.luni.filter(m => m.totalVenit > 0)
   const clickable = luniActive.length > 0
   const subtitlu = luniActive.length === 0
@@ -34,13 +25,9 @@ export default function SumarLunarCard({ id, stats, facturareConfig, profitSamiP
       : `însumat pe ${luniActive.length} luni active`
 
   const deltaCaa = stats.caaReala - stats.caaPerDosare
-  const explainText = `De ce diferă cifrele? Cardurile de sus însumează profitul calculat pe fiecare dosar în parte (CAA mereu ${Math.round(facturareConfig.caaProcent * 1000) / 10}%, fără Barou). Sumarul lunar aplică regula reală — CAA cu prag și Barou fix, împărțite proporțional între Sami și Adi după cât a cuvenit fiecăruia — cifra care contează la facturare. Impozitul pe profit rămâne neschimbat în ambele metode.`
+  const explainText = `De ce diferă cifrele față de profiturile din dosare? Suma profiturilor din dosare este fără CAA și Taxa de Barou. Sumarul lunar aplică regula reală — CAA cu prag și Taxa de Barou fixă, împărțite proporțional între Sami și Adi după cât a cuvenit fiecăruia — cifra care contează la facturare.`
 
-  const cardClass = [
-    'sumar-lunar-card',
-    clickable ? 'sumar-lunar-card--clickable' : '',
-    highlight ? 'sumar-lunar-card--highlight' : '',
-  ].filter(Boolean).join(' ')
+  const cardClass = `sumar-lunar-card${clickable ? ' sumar-lunar-card--clickable' : ''}`
 
   // Click-ul de restrângere/expandare nu se aplică peste "cardurile" din
   // interior (comparația CAA, tile-urile de profit oficial) — acolo etichetele
@@ -53,7 +40,6 @@ export default function SumarLunarCard({ id, stats, facturareConfig, profitSamiP
 
   return (
     <div
-      id={id}
       className={cardClass}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
@@ -87,8 +73,12 @@ export default function SumarLunarCard({ id, stats, facturareConfig, profitSamiP
             </span>
           </div>
           <div className="sumar-lunar-compact-item">
-            <span className="sumar-lunar-compact-label">Profit Sami — oficial</span>
-            <span className="sumar-lunar-compact-value">{ron(stats.profitSamiOficial)} RON</span>
+            <span className="sumar-lunar-compact-label">Profit Sami</span>
+            <span className="sumar-lunar-compact-value" style={{ color: stats.profitSamiOficial >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{ron(stats.profitSamiOficial)} RON</span>
+          </div>
+          <div className="sumar-lunar-compact-item">
+            <span className="sumar-lunar-compact-label">De facturat către Adi</span>
+            <span className="sumar-lunar-compact-value" style={{ color: stats.profitAdiOficial <= 0 ? 'var(--g700)' : 'var(--r600)' }}>{ron(stats.profitAdiOficial)} RON</span>
           </div>
         </div>
       )}
@@ -113,18 +103,18 @@ export default function SumarLunarCard({ id, stats, facturareConfig, profitSamiP
           </div>
 
           <div className="sumar-lunar-profit-tile" data-tooltip={explainText}>
-            <span className="sumar-lunar-profit-label">Profit Sami — oficial</span>
+            <span className="sumar-lunar-profit-label">Profit Sami</span>
             <span className="sumar-lunar-profit-value" style={{ color: stats.profitSamiOficial >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
               {ron(stats.profitSamiOficial)} RON
             </span>
-            <span className="sumar-lunar-profit-was">cardul de mai sus arată <b>{ron(profitSamiPerDosar)} RON</b></span>
+            <span className="sumar-lunar-profit-before">din dosare, înainte de Barou/CAA: {ron(stats.profitSamiDinDosare)} RON</span>
           </div>
           <div className="sumar-lunar-profit-tile" data-tooltip={explainText}>
-            <span className="sumar-lunar-profit-label">De facturat către Adi — oficial</span>
-            <span className="sumar-lunar-profit-value" style={{ color: stats.profitAdiOficial >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
+            <span className="sumar-lunar-profit-label">De facturat către Adi</span>
+            <span className="sumar-lunar-profit-value" style={{ color: stats.profitAdiOficial <= 0 ? 'var(--g700)' : 'var(--r600)' }}>
               {ron(stats.profitAdiOficial)} RON
             </span>
-            <span className="sumar-lunar-profit-was">cardul de mai sus arată <b>{ron(profitAdiPerDosar)} RON</b></span>
+            <span className="sumar-lunar-profit-before">din dosare, înainte de Barou/CAA: {ron(stats.profitAdiDinDosare)} RON</span>
           </div>
         </div>
       )}

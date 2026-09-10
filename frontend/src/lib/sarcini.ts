@@ -69,6 +69,11 @@ export function useSarcini(workspaceId: string | null) {
     delete payload.createdBy
     payload.createdAt = serverTimestamp()
     payload.createdBy = uid
+    // O sarcină creată direct cu Stare="Finalizat" (posibil din TaskModal, unde
+    // select-ul de Stare e disponibil și la creare) are nevoie de completedAt
+    // de la bun început — altfel n-ar apărea în niciun query (board-ul cere
+    // fie status activ, fie completedAt recent), la fel ca la update().
+    if (data.status === 'finalizat') payload.completedAt = serverTimestamp()
     const ref = await addDoc(sarciniCol(workspaceId), payload)
     return ref.id
   }, [])

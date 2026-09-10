@@ -145,13 +145,20 @@ export default function SarciniPage() {
   const handleSave = useCallback(async (data: SarcinaInput) => {
     if (!workspaceId || !user) return
     if (modal && typeof modal === 'object') {
-      await update(workspaceId, modal.id, data)
+      const patch = { ...data } as SarcinaInput
+      // Schimbare de Stare din formular (nu prin drag) — mută sarcina la
+      // finalul coloanei destinație, la fel ca moveSarcina() din KanbanBoard,
+      // altfel cardul rămâne sortat după vechiul `order` și apare „rătăcit".
+      if (data.status !== modal.status) {
+        patch.order = sarcini.filter(s => s.status === data.status).length * 1000
+      }
+      await update(workspaceId, modal.id, patch)
       toast('Sarcină actualizată', 'ok')
     } else {
       await add(workspaceId, data, user.uid)
       toast('Sarcină adăugată', 'ok')
     }
-  }, [modal, workspaceId, user, add, update, toast])
+  }, [modal, workspaceId, user, add, update, toast, sarcini])
 
   // Ștergere amânată — sarcina dispare imediat din UI (pendingDeleteIds,
   // filtrat în `filtered`), dar scrierea reală în Firestore se întâmplă abia

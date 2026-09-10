@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import type { Dosar, FacturareConfig } from '../../types'
 import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR, obiecteCereriiText, DEFAULT_FACTURARE_CONFIG } from '../../types'
 import { calculDosarFinanciar } from '../../lib/dosareStats'
+import { formatRon } from '../../lib/format'
 import { usePositionedDropdown } from '../../lib/usePositionedDropdown'
 import {
   COLUMNS, type ColDef, EMPTY_PLACEHOLDER, fmtDateShort, getColValue, getUniqueValues,
@@ -36,17 +37,19 @@ function renderCellContent(d: Dosar, key: string, facturareConfig: FacturareConf
       return <span className={`chip ${d.semnaturaElectronica ? 'chip-success' : 'chip-muted'}`}>{d.semnaturaElectronica ? 'Da' : 'Nu'}</span>
     case 'profitSami': {
       const p = calculDosarFinanciar(d, facturareConfig).profitSami
-      return <span style={{ fontWeight: 700, color: p >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{p.toLocaleString('ro-RO')} RON</span>
+      return <span style={{ fontWeight: 700, color: p >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{formatRon(p)} RON</span>
     }
     case 'profitAdi': {
+      // Convenție inversată — ce e profit pentru Adi trebuie să-i plătească
+      // userul, deci roșu e sugestiv (la fel ca în DosarView/DosarModal/SumarLunarCard).
       const p = calculDosarFinanciar(d, facturareConfig).profitAdi
-      return <span style={{ fontWeight: 700, color: p >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{p.toLocaleString('ro-RO')} RON</span>
+      return <span style={{ fontWeight: 700, color: p <= 0 ? 'var(--g700)' : 'var(--r600)' }}>{formatRon(p)} RON</span>
     }
     case 'taxeOnrc':
     case 'certificatConstatator':
     case 'tarifClient': {
       const v = d[key]
-      return v == null ? null : `${v.toLocaleString('ro-RO')} RON`
+      return v == null ? null : `${formatRon(v)} RON`
     }
     case 'dataAdmiterii':
     case 'dataPlanificare': {

@@ -2,7 +2,10 @@ import { useState } from 'react'
 import type { Client, Dosar, DosarInput, ObiectCerereItem, StadiuDosar } from '../types'
 import { STADIU_DOSAR_LABELS } from '../types'
 import { useClienti, EMPTY_CLIENT } from '../lib/clienti'
+import { toDateSafe, formatDateRo } from '../lib/dates'
+import { formatRon } from '../lib/format'
 import { useApp } from '../AppContext'
+import { useDosarFinanciar } from '../lib/useDosarFinanciar'
 import ClientLinkPicker from './ClientLinkPicker'
 import ObiectCereriiTags from './ObiectCereriiTags'
 import ResponsabilCombobox from './ResponsabilCombobox'
@@ -60,6 +63,10 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
 
   const isEditing = !!initial
   const set = <K extends keyof DosarInput>(key: K, val: DosarInput[K]) => setForm(prev => ({ ...prev, [key]: val }))
+
+  // Previzualizare live a split-ului Sami/Adi, ca în DosarView — recalculată
+  // la fiecare schimbare din formular (tarif, taxe, Client Adi, semnătură).
+  const { facturareConfig, financiar, cotaSami, pct } = useDosarFinanciar(form)
 
   const clientPickerValue = form.clientDenumire ?? form.clientDenumireLibera ?? ''
 
@@ -190,19 +197,27 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
               </div>
 
               <div className="field">
-                <label className="field-label">Taxe ONRC (RON)</label>
-                <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} />
-              </div>
-              <div className="field">
-                <label className="field-label">Taxe Certificat Constatator (RON)</label>
-                <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} />
-              </div>
-
-              <div className="field">
                 <label className="field-checkbox-row">
                   <input type="checkbox" className="field-checkbox" checked={form.semnaturaElectronica} onChange={e => set('semnaturaElectronica', e.target.checked)} />
                   Semnătură electronică
                 </label>
+              </div>
+              <div className="field">
+                <label className="field-label">Data facturării</label>
+                <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
+                  {form.facturat ? (toDateSafe(form.dataFacturarii) ? formatDateRo(toDateSafe(form.dataFacturarii)!) : '—') : '—'}
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label">Taxe ONRC (RON)</label>
+                <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} />
+              </div>
+              <div className="field" aria-hidden="true" />
+
+              <div className="field">
+                <label className="field-label">Taxe Certificat Constatator (RON)</label>
+                <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} />
               </div>
               <div className="field">
                 <label className="field-checkbox-row">
@@ -210,6 +225,42 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                   Client Adi
                 </label>
               </div>
+
+              {form.semnaturaElectronica && (
+                <>
+                  <div className="field">
+                    <label className="field-label" data-tooltip={`${pct(cotaSami)} din valoare`}>Cuvenit Sami (RON)</label>
+                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.cuvenitSami)}</div>
+                  </div>
+                  <div className="field">
+                    <label className="field-label" data-tooltip={`${pct(1 - cotaSami)} din valoare`}>Cuvenit Adi (RON)</label>
+                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.cuvenitAdi)}</div>
+                  </div>
+                  <div className="field">
+                    <label className="field-label" data-tooltip={`${pct(facturareConfig.caaProcent)} din valoare`}>CAA (RON)</label>
+                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.caa)}</div>
+                  </div>
+                  <div className="field">
+                    <label className="field-label" data-tooltip={`${pct(facturareConfig.impozitProfitCota)} din cuvenit Adi`}>Impozit profit — Adi (RON)</label>
+                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.impozitProfit)}</div>
+                  </div>
+                </>
+              )}
+
+              <div className="field">
+                <label className="field-label">Profit Sami (RON)</label>
+                <div className="field-input" style={{ background: 'var(--s50)', color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)', fontWeight: 700 }}>
+                  {formatRon(financiar.profitSami)}
+                </div>
+              </div>
+              {form.semnaturaElectronica && (
+                <div className="field">
+                  <label className="field-label">De facturat către Adi (RON)</label>
+                  <div className="field-input" style={{ background: 'var(--s50)', color: financiar.profitAdi <= 0 ? 'var(--g700)' : 'var(--r600)', fontWeight: 700 }}>
+                    {formatRon(financiar.profitAdi)}
+                  </div>
+                </div>
+              )}
 
               <div className="field full">
                 <label className="field-label">Observații</label>

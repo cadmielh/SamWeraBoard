@@ -27,7 +27,14 @@ const STATS_PERIOD_OPTIONS: { key: StatsPeriod; label: string }[] = [
 export default function DosarePage() {
   const { user, activeWorkspace, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
-  const facturareConfig = resolveFacturareConfig(activeWorkspace?.facturareConfig)
+  // Memoizat pe identitatea config-ului salvat — resolveFacturareConfig()
+  // creează un obiect nou la fiecare apel, iar facturareConfig e folosit ca
+  // dependință de useEffect în DosarStatsPanel; fără memo, ar re-declanșa
+  // fetch-uri de statistici la fiecare render al acestei pagini.
+  const facturareConfig = useMemo(
+    () => resolveFacturareConfig(activeWorkspace?.facturareConfig),
+    [activeWorkspace?.facturareConfig]
+  )
 
   const { dosare, loading, hasMore, loadingMore, loadMore, add, update, remove } = useDosare(workspaceId)
   const sarciniCtx = useSarcini(workspaceId)
@@ -149,7 +156,20 @@ export default function DosarePage() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('samwera-dosare-hidden-cols')
-      if (raw) return new Set(JSON.parse(raw) as string[])
+      if (raw) {
+        const saved = new Set(JSON.parse(raw) as string[])
+        // Migrare — coloanele adăugate ulterior (Certificat Constatator, Client
+        // Adi, Semnătură electronică) trebuie să rămână ascunse implicit și
+        // pentru userii cu preferințe salvate dinainte de introducerea lor, nu
+        // doar pentru userii noi (care le primesc ascunse din EXTRA_COL_KEYS).
+        const migrationKey = 'samwera-dosare-hidden-cols-migrated-v2'
+        if (!localStorage.getItem(migrationKey)) {
+          for (const k of ['certificatConstatator', 'esteClientAdi', 'semnaturaElectronica']) saved.add(k)
+          localStorage.setItem('samwera-dosare-hidden-cols', JSON.stringify([...saved]))
+          localStorage.setItem(migrationKey, '1')
+        }
+        return saved
+      }
     } catch { /* localStorage indisponibil sau valoare coruptă — folosim implicitul */ }
     return new Set(EXTRA_COL_KEYS)
   })
@@ -229,7 +249,7 @@ export default function DosarePage() {
   // altă editare de stadiu.
   const handleQuickRestore = useCallback(async (d: Dosar) => {
     if (!workspaceId) return
-    await update(workspaceId, d.id, { stadiu: 'in_lucru' })
+    await update(workspaceId, d.id, { stadiu: 'in_lucru' }, d)
     setExtraDosare(prev => prev[d.id] ? { ...prev, [d.id]: { ...prev[d.id], stadiu: 'in_lucru' } } : prev)
     setArchiveRefreshKey(k => k + 1)
     setStatsRefreshKey(k => k + 1)
@@ -239,7 +259,7 @@ export default function DosarePage() {
   const handleSave = useCallback(async (data: DosarInput, creeazaSarcina: boolean) => {
     if (!workspaceId || !user) return
     if (modal && typeof modal === 'object') {
-      await update(workspaceId, modal.id, data)
+      await update(workspaceId, modal.id, data, modal)
       toast('Dosar actualizat', 'ok')
       setArchiveRefreshKey(k => k + 1)
       setStatsRefreshKey(k => k + 1)
@@ -424,7 +444,7 @@ export default function DosarePage() {
                 onDelete={() => setDeleteConf(viewing)}
                 onSaveField={async patch => {
                   try {
-                    await update(workspaceId, viewing.id, patch)
+                    await update(workspaceId, viewing.id, patch, viewing)
                   } catch (err: unknown) {
                     toast((err as Error).message ?? 'Eroare la actualizarea dosarului', 'err')
                     return

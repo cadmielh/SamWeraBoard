@@ -49,6 +49,36 @@ export default function AppLayout() {
     }
   }, [workspaceCtx.loading, workspaceCtx.workspaces.length, user, navigate])
 
+  // Poziția cursorului, expusă ca variabile CSS — tooltip-urile [data-tooltip]
+  // (tokens.css) le folosesc ca să apară chiar de lângă mouse, nu centrate
+  // sub tot elementul cu hover (care putea fi mult mai lat decât cursorul).
+  // Urmărirea pornește doar cât timp mouse-ul e deasupra unui element cu
+  // [data-tooltip] (mouseover/mouseout, delegat pe window) — nu tot timpul cât
+  // aplicația e deschisă, ca să nu scrie 2 proprietăți CSS la fiecare mousemove
+  // pe pagini fără niciun tooltip (ex. ecranul de login).
+  useEffect(() => {
+    let tracking = false
+    const onMove = (e: MouseEvent) => {
+      if (!tracking) return
+      document.documentElement.style.setProperty('--mx', `${e.clientX}px`)
+      document.documentElement.style.setProperty('--my', `${e.clientY}px`)
+    }
+    const onOver = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest?.('[data-tooltip]')) tracking = true
+    }
+    const onOut = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest?.('[data-tooltip]')) tracking = false
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseover', onOver)
+    window.addEventListener('mouseout', onOut)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseover', onOver)
+      window.removeEventListener('mouseout', onOut)
+    }
+  }, [])
+
   const toast = useCallback((message: string, type: ToastItem['type'] = 'info', opts?: Pick<ToastItem, 'onExpire' | 'action'>) => {
     const id = Math.random().toString(36).slice(2)
     setToasts(t => [...t, { id, message, type, onExpire: opts?.onExpire, action: opts?.action }])
