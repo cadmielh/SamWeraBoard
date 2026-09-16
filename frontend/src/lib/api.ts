@@ -28,14 +28,32 @@ async function headers(accessToken: string): Promise<Record<string, string>> {
   };
 }
 
+// Puțin peste bugetul maxim al backend-ului (Azure ~48s + fallback OCR local
+// plafonat la 45s, vezi _LOCAL_OCR_TIMEOUT din app.py) — altfel un request
+// agățat (rețea căzută etc.) ține spinner-ul în loading la nesfârșit.
+const OCR_TIMEOUT_MS = 100_000;
+
 export async function extractFile(file: File, accessToken: string): Promise<IDFields> {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(`${OCR_BASE}/extract`, {
-    method: "POST",
-    headers: await headers(accessToken),
-    body: fd,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OCR_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${OCR_BASE}/extract`, {
+      method: "POST",
+      headers: await headers(accessToken),
+      body: fd,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new Error("Scanarea durează prea mult. Încearcă din nou sau completează manual.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Extraction failed");
   return data as IDFields;

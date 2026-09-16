@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
 from datetime import date
 from pathlib import Path
 
@@ -53,6 +54,11 @@ def _preload_easyocr() -> None:
 
 
 threading.Thread(target=_preload_easyocr, daemon=True).start()
+
+# Plafon dur pentru fallback-ul OCR local (vezi comentariul din /extract) —
+# rulează izolat într-un thread ca să poată fi întrerupt cu future.result(timeout=...).
+_LOCAL_OCR_TIMEOUT = 45  # secunde
+_local_ocr_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="local-ocr")
 
 # ── Firebase Admin init ───────────────────────────────────────────────────────
 _sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "firebase-service-account.json")
@@ -144,13 +150,21 @@ def extract():
         return jsonify({**(_empty | ai_fields), "uid": uid})
 
     # ── OCR local — doar dacă Azure n-a dat suficient (eșec sau scor mic) ──────
+    # EasyOCR pe CPU poate rula minute întregi pe scanuri slabe (2 pass-uri ×
+    # OCR complet + bandă MRZ) — fără plafon de timp, cererea rămâne agățată în
+    # loading pe frontend la nesfârșit. Plafonăm dur la _LOCAL_OCR_TIMEOUT: dacă
+    # se depășește, ne mulțumim cu ce a găsit Azure (chiar sub prag) în loc să
+    # blocăm utilizatorul.
     print(f"[extract] azure score {ai_score:.2f} < {local_extractor.QUALITY_THRESHOLD} — local OCR fallback")
     local_fields: dict = {}
     local_score = 0.0
     try:
-        local_fields, local_score = local_extractor.extract_local(file_bytes, filename)
+        future = _local_ocr_executor.submit(local_extractor.extract_local, file_bytes, filename)
+        local_fields, local_score = future.result(timeout=_LOCAL_OCR_TIMEOUT)
         local_fields = _postprocess(local_fields)
         print(f"[extract] local score={local_score:.2f} cnp={local_extractor.mask_cnp(local_fields.get('cnp', ''))}")
+    except _FutureTimeoutError:
+        print(f"[extract] Local OCR timed out after {_LOCAL_OCR_TIMEOUT}s — falling back to Azure result")
     except Exception as local_err:
         print(f"[extract] Local OCR failed: {local_err}")
 
