@@ -132,7 +132,7 @@ function FacturareConfigCard() {
 
 export default function SetariPage() {
   const { theme, setTheme, font, setFont } = useSettingsCtx()
-  const { userRole, activeWorkspace } = useApp()
+  const { userRole, activeWorkspace, hasFeature } = useApp()
 
   return (
     <div className="page--data">
@@ -201,7 +201,7 @@ export default function SetariPage() {
           {/* key=workspace id — forțează remount la schimbarea workspace-ului activ,
               ca `form` să nu rămână cu valorile vechiului workspace (altfel Save
               ar suprascrie configul noului workspace cu date stale). */}
-          {userRole === 'admin' && activeWorkspace && <FacturareConfigCard key={activeWorkspace.id} />}
+          {userRole === 'admin' && activeWorkspace && hasFeature('facturareSamiAdi') && <FacturareConfigCard key={activeWorkspace.id} />}
         </div>
       </div>
     </div>

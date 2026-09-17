@@ -5,7 +5,7 @@ import { calculDosarFinanciar } from '../../lib/dosareStats'
 import { formatRon } from '../../lib/format'
 import { usePositionedDropdown } from '../../lib/usePositionedDropdown'
 import {
-  COLUMNS, type ColDef, EMPTY_PLACEHOLDER, fmtDateShort, getColValue, getUniqueValues,
+  type ColDef, EMPTY_PLACEHOLDER, fmtDateShort, getColValue, getUniqueValues,
   type SortState,
 } from './dosarColumns'
 import IconTrash from '../IconTrash'
@@ -65,6 +65,7 @@ function renderCellContent(d: Dosar, key: string, facturareConfig: FacturareConf
 
 /* ── ColumnsPanel ── */
 interface ColumnsPanelProps {
+  columns: ColDef[]
   hiddenCols: Set<string>
   onToggle: (key: string) => void
   onSelectAll: () => void
@@ -72,7 +73,7 @@ interface ColumnsPanelProps {
   onClose: () => void
 }
 
-export function DosarColumnsPanel({ hiddenCols, onToggle, onSelectAll, onDeselectAll, onClose }: ColumnsPanelProps) {
+export function DosarColumnsPanel({ columns, hiddenCols, onToggle, onSelectAll, onDeselectAll, onClose }: ColumnsPanelProps) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -82,7 +83,7 @@ export function DosarColumnsPanel({ hiddenCols, onToggle, onSelectAll, onDeselec
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
-  const allVisible = COLUMNS.every(c => c.fixed || !hiddenCols.has(c.key))
+  const allVisible = columns.every(c => c.fixed || !hiddenCols.has(c.key))
 
   return (
     <div ref={ref} className="cols-panel">
@@ -92,7 +93,7 @@ export function DosarColumnsPanel({ hiddenCols, onToggle, onSelectAll, onDeselec
           {allVisible ? 'Deselectează tot' : 'Selectează tot'}
         </button>
       </div>
-      {COLUMNS.map(col => (
+      {columns.map(col => (
         <label key={col.key} className="cols-panel__item">
           <input
             type="checkbox"
@@ -110,6 +111,7 @@ export function DosarColumnsPanel({ hiddenCols, onToggle, onSelectAll, onDeselec
 
 /* ── Table ── */
 interface Props {
+  columns: ColDef[]
   dosare: Dosar[]
   rawDosare: Dosar[]
   sortState: SortState
@@ -126,7 +128,7 @@ interface Props {
 }
 
 export default function DosarTable({
-  dosare, rawDosare, sortState, colFilters, hiddenCols, facturareConfig = DEFAULT_FACTURARE_CONFIG,
+  columns, dosare, rawDosare, sortState, colFilters, hiddenCols, facturareConfig = DEFAULT_FACTURARE_CONFIG,
   onColSort, onFilterToggle, onSelectAllFilter, onClearFilter,
   onView, onEdit, onDelete,
 }: Props) {
@@ -149,11 +151,11 @@ export default function DosarTable({
       const raw = localStorage.getItem('samwera-dosare-col-order')
       if (raw) {
         const saved = JSON.parse(raw) as string[]
-        const allKeys = COLUMNS.map(c => c.key)
+        const allKeys = columns.map(c => c.key)
         return [...saved.filter(k => allKeys.includes(k)), ...allKeys.filter(k => !saved.includes(k))]
       }
     } catch { /* localStorage indisponibil sau valoare coruptă — folosim implicitul */ }
-    return COLUMNS.map(c => c.key)
+    return columns.map(c => c.key)
   })
 
   /* Column widths */
@@ -178,13 +180,19 @@ export default function DosarTable({
     if (!filterDropdown.open) setOpenFilterKey(null)
   }, [filterDropdown.open])
 
-  const colMap = useMemo(() => new Map(COLUMNS.map(c => [c.key, c])), [])
+  const colMap = useMemo(() => new Map(columns.map(c => [c.key, c])), [columns])
 
   const orderedVisibleColumns = useMemo(() => {
-    return colOrder
+    // Coloanele apărute după ce colOrder a fost salvat (ex. activarea unui
+    // feature nou pe workspace) nu sunt încă în colOrder — le adăugăm la
+    // final, fără să scriem înapoi în state (colOrder rămâne neschimbat până
+    // la următoarea reordonare manuală).
+    const known = new Set(colOrder)
+    const effectiveOrder = [...colOrder, ...columns.map(c => c.key).filter(k => !known.has(k))]
+    return effectiveOrder
       .map(key => colMap.get(key))
       .filter((col): col is ColDef => !!col && (!!col.fixed || !hiddenCols.has(col.key)))
-  }, [colOrder, hiddenCols, colMap])
+  }, [colOrder, columns, hiddenCols, colMap])
 
   const getW = useCallback((key: string): number => colWidths[key] ?? colMap.get(key)?.width ?? 150, [colWidths, colMap])
 

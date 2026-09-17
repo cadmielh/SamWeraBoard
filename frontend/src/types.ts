@@ -1,4 +1,5 @@
 import type { AdresaStructurata } from './lib/adresa'
+import type { FeatureKey } from './lib/features'
 
 export interface ToastItem {
   id: string
@@ -207,6 +208,10 @@ export interface Workspace {
   ownerId: string
   members: Record<string, WorkspaceMember>
   facturareConfig?: FacturareConfig
+  /** Feature flags active pentru acest workspace — comutate din pagina de
+   * super admin (`/super-admin`), vezi lib/features.ts. Absent = niciun
+   * feature activ. */
+  features?: Partial<Record<FeatureKey, boolean>>
   createdAt: string | null
 }
 

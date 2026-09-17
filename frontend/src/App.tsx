@@ -7,6 +7,7 @@ import MembriPage from './pages/MembriPage'
 import SetariPage from './pages/SetariPage'
 import DosarePage from './pages/DosarePage'
 import SarciniPage from './pages/SarciniPage'
+import SuperAdminPage from './pages/SuperAdminPage'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="workspace/setup" element={<WorkspaceSetupPage />} />
           <Route path="utilizatori" element={<MembriPage />} />
           <Route path="setari" element={<SetariPage />} />
+          <Route path="super-admin" element={<SuperAdminPage />} />
         </Route>
         <Route path="/signin" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

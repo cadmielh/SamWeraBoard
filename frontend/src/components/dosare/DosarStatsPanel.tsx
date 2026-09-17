@@ -15,6 +15,10 @@ interface Props {
   year: number
   month0: number
   facturareConfig?: FacturareConfig
+  /** Feature 'facturareSamiAdi' activ pe workspace — dacă e false, se sare
+   * peste fetch-ul și calculul Sumarului lunar (specific Sami/Adi), care nu
+   * se randează deloc. */
+  samiAdiEnabled: boolean
   /** Incrementat de DosarePage la orice adăugare/editare/ștergere de dosar —
    * panoul face propriile citiri Firestore, separate de `dosare`, deci nu
    * s-ar actualiza altfel decât la schimbarea perioadei. */
@@ -73,7 +77,7 @@ function periodBounds(period: StatsPeriod, year: number, month0: number): [Date,
   return [new Date(year, month0, 1), new Date(year, month0 + 1, 1)]
 }
 
-export default function DosarStatsPanel({ workspaceId, period, year, month0, facturareConfig = DEFAULT_FACTURARE_CONFIG, refreshKey = 0 }: Props) {
+export default function DosarStatsPanel({ workspaceId, period, year, month0, facturareConfig = DEFAULT_FACTURARE_CONFIG, samiAdiEnabled, refreshKey = 0 }: Props) {
   const [loading, setLoading] = useState(true)
   const [current, setCurrent] = useState<DosarMonthStats | null>(null)
   const [previous, setPrevious] = useState<DosarMonthStats | null>(null)
@@ -94,26 +98,32 @@ export default function DosarStatsPanel({ workspaceId, period, year, month0, fac
     const [currentFetch, previousFetch] = fetchForPeriod(workspaceId, period, year, month0)
     const bounds = periodBounds(period, year, month0)
 
-    Promise.all([currentFetch, previousFetch ?? Promise.resolve(null), fetchDosareFacturate(workspaceId)]).then(([curDosare, prevDosare, facturate]) => {
+    Promise.all([
+      currentFetch,
+      previousFetch ?? Promise.resolve(null),
+      samiAdiEnabled ? fetchDosareFacturate(workspaceId) : Promise.resolve([]),
+    ]).then(([curDosare, prevDosare, facturate]) => {
       if (cancelled) return
       setCurrent(computeDosarStats(curDosare))
       setPrevious(prevDosare ? computeDosarStats(prevDosare) : null)
-      // Sumarul lunar (CAA reală, Barou) se raportează la luna FACTURĂRII, nu
-      // la `createdAt` ca restul cardurilor — un dosar deschis în august dar
-      // facturat în octombrie contează pentru octombrie aici (vezi
-      // dataEfectivaFacturare).
-      const facturateInPerioada = bounds
-        ? facturate.filter(d => {
-          const dt = dataEfectivaFacturare(d)
-          return dt && dt >= bounds[0] && dt < bounds[1]
-        })
-        : facturate
-      setSumarLunar(computeSumarLunar(facturateInPerioada, facturareConfig))
+      if (samiAdiEnabled) {
+        // Sumarul lunar (CAA reală, Barou) se raportează la luna FACTURĂRII, nu
+        // la `createdAt` ca restul cardurilor — un dosar deschis în august dar
+        // facturat în octombrie contează pentru octombrie aici (vezi
+        // dataEfectivaFacturare).
+        const facturateInPerioada = bounds
+          ? facturate.filter(d => {
+            const dt = dataEfectivaFacturare(d)
+            return dt && dt >= bounds[0] && dt < bounds[1]
+          })
+          : facturate
+        setSumarLunar(computeSumarLunar(facturateInPerioada, facturareConfig))
+      }
       setLoading(false)
     }).catch(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
-  }, [workspaceId, period, year, month0, facturareConfig, refreshKey])
+  }, [workspaceId, period, year, month0, facturareConfig, samiAdiEnabled, refreshKey])
 
   const cur = current ?? EMPTY_STATS
   const ron = formatRon
@@ -134,7 +144,7 @@ export default function DosarStatsPanel({ workspaceId, period, year, month0, fac
           același rând — Sumarul rămâne grupat, cu propriul header/chevron,
           doar poziționat ca a treia coloană, mai lată. Sub breakpoint, cade
           pe rândul următor, full-width (vezi .dosar-top-row în tokens.css). */}
-      <div className="dosar-top-row">
+      <div className={`dosar-top-row${samiAdiEnabled ? '' : ' dosar-top-row--generic'}`}>
         <div className="stat-tile">
           <div className="stat-tile-label">Număr dosare</div>
           <div className="stat-tile-value">

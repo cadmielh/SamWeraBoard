@@ -2,11 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users own profile (active workspace preference)
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-
     // Helper functions
     function isMember(wid) {
       return request.auth != null &&
@@ -18,12 +13,18 @@ service cloud.firestore {
         request.auth.uid in members &&
         members[request.auth.uid].role == 'admin';
     }
+    // App-level role (independent of any workspace) — see users/{uid}.isSuperAdmin.
+    function isSuperAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuperAdmin', false) == true;
+    }
 
-    // Derives the invitations/{docId} for the current signed-in user's own email,
-    // mirroring the frontend's encodeEmail() (replace '.' -> '_DOT_', then '@' -> '_AT_').
+    // Derives the doc id for the current signed-in user's own email, used both
+    // for invitations/{docId} and superAdminGrants/{docId} — mirrors the
+    // frontend's encodeEmail() (replace '.' -> '_DOT_', then '@' -> '_AT_').
     // string.replace() only replaces the FIRST match per call, so dots are replaced
     // iteratively — extra passes beyond what's needed are harmless no-ops.
-    function ownInvitationId() {
+    function ownEmailDocId() {
       return request.auth.token.email.lower()
         .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
         .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
@@ -34,19 +35,62 @@ service cloud.firestore {
 
     // A pending, unused invitation for the current user that points at wid.
     function hasValidInvitation(wid) {
-      let invPath = /databases/$(database)/documents/invitations/$(ownInvitationId());
+      let invPath = /databases/$(database)/documents/invitations/$(ownEmailDocId());
       return exists(invPath) &&
         get(invPath).data.workspaceId == wid &&
         get(invPath).data.get('used', false) != true;
+    }
+
+    // A pending, unused super-admin grant for the current user's own email —
+    // created by an existing super admin from the /super-admin page.
+    function hasValidSuperAdminGrant() {
+      let path = /databases/$(database)/documents/superAdminGrants/$(ownEmailDocId());
+      return exists(path) && get(path).data.get('used', false) != true;
+    }
+
+    // Users own profile (active workspace preference, super-admin flag).
+    // isSuperAdmin can only ever go from unset/false to true, and only when a
+    // valid grant exists for the user's own email — a user can never set it on
+    // themselves out of thin air. Turning it off (or the initial bootstrap
+    // grant to the very first super admin) is done manually via Firebase
+    // Console / Admin SDK, which bypasses these rules entirely.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid &&
+        request.resource.data.get('isSuperAdmin', false) == false;
+      allow update: if request.auth != null && request.auth.uid == uid && (
+        request.resource.data.get('isSuperAdmin', false) == resource.data.get('isSuperAdmin', false) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isSuperAdmin']) &&
+          request.resource.data.isSuperAdmin == true &&
+          hasValidSuperAdminGrant()
+        )
+      );
+    }
+    // Genuine subcollections under a user doc, if any ever appear — deliberately
+    // NOT `/users/{uid}/{document=**}` (which also matches the parent document
+    // itself, zero segments deep, and would bypass the isSuperAdmin protection
+    // above with an unconditional write).
+    match /users/{uid}/{subcollection}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
     // Workspaces
     match /workspaces/{wid} {
       allow read: if request.auth != null &&
         request.auth.uid in resource.data.members;
+      // Super admins can see every workspace (not just ones they're a member
+      // of) — needed for the /super-admin overview page.
+      allow read: if isSuperAdmin();
       allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.ownerId;
       allow update: if isAdmin(wid);
+      // Super admins can toggle feature flags on any workspace from
+      // /super-admin — deliberately scoped to only the `features` field, so a
+      // super admin who isn't a member of a workspace still can't touch its
+      // members, name or financial config.
+      allow update: if isSuperAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['features']);
       // Invited (not-yet-member) user accepting an invitation: may only add
       // their own membership entry, only if a valid invitation exists, and only
       // with the exact role the admin set on that invitation (no self-promotion).
@@ -56,7 +100,7 @@ service cloud.firestore {
         request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
         hasValidInvitation(wid) &&
         request.resource.data.members[request.auth.uid].role ==
-          get(/databases/$(database)/documents/invitations/$(ownInvitationId())).data.role;
+          get(/databases/$(database)/documents/invitations/$(ownEmailDocId())).data.role;
       allow delete: if false;
 
       // Clients sub-collection — any workspace member can CRUD
@@ -94,6 +138,24 @@ service cloud.firestore {
       allow create, update: if request.auth != null &&
         isAdmin(request.resource.data.workspaceId);
       // Invited user may mark their own invitation as used — nothing else
+      allow update: if request.auth != null &&
+        resource.data.email == request.auth.token.email.lower() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
+        request.resource.data.used == true;
+    }
+
+    // Super-admin grants — keyed by encoded email, same scheme as invitations.
+    // Created by an existing super admin to promote another account (by email)
+    // to the app-level super admin role; consumed at that account's next
+    // sign-in (see users/{uid}.isSuperAdmin above).
+    match /superAdminGrants/{encodedEmail} {
+      // Any super admin can see all grants (to list them in /super-admin);
+      // the invited user can see their own, to know it's pending.
+      allow read: if request.auth != null &&
+        (isSuperAdmin() || resource.data.email == request.auth.token.email.lower());
+      // Only an existing super admin can grant (or revoke, before it's used).
+      allow create, delete: if isSuperAdmin();
+      // Invited user may mark their own grant as used — nothing else.
       allow update: if request.auth != null &&
         resource.data.email == request.auth.token.email.lower() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&

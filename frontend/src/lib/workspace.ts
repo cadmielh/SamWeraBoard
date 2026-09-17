@@ -5,18 +5,39 @@ import {
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { FacturareConfig, Workspace, WorkspaceMember } from '../types'
+import type { FeatureKey } from './features'
 
 function encodeEmail(email: string) {
   return email.replace(/\./g, '_DOT_').replace(/@/g, '_AT_')
 }
 
+/** Scrie flag-ul de feature pe un workspace, indiferent dacă apelantul e
+ * membru al lui — permisă super adminilor pe orice workspace (vezi
+ * `isSuperAdmin()` din firestore.rules, scopat strict la câmpul `features`).
+ * Funcție simplă, fără state de hook, ca să poată fi folosită atât din
+ * `useWorkspace` (workspace-urile proprii) cât și din pagina de super admin
+ * (toate workspace-urile). */
+export async function writeWorkspaceFeature(workspaceId: string, key: FeatureKey, enabled: boolean): Promise<void> {
+  await updateDoc(doc(db, 'workspaces', workspaceId), { [`features.${key}`]: enabled })
+}
+
+/** Toate workspace-urile din aplicație — doar pentru super admini (vezi
+ * regula `allow read: if isSuperAdmin()` pe `workspaces/{wid}`), folosită de
+ * pagina de super admin pentru vizibilitate completă, nu doar pe workspace-urile
+ * proprii. */
+export async function listAllWorkspaces(): Promise<Workspace[]> {
+  const snap = await getDocs(collection(db, 'workspaces'))
+  return snap.docs.map(d => ({ ...d.data(), id: d.id } as Workspace))
+}
+
 export function useWorkspace(uid: string | null) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const loadWorkspaces = useCallback(async () => {
-    if (!uid) { setWorkspaces([]); setActiveWorkspaceState(null); return }
+    if (!uid) { setWorkspaces([]); setActiveWorkspaceState(null); setIsSuperAdmin(false); return }
     setLoading(true)
     try {
       const q = query(collection(db, 'workspaces'), where(`members.${uid}.role`, 'in', ['admin', 'member']))
@@ -28,6 +49,7 @@ export function useWorkspace(uid: string | null) {
       const activeId = userDoc.data()?.activeWorkspaceId as string | undefined
       const active = list.find(w => w.id === activeId) ?? list[0] ?? null
       setActiveWorkspaceState(active)
+      setIsSuperAdmin(userDoc.data()?.isSuperAdmin === true)
     } catch (e) {
       console.error('useWorkspace load error', e)
     } finally {
@@ -104,6 +126,13 @@ export function useWorkspace(uid: string | null) {
     setActiveWorkspaceState(prev => prev?.id === workspaceId ? { ...prev, facturareConfig: config } : prev)
   }, [])
 
+  const setWorkspaceFeature = useCallback(async (workspaceId: string, key: FeatureKey, enabled: boolean) => {
+    await writeWorkspaceFeature(workspaceId, key, enabled)
+    const patch = (w: Workspace): Workspace => ({ ...w, features: { ...w.features, [key]: enabled } })
+    setWorkspaces(prev => prev.map(w => w.id === workspaceId ? patch(w) : w))
+    setActiveWorkspaceState(prev => prev?.id === workspaceId ? patch(prev) : prev)
+  }, [])
+
   const checkAndJoinInvitations = useCallback(async (user: { uid: string; email: string; displayName: string }) => {
     const encoded = encodeEmail(user.email)
     const invRef = doc(db, 'invitations', encoded)
@@ -127,6 +156,7 @@ export function useWorkspace(uid: string | null) {
   return {
     workspaces,
     activeWorkspace,
+    isSuperAdmin,
     loading,
     setActiveWorkspace,
     createWorkspace,
@@ -135,6 +165,7 @@ export function useWorkspace(uid: string | null) {
     changeMemberRole,
     renameWorkspace,
     updateFacturareConfig,
+    setWorkspaceFeature,
     checkAndJoinInvitations,
     reload: loadWorkspaces,
   }

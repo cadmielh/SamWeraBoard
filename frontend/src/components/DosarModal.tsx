@@ -44,7 +44,8 @@ const EMPTY: DosarInput = {
  * completate ulterior). Restul rămâne oricum editabil inline din DosarView.
  */
 export default function DosarModal({ initial, onSave, onClose, prefillClient }: Props) {
-  const { user, activeWorkspace, toast } = useApp()
+  const { user, activeWorkspace, toast, hasFeature } = useApp()
+  const samiAdiEnabled = hasFeature('facturareSamiAdi')
   const workspaceId = activeWorkspace?.id ?? null
   const { clienti, loading: clientiLoading, add: addClient } = useClienti(workspaceId)
 
@@ -196,12 +197,14 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                 </label>
               </div>
 
-              <div className="field">
-                <label className="field-checkbox-row">
-                  <input type="checkbox" className="field-checkbox" checked={form.semnaturaElectronica} onChange={e => set('semnaturaElectronica', e.target.checked)} />
-                  Semnătură electronică
-                </label>
-              </div>
+              {samiAdiEnabled ? (
+                <div className="field">
+                  <label className="field-checkbox-row">
+                    <input type="checkbox" className="field-checkbox" checked={form.semnaturaElectronica} onChange={e => set('semnaturaElectronica', e.target.checked)} />
+                    Semnătură electronică
+                  </label>
+                </div>
+              ) : <div className="field" aria-hidden="true" />}
               <div className="field">
                 <label className="field-label">Data facturării</label>
                 <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
@@ -209,57 +212,61 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                 </div>
               </div>
 
-              <div className="field">
-                <label className="field-label">Taxe ONRC (RON)</label>
-                <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} />
-              </div>
-              <div className="field" aria-hidden="true" />
-
-              <div className="field">
-                <label className="field-label">Taxe Certificat Constatator (RON)</label>
-                <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} />
-              </div>
-              <div className="field">
-                <label className="field-checkbox-row">
-                  <input type="checkbox" className="field-checkbox" checked={form.esteClientAdi} onChange={e => set('esteClientAdi', e.target.checked)} />
-                  Client Adi
-                </label>
-              </div>
-
-              {form.semnaturaElectronica && (
+              {samiAdiEnabled && (
                 <>
                   <div className="field">
-                    <label className="field-label" data-tooltip={`${pct(cotaSami)} din valoare`}>Cuvenit Sami (RON)</label>
-                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.cuvenitSami)}</div>
+                    <label className="field-label">Taxe ONRC (RON)</label>
+                    <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} />
                   </div>
-                  <div className="field">
-                    <label className="field-label" data-tooltip={`${pct(1 - cotaSami)} din valoare`}>Cuvenit Adi (RON)</label>
-                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.cuvenitAdi)}</div>
-                  </div>
-                  <div className="field">
-                    <label className="field-label" data-tooltip={`${pct(facturareConfig.caaProcent)} din valoare`}>CAA (RON)</label>
-                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.caa)}</div>
-                  </div>
-                  <div className="field">
-                    <label className="field-label" data-tooltip={`${pct(facturareConfig.impozitProfitCota)} din cuvenit Adi`}>Impozit profit — Adi (RON)</label>
-                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.impozitProfit)}</div>
-                  </div>
-                </>
-              )}
+                  <div className="field" aria-hidden="true" />
 
-              <div className="field">
-                <label className="field-label">Profit Sami (RON)</label>
-                <div className="field-input" style={{ background: 'var(--s50)', color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)', fontWeight: 700 }}>
-                  {formatRon(financiar.profitSami)}
-                </div>
-              </div>
-              {form.semnaturaElectronica && (
-                <div className="field">
-                  <label className="field-label">De facturat către Adi (RON)</label>
-                  <div className="field-input" style={{ background: 'var(--s50)', color: financiar.profitAdi <= 0 ? 'var(--g700)' : 'var(--r600)', fontWeight: 700 }}>
-                    {formatRon(financiar.profitAdi)}
+                  <div className="field">
+                    <label className="field-label">Taxe Certificat Constatator (RON)</label>
+                    <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} />
                   </div>
-                </div>
+                  <div className="field">
+                    <label className="field-checkbox-row">
+                      <input type="checkbox" className="field-checkbox" checked={form.esteClientAdi} onChange={e => set('esteClientAdi', e.target.checked)} />
+                      Client Adi
+                    </label>
+                  </div>
+
+                  {form.semnaturaElectronica && (
+                    <>
+                      <div className="field">
+                        <label className="field-label" data-tooltip={`${pct(cotaSami)} din valoare`}>Cuvenit Sami (RON)</label>
+                        <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.cuvenitSami)}</div>
+                      </div>
+                      <div className="field">
+                        <label className="field-label" data-tooltip={`${pct(1 - cotaSami)} din valoare`}>Cuvenit Adi (RON)</label>
+                        <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.cuvenitAdi)}</div>
+                      </div>
+                      <div className="field">
+                        <label className="field-label" data-tooltip={`${pct(facturareConfig.caaProcent)} din valoare`}>CAA (RON)</label>
+                        <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.caa)}</div>
+                      </div>
+                      <div className="field">
+                        <label className="field-label" data-tooltip={`${pct(facturareConfig.impozitProfitCota)} din cuvenit Adi`}>Impozit profit — Adi (RON)</label>
+                        <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>{formatRon(financiar.impozitProfit)}</div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="field">
+                    <label className="field-label">Profit Sami (RON)</label>
+                    <div className="field-input" style={{ background: 'var(--s50)', color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)', fontWeight: 700 }}>
+                      {formatRon(financiar.profitSami)}
+                    </div>
+                  </div>
+                  {form.semnaturaElectronica && (
+                    <div className="field">
+                      <label className="field-label">De facturat către Adi (RON)</label>
+                      <div className="field-input" style={{ background: 'var(--s50)', color: financiar.profitAdi <= 0 ? 'var(--g700)' : 'var(--r600)', fontWeight: 700 }}>
+                        {formatRon(financiar.profitAdi)}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="field full">

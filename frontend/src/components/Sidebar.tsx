@@ -9,6 +9,7 @@ interface Props {
   activeWorkspace: Workspace | null
   workspaces: Workspace[]
   userRole: 'admin' | 'member' | null
+  isSuperAdmin: boolean
   onSignOut: () => void
   onWorkspaceChange: (w: Workspace) => void
   onWorkspaceCreate: (name: string) => Promise<void>
@@ -92,6 +93,14 @@ function IconSidebarToggle({ collapsed }: { collapsed: boolean }) {
     </svg>
   )
 }
+function IconShield() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 2.2l6.2 2.4v4.6c0 4.1-2.6 7.3-6.2 8.6c-3.6-1.3-6.2-4.5-6.2-8.6V4.6L10 2.2Z" />
+      <path d="M7.3 10.1l1.9 1.9 3.5-3.9" />
+    </svg>
+  )
+}
 function IconSignOut() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -104,7 +113,7 @@ function IconSignOut() {
 
 const COLLAPSE_KEY = 'samwera-sidebar-collapsed'
 
-export default function Sidebar({ user, activeWorkspace, workspaces, userRole, onSignOut, onWorkspaceChange, onWorkspaceCreate, onWorkspaceRename }: Props) {
+export default function Sidebar({ user, activeWorkspace, workspaces, userRole, isSuperAdmin, onSignOut, onWorkspaceChange, onWorkspaceCreate, onWorkspaceRename }: Props) {
   const initials = (user.displayName ?? user.email ?? '?')[0].toUpperCase()
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
@@ -307,11 +316,21 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, o
         </NavLink>
 
         {userRole === 'admin' && (
-          <div style={{ marginTop: 'auto' }}>
+          <div style={{ marginTop: isSuperAdmin ? 0 : 'auto' }}>
             {!collapsed && <div className="sidebar-section">Administrare</div>}
             <NavLink to="/utilizatori" title="Utilizatori" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconUsers />
               <span className="sidebar-nav-label">Utilizatori</span>
+            </NavLink>
+          </div>
+        )}
+
+        {isSuperAdmin && (
+          <div style={{ marginTop: userRole === 'admin' ? 0 : 'auto' }}>
+            {!collapsed && <div className="sidebar-section">Super admin</div>}
+            <NavLink to="/super-admin" title="Super admin" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+              <IconShield />
+              <span className="sidebar-nav-label">Super admin</span>
             </NavLink>
           </div>
         )}

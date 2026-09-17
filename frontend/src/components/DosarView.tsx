@@ -87,7 +87,8 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
 
 export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, onSaveField }: Props) {
   const navigate = useNavigate()
-  const { user, activeWorkspace, toast } = useApp()
+  const { user, activeWorkspace, toast, hasFeature } = useApp()
+  const samiAdiEnabled = hasFeature('facturareSamiAdi')
   const workspaceId = activeWorkspace?.id ?? null
   const { clienti, add: addClient } = useClienti(workspaceId)
   const { facturareConfig, financiar, cotaSami, pct } = useDosarFinanciar(dosar)
@@ -223,78 +224,84 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
           </div>
 
           <div className="cv2-two-col">
+            {samiAdiEnabled ? (
+              <div className="cv2-info-row">
+                <span className="cv2-info-label">Semnătură electronică</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!dosar.semnaturaElectronica} onChange={e => onSaveField({ semnaturaElectronica: e.target.checked })} />
+                  <span className="cv2-info-value">{dosar.semnaturaElectronica ? 'Da' : 'Nu'}</span>
+                </label>
+              </div>
+            ) : <div />}
             <div className="cv2-info-row">
-              <span className="cv2-info-label">Semnătură electronică</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={!!dosar.semnaturaElectronica} onChange={e => onSaveField({ semnaturaElectronica: e.target.checked })} />
-                <span className="cv2-info-value">{dosar.semnaturaElectronica ? 'Da' : 'Nu'}</span>
-              </label>
-            </div>
-            <div className="cv2-info-row">
-              <span className="cv2-info-label" data-tooltip="Completată automat la bifarea „Facturat” — folosită de Sumarul lunar (CAA reală, Barou)">Data facturării</span>
+              <span className="cv2-info-label" data-tooltip="Completată automat la bifarea „Facturat”">Data facturării</span>
               <span className="cv2-info-value">
                 {dosar.facturat ? (toDateSafe(dosar.dataFacturarii) ? formatDateRo(toDateSafe(dosar.dataFacturarii)!) : '—') : '—'}
               </span>
             </div>
           </div>
 
-          <div className="cv2-two-col">
-            <EditableRow label="Taxe ONRC (RON)" type="number" value={num(dosar.taxeOnrc)} displayValue={dosar.taxeOnrc != null ? formatRon(dosar.taxeOnrc) : undefined} onSave={v => onSaveField({ taxeOnrc: v === '' ? null : Number(v) })} />
-          </div>
-
-          <div className="cv2-two-col">
-            <EditableRow label="Taxe Certificat Constatator (RON)" type="number" value={num(dosar.certificatConstatator)} displayValue={dosar.certificatConstatator != null ? formatRon(dosar.certificatConstatator) : undefined} onSave={v => onSaveField({ certificatConstatator: v === '' ? null : Number(v) })} />
-            <div className="cv2-info-row">
-              <span className="cv2-info-label">Client Adi</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={!!dosar.esteClientAdi} onChange={e => onSaveField({ esteClientAdi: e.target.checked })} />
-                <span className="cv2-info-value">{dosar.esteClientAdi ? 'Da' : 'Nu'}</span>
-              </label>
-            </div>
-          </div>
-
-          {dosar.semnaturaElectronica && (
-            <div className="cv2-two-col">
-              <div className="cv2-info-row">
-                <span className="cv2-info-label" data-tooltip={`${pct(cotaSami)} din valoare`}>Cuvenit Sami</span>
-                <span className="cv2-info-value">{formatRon(financiar.cuvenitSami)} RON</span>
+          {samiAdiEnabled && (
+            <>
+              <div className="cv2-two-col">
+                <EditableRow label="Taxe ONRC (RON)" type="number" value={num(dosar.taxeOnrc)} displayValue={dosar.taxeOnrc != null ? formatRon(dosar.taxeOnrc) : undefined} onSave={v => onSaveField({ taxeOnrc: v === '' ? null : Number(v) })} />
               </div>
-              <div className="cv2-info-row">
-                <span className="cv2-info-label" data-tooltip={`${pct(1 - cotaSami)} din valoare`}>Cuvenit Adi</span>
-                <span className="cv2-info-value">{formatRon(financiar.cuvenitAdi)} RON</span>
+
+              <div className="cv2-two-col">
+                <EditableRow label="Taxe Certificat Constatator (RON)" type="number" value={num(dosar.certificatConstatator)} displayValue={dosar.certificatConstatator != null ? formatRon(dosar.certificatConstatator) : undefined} onSave={v => onSaveField({ certificatConstatator: v === '' ? null : Number(v) })} />
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label">Client Adi</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!dosar.esteClientAdi} onChange={e => onSaveField({ esteClientAdi: e.target.checked })} />
+                    <span className="cv2-info-value">{dosar.esteClientAdi ? 'Da' : 'Nu'}</span>
+                  </label>
+                </div>
               </div>
-            </div>
+
+              {dosar.semnaturaElectronica && (
+                <div className="cv2-two-col">
+                  <div className="cv2-info-row">
+                    <span className="cv2-info-label" data-tooltip={`${pct(cotaSami)} din valoare`}>Cuvenit Sami</span>
+                    <span className="cv2-info-value">{formatRon(financiar.cuvenitSami)} RON</span>
+                  </div>
+                  <div className="cv2-info-row">
+                    <span className="cv2-info-label" data-tooltip={`${pct(1 - cotaSami)} din valoare`}>Cuvenit Adi</span>
+                    <span className="cv2-info-value">{formatRon(financiar.cuvenitAdi)} RON</span>
+                  </div>
+                </div>
+              )}
+
+              {dosar.semnaturaElectronica && (
+                <div className="cv2-two-col">
+                  <div className="cv2-info-row">
+                    <span className="cv2-info-label" data-tooltip={`${pct(facturareConfig.caaProcent)} din valoare`}>CAA</span>
+                    <span className="cv2-info-value">{formatRon(financiar.caa)} RON</span>
+                  </div>
+                  <div className="cv2-info-row">
+                    <span className="cv2-info-label" data-tooltip={`${pct(facturareConfig.impozitProfitCota)} din cuvenit Adi`}>Impozit profit (Adi)</span>
+                    <span className="cv2-info-value">{formatRon(financiar.impozitProfit)} RON</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="cv2-two-col">
+                <div className="cv2-info-row">
+                  <span className="cv2-info-label">Profit Sami</span>
+                  <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
+                    {formatRon(financiar.profitSami)} RON
+                  </span>
+                </div>
+                {dosar.semnaturaElectronica && (
+                  <div className="cv2-info-row">
+                    <span className="cv2-info-label">De facturat către Adi</span>
+                    <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitAdi <= 0 ? 'var(--g700)' : 'var(--r600)' }}>
+                      {formatRon(financiar.profitAdi)} RON
+                    </span>
+                  </div>
+                )}
+              </div>
+            </>
           )}
-
-          {dosar.semnaturaElectronica && (
-            <div className="cv2-two-col">
-              <div className="cv2-info-row">
-                <span className="cv2-info-label" data-tooltip={`${pct(facturareConfig.caaProcent)} din valoare`}>CAA</span>
-                <span className="cv2-info-value">{formatRon(financiar.caa)} RON</span>
-              </div>
-              <div className="cv2-info-row">
-                <span className="cv2-info-label" data-tooltip={`${pct(facturareConfig.impozitProfitCota)} din cuvenit Adi`}>Impozit profit (Adi)</span>
-                <span className="cv2-info-value">{formatRon(financiar.impozitProfit)} RON</span>
-              </div>
-            </div>
-          )}
-
-          <div className="cv2-two-col">
-            <div className="cv2-info-row">
-              <span className="cv2-info-label">Profit Sami</span>
-              <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
-                {formatRon(financiar.profitSami)} RON
-              </span>
-            </div>
-            {dosar.semnaturaElectronica && (
-              <div className="cv2-info-row">
-                <span className="cv2-info-label">De facturat către Adi</span>
-                <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitAdi <= 0 ? 'var(--g700)' : 'var(--r600)' }}>
-                  {formatRon(financiar.profitAdi)} RON
-                </span>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="cv2-section cv2-section--notes">

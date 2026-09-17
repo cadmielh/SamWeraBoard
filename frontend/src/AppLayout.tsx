@@ -3,6 +3,8 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, auth, signIn, signOut } from './lib/firebase'
 import { useWorkspace } from './lib/workspace'
+import { hasFeature as hasFeatureFn, type FeatureKey } from './lib/features'
+import { applyPendingSuperAdminGrant } from './lib/superAdmin'
 import type { ToastItem } from './types'
 import { AppCtx, type AppContextType } from './AppContext'
 import Sidebar from './components/Sidebar'
@@ -36,6 +38,11 @@ export default function AppLayout() {
           })
         } catch {
           // Non-blocking — user may not have pending invitations
+        }
+        try {
+          if (u.email) await applyPendingSuperAdminGrant(u.uid, u.email)
+        } catch {
+          // Non-blocking — user may not have a pending super-admin grant
         }
       }
     })
@@ -118,10 +125,11 @@ export default function AppLayout() {
     }} toasts={toasts} onDismiss={dismissToast} />
   }
 
-  const { activeWorkspace, workspaces } = workspaceCtx
+  const { activeWorkspace, workspaces, isSuperAdmin } = workspaceCtx
   const userRole = activeWorkspace && user
     ? (activeWorkspace.members[user.uid]?.role ?? null)
     : null
+  const hasFeature = (key: FeatureKey) => hasFeatureFn(activeWorkspace?.features, key)
 
   const ctx: AppContextType = {
     user,
@@ -129,6 +137,8 @@ export default function AppLayout() {
     toast,
     activeWorkspace,
     userRole,
+    hasFeature,
+    isSuperAdmin,
     workspaceCtx,
   }
 
@@ -140,6 +150,7 @@ export default function AppLayout() {
           activeWorkspace={activeWorkspace}
           workspaces={workspaces}
           userRole={userRole}
+          isSuperAdmin={isSuperAdmin}
           onSignOut={handleSignOut}
           onWorkspaceChange={w => workspaceCtx.setActiveWorkspace(w)}
           onWorkspaceCreate={async name => {

@@ -9,7 +9,7 @@ import { useApp } from '../AppContext'
 import DosarModal from '../components/DosarModal'
 import DosarView from '../components/DosarView'
 import DosarTable, { DosarColumnsPanel } from '../components/dosare/DosarTable'
-import { applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, COLUMNS } from '../components/dosare/dosarColumns'
+import { applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, getVisibleColumns } from '../components/dosare/dosarColumns'
 import DosarStatsPanel from '../components/dosare/DosarStatsPanel'
 import ArchivedDosareSection from '../components/dosare/ArchivedDosareSection'
 import { LUNI, type StatsPeriod } from '../lib/dosareStats'
@@ -25,8 +25,10 @@ const STATS_PERIOD_OPTIONS: { key: StatsPeriod; label: string }[] = [
 ]
 
 export default function DosarePage() {
-  const { user, activeWorkspace, toast } = useApp()
+  const { user, activeWorkspace, toast, hasFeature } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
+  const samiAdiEnabled = hasFeature('facturareSamiAdi')
+  const columns = useMemo(() => getVisibleColumns(samiAdiEnabled), [samiAdiEnabled])
   // Memoizat pe identitatea config-ului salvat — resolveFacturareConfig()
   // creează un obiect nou la fiecare apel, iar facturareConfig e folosit ca
   // dependință de useEffect în DosarStatsPanel; fără memo, ar re-declanșa
@@ -212,10 +214,10 @@ export default function DosarePage() {
   }, [])
 
   const hideAllColumns = useCallback(() => {
-    const next = new Set(COLUMNS.filter(c => !c.fixed).map(c => c.key))
+    const next = new Set(columns.filter(c => !c.fixed).map(c => c.key))
     localStorage.setItem('samwera-dosare-hidden-cols', JSON.stringify([...next]))
     setHiddenCols(next)
-  }, [])
+  }, [columns])
 
   const handleFilterToggle = useCallback((key: string, val: string) => {
     setColFilters(prev => {
@@ -367,7 +369,7 @@ export default function DosarePage() {
             </div>
           </div>
 
-          <DosarStatsPanel workspaceId={workspaceId} period={statsPeriod} year={year} month0={month0} facturareConfig={facturareConfig} refreshKey={statsRefreshKey} />
+          <DosarStatsPanel workspaceId={workspaceId} period={statsPeriod} year={year} month0={month0} facturareConfig={facturareConfig} samiAdiEnabled={samiAdiEnabled} refreshKey={statsRefreshKey} />
         </div>
 
         <div className="page-tabs page-tabs--lg">
@@ -423,6 +425,7 @@ export default function DosarePage() {
                   </button>
                   {showColsPanel && (
                     <DosarColumnsPanel
+                      columns={columns}
                       hiddenCols={hiddenCols}
                       onToggle={toggleColVisibility}
                       onSelectAll={showAllColumns}
@@ -488,6 +491,7 @@ export default function DosarePage() {
                 )}
                 {!loading && processedDosare.length > 0 && (
                   <DosarTable
+                    columns={columns}
                     dosare={processedDosare}
                     rawDosare={displayed}
                     sortState={sortState}

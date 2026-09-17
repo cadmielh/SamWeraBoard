@@ -11,6 +11,9 @@ export interface ColDef {
   fixed?: boolean
   sortable?: boolean
   filterable?: boolean
+  /** Vizibilă/selectabilă doar când feature-ul 'facturareSamiAdi' e activ pe
+   * workspace — vezi getVisibleColumns() și lib/features.ts. */
+  samiAdiOnly?: boolean
 }
 
 export const COLUMNS: ColDef[] = [
@@ -23,18 +26,24 @@ export const COLUMNS: ColDef[] = [
   { key: 'responsabilNume',    label: 'Responsabil',        width: 140, sortable: true,  filterable: true  },
   { key: 'facturat',           label: 'Facturat',           width: 100, sortable: true,  filterable: true  },
   { key: 'dataFacturarii',     label: 'Data facturării',    width: 130, sortable: true,  filterable: true  },
-  { key: 'profitSami',         label: 'Profit Sami',        width: 130, sortable: true,  filterable: false },
-  { key: 'profitAdi',          label: 'De facturat către Adi',         width: 130, sortable: true,  filterable: false },
+  { key: 'profitSami',         label: 'Profit Sami',        width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
+  { key: 'profitAdi',          label: 'De facturat către Adi',         width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
   /* câmpuri suplimentare — ascunse implicit */
   { key: 'dataAdmiterii',      label: 'Data admiterii',     width: 130, sortable: true,  filterable: true  },
   { key: 'dataPlanificare',    label: 'Data planificare',   width: 140, sortable: true,  filterable: true  },
-  { key: 'taxeOnrc',           label: 'Taxe ONRC',          width: 120, sortable: true,  filterable: false },
-  { key: 'certificatConstatator', label: 'Taxe Certificat Constatator', width: 150, sortable: true, filterable: false },
+  { key: 'taxeOnrc',           label: 'Taxe ONRC',          width: 120, sortable: true,  filterable: false, samiAdiOnly: true },
+  { key: 'certificatConstatator', label: 'Taxe Certificat Constatator', width: 150, sortable: true, filterable: false, samiAdiOnly: true },
   { key: 'tarifClient',        label: 'Tarif client',       width: 120, sortable: true,  filterable: false },
-  { key: 'esteClientAdi',      label: 'Client Adi',         width: 110, sortable: true,  filterable: true  },
-  { key: 'semnaturaElectronica', label: 'Semnătură electronică', width: 140, sortable: true, filterable: true  },
+  { key: 'esteClientAdi',      label: 'Client Adi',         width: 110, sortable: true,  filterable: true, samiAdiOnly: true },
+  { key: 'semnaturaElectronica', label: 'Semnătură electronică', width: 140, sortable: true, filterable: true, samiAdiOnly: true },
   { key: 'observatii',         label: 'Observații',         width: 220, sortable: false, filterable: true  },
 ]
+
+/** Coloanele afișate/selectabile pentru workspace-ul curent — filtrează pe
+ * `samiAdiOnly` în funcție de feature-ul 'facturareSamiAdi'. */
+export function getVisibleColumns(samiAdiEnabled: boolean): ColDef[] {
+  return COLUMNS.filter(c => samiAdiEnabled || !c.samiAdiOnly)
+}
 
 export const EXTRA_COL_KEYS = new Set(['dataAdmiterii', 'dataPlanificare', 'taxeOnrc', 'certificatConstatator', 'tarifClient', 'esteClientAdi', 'semnaturaElectronica', 'observatii'])
 export const EMPTY_PLACEHOLDER = '(Necompletat)'

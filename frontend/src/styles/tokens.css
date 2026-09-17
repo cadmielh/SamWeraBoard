@@ -886,6 +886,10 @@ body {
 /* ── rândul de sus — 2 carduri de volum + Sumarul lunar grupat, mai lat, pe
    același rând; sub breakpoint, Sumarul cade pe rândul următor, full-width ── */
 .dosar-top-row { display:grid; grid-template-columns:1fr 1fr 3.2fr; gap:.875rem; align-items:stretch; }
+/* Fără feature-ul Sami/Adi, Sumarul lunar nu se randează deloc — cele 2
+   carduri rămase se întind pe toată lățimea, în loc să lase gol locul
+   celui de-al treilea. */
+.dosar-top-row--generic { grid-template-columns:1fr 1fr; }
 @media (max-width:1180px) {
   .dosar-top-row { grid-template-columns:1fr 1fr; }
   .dosar-top-row .sumar-lunar-card { grid-column:1 / -1; }
