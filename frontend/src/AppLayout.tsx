@@ -3,12 +3,15 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, auth, signIn, signOut } from './lib/firebase'
 import { useWorkspace } from './lib/workspace'
+import { setApiWorkspace } from './lib/api'
 import { hasFeature as hasFeatureFn, type FeatureKey } from './lib/features'
 import { applyPendingSuperAdminGrant } from './lib/superAdmin'
 import type { ToastItem } from './types'
 import { AppCtx, type AppContextType } from './AppContext'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
+import ConsentGate from './components/ConsentGate'
+import LandingPage from './pages/LandingPage'
 
 export default function AppLayout() {
   const navigate = useNavigate()
@@ -28,17 +31,21 @@ export default function AppLayout() {
         sessionStorage.removeItem('gat')
         setAuthLoading(false)
       } else {
+        // Cont șters/dezactivat între timp: sesiunea locală mai e „validă” până expiră tokenul,
+        // dar fără cont nu există spații de lucru. O încheiem, ca să se poată reconecta corect.
+        try {
+          await u.getIdToken(true)
+        } catch (e) {
+          const code = (e as { code?: string }).code ?? ''
+          if (['auth/user-token-expired', 'auth/user-not-found', 'auth/user-disabled', 'auth/invalid-user-token'].includes(code)) {
+            await signOut()
+            return
+          }
+        }
         setUser(u)
         setAuthLoading(false)
-        try {
-          await workspaceCtx.checkAndJoinInvitations({
-            uid: u.uid,
-            email: u.email ?? '',
-            displayName: u.displayName ?? '',
-          })
-        } catch {
-          // Non-blocking — user may not have pending invitations
-        }
+        // Invitațiile NU se mai acceptă automat: utilizatorul le vede și decide
+        // explicit (vezi InvitationsPanel).
         try {
           if (u.email) await applyPendingSuperAdminGrant(u.uid, u.email)
         } catch {
@@ -46,15 +53,18 @@ export default function AppLayout() {
         }
       }
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Workspace-ul activ e trimis la fiecare cerere către API (autorizare server-side).
+  const activeWorkspaceId = workspaceCtx.activeWorkspace?.id ?? null
+  useEffect(() => { setApiWorkspace(activeWorkspaceId) }, [activeWorkspaceId])
 
   // Redirect to workspace setup if no workspace
   useEffect(() => {
-    if (!workspaceCtx.loading && user && workspaceCtx.workspaces.length === 0) {
+    if (!workspaceCtx.loading && !workspaceCtx.loadError && user && workspaceCtx.workspaces.length === 0) {
       navigate('/workspace/setup')
     }
-  }, [workspaceCtx.loading, workspaceCtx.workspaces.length, user, navigate])
+  }, [workspaceCtx.loading, workspaceCtx.loadError, workspaceCtx.workspaces.length, user, navigate])
 
   // Poziția cursorului, expusă ca variabile CSS — tooltip-urile [data-tooltip]
   // (tokens.css) le folosesc ca să apară chiar de lângă mouse, nu centrate
@@ -125,6 +135,11 @@ export default function AppLayout() {
     }} toasts={toasts} onDismiss={dismissToast} />
   }
 
+  // Încărcarea spațiilor de lucru a eșuat: nu presupunem că nu există (ar duce la ecranul de creare).
+  if (workspaceCtx.loadError && workspaceCtx.workspaces.length === 0) {
+    return <LoadErrorView onRetry={() => void workspaceCtx.reload()} onSignOut={handleSignOut} />
+  }
+
   const { activeWorkspace, workspaces, isSuperAdmin } = workspaceCtx
   const userRole = activeWorkspace && user
     ? (activeWorkspace.members[user.uid]?.role ?? null)
@@ -153,16 +168,10 @@ export default function AppLayout() {
           isSuperAdmin={isSuperAdmin}
           onSignOut={handleSignOut}
           onWorkspaceChange={w => workspaceCtx.setActiveWorkspace(w)}
-          onWorkspaceCreate={async name => {
-            await workspaceCtx.createWorkspace(name, {
-              uid: user.uid,
-              email: user.email ?? '',
-              displayName: user.displayName ?? user.email ?? '',
-            })
-          }}
           onWorkspaceRename={workspaceCtx.renameWorkspace}
         />
         <div className="main-area">
+          <ConsentGate onSignOut={handleSignOut} />
           <Outlet />
         </div>
       </div>
@@ -172,32 +181,29 @@ export default function AppLayout() {
 }
 
 function SignInView({ onSignIn, toasts, onDismiss }: { onSignIn: () => Promise<void>; toasts: ToastItem[]; onDismiss: (id: string) => void }) {
-  const [signing, setSigning] = useState(false)
-  const handle = async () => {
-    setSigning(true)
-    await onSignIn()
-    setSigning(false)
-  }
+  return (
+    <>
+      <LandingPage onSignIn={onSignIn} />
+      <Toast toasts={toasts} onDismiss={onDismiss} />
+    </>
+  )
+}
+
+function LoadErrorView({ onRetry, onSignOut }: { onRetry: () => void; onSignOut: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem', background: 'var(--s100)' }}>
-      <div className="card" style={{ maxWidth: 380, width: '100%' }}>
+      <div className="card" style={{ maxWidth: 420, width: '100%' }}>
         <div className="card-body" style={{ textAlign: 'center', padding: '2rem 1.75rem' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '.75rem' }}>📋</div>
-          <h1 style={{ fontWeight: 800, fontSize: '1.5rem', letterSpacing: '-.025em', color: 'var(--s900)', marginBottom: '.5rem' }}>
-            SamWera<span style={{ color: 'var(--p500)' }}>Board</span>
-          </h1>
-          <p style={{ color: 'var(--s400)', fontSize: '.875rem', marginBottom: '1.5rem' }}>
-            CRM contabil — clienți, generare documente, șabloane
+          <h1 style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--s900)', marginBottom: '.5rem' }}>Nu am putut încărca spațiile de lucru</h1>
+          <p style={{ color: 'var(--s500)', fontSize: '.875rem', lineHeight: 1.55, marginBottom: '1.25rem' }}>
+            Datele tale nu au dispărut: încărcarea a eșuat (conexiune sau permisiuni). Reîncearcă sau reconectează-te.
           </p>
-          <button className="btn btn-primary btn-full" onClick={handle} disabled={signing} style={{ fontSize: '.9375rem', padding: '.625rem 1.25rem' }}>
-            {signing ? <><span className="spin" />Se conectează...</> : 'Autentificare cu Google'}
-          </button>
-          <p style={{ fontSize: '.72rem', color: 'var(--s300)', marginTop: '.875rem' }}>
-            Necesită acces Google Drive pentru salvarea documentelor
-          </p>
+          <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'center' }}>
+            <button className="btn btn-primary" onClick={onRetry}>Reîncearcă</button>
+            <button className="btn btn-ghost" onClick={onSignOut}>Deconectare</button>
+          </div>
         </div>
       </div>
-      <Toast toasts={toasts} onDismiss={onDismiss} />
     </div>
   )
 }

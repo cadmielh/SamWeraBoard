@@ -11,7 +11,7 @@ export interface AppContextType {
   accessToken: string
   toast: (msg: string, type?: ToastItem['type'], opts?: Pick<ToastItem, 'onExpire' | 'action'>) => void
   activeWorkspace: Workspace | null
-  userRole: 'admin' | 'member' | null
+  userRole: 'admin' | 'member' | 'viewer' | null
   /** Feature flags ale workspace-ului activ — vezi lib/features.ts. */
   hasFeature: (key: FeatureKey) => boolean
   /** Rol de aplicație (nu de workspace) — vezi lib/superAdmin.ts. */

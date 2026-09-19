@@ -9,3 +9,34 @@ __pycache__/
 preview.html
 *.egg-info/
 .git/
+
+# Secrete și fișiere locale — nu trebuie să ajungă niciodată într-o imagine
+.env.*
+!.env.example
+firebase-service-account.json
+*.pem
+*.key
+frontend/
+tests/
+venv/
+.venv/
+node_modules/
+.gitignore
+
+# Date locale de test/dezvoltare: NU trebuie încărcate niciodată la deploy (pot conține date reale exportate de emulator)
+.emulator-data/
+.emulator-data-google/
+.emulator-data*/
+tests/
+docs/
+scripts/
+**/node_modules/
+firestore-debug.log
+ui-debug.log
+firebase-debug.log
+.env.eu.local
+venv
+venv/**
+.venv
+.venv/**
+migrare.zip

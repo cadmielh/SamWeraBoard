@@ -9,7 +9,6 @@ import IconTrash from './IconTrash'
 
 interface Props {
   client: Client
-  accessToken: string
   onContinue: (persons: ScannedPerson[], updatedClient: Client) => void
   onToast: (msg: string, type: ToastItem['type']) => void
 }
@@ -39,13 +38,12 @@ function completenessScore(p: Persoana): number {
 }
 
 function PersonCard({
-  persoana, role, index, accessToken,
+  persoana, role, index,
   onUpdate, onCotaChange, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onRemove, atMin, onToast,
 }: {
   persoana: Persoana
   role: 'asociat' | 'administrator'
   index: number
-  accessToken: string
   onUpdate: (p: Persoana) => void
   onCotaChange?: (val: string) => void
   onMoveUp: () => void
@@ -150,7 +148,6 @@ function PersonCard({
       {scanMode && (
         <PersonScanModal
           personLabel={`${roleLabel} ${index + 1}${fullName ? ` — ${fullName}` : ''}`}
-          accessToken={accessToken}
           initialFields={scanMode === 'manual' ? persoanaToIDFields(persoana) : undefined}
           mode={scanMode}
           onConfirm={f => { onUpdate(idFieldsToPersoana(f, persoana)); setScanMode(null); onToast('Date actualizate', 'ok') }}
@@ -163,7 +160,7 @@ function PersonCard({
 }
 
 export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonPreview(
-  { client, accessToken, onContinue, onToast }, ref,
+  { client, onContinue, onToast }, ref,
 ) {
   // Cotă neintrodusă explicit → default egal proporțional între asociați
   const [asociati, setAsociati] = useState<Persoana[]>(() => {
@@ -274,7 +271,6 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
           value={companyData}
           onChange={patch => setCompanyData(prev => ({ ...prev, ...patch }))}
           asociati={asociati}
-          accessToken={accessToken}
           onToast={onToast}
         />
       </section>
@@ -294,7 +290,6 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
             persoana={p}
             role="asociat"
             index={i}
-            accessToken={accessToken}
             onUpdate={updated => setAsociati(prev => prev.map((x, idx) => idx === i ? updated : x))}
             onCotaChange={val => setAsociati(prev => prev.map((x, idx) => idx === i ? { ...x, cotaParticipare: val } : x))}
             onMoveUp={() => setAsociati(prev => moveInArray(prev, i, i - 1))}
@@ -346,7 +341,6 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
             persoana={p}
             role="administrator"
             index={i}
-            accessToken={accessToken}
             onUpdate={updated => setAdmini(prev => prev.map((x, idx) => idx === i ? updated : x))}
             onMoveUp={() => setAdmini(prev => moveInArray(prev, i, i - 1))}
             onMoveDown={() => setAdmini(prev => moveInArray(prev, i, i + 1))}

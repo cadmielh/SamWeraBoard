@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase'
+import { apiJson } from './api'
 
 export interface SuperAdminGrant {
   email: string
@@ -41,3 +42,17 @@ export async function applyPendingSuperAdminGrant(uid: string, email: string): P
   await updateDoc(doc(db, 'users', uid), { isSuperAdmin: true })
   await setDoc(grantRef, { used: true }, { merge: true })
 }
+
+/** Poate utilizatorul curent crea un cabinet nou (înregistrare pe invitație)? */
+export const fetchSignupStatus = () => apiJson<{ canCreate: boolean }>('GET', '/signup/status')
+
+export interface WorkspaceCreator {
+  id: string
+  email: string
+}
+
+/** Adrese aprobate să creeze cabinete noi (înregistrare pe invitație) — doar prin API. */
+export const listWorkspaceCreators = () => apiJson<WorkspaceCreator[]>('GET', '/signup/creators')
+export const addWorkspaceCreator = (email: string) =>
+  apiJson<WorkspaceCreator>('POST', '/signup/creators', { email: email.trim().toLowerCase() })
+export const removeWorkspaceCreator = (id: string) => apiJson('DELETE', `/signup/creators/${id}`)

@@ -7,7 +7,6 @@ import PersonScanModal from './PersonScanModal'
 import Modal from './Modal'
 
 interface Props {
-  accessToken: string
   initialPersons?: ScannedPerson[]
   onContinue: (persons: ScannedPerson[]) => void
   onToast: (msg: string, type: ToastItem['type']) => void
@@ -39,7 +38,7 @@ function personLabel(p: ScannedPerson, idx: number, role: string): string {
   return `${role} ${idx + 1}${name ? ` — ${name}` : ''}`
 }
 
-export default function ScanQueue({ accessToken, initialPersons, onContinue, onToast }: Props) {
+export default function ScanQueue({ initialPersons, onContinue, onToast }: Props) {
   const [persons, setPersons] = useState<ScannedPerson[]>(
     initialPersons && initialPersons.length > 0
       ? initialPersons
@@ -374,7 +373,6 @@ export default function ScanQueue({ accessToken, initialPersons, onContinue, onT
         return (
           <PersonScanModal
             personLabel={personLabel(p, roleIdx, roleLabel)}
-            accessToken={accessToken}
             initialFields={scanTarget.manual ? p.fields : undefined}
             mode={scanTarget.manual ? 'manual' : 'scan'}
             onConfirm={handleScanConfirm}

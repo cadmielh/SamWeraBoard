@@ -107,3 +107,11 @@ preview.html
 *.log
 *.bak
 *.tmp
+
+# Date locale ale emulatoarelor (conțin date de test)
+.emulator-data/
+.emulator-data-google/
+
+# legătură simbolică folosită de Firebase CLI (către .venv)
+venv
+migrare.zip

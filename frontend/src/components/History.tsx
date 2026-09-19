@@ -2,24 +2,21 @@ import { useState, useEffect } from 'react'
 import type { User } from 'firebase/auth'
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import type { IDFields } from '../lib/api'
 import Modal from './Modal'
 
 interface Extraction {
   id: string
   sourceFile: string
   seconds: number | null
-  fields: IDFields
 }
 
 interface Props {
   user: User
   open: boolean
-  onSelect: (fields: IDFields, filename: string) => void
   onClose: () => void
 }
 
-export default function History({ user, open, onSelect, onClose }: Props) {
+export default function History({ user, open, onClose }: Props) {
   const [items, setItems] = useState<Extraction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -40,7 +37,6 @@ export default function History({ user, open, onSelect, onClose }: Props) {
           id: d.id,
           sourceFile: (data.sourceFile as string) ?? 'Necunoscut',
           seconds: (data.createdAt as { seconds: number } | null)?.seconds ?? null,
-          fields: data.fields as IDFields,
         }
       }))
       setLoading(false)
@@ -88,27 +84,23 @@ export default function History({ user, open, onSelect, onClose }: Props) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
               {items.map(item => (
-                <button
+                <div
                   key={item.id}
-                  onClick={() => { onSelect(item.fields, item.sourceFile); onClose() }}
                   style={{
                     display: 'flex', flexDirection: 'column', gap: '.2rem', alignItems: 'flex-start',
                     padding: '.75rem', borderRadius: 'var(--r-sm)',
-                    border: '1px solid var(--s200)', background: 'transparent',
-                    cursor: 'pointer', textAlign: 'left', transition: 'all var(--t)', width: '100%',
-                    fontFamily: 'var(--font)',
+                    border: '1px solid var(--s200)', width: '100%',
                   }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--p50)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--p200)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--s200)' }}
                 >
                   <span style={{ fontSize: '.85rem', fontWeight: 600, color: 'var(--s800)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
-                    {item.fields.nume} {item.fields.prenume}
+                    {item.sourceFile}
                   </span>
-                  <span style={{ fontSize: '.72rem', color: 'var(--s400)' }}>
-                    {item.sourceFile}{item.seconds ? ` · ${formatDate(item.seconds)}` : ''}
-                  </span>
-                </button>
+                  {item.seconds && <span style={{ fontSize: '.72rem', color: 'var(--s400)' }}>{formatDate(item.seconds)}</span>}
+                </div>
               ))}
+              <p style={{ fontSize: '.72rem', color: 'var(--s400)', margin: '.5rem 0 0' }}>
+                Istoricul păstrează doar numele sursei și data, timp de 30 de zile. Datele personale extrase nu se salvează aici.
+              </p>
             </div>
           )}
         </div>

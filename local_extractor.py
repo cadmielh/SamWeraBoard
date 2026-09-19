@@ -196,10 +196,11 @@ _CNP_WEIGHTS = [2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9]
 
 
 def mask_cnp(cnp: str) -> str:
-    """Mask a CNP for logging — CNP is special-category personal data (GDPR)."""
+    """Mask a CNP for logging — CNP is personal data with special protection (Legea 190/2018).
+    Nicio cifră nu ajunge în log-uri: se vede doar dacă valoarea există (și lungimea, care nu dezvăluie nimic)."""
     if not cnp:
         return "–"
-    return f"{cnp[:2]}{'*' * max(len(cnp) - 4, 0)}{cnp[-2:]}" if len(cnp) > 4 else "*" * len(cnp)
+    return "*" * len(cnp)
 
 
 def _validate_cnp(cnp: str) -> bool:

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import type { Workspace } from '../types'
 import ThemeToggleSwitch from './ThemeToggleSwitch'
@@ -8,11 +8,10 @@ interface Props {
   user: User
   activeWorkspace: Workspace | null
   workspaces: Workspace[]
-  userRole: 'admin' | 'member' | null
+  userRole: 'admin' | 'member' | 'viewer' | null
   isSuperAdmin: boolean
   onSignOut: () => void
   onWorkspaceChange: (w: Workspace) => void
-  onWorkspaceCreate: (name: string) => Promise<void>
   onWorkspaceRename: (workspaceId: string, newName: string) => Promise<void>
 }
 
@@ -113,12 +112,21 @@ function IconSignOut() {
 
 const COLLAPSE_KEY = 'samwera-sidebar-collapsed'
 
-export default function Sidebar({ user, activeWorkspace, workspaces, userRole, isSuperAdmin, onSignOut, onWorkspaceChange, onWorkspaceCreate, onWorkspaceRename }: Props) {
+const LEGAL_LINKS: [string, string][] = [
+  ['/termeni', 'Termeni'],
+  ['/confidentialitate', 'Confidențialitate'],
+  ['/dpa', 'DPA'],
+  ['/sub-imputerniciti', 'Sub-împuterniciți'],
+  ['/securitate', 'Securitate'],
+]
+
+export default function Sidebar({ user, activeWorkspace, workspaces, userRole, isSuperAdmin, onSignOut, onWorkspaceChange, onWorkspaceRename }: Props) {
+  const navigate = useNavigate()
   const initials = (user.displayName ?? user.email ?? '?')[0].toUpperCase()
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [action, setAction] = useState<'idle' | 'rename' | 'create'>('idle')
+  const [action, setAction] = useState<'idle' | 'rename'>('idle')
   const [inputVal, setInputVal] = useState('')
   const [saving, setSaving] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -156,9 +164,8 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
     setInputVal('')
   }
 
-  function openAction(a: 'rename' | 'create') {
-    if (a === 'rename') setInputVal(activeWorkspace?.name ?? '')
-    else setInputVal('')
+  function openAction(a: 'rename') {
+    setInputVal(activeWorkspace?.name ?? '')
     setAction(a)
     setMenuOpen(false)
   }
@@ -169,8 +176,6 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
     try {
       if (action === 'rename' && activeWorkspace) {
         await onWorkspaceRename(activeWorkspace.id, inputVal.trim())
-      } else if (action === 'create') {
-        await onWorkspaceCreate(inputVal.trim())
       }
       closeAll()
     } finally {
@@ -182,7 +187,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
     <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
       {/* Logo + restrângere meniu, pe același rând, butonul cât mai în dreapta */}
       <div className="sidebar-logo">
-        {!collapsed && <span className="sidebar-logo-text">SamWera<b>Board</b></span>}
+        {!collapsed && <span className="sidebar-logo-text">Cabin<b>io</b></span>}
         <button
           className="sidebar-collapse-btn"
           onClick={toggleCollapsed}
@@ -241,7 +246,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
                   <span>Redenumire spațiu curent...</span>
                 </button>
               )}
-              <button className="ws-dropdown-item" onClick={() => openAction('create')}>
+              <button className="ws-dropdown-item" onClick={() => { setMenuOpen(false); navigate('/workspace/setup?nou=1') }}>
                 <span className="ws-dropdown-item__check" />
                 <span>Spațiu de lucru nou...</span>
               </button>
@@ -252,7 +257,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
           {action !== 'idle' && (
             <div className="ws-inline-form">
               <div style={{ fontSize: '.72rem', color: 'var(--s400)', marginBottom: '.35rem', fontWeight: 600 }}>
-                {action === 'rename' ? 'Redenumire spațiu' : 'Spațiu de lucru nou'}
+                Redenumire spațiu
               </div>
               <input
                 ref={inputRef}
@@ -261,7 +266,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
                 value={inputVal}
                 onChange={e => setInputVal(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') void handleSubmit(); if (e.key === 'Escape') closeAll() }}
-                placeholder={action === 'rename' ? 'Nume nou...' : 'Numele cabinetului...'}
+                placeholder="Nume nou..."
               />
               <div style={{ display: 'flex', gap: '.375rem', marginTop: '.4rem' }}>
                 <button
@@ -270,7 +275,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
                   onClick={handleSubmit}
                   disabled={!inputVal.trim() || saving}
                 >
-                  {saving ? <span className="spin" /> : (action === 'rename' ? 'Salvează' : 'Creează')}
+                  {saving ? <span className="spin" /> : 'Salvează'}
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -356,6 +361,15 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
         <button className="btn btn-ghost btn-sm btn-full" onClick={onSignOut} title="Deconectare">
           {collapsed ? <IconSignOut /> : 'Deconectare'}
         </button>
+        {/* Documentele legale rămân accesibile oricând, nu doar la acceptare. Se deschid în filă nouă,
+            ca să nu se piardă ce e completat în aplicație. */}
+        {!collapsed && (
+          <nav className="sidebar-legal" aria-label="Documente legale">
+            {LEGAL_LINKS.map(([href, label]) => (
+              <a key={href} href={href} target="_blank" rel="noopener noreferrer">{label}</a>
+            ))}
+          </nav>
+        )}
       </div>
     </aside>
   )

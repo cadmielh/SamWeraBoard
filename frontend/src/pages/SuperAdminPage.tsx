@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '../AppContext'
 import { FEATURE_REGISTRY, hasFeature } from '../lib/features'
 import { listAllWorkspaces, writeWorkspaceFeature } from '../lib/workspace'
-import { grantSuperAdmin, listSuperAdminGrants, type SuperAdminGrant } from '../lib/superAdmin'
+import {
+  grantSuperAdmin, listSuperAdminGrants, type SuperAdminGrant,
+  listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator,
+} from '../lib/superAdmin'
 import type { Workspace } from '../types'
 
-const ROLE_LABEL: Record<'admin' | 'member', string> = { admin: 'Admin', member: 'Membru' }
+const ROLE_LABEL: Record<'admin' | 'member' | 'viewer', string> = { admin: 'Admin', member: 'Membru', viewer: 'Doar citire' }
 
 export default function SuperAdminPage() {
   const { user, isSuperAdmin, workspaceCtx } = useApp()
@@ -19,6 +22,10 @@ export default function SuperAdminPage() {
   const [email, setEmail] = useState('')
   const [granting, setGranting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [creators, setCreators] = useState<WorkspaceCreator[]>([])
+  const [creatorEmail, setCreatorEmail] = useState('')
+  const [creatorError, setCreatorError] = useState<string | null>(null)
 
   const loadWorkspaces = useCallback(async () => {
     setWsLoading(true)
@@ -41,10 +48,18 @@ export default function SuperAdminPage() {
     }
   }, [])
 
+  const loadCreators = useCallback(async () => {
+    try {
+      setCreators(await listWorkspaceCreators())
+    } catch (e: unknown) {
+      setCreatorError((e as Error).message ?? 'Eroare la încărcarea listei')
+    }
+  }, [])
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isSuperAdmin) { void loadWorkspaces(); void loadGrants() }
-  }, [isSuperAdmin, loadWorkspaces, loadGrants])
+    if (isSuperAdmin) { void loadWorkspaces(); void loadGrants(); void loadCreators() }
+  }, [isSuperAdmin, loadWorkspaces, loadGrants, loadCreators])
 
   if (!isSuperAdmin) {
     return (
@@ -77,6 +92,28 @@ export default function SuperAdminPage() {
       // Revenim la starea anterioară dacă scrierea a eșuat.
       setWorkspaces(prev => prev.map(w => w.id === workspaceId ? { ...w, features: { ...w.features, [key]: !enabled } } : w))
       setWsError((e as Error).message ?? 'Eroare la salvarea feature-ului')
+    }
+  }
+
+  const handleAddCreator = async () => {
+    if (!creatorEmail.trim()) return
+    setCreatorError(null)
+    try {
+      await addWorkspaceCreator(creatorEmail)
+      setCreatorEmail('')
+      await loadCreators()
+    } catch (e: unknown) {
+      setCreatorError((e as Error).message === 'invalid_email' ? 'Adresă de e-mail nevalidă' : ((e as Error).message ?? 'Eroare la adăugare'))
+    }
+  }
+
+  const handleRemoveCreator = async (id: string) => {
+    setCreatorError(null)
+    try {
+      await removeWorkspaceCreator(id)
+      await loadCreators()
+    } catch (e: unknown) {
+      setCreatorError((e as Error).message ?? 'Eroare la ștergere')
     }
   }
 
@@ -157,6 +194,40 @@ export default function SuperAdminPage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-head">
+              <span className="card-title">🔑 Cine poate crea cabinete noi</span>
+            </div>
+            <div className="card-body">
+              <div className="card-sub" style={{ marginBottom: '.75rem' }}>
+                Înregistrarea e pe invitație: doar adresele de mai jos (și cine are deja un cabinet) pot crea un cabinet nou. Utilizatorii invitați într-un cabinet existent nu au nevoie de aprobare.
+              </div>
+              <div style={{ display: 'flex', gap: '.5rem' }}>
+                <input
+                  className="field-input"
+                  type="email"
+                  placeholder="adresa Google a cabinetului"
+                  value={creatorEmail}
+                  onChange={e => setCreatorEmail(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') void handleAddCreator() }}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn btn-primary btn-sm" onClick={handleAddCreator} disabled={!creatorEmail.trim()}>Aprobă</button>
+              </div>
+              {creatorError && <div style={{ color: 'var(--r600)', fontSize: '.8125rem', marginTop: '.5rem' }}>{creatorError}</div>}
+              <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+                {creators.length === 0 ? (
+                  <div className="card-sub">Nicio adresă aprobată încă.</div>
+                ) : creators.map(c => (
+                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '.8125rem', color: 'var(--s600)' }}>
+                    <span>{c.email}</span>
+                    <button className="btn btn-sm" onClick={() => void handleRemoveCreator(c.id)}>Retrage</button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

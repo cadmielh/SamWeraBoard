@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Client, Persoana } from '../types'
+import { fetchPii, type PiiMap } from '../lib/pii'
 import { inferTipClient } from '../types'
 import { findCaenDescriere } from '../data/caen'
 import { formatDateRo } from '../lib/dates'
@@ -139,15 +140,20 @@ function CaenSecundareList({ items }: { items: { cod: string; descriere: string 
   )
 }
 
-function PersoanaCard({ p }: { p: Persoana }) {
+function PersoanaCard({ p, pii, onReveal }: { p: Persoana; pii: PiiMap | null; onReveal: () => void }) {
+  // Valorile reale vin din vault doar după „Arată” (cerere auditată); implicit se văd cele mascate.
+  const entry = p.pid && pii ? pii[p.pid] : undefined
+  const cnp = entry?.cnp ?? p.cnp
+  const serie = entry?.serie_numar ?? p.serie_numar
+  const masked = !entry && !cnp && !serie && !!(p.cnpMasked || p.serieMasked)
   const fullName = [p.prenume, p.nume].filter(Boolean).join(' ')
   const initials = fullName ? getInitials(fullName) : '?'
-  const avatarBg = getAvatarColor(fullName || p.cnp || 'x')
+  const avatarBg = getAvatarColor(fullName || p.pid || 'x')
   const adresaFull = [p.adresa, p.judet].filter(Boolean).join(', ')
 
   const details: { label: string; value: string }[] = [
-    p.cnp              ? { label: 'CNP',               value: p.cnp }              : null,
-    p.serie_numar      ? { label: 'Serie / Nr. CI',    value: p.serie_numar }      : null,
+    cnp || p.cnpMasked ? { label: 'CNP',               value: cnp || p.cnpMasked! } : null,
+    serie || p.serieMasked ? { label: 'Serie / Nr. CI', value: serie || p.serieMasked! } : null,
     p.data_nasterii    ? { label: 'Data nașterii',     value: p.data_nasterii }    : null,
     p.locul_nasterii   ? { label: 'Locul nașterii',    value: p.locul_nasterii }   : null,
     p.cetatenia        ? { label: 'Cetățenia',         value: p.cetatenia }        : null,
@@ -177,6 +183,11 @@ function PersoanaCard({ p }: { p: Persoana }) {
               <span className="cv2-detail-value">{d.value}</span>
             </div>
           ))}
+          {masked && (
+            <button type="button" className="btn btn-ghost btn-xs" style={{ alignSelf: 'flex-start', marginTop: '.25rem' }} onClick={onReveal}>
+              Arată CNP și serie
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -192,6 +203,14 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
   const missingCompany = isPF ? [] : missingCompanyFields(client)
   const cotaTotal = sumCota(client.asociati.map(a => a.cotaParticipare))
   const cotaValid = isCotaTotalValid(client.asociati.map(a => a.cotaParticipare))
+
+  // Date sensibile aduse la cerere din vault (fiecare afișare e înregistrată în jurnalul de acces).
+  // Legat de id-ul clientului: la schimbarea clientului valorile dezvăluite dispar de la sine.
+  const [piiState, setPiiState] = useState<{ clientId: string; map: PiiMap } | null>(null)
+  const pii = piiState?.clientId === client.id ? piiState.map : null
+  const revealPii = async () => {
+    try { setPiiState({ clientId: client.id, map: await fetchPii(client.id, 'view') }) } catch { /* rămâne mascat */ }
+  }
 
   const [editingNotite, setEditingNotite] = useState(false)
   const [notiteValue, setNotiteValue] = useState(client.notite)
@@ -298,7 +317,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
             <div className="cv2-section-label" style={{ color: 'var(--b600)' }}>
               Date persoană (CI)
             </div>
-            <PersoanaCard p={client.titular} />
+            <PersoanaCard p={client.titular} pii={pii} onReveal={revealPii} />
           </div>
         )}
 
@@ -412,7 +431,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                 )}
                 {client.asociati.length > 0
                   ? <div className="cv2-persons-list">
-                      {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                      {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} />)}
                     </div>
                   : <span className="cv2-info-empty">Niciun asociat adăugat.</span>
                 }
@@ -424,7 +443,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                 </div>
                 {client.administratori.length > 0
                   ? <div className="cv2-persons-list">
-                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} />)}
                     </div>
                   : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
                 }
@@ -447,7 +466,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
             </div>
             {(client.membriIF?.length ?? 0) > 0
               ? <div className="cv2-persons-list">
-                  {client.membriIF!.map((p, i) => <PersoanaCard key={i} p={p} />)}
+                  {client.membriIF!.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} />)}
                 </div>
               : <span className="cv2-info-empty">Niciun membru adăugat.</span>
             }

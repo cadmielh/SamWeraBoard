@@ -1,13 +1,15 @@
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
+  connectAuthEmulator,
   GoogleAuthProvider,
   signInWithPopup,
   signOut as fbSignOut,
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { DRIVE_SCOPE } from "./drive";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -22,9 +24,20 @@ const app  = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
 
+// Dezvoltare locală: `VITE_USE_EMULATORS=1` emulează Auth + Firestore; se pot alege și separat
+// (`VITE_USE_AUTH_EMULATOR`, `VITE_USE_FIRESTORE_EMULATOR`) — ex. Auth real Google + Firestore local.
+const emuAll = import.meta.env.VITE_USE_EMULATORS === "1";
+if (emuAll || import.meta.env.VITE_USE_AUTH_EMULATOR === "1") {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+}
+if (emuAll || import.meta.env.VITE_USE_FIRESTORE_EMULATOR === "1") {
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+}
+
 const provider = new GoogleAuthProvider();
-provider.addScope("https://www.googleapis.com/auth/drive");
-provider.addScope("https://www.googleapis.com/auth/documents");
+// Doar `drive.file`: fișierele create de aplicație sau alese explicit de utilizator (Google Picker). Nu cere verificare
+// Google (nu e permisiune sensibilă) și nu acordă acces la restul Drive-ului. Tokenul rămâne în browser.
+provider.addScope(DRIVE_SCOPE);
 provider.setCustomParameters({ prompt: "select_account" });
 
 export async function signIn(): Promise<{ user: User; accessToken: string }> {

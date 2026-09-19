@@ -1,4 +1,4 @@
-# Proiecte viitoare — SamWeraBoard
+# Proiecte viitoare — Cabinio
 
 Document de urmărire pentru inițiative mari, amânate deliberat din runda curentă de îmbunătățiri (2026-07-23) ca să nu blocheze fixurile de securitate/corectitudine și funcționalitățile fiscale de bază. De revizitat individual, ca proiecte separate, când e momentul potrivit.
 

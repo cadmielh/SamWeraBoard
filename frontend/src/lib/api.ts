@@ -1,7 +1,9 @@
 import { auth } from "./firebase";
+import { DOCX_MIME, DriveError, driveDownload, driveUpload, fillGoogleDoc } from "./drive";
+import { pickAgain } from "./picker";
 import type { BuiltinTemplate, ClauseMeta } from "../types";
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5001";
 // OCR calls go directly to Cloud Run to bypass Firebase Hosting's 60s proxy timeout
 const OCR_BASE = import.meta.env.VITE_OCR_BASE ?? BASE;
 
@@ -20,12 +22,60 @@ export interface IDFields {
   valabila_pana_la: string;
 }
 
-async function headers(accessToken: string): Promise<Record<string, string>> {
+// Workspace-ul activ, trimis la fiecare cerere: backend-ul verifică din el că
+// utilizatorul e membru cu rol suficient (vezi authz.require_role). Setat din
+// AppLayout la schimbarea workspace-ului.
+let activeWorkspaceId = "";
+export function setApiWorkspace(id: string | null) {
+  activeWorkspaceId = id ?? "";
+}
+
+/** Mesajul afișat utilizatorului pentru un răspuns de eroare al API-ului (coduri cunoscute → text clar). */
+export function apiErrorMessage(data: { error?: string } | undefined, res: Response, fallback: string): string {
+  switch (data?.error) {
+    case "rate_limited": {
+      const s = Number(res.headers.get("Retry-After")) || 60;
+      return `Prea multe cereri într-un timp scurt. Încearcă din nou peste ${s < 90 ? `${s} de secunde` : `${Math.ceil(s / 60)} minute`}.`;
+    }
+    case "consent_required":
+      return "Administratorul spațiului de lucru trebuie să accepte termenii și DPA înainte de a prelucra date personale.";
+    case "creation_not_allowed":
+      return "Crearea de cabinete noi se face pe invitație. Solicită acces pilot la adresa de contact din subsolul paginii.";
+    case "invalid_person":
+      return "CNP-ul (13 cifre) sau seria actului au un format nevalid. Corectează datele persoanei și încearcă din nou.";
+    case "vault_unavailable":
+      return "Serviciul de protecție a datelor sensibile este temporar indisponibil. Încearcă din nou în câteva minute.";
+    case "Forbidden":
+      return "Nu ai drepturile necesare pentru această acțiune.";
+    default:
+      return data?.error ?? fallback;
+  }
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
   const idToken = await auth.currentUser!.getIdToken();
   return {
     "X-Firebase-Token": idToken,
-    "Authorization": `Bearer ${accessToken}`,
+    "X-Workspace-Id": activeWorkspaceId,
   };
+}
+
+/** Apel JSON către API (membri, invitații, audit, vault). Nu folosește token-ul Google — doar identitatea Firebase.
+ * Aruncă Error cu `code` = codul de eroare al serverului (ex. "last_admin", "consent_required"). */
+export async function apiJson<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { ...(await authHeaders()), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(apiErrorMessage(data as { error?: string }, res, `HTTP ${res.status}`)) as Error & { code?: string; status?: number };
+    err.code = (data as { error?: string }).error;
+    err.status = res.status;
+    throw err;
+  }
+  return data as T;
 }
 
 // Puțin peste bugetul maxim al backend-ului (Azure ~48s + fallback OCR local
@@ -33,16 +83,17 @@ async function headers(accessToken: string): Promise<Record<string, string>> {
 // agățat (rețea căzută etc.) ține spinner-ul în loading la nesfârșit.
 const OCR_TIMEOUT_MS = 100_000;
 
-export async function extractFile(file: File, accessToken: string): Promise<IDFields> {
+export async function extractFile(file: File, source: "upload" | "drive" = "upload"): Promise<IDFields> {
   const fd = new FormData();
   fd.append("file", file);
+  fd.append("source", source);   // doar pentru jurnalul de acces (serverul nu vede Drive)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), OCR_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(`${OCR_BASE}/extract`, {
       method: "POST",
-      headers: await headers(accessToken),
+      headers: await authHeaders(),
       body: fd,
       signal: controller.signal,
     });
@@ -55,81 +106,70 @@ export async function extractFile(file: File, accessToken: string): Promise<IDFi
     clearTimeout(timeoutId);
   }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Extraction failed");
+  if (!res.ok) {
+    throw new Error(apiErrorMessage(data, res, "Extraction failed"));
+  }
   return data as IDFields;
 }
 
-export async function extractFromDrive(fileId: string, accessToken: string): Promise<IDFields> {
-  const res = await fetch(`${OCR_BASE}/extract/drive`, {
-    method: "POST",
-    headers: { ...(await headers(accessToken)), "Content-Type": "application/json" },
-    body: JSON.stringify({ file_id: fileId }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Extraction failed");
-  return data as IDFields;
+/** Destinația „Google Drive” pentru un document generat: tokenul Google (rămâne în browser) și folderul ales prin Picker. */
+export interface DriveTarget { token: string; folderId?: string | null }
+
+export interface FillResult { blob?: Blob; name?: string; link?: string }
+
+/** Rulează o operațiune pe un fișier Drive; dacă aplicația nu are (încă) acces la el — de ex. un șablon ales de un coleg —
+ * cere utilizatorului să-l confirme prin Google Picker și reîncearcă o singură dată. */
+async function withDriveAccess<T>(fileId: string, token: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (!(e instanceof DriveError) || e.code !== "not_granted") throw e;
+    const picked = await pickAgain(fileId, token);
+    if (!picked) throw e;
+    return await run();
+  }
 }
 
-export interface DriveFile {
-  id: string;
-  name: string;
-  mimeType: string;
-  modifiedTime?: string;
-  label: string;
-  is_folder: boolean;
+function fileNameFrom(res: Response, fallback: string): string {
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers.get("Content-Disposition") ?? "");
+  try { return m ? decodeURIComponent(m[1]) : fallback; } catch { return m?.[1] ?? fallback; }
 }
 
-export async function listDriveFiles(
-  accessToken: string,
-  folderId = "root",
-  pageToken?: string
-): Promise<{ files: DriveFile[]; nextPageToken?: string; folder_id: string }> {
-  const params = new URLSearchParams({ folder_id: folderId });
-  if (pageToken) params.set("page_token", pageToken);
-  const res = await fetch(`${BASE}/drive/files?${params}`, {
-    headers: await headers(accessToken),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Drive error");
-  return data;
+/** Trimite formularul la /fill/docx. Dacă se cere Drive, fișierul generat se încarcă din browser (serverul nu vede tokenul). */
+async function postFillDocx(fd: FormData, drive: DriveTarget | null | undefined, outputName?: string): Promise<FillResult> {
+  if (drive) fd.append("_destination", "drive");      // doar pentru jurnalul de acces
+  const res = await fetch(`${BASE}/fill/docx`, { method: "POST", headers: await authHeaders(), body: fd });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(apiErrorMessage(err, res, "Fill failed"));
+  }
+  const blob = await res.blob();
+  if (!drive) return { blob };
+  const up = await driveUpload(blob, fileNameFrom(res, outputName || "document.docx"), DOCX_MIME, drive.folderId ?? null, drive.token);
+  return { name: up.name, link: up.webViewLink };
+}
+
+function docxForm(fields: Record<string, string>, outputName?: string, groups?: Record<string, Record<string, string>[]>, selectedClauses?: string[], rowGroups?: Record<string, Record<string, string>[]>, upperKeys = false): FormData {
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(upperKeys ? k.toUpperCase() : k, v));
+  if (outputName) fd.append("_output_name", outputName);
+  if (groups) fd.append("_groups", JSON.stringify(groups));
+  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
+  if (rowGroups) fd.append("_row_groups", JSON.stringify(rowGroups));
+  return fd;
 }
 
 export async function fillDocx(
   templateFile: File,
   fields: Record<string, string>,
-  accessToken: string,
-  uploadToDrive = false,
-  driveFolderId?: string,
+  drive?: DriveTarget | null,
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
-): Promise<{ blob?: Blob; name?: string; link?: string }> {
-  const fd = new FormData();
+): Promise<FillResult> {
+  const fd = docxForm(fields, outputName, groups, selectedClauses, undefined, true);
   fd.append("template", templateFile);
-  Object.entries(fields).forEach(([k, v]) => fd.append(k.toUpperCase(), v));
-  if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
-  if (outputName) fd.append("_output_name", outputName);
-  if (groups) fd.append("_groups", JSON.stringify(groups));
-  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
-
-  const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: await headers(accessToken),
-    body: fd,
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "Fill failed");
-  }
-
-  if (uploadToDrive) {
-    const d = await res.json();
-    return { name: d.name, link: d.link };
-  }
-  const blob = await res.blob();
-  return { blob };
+  return postFillDocx(fd, drive, outputName);
 }
 
 export interface AnafResult {
@@ -160,109 +200,65 @@ export interface AnafResult {
   administratoriAnaf?: { nume: string; rol: string }[]
 }
 
-export async function fetchAnafCompany(cif: string, accessToken: string): Promise<AnafResult> {
+export async function fetchAnafCompany(cif: string): Promise<AnafResult> {
   const res = await fetch(`${BASE}/anaf/company?cif=${encodeURIComponent(cif)}`, {
-    headers: await headers(accessToken),
+    headers: await authHeaders(),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error ?? 'Eroare ANAF')
+  if (!res.ok) throw new Error(apiErrorMessage(data, res, 'Eroare ANAF'))
   return data as AnafResult
 }
 
 export async function detectPlaceholders(
   templateFile: File,
-  accessToken: string,
 ): Promise<{ placeholders: string[]; clauses: ClauseMeta[] }> {
   const fd = new FormData();
   fd.append("template", templateFile);
   const res = await fetch(`${BASE}/template/placeholders`, {
     method: "POST",
-    headers: await headers(accessToken),
+    headers: await authHeaders(),
     body: fd,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Placeholder detection failed");
+  if (!res.ok) throw new Error(apiErrorMessage(data, res, "Placeholder detection failed"));
   return { placeholders: data.placeholders as string[], clauses: (data.clauses ?? []) as ClauseMeta[] };
 }
 
+/** Șablon .docx aflat în Drive: se descarcă în browser (cu confirmarea accesului prin Picker, dacă e nevoie),
+ * apoi se completează ca orice șablon încărcat. */
 export async function fillDocxFromDriveTemplate(
   templateDriveId: string,
   fields: Record<string, string>,
-  accessToken: string,
-  uploadToDrive = false,
-  driveFolderId?: string,
+  token: string,
+  drive?: DriveTarget | null,
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
-): Promise<{ blob?: Blob; name?: string; link?: string }> {
-  const fd = new FormData();
-  fd.append("template_drive_id", templateDriveId);
-  Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
-  if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
-  if (outputName) fd.append("_output_name", outputName);
-  if (groups) fd.append("_groups", JSON.stringify(groups));
-  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
-
-  const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: await headers(accessToken),
-    body: fd,
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "Fill failed");
-  }
-  if (uploadToDrive) {
-    const d = await res.json();
-    return { name: d.name, link: d.link };
-  }
-  const blob = await res.blob();
-  return { blob };
+): Promise<FillResult> {
+  const tpl = await withDriveAccess(templateDriveId, token, () => driveDownload(templateDriveId, token));
+  const file = new File([tpl.blob], tpl.name.endsWith(".docx") ? tpl.name : `${tpl.name}.docx`, { type: DOCX_MIME });
+  const fd = docxForm(fields, outputName, groups, selectedClauses);
+  fd.append("template", file);
+  return postFillDocx(fd, drive, outputName);
 }
 
 export async function fillDocxFromBuiltinTemplate(
   builtinKey: string,
   fields: Record<string, string>,
-  accessToken: string,
-  uploadToDrive = false,
-  driveFolderId?: string,
+  drive?: DriveTarget | null,
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
   rowGroups?: Record<string, Record<string, string>[]>,
-): Promise<{ blob?: Blob; name?: string; link?: string }> {
-  const fd = new FormData();
+): Promise<FillResult> {
+  const fd = docxForm(fields, outputName, groups, selectedClauses, rowGroups);
   fd.append("template_builtin_key", builtinKey);
-  Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
-  if (uploadToDrive && driveFolderId) fd.append("_drive_folder_id", driveFolderId);
-  if (outputName) fd.append("_output_name", outputName);
-  if (groups) fd.append("_groups", JSON.stringify(groups));
-  if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
-  if (rowGroups) fd.append("_row_groups", JSON.stringify(rowGroups));
-
-  const endpoint = uploadToDrive ? `${BASE}/fill/docx/upload-to-drive` : `${BASE}/fill/docx`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: await headers(accessToken),
-    body: fd,
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error ?? "Fill failed");
-  }
-  if (uploadToDrive) {
-    const d = await res.json();
-    return { name: d.name, link: d.link };
-  }
-  const blob = await res.blob();
-  return { blob };
+  return postFillDocx(fd, drive, outputName);
 }
 
 export async function fillPdfFromBuiltinTemplate(
   builtinKey: string,
   fields: Record<string, string>,
-  accessToken: string,
   outputName?: string,
 ): Promise<Blob> {
   const fd = new FormData();
@@ -272,51 +268,58 @@ export async function fillPdfFromBuiltinTemplate(
 
   const res = await fetch(`${BASE}/fill/pdf`, {
     method: "POST",
-    headers: await headers(accessToken),
+    headers: await authHeaders(),
     body: fd,
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error ?? "Fill failed");
+    throw new Error(apiErrorMessage(err, res, "Fill failed"));
   }
   return res.blob();
 }
 
-export async function fetchBuiltinTemplates(accessToken: string): Promise<BuiltinTemplate[]> {
+export async function fetchBuiltinTemplates(): Promise<BuiltinTemplate[]> {
   const res = await fetch(`${BASE}/templates/builtin`, {
-    headers: await headers(accessToken),
+    headers: await authHeaders(),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Nu s-au putut încărca șabloanele de bază");
+  if (!res.ok) throw new Error(apiErrorMessage(data, res, "Nu s-au putut încărca șabloanele de bază"));
   return data.templates as BuiltinTemplate[];
 }
 
-export async function fetchBuiltinTemplateBytes(key: string, accessToken: string): Promise<Blob> {
+export async function fetchBuiltinTemplateBytes(key: string): Promise<Blob> {
   const res = await fetch(`${BASE}/templates/builtin/${encodeURIComponent(key)}`, {
-    headers: await headers(accessToken),
+    headers: await authHeaders(),
   });
   if (!res.ok) {
     const err = await res.json();
-    throw new Error(err.error ?? "Nu s-a putut descărca șablonul de bază");
+    throw new Error(apiErrorMessage(err, res, "Nu s-a putut descărca șablonul de bază"));
   }
   return res.blob();
 }
 
+/** Raportează serverului (doar pentru jurnalul de acces) că s-a generat un document în afara lui, ex. un Google Doc completat
+ * din browser. Se trimit doar metadate, niciodată valorile câmpurilor. Eșecul raportării nu blochează utilizatorul. */
+export async function reportDocument(meta: { format: "docx" | "pdf" | "gdoc"; template: string; destination: "download" | "drive"; fields: number; cnp: boolean }): Promise<void> {
+  try {
+    await apiJson("POST", "/audit/document", meta);
+  } catch { /* jurnalul e best-effort din partea clientului */ }
+}
+
+/** Completează un șablon Google Docs direct din browser (copie + înlocuiri). Serverul nu vede documentul. */
 export async function fillGdoc(
   templateDocId: string,
   fields: Record<string, string>,
-  accessToken: string,
+  token: string,
   outputName?: string,
 ): Promise<{ doc_id: string; link: string }> {
   const upperFields: Record<string, string> = {};
   Object.entries(fields).forEach(([k, v]) => { upperFields[k.toUpperCase()] = v; });
-
-  const res = await fetch(`${BASE}/fill/gdoc`, {
-    method: "POST",
-    headers: { ...(await headers(accessToken)), "Content-Type": "application/json" },
-    body: JSON.stringify({ template_doc_id: templateDocId, fields: upperFields, output_name: outputName }),
+  const out = await withDriveAccess(templateDocId, token, () => fillGoogleDoc(templateDocId, upperFields, outputName, token));
+  void reportDocument({
+    format: "gdoc", template: "drive", destination: "drive",
+    fields: Object.values(upperFields).filter(Boolean).length,
+    cnp: Object.entries(upperFields).some(([k, v]) => v && k.includes("CNP")),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Fill failed");
-  return data;
+  return { doc_id: out.docId, link: out.link };
 }

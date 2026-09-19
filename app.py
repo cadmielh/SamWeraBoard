@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import threading
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
 from datetime import date
 from pathlib import Path
@@ -31,13 +32,15 @@ load_dotenv()
 load_dotenv(".env.local", override=True)
 
 import firebase_admin
-from firebase_admin import auth as fb_auth, credentials as fb_creds
+from firebase_admin import credentials as fb_creds
 
 
 
+import audit
+import authz
+import ratelimit
 import local_extractor
 import azure_extractor
-import gdrive
 from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx
 from pdf_filler import fill_pdf, list_pdf_fields
 
@@ -68,14 +71,28 @@ else:
     # Cloud Run: uses Application Default Credentials automatically
     firebase_admin.initialize_app()
 
+if not (os.getenv("VAULT_KMS_KEY") or os.getenv("VAULT_LOCAL_KEK")):
+    print("[vault] ATENȚIE: nici VAULT_KMS_KEY, nici VAULT_LOCAL_KEK nu sunt setate — "
+          "CNP/serie CI nu se pot salva până la configurare (vezi docs/vault-rollout.md).")
+
 # ── Flask app ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB — OCR uploads only need a few MB
-_cors_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "*").split(",") if o.strip()]
-CORS(app, origins=_cors_origins or "*",
-     allow_headers=["Content-Type", "Authorization", "X-Firebase-Token"])
+# Fără fallback "*": dacă FRONTEND_ORIGIN lipsește, nicio origine cross-site nu e acceptată.
+_cors_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
+CORS(app, origins=_cors_origins,
+     allow_headers=["Content-Type", "X-Firebase-Token", "X-Workspace-Id"],
+     expose_headers=["Content-Disposition", "Retry-After"])
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
+
+import workspaces_api  # noqa: E402  (după init Firebase Admin și limiter)
+import pii_api  # noqa: E402
+limiter.limit("120 per hour")(workspaces_api.bp)
+app.register_blueprint(workspaces_api.bp)
+# Plafon pe citirea datelor sensibile: încetinește o eventuală exfiltrare în masă.
+limiter.limit("60 per minute")(pii_api.bp)
+app.register_blueprint(pii_api.bp)
 
 UPLOAD_FOLDER = Path(os.getenv("UPLOAD_FOLDER", "uploads"))
 UPLOAD_FOLDER.mkdir(exist_ok=True)
@@ -86,19 +103,55 @@ def _allowed(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
 
-def _verify() -> tuple[str, str]:
-    """Verify Firebase ID token, return (uid, google_access_token)."""
-    id_token     = request.headers.get("X-Firebase-Token", "")
-    access_token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    try:
-        decoded = fb_auth.verify_id_token(id_token)
-        return decoded["uid"], access_token
-    except Exception as e:
-        raise PermissionError(f"Unauthorized: {e}")
+def _verify(min_role: str = "member", consent: bool = False, limit: str | None = None) -> str:
+    """Autentifică (token Firebase nerevocat, e-mail verificat) ȘI autorizează: utilizatorul trebuie să fie membru
+    al workspace-ului din `X-Workspace-Id` cu cel puțin `min_role`. Întoarce uid-ul.
+    Serverul NU primește și nu folosește tokenul Google al utilizatorului: operațiunile Drive/Docs se fac din browser."""
+    principal = authz.authenticate()
+    authz.require_role(principal, request.headers.get("X-Workspace-Id", ""), min_role, consent=consent)
+    if limit:
+        ratelimit.check(principal.uid, request.headers.get("X-Workspace-Id", ""), limit)
+    return principal.uid
 
 
 def _auth_error(e: Exception):
-    return jsonify({"error": str(e)}), 401
+    # Mesaj fix: nu reflectăm detalii despre de ce a fost respins accesul.
+    if isinstance(e, authz.AuthError):
+        return authz.error_response(e)
+    return jsonify({"error": "Unauthorized"}), 401
+
+
+def _server_error(public_message: str, exc: Exception, status: int = 500):
+    """Loghează doar tipul excepției (mesajul poate conține date personale sau
+    identificatori Drive) și întoarce clientului un mesaj generic."""
+    print(f"[error] {public_message} ({type(exc).__name__})")
+    return jsonify({"error": public_message}), status
+
+
+def _audit(uid: str, action: str, meta: dict | None = None) -> None:
+    """Jurnal de acces (scris de server). Niciodată valori de date personale sau nume de fișiere:
+    doar ce s-a făcut, cu ce fel de șablon, câte câmpuri și dacă a fost inclus un CNP."""
+    audit.log(request.headers.get("X-Workspace-Id", ""), uid, action, None, meta)
+
+
+def _ocr_meta(source: str, engine: str, outcome: str, size: int, fields: dict | None) -> dict:
+    return {"source": source, "engine": engine, "outcome": outcome, "sizeKb": size // 1024,
+            "cnp": bool((fields or {}).get("cnp"))}
+
+
+def _template_source(builtin_key: str | None) -> str:
+    return f"builtin:{builtin_key}" if builtin_key else "upload"
+
+
+def _clean_choice(value: str | None, allowed: tuple[str, ...], default: str) -> str:
+    """Valori raportate de client doar pentru jurnal: acceptăm strict o listă mică, orice altceva devine implicit."""
+    return value if value in allowed else default
+
+
+def _fill_meta(fmt: str, template: str, replacements: dict, destination: str = "download") -> dict:
+    return {"format": fmt, "template": template, "destination": destination,
+            "fields": sum(1 for v in replacements.values() if v),
+            "cnp": any(v and "CNP" in str(k).upper() for k, v in replacements.items())}
 
 
 # ── Extraction ────────────────────────────────────────────────────────────────
@@ -107,7 +160,7 @@ def _auth_error(e: Exception):
 @limiter.limit("20 per minute")
 def extract():
     try:
-        uid, _ = _verify()
+        uid = _verify(consent=True, limit="ocr")
     except PermissionError as e:
         return _auth_error(e)
 
@@ -119,9 +172,14 @@ def extract():
 
     file_bytes = file.read()
     filename   = file.filename
+    source     = _clean_choice(request.form.get("source"), ("upload", "drive"), "upload")   # doar pentru jurnal
 
     def _postprocess(fields: dict) -> dict:
-        """Re-derive DOB from CNP if valid; clear CNP if invalid."""
+        """Curăță spațiile/liniile noi din valorile extrase (OCR-ul desparte adesea seria de număr pe linii diferite);
+        re-derive DOB from CNP if valid; clear CNP if invalid."""
+        for k, v in list(fields.items()):
+            if isinstance(v, str):
+                fields[k] = " ".join(v.split())
         cnp = fields.get("cnp", "")
         if cnp and local_extractor._validate_cnp(cnp):
             dob = local_extractor._cnp_to_dob(cnp)
@@ -144,10 +202,11 @@ def extract():
         ai_score = local_extractor._quality_score(ai_fields)
         print(f"[extract] azure score={ai_score:.2f} cnp={local_extractor.mask_cnp(ai_fields.get('cnp', ''))}")
     except Exception as ai_err:
-        print(f"[extract] Azure extraction failed: {ai_err}")
+        print(f"[extract] Azure extraction failed ({type(ai_err).__name__})")
 
     if ai_score >= local_extractor.QUALITY_THRESHOLD:
-        return jsonify({**(_empty | ai_fields), "uid": uid})
+        _audit(uid, "ocr.extract", _ocr_meta(source, "azure", "ok", len(file_bytes), ai_fields))
+        return jsonify(_empty | ai_fields)
 
     # ── OCR local — doar dacă Azure n-a dat suficient (eșec sau scor mic) ──────
     # EasyOCR pe CPU poate rula minute întregi pe scanuri slabe (2 pass-uri ×
@@ -166,7 +225,7 @@ def extract():
     except _FutureTimeoutError:
         print(f"[extract] Local OCR timed out after {_LOCAL_OCR_TIMEOUT}s — falling back to Azure result")
     except Exception as local_err:
-        print(f"[extract] Local OCR failed: {local_err}")
+        print(f"[extract] Local OCR failed ({type(local_err).__name__})")
 
     best = local_fields if local_score > ai_score else ai_fields
     # CNP validat local e mai sigur decât cel din Azure (verificare cu cifra de control)
@@ -176,51 +235,9 @@ def extract():
         dob = local_extractor._cnp_to_dob(local_cnp)
         if dob:
             best["data_nasterii"] = dob
-    return jsonify({**(_empty | best), "uid": uid})
-
-
-@app.route("/extract/drive", methods=["POST"])
-@limiter.limit("20 per minute")
-def extract_from_drive():
-    try:
-        _, access_token = _verify()
-    except PermissionError as e:
-        return _auth_error(e)
-
-    data    = request.get_json() or {}
-    file_id = data.get("file_id")
-    if not file_id:
-        return jsonify({"error": "file_id required"}), 400
-    if not access_token:
-        return jsonify({"error": "Google access_token required"}), 400
-
-    try:
-        file_bytes, filename, _ = gdrive.download_file(access_token, file_id)
-        id_data = azure_extractor.extract_from_bytes(file_bytes, filename)
-    except Exception as e:
-        return jsonify({"error": f"Extraction failed: {e}"}), 500
-
-    return jsonify(id_data.model_dump())
-
-
-# ── Drive browsing ────────────────────────────────────────────────────────────
-
-@app.route("/drive/files")
-def drive_files():
-    try:
-        _, access_token = _verify()
-    except PermissionError as e:
-        return _auth_error(e)
-    if not access_token:
-        return jsonify({"error": "Google access_token required"}), 400
-
-    folder_id  = request.args.get("folder_id", "root")
-    page_token = request.args.get("page_token")
-    try:
-        result = gdrive.list_files(access_token, folder_id=folder_id, page_token=page_token)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    return jsonify(result)
+    _audit(uid, "ocr.extract", _ocr_meta(source, "local" if local_score > ai_score else "azure",
+                                         "ok" if any(best.values()) else "empty", len(file_bytes), best))
+    return jsonify(_empty | best)
 
 
 # ── Șabloane de bază ("built-in") ────────────────────────────────────────────
@@ -231,6 +248,22 @@ def drive_files():
 BUILTIN_TEMPLATE_DIR = Path(__file__).resolve().parent / "fisiere_template"
 
 
+def _resolve_template_file(directory: Path, filename: str) -> Path:
+    """Găsește fișierul șablonului indiferent de forma Unicode a diacriticelor din nume.
+
+    macOS stochează numele „descompuse” (NFD) și le tratează identic cu cele „compuse” (NFC); Linux (Cloud Run) nu.
+    Registrul scrie NFC, dar arhiva încărcată de pe Mac conține NFD: fără această potrivire, funcția nu pornea în cloud
+    (`FileNotFoundError` la import). Se compară în forma NFC."""
+    direct = directory / filename
+    if direct.is_file():
+        return direct
+    wanted = unicodedata.normalize("NFC", filename)
+    for f in directory.iterdir():
+        if unicodedata.normalize("NFC", f.name) == wanted:
+            return f
+    raise FileNotFoundError(f"Șablon lipsă: {filename}")
+
+
 def _load_builtin_templates() -> dict[str, dict]:
     registry_path = BUILTIN_TEMPLATE_DIR / "registry.json"
     if not registry_path.exists():
@@ -238,7 +271,7 @@ def _load_builtin_templates() -> dict[str, dict]:
     entries = json.loads(registry_path.read_text(encoding="utf-8"))
     result: dict[str, dict] = {}
     for entry in entries:
-        file_bytes = (BUILTIN_TEMPLATE_DIR / entry["filename"]).read_bytes()
+        file_bytes = _resolve_template_file(BUILTIN_TEMPLATE_DIR, entry["filename"]).read_bytes()
         if entry.get("type", "docx") == "pdf":
             result[entry["key"]] = {
                 **entry,
@@ -291,24 +324,16 @@ def get_builtin_template(key: str):
 @app.route("/fill/docx", methods=["POST"])
 def fill_docx_route():
     try:
-        _, access_token = _verify()
+        uid = _verify(limit="fill")
     except PermissionError as e:
         return _auth_error(e)
 
-    template_drive_id    = request.form.get("template_drive_id")
     template_builtin_key = request.form.get("template_builtin_key")
     if template_builtin_key:
         tpl = BUILTIN_TEMPLATES.get(template_builtin_key)
         if not tpl:
             return jsonify({"error": "Unknown built-in template"}), 400
         file_bytes, original_name = tpl["bytes"], tpl["filename"]
-    elif template_drive_id:
-        if not access_token:
-            return jsonify({"error": "Google access_token required for Drive template"}), 400
-        try:
-            file_bytes, original_name, _ = gdrive.download_file(access_token, template_drive_id)
-        except Exception as e:
-            return jsonify({"error": f"Failed to download template from Drive: {e}"}), 500
     elif "template" in request.files:
         template_file = request.files["template"]
         if Path(template_file.filename).suffix.lower() != ".docx":
@@ -316,12 +341,12 @@ def fill_docx_route():
         file_bytes    = template_file.read()
         original_name = template_file.filename
     else:
-        return jsonify({"error": "No template provided (upload file, set template_drive_id, or set template_builtin_key)"}), 400
+        return jsonify({"error": "No template provided (upload file or set template_builtin_key)"}), 400
 
     try:
         fields       = request.form.to_dict()
-        fields.pop("template_drive_id", None)
         fields.pop("template_builtin_key", None)
+        destination  = _clean_choice(fields.pop("_destination", None), ("download", "drive"), "download")   # doar pentru jurnal
         output_name  = fields.pop("_output_name", None) or None
         groups_raw   = fields.pop("_groups", None)
         groups       = json.loads(groups_raw) if groups_raw else None
@@ -333,9 +358,10 @@ def fill_docx_route():
         replacements = {k: v for k, v in fields.items() if v}
         filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups)
     except Exception as e:
-        return jsonify({"error": f"Fill failed: {e}"}), 500
+        return _server_error("Fill failed", e)
 
     out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
+    _audit(uid, "document.generate", _fill_meta("docx", _template_source(request.form.get("template_builtin_key")), replacements, destination))
     return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -343,7 +369,7 @@ def fill_docx_route():
 @app.route("/fill/pdf", methods=["POST"])
 def fill_pdf_route():
     try:
-        _verify()
+        uid = _verify(limit="fill")
     except PermissionError as e:
         return _auth_error(e)
 
@@ -371,92 +397,35 @@ def fill_pdf_route():
         # de tip {{CAMP}} needefinit care ar trebui evitat.
         filled_bytes = fill_pdf(file_bytes, fields)
     except Exception as e:
-        return jsonify({"error": f"Fill failed: {e}"}), 500
+        return _server_error("Fill failed", e)
 
     out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
+    _audit(uid, "document.generate", _fill_meta("pdf", _template_source(request.form.get("template_builtin_key")), fields))
     return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
                      mimetype="application/pdf")
 
 
-@app.route("/fill/docx/upload-to-drive", methods=["POST"])
-def fill_docx_and_upload():
+@app.route("/audit/document", methods=["POST"])
+def audit_document():
+    """Jurnalul de acces pentru documente generate în afara serverului (ex. un Google Doc completat din browser).
+    Raport al clientului: se acceptă doar metadate cu formă strictă, niciodată valori ale câmpurilor."""
     try:
-        _, access_token = _verify()
+        uid = _verify(consent=True, limit="fill")
     except PermissionError as e:
         return _auth_error(e)
-    if not access_token:
-        return jsonify({"error": "Google access_token required"}), 400
-
-    template_drive_id    = request.form.get("template_drive_id")
-    template_builtin_key = request.form.get("template_builtin_key")
-    if template_builtin_key:
-        tpl = BUILTIN_TEMPLATES.get(template_builtin_key)
-        if not tpl:
-            return jsonify({"error": "Unknown built-in template"}), 400
-        file_bytes, original_name = tpl["bytes"], tpl["filename"]
-    elif template_drive_id:
-        try:
-            file_bytes, original_name, _ = gdrive.download_file(access_token, template_drive_id)
-        except Exception as e:
-            return jsonify({"error": f"Failed to download template from Drive: {e}"}), 500
-    elif "template" in request.files:
-        template_file = request.files["template"]
-        file_bytes    = template_file.read()
-        original_name = template_file.filename
-    else:
-        return jsonify({"error": "No template provided"}), 400
-
-    fields      = request.form.to_dict()
-    fields.pop("template_drive_id", None)
-    fields.pop("template_builtin_key", None)
-    folder_id   = fields.pop("_drive_folder_id", None)
-    output_name = fields.pop("_output_name", None) or None
-    groups_raw  = fields.pop("_groups", None)
-    groups      = json.loads(groups_raw) if groups_raw else None
-    clauses_raw      = fields.pop("_clauses", None)
-    selected_clauses = json.loads(clauses_raw) if clauses_raw else None
-    row_groups_raw   = fields.pop("_row_groups", None)
-    row_groups       = json.loads(row_groups_raw) if row_groups_raw else None
-    # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
-    replacements = {k: v for k, v in fields.items() if v}
-
-    try:
-        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups)
-        out_name     = output_name or ("completat_" + secure_filename(original_name))
-        meta = gdrive.upload_file(access_token, filled_bytes, out_name,
-                                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                  folder_id=folder_id)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    return jsonify({"file_id": meta["id"], "name": meta["name"], "link": meta.get("webViewLink", "")})
-
-
-@app.route("/fill/gdoc", methods=["POST"])
-def fill_gdoc_route():
-    try:
-        _, access_token = _verify()
-    except PermissionError as e:
-        return _auth_error(e)
-    if not access_token:
-        return jsonify({"error": "Google access_token required"}), 400
-
-    data            = request.get_json() or {}
-    template_doc_id = data.get("template_doc_id")
-    fields: dict    = data.get("fields", {})
-    output_name     = data.get("output_name") or None
-    if not template_doc_id:
-        return jsonify({"error": "template_doc_id required"}), 400
-
-    # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
-    replacements = {k: v for k, v in fields.items() if v}
-    try:
-        new_id = gdrive.fill_google_doc(access_token, template_doc_id, replacements, output_name=output_name)
-        link   = gdrive.get_doc_web_link(access_token, new_id)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    return jsonify({"doc_id": new_id, "link": link})
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return jsonify({"error": "invalid_body"}), 400
+    fmt, template, dest = d.get("format"), d.get("template"), d.get("destination")
+    n = d.get("fields")
+    if (fmt not in ("docx", "pdf", "gdoc") or dest not in ("download", "drive")
+            or not isinstance(template, str) or not re.fullmatch(r"builtin:[a-z0-9_]{1,60}|drive|upload", template)
+            or not isinstance(n, int) or isinstance(n, bool) or not 0 <= n <= 5000
+            or not isinstance(d.get("cnp"), bool)):
+        return jsonify({"error": "invalid_report"}), 400
+    _audit(uid, "document.generate", {"format": fmt, "template": template, "destination": dest,
+                                       "fields": n, "cnp": d["cnp"], "reportedBy": "client"})
+    return jsonify({"ok": True})
 
 
 @app.route("/template/placeholders", methods=["POST"])
@@ -562,7 +531,7 @@ def _query_anaf(cif_int: int) -> dict | None:
             json=payload,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (compatible; SamWeraBoard/1.0)",
+                "User-Agent": "Mozilla/5.0 (compatible; Cabinio/1.0)",
             },
             timeout=10,
         )
@@ -742,8 +711,9 @@ def anaf_company():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "ocr_mode": "azure+local"})
+    return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
-    app.run(debug=False, port=5000)
+    # 5001, nu 5000: pe macOS portul 5000 e ocupat de AirPlay Receiver (răspunde în locul Flask).
+    app.run(debug=False, port=int(os.getenv("PORT", "5001")))

@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function MiniOCR({ onExtracted, onDrivePick }: Props) {
-  const { accessToken, toast } = useApp()
+  const { toast } = useApp()
   const [loading, setLoading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -17,7 +17,7 @@ export default function MiniOCR({ onExtracted, onDrivePick }: Props) {
   const process = async (file: File) => {
     setLoading(true)
     try {
-      const fields = await extractFile(file, accessToken)
+      const fields = await extractFile(file)
       onExtracted(fields)
       toast('Câmpuri extrase cu succes', 'ok')
     } catch (e: unknown) {

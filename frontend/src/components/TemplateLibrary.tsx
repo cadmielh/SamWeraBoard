@@ -12,6 +12,7 @@ const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
   { value: 'PJ', label: 'Persoană Juridică' },
 ]
 import { detectPlaceholders } from '../lib/api'
+import { pickGoogleDoc } from '../lib/picker'
 import Modal from './Modal'
 
 const MAX_BASE64_BYTES = 500 * 1024  // 500 KB
@@ -93,7 +94,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   const [addTab, setAddTab] = useState<AddTab>('docx')
   const [saving, setSaving] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
-  const { builtins, loading: builtinsLoading } = useBuiltinTemplates(accessToken)
+  const { builtins, loading: builtinsLoading } = useBuiltinTemplates()
   const [duplicatingKey, setDuplicatingKey] = useState<string | null>(null)
 
   // docx add form state
@@ -110,6 +111,8 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   // gdoc add form state
   const [gdocName, setGdocName] = useState('')
   const [gdocDocId, setGdocDocId] = useState('')
+  const [gdocPickedName, setGdocPickedName] = useState('')
+  const [pickingGdoc, setPickingGdoc] = useState(false)
   const [gdocDesc, setGdocDesc] = useState('')
   const [gdocOutput, setGdocOutput] = useState('')
   const [gdocTip, setGdocTip] = useState<TipTemplate>('universal')
@@ -120,7 +123,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     setDocxOutput(prev => prev || `${f.name.replace(/\.[^.]+$/, '')}_completat.docx`)
     setDetecting(true)
     try {
-      const { placeholders, clauses } = await detectPlaceholders(f, accessToken)
+      const { placeholders, clauses } = await detectPlaceholders(f)
       setDocxPlaceholders(placeholders)
       setDocxClauses(clauses)
     } catch {
@@ -166,8 +169,25 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     }
   }
 
+  // Alege șablonul prin Google Picker (drive.file): id-ul nu se mai lipește de mână, iar aplicația primește acces la el.
+  const handlePickGdoc = async () => {
+    setPickingGdoc(true)
+    try {
+      const doc = await pickGoogleDoc(accessToken)
+      if (doc) {
+        setGdocDocId(doc.id)
+        setGdocPickedName(doc.name)
+        if (!gdocName.trim()) setGdocName(doc.name)
+      }
+    } catch (err: unknown) {
+      onToast((err as Error).message ?? 'Google Drive indisponibil', 'err')
+    } finally {
+      setPickingGdoc(false)
+    }
+  }
+
   const handleAddGdoc = async () => {
-    if (!gdocName.trim() || !gdocDocId.trim()) { onToast('Introdu numele și ID-ul documentului', 'err'); return }
+    if (!gdocName.trim() || !gdocDocId.trim()) { onToast('Introdu numele și alege documentul din Drive', 'err'); return }
     setSaving(true)
     try {
       await onAdd({
@@ -211,12 +231,13 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   }
 
   const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxTip('universal') }
-  const resetGdocForm = () => { setGdocName(''); setGdocDocId(''); setGdocDesc(''); setGdocOutput(''); setGdocTip('universal') }
+  const resetGdocForm = () => {
+    setGdocPickedName(''); setGdocName(''); setGdocDocId(''); setGdocDesc(''); setGdocOutput(''); setGdocTip('universal') }
 
   const handleDuplicateBuiltin = async (b: BuiltinTemplate) => {
     setDuplicatingKey(b.key)
     try {
-      const blob = await fetchBuiltinTemplateBytes(b.key, accessToken)
+      const blob = await fetchBuiltinTemplateBytes(b.key)
       const base64 = await new Promise<string>((res, rej) => {
         const reader = new FileReader()
         reader.onload = () => res((reader.result as string).split(',')[1])
@@ -450,10 +471,17 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                     <input className="field-input" value={gdocName} onChange={e => setGdocName(e.target.value)} placeholder="ex: Contract SRL" />
                   </div>
                   <div className="field">
-                    <label className="field-label">Google Doc ID *</label>
-                    <input className="field-input" value={gdocDocId} onChange={e => setGdocDocId(e.target.value)} placeholder="ID din URL: /document/d/ID/edit" />
+                    <label className="field-label">Document Google Docs *</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                      <span style={{ flex: 1, fontSize: '.875rem', color: gdocDocId ? 'var(--s800)' : 'var(--s400)' }}>
+                        {gdocDocId ? `📄 ${gdocPickedName || 'Document ales'}` : 'Niciun document ales'}
+                      </span>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={handlePickGdoc} disabled={pickingGdoc}>
+                        {pickingGdoc ? <span className="spin" /> : (gdocDocId ? 'Schimbă' : 'Alege din Drive')}
+                      </button>
+                    </div>
                     <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>
-                      Copiază ID-ul din: docs.google.com/document/d/<strong>ID</strong>/edit
+                      Se alege prin fereastra Google: aplicația primește acces doar la documentul ales. Colegii tăi vor confirma accesul o singură dată, la prima folosire.
                     </p>
                   </div>
                   <div className="field">

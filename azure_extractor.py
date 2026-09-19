@@ -127,23 +127,37 @@ def _analyze(file_bytes: bytes, media_type: str) -> dict:
     if not operation_location:
         raise RuntimeError("Azure analyze: răspuns fără header Operation-Location")
 
-    waited = 0.0
-    while waited < _POLL_MAX_WAIT:
-        time.sleep(_POLL_INTERVAL)
-        waited += _POLL_INTERVAL
-        poll = _req.get(operation_location, headers={"Ocp-Apim-Subscription-Key": api_key},
-                         timeout=_TIMEOUT)
-        if poll.status_code != 200:
-            raise RuntimeError(f"Azure poll: HTTP {poll.status_code} — {poll.text[:200]}")
-        data = poll.json()
-        status = data.get("status")
-        if status == "succeeded":
-            return data.get("analyzeResult", {})
-        if status == "failed":
-            raise RuntimeError(f"Azure analyze failed: {data.get('error')}")
-        # altfel "running"/"notStarted" — continuăm polling-ul
+    try:
+        waited = 0.0
+        while waited < _POLL_MAX_WAIT:
+            time.sleep(_POLL_INTERVAL)
+            waited += _POLL_INTERVAL
+            poll = _req.get(operation_location, headers={"Ocp-Apim-Subscription-Key": api_key},
+                             timeout=_TIMEOUT)
+            if poll.status_code != 200:
+                raise RuntimeError(f"Azure poll: HTTP {poll.status_code} — {poll.text[:200]}")
+            data = poll.json()
+            status = data.get("status")
+            if status == "succeeded":
+                return data.get("analyzeResult", {})
+            if status == "failed":
+                raise RuntimeError(f"Azure analyze failed: {data.get('error')}")
+            # altfel "running"/"notStarted" — continuăm polling-ul
 
-    raise RuntimeError(f"Azure analyze: timeout după {_POLL_MAX_WAIT}s de polling")
+        raise RuntimeError(f"Azure analyze: timeout după {_POLL_MAX_WAIT}s de polling")
+    finally:
+        # Indiferent de rezultat: cerem ștergerea imediată a fișierului trimis și a rezultatului.
+        _delete_result(operation_location, api_key)
+
+
+def _delete_result(operation_location: str, api_key: str) -> None:
+    """Șterge din stocarea temporară Azure fișierul trimis și rezultatul analizei (altfel Azure le șterge singur după 24 de ore).
+    „Best effort”: o eroare aici nu trebuie să strice extragerea."""
+    try:
+        r = _req.delete(operation_location, headers={"Ocp-Apim-Subscription-Key": api_key}, timeout=(3, 6))
+        print(f"[azure] ștergere rezultat: HTTP {r.status_code}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[azure] ștergerea rezultatului a eșuat ({type(e).__name__}); rămâne valabilă ștergerea automată după 24 h")
 
 
 # ── Mapare câmpuri Azure → schema aplicației ───────────────────────────────────

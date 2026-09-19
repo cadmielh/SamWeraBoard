@@ -2,28 +2,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isMember(wid) {
-      return request.auth != null &&
-        request.auth.uid in get(/databases/$(database)/documents/workspaces/$(wid)).data.members;
+    // ── Helpers ────────────────────────────────────────────────────────────
+    // Tot accesul cere cont cu e-mail verificat.
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
     }
-    function isAdmin(wid) {
-      let members = get(/databases/$(database)/documents/workspaces/$(wid)).data.members;
-      return request.auth != null &&
-        request.auth.uid in members &&
-        members[request.auth.uid].role == 'admin';
+    function workspace(wid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)).data;
     }
-    // App-level role (independent of any workspace) — see users/{uid}.isSuperAdmin.
+    // Rolul utilizatorului în workspace ('admin' | 'member' | 'viewer') sau null.
+    // Membership-ul (workspaces/{wid}.members) se scrie DOAR de server (Admin SDK,
+    // vezi workspaces_api.py) — clienții nu-l pot modifica (vezi regulile de mai jos).
+    function roleOf(wid) {
+      return signedIn() && request.auth.uid in workspace(wid).members
+        ? workspace(wid).members[request.auth.uid].role
+        : null;
+    }
+    function isMember(wid)  { return roleOf(wid) != null; }
+    function canWrite(wid)  { return roleOf(wid) in ['admin', 'member']; }
+    function isAdmin(wid)   { return roleOf(wid) == 'admin'; }
+
+    // Rol de aplicație (independent de orice workspace) — users/{uid}.isSuperAdmin.
     function isSuperAdmin() {
-      return request.auth != null &&
+      return signedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuperAdmin', false) == true;
     }
 
-    // Derives the doc id for the current signed-in user's own email, used both
-    // for invitations/{docId} and superAdminGrants/{docId} — mirrors the
-    // frontend's encodeEmail() (replace '.' -> '_DOT_', then '@' -> '_AT_').
-    // string.replace() only replaces the FIRST match per call, so dots are replaced
-    // iteratively — extra passes beyond what's needed are harmless no-ops.
+    // Id-ul de document derivat din e-mailul utilizatorului curent, folosit
+    // pentru superAdminGrants/{docId} — oglinda encodeEmail() din frontend
+    // ('.' -> '_DOT_', apoi '@' -> '_AT_'). replace() înlocuiește doar prima
+    // apariție, deci trecerile suplimentare sunt no-op inofensive.
     function ownEmailDocId() {
       return request.auth.token.email.lower()
         .replace('\\.', '_DOT_').replace('\\.', '_DOT_')
@@ -33,32 +41,20 @@ service cloud.firestore {
         .replace('@', '_AT_');
     }
 
-    // A pending, unused invitation for the current user that points at wid.
-    function hasValidInvitation(wid) {
-      let invPath = /databases/$(database)/documents/invitations/$(ownEmailDocId());
-      return exists(invPath) &&
-        get(invPath).data.workspaceId == wid &&
-        get(invPath).data.get('used', false) != true;
-    }
-
-    // A pending, unused super-admin grant for the current user's own email —
-    // created by an existing super admin from the /super-admin page.
+    // Un grant de super admin în așteptare, nefolosit, pentru e-mailul propriu.
     function hasValidSuperAdminGrant() {
       let path = /databases/$(database)/documents/superAdminGrants/$(ownEmailDocId());
       return exists(path) && get(path).data.get('used', false) != true;
     }
 
-    // Users own profile (active workspace preference, super-admin flag).
-    // isSuperAdmin can only ever go from unset/false to true, and only when a
-    // valid grant exists for the user's own email — a user can never set it on
-    // themselves out of thin air. Turning it off (or the initial bootstrap
-    // grant to the very first super admin) is done manually via Firebase
-    // Console / Admin SDK, which bypasses these rules entirely.
+    // ── users ──────────────────────────────────────────────────────────────
+    // isSuperAdmin poate trece doar din nesetat/false în true, doar cu un grant
+    // valid pentru e-mailul propriu. Dezactivarea se face manual (Console/Admin SDK).
     match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow create: if request.auth != null && request.auth.uid == uid &&
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid &&
         request.resource.data.get('isSuperAdmin', false) == false;
-      allow update: if request.auth != null && request.auth.uid == uid && (
+      allow update: if signedIn() && request.auth.uid == uid && (
         request.resource.data.get('isSuperAdmin', false) == resource.data.get('isSuperAdmin', false) ||
         (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isSuperAdmin']) &&
@@ -67,96 +63,117 @@ service cloud.firestore {
         )
       );
     }
-    // Genuine subcollections under a user doc, if any ever appear — deliberately
-    // NOT `/users/{uid}/{document=**}` (which also matches the parent document
-    // itself, zero segments deep, and would bypass the isSuperAdmin protection
-    // above with an unconditional write).
+    // Doar subcolecții reale — nu `/users/{uid}/{document=**}`, care ar potrivi
+    // și documentul părinte și ar ocoli protecția isSuperAdmin de mai sus.
     match /users/{uid}/{subcollection}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if signedIn() && request.auth.uid == uid && subcollection != 'extractions';
+    }
+    // Istoric extrageri: doar metadate (sursă, moment, expirare). Orice alt câmp — în special
+    // datele personale extrase din acte — e refuzat; sunt permise doar citirea și ștergerea.
+    match /users/{uid}/extractions/{id} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['createdAt', 'sourceFile', 'expireAt']);
+      allow update: if false;
     }
 
-    // Workspaces
+    // ── workspaces ─────────────────────────────────────────────────────────
     match /workspaces/{wid} {
-      allow read: if request.auth != null &&
-        request.auth.uid in resource.data.members;
-      // Super admins can see every workspace (not just ones they're a member
-      // of) — needed for the /super-admin overview page.
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      // Super adminii văd toate workspace-urile (pagina /super-admin).
       allow read: if isSuperAdmin();
-      allow create: if request.auth != null &&
-        request.auth.uid == request.resource.data.ownerId;
-      allow update: if isAdmin(wid);
-      // Super admins can toggle feature flags on any workspace from
-      // /super-admin — deliberately scoped to only the `features` field, so a
-      // super admin who isn't a member of a workspace still can't touch its
-      // members, name or financial config.
-      allow update: if isSuperAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['features']);
-      // Invited (not-yet-member) user accepting an invitation: may only add
-      // their own membership entry, only if a valid invitation exists, and only
-      // with the exact role the admin set on that invitation (no self-promotion).
-      allow update: if request.auth != null &&
-        !(request.auth.uid in resource.data.members) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
-        request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
-        hasValidInvitation(wid) &&
-        request.resource.data.members[request.auth.uid].role ==
-          get(/databases/$(database)/documents/invitations/$(ownEmailDocId())).data.role;
+
+      // Creare, membri, roluri, ownerId, consimțământ, status: doar server-side.
+      allow create: if false;
       allow delete: if false;
 
-      // Clients sub-collection — any workspace member can CRUD
-      match /clienti/{clientId} {
-        allow read, write, delete: if isMember(wid);
+      // Adminul de workspace poate modifica doar numele și configurul de facturare.
+      allow update: if isAdmin(wid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig']);
+      // Super adminul poate comuta doar feature flag-urile.
+      allow update: if isSuperAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['features']);
 
-        // Document-generation audit trail — any workspace member can log/read
+      // Clienți — date personale (CNP etc.): citire pentru orice membru,
+      // scriere pentru admin/member, ștergere doar prin API (admin).
+      match /clienti/{clientId} {
+        allow read: if isMember(wid);
+        allow create: if canWrite(wid);
+        allow update: if canWrite(wid) &&
+          request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null);
+        // Ștergerea trece exclusiv prin API (DELETE /clients/<id>, doar admin): șterge
+        // în cascadă și vault-ul de CNP/serie CI + istoricul, ca să nu rămână date orfane.
+        allow delete: if false;
+
+        // Vault-ul de date sensibile (pii/vault) NU are reguli => acces interzis din
+        // client. Citirea/scrierea în clar trece doar prin pii_api.py, cu audit.
+
+        // Istoric generări documente — append-only.
         match /docGenerations/{genId} {
-          allow read, write: if isMember(wid);
+          allow read: if isMember(wid);
+          allow create: if canWrite(wid);
+          allow update, delete: if false;
         }
       }
 
-      // Document template library — any workspace member can CRUD
       match /docTemplates/{templateId} {
-        allow read, write, delete: if isMember(wid);
+        allow read: if isMember(wid);
+        allow create, update, delete: if canWrite(wid);
       }
 
-      // Dosare (registru ONRC) — any workspace member can CRUD
       match /dosare/{dosarId} {
-        allow read, write, delete: if isMember(wid);
+        allow read: if isMember(wid);
+        allow create: if canWrite(wid);
+        allow update: if canWrite(wid) &&
+          request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null);
+        allow delete: if canWrite(wid);
       }
 
-      // Sarcini (task board) — any workspace member can CRUD
       match /sarcini/{sarcinaId} {
-        allow read, write, delete: if isMember(wid);
+        allow read: if isMember(wid);
+        allow create: if canWrite(wid);
+        allow update: if canWrite(wid) &&
+          request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null);
+        allow delete: if canWrite(wid);
+      }
+
+      // Jurnal de audit — scris exclusiv de server; citit doar de admini.
+      match /auditLog/{entryId} {
+        allow read: if isAdmin(wid);
+        allow write: if false;
       }
     }
 
-    // Invitations — keyed by encoded email (@ -> _AT_, . -> _DOT_)
-    match /invitations/{encodedEmail} {
-      // Only the invited user can read their own invitation
-      allow read: if request.auth != null &&
-        resource.data.email == request.auth.token.email.lower();
-      // Admins create/update invitations for their own workspace
-      allow create, update: if request.auth != null &&
-        isAdmin(request.resource.data.workspaceId);
-      // Invited user may mark their own invitation as used — nothing else
-      allow update: if request.auth != null &&
-        resource.data.email == request.auth.token.email.lower() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
-        request.resource.data.used == true;
+    // ── workspaceKeys ──────────────────────────────────────────────────────
+    // Chei de date (învelite cu KMS) pentru vault-ul de CNP. Doar server-side.
+    match /workspaceKeys/{wid} {
+      allow read, write: if false;
     }
 
-    // Super-admin grants — keyed by encoded email, same scheme as invitations.
-    // Created by an existing super admin to promote another account (by email)
-    // to the app-level super admin role; consumed at that account's next
-    // sign-in (see users/{uid}.isSuperAdmin above).
+    // ── rateLimits ─────────────────────────────────────────────────────────
+    // Contoare pentru limitarea cererilor (ratelimit.py). Doar server-side.
+    match /rateLimits/{id} {
+      allow read, write: if false;
+    }
+
+    // ── invitations ────────────────────────────────────────────────────────
+    // Create/accept/decline/revoke se fac exclusiv prin API (workspaces_api.py):
+    // acceptarea e explicită și verificată server-side. Niciun acces din client.
+    match /invitations/{inviteId} {
+      allow read, write: if false;
+    }
+
+    // Cine poate crea cabinete (înregistrare pe invitație): doar prin API.
+    match /workspaceCreators/{id} {
+      allow read, write: if false;
+    }
+
+    // ── superAdminGrants ───────────────────────────────────────────────────
     match /superAdminGrants/{encodedEmail} {
-      // Any super admin can see all grants (to list them in /super-admin);
-      // the invited user can see their own, to know it's pending.
-      allow read: if request.auth != null &&
+      allow read: if signedIn() &&
         (isSuperAdmin() || resource.data.email == request.auth.token.email.lower());
-      // Only an existing super admin can grant (or revoke, before it's used).
       allow create, delete: if isSuperAdmin();
-      // Invited user may mark their own grant as used — nothing else.
-      allow update: if request.auth != null &&
+      allow update: if signedIn() &&
         resource.data.email == request.auth.token.email.lower() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
         request.resource.data.used == true;

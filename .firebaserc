@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "samwera-board"
-  }
+    "default": "samwera-board",
+    "SamWeraBoard-Eu": "samwera-board-eu"
+  },
+  "targets": {},
+  "etags": {}
 }

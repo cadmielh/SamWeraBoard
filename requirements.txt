@@ -3,10 +3,7 @@ flask-cors==6.0.2
 flask-limiter==4.1.1
 firebase-admin==7.4.0
 firebase-functions==0.5.0
-openai==2.41.0
 google-auth==2.53.0
-google-auth-oauthlib==1.4.0
-google-api-python-client==2.196.0
 python-docx==1.2.0
 pillow==12.2.0
 pymupdf==1.27.2.3
@@ -16,3 +13,6 @@ werkzeug==3.1.8
 requests==2.34.2
 numpy==2.4.6
 easyocr==1.7.2
+gunicorn==23.0.0
+cryptography==50.0.1
+google-cloud-kms==3.17.0

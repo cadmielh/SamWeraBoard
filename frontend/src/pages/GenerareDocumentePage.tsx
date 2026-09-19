@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '../lib/firebase'
 import type { IDFields } from '../lib/api'
 import type { Client, ScannedPerson } from '../types'
 import { inferTipClient } from '../types'
 import { useApp } from '../AppContext'
 import { useClienti, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from '../lib/clienti'
 import { EMPTY_ID_FIELDS, idFieldsToPersoana, persoanaToIDFields } from '../lib/idFields'
+import { revealClient } from '../lib/pii'
 import UploadZone from '../components/UploadZone'
 import DriveFilePicker from '../components/DriveFilePicker'
 import FieldsForm from '../components/FieldsForm'
 import TemplateFiller from '../components/TemplateFiller'
 import History from '../components/History'
+import { logExtraction } from '../lib/extractions'
 import ScanQueue from '../components/ScanQueue'
 import ClientDocSelector from '../components/ClientDocSelector'
 import MultiPersonPreview, { type MultiPersonPreviewHandle } from '../components/MultiPersonPreview'
@@ -76,6 +76,9 @@ export default function GenerareDocumentePage() {
   // Societate / Client mode state
   const [scannedPersons, setScannedPersons] = useState<ScannedPerson[]>([])
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  // Fișa clientului așa cum a fost adusă la selectare (cu CNP/serie din vault) — baza de
+  // comparație pentru „există modificări de salvat”; lista `clienti` are doar valori mascate.
+  const selectedBaselineRef = useRef<Client | null>(null)
   // Datele complete de client colectate prin ClientModal la Pasul 2 — nu se
   // salvează încă în Firestore (asta rămâne opțional, la Pasul 3, ca înainte),
   // doar alimentează TemplateFiller.
@@ -118,11 +121,14 @@ export default function GenerareDocumentePage() {
     const found = clienti.find(c => c.id === clientId)
     if (found) {
       setSourceMode('client')
-      setSelectedClient(found)
       setHasStarted(true)
+      // Pentru generare sunt necesare CNP/serie CI: se aduc din vault (cerere auditată).
+      revealClient(found, 'generate')
+        .then(hydrated => { selectedBaselineRef.current = hydrated; setSelectedClient(hydrated) })
+        .catch(() => toast('Nu s-au putut încărca datele sensibile ale clientului', 'err'))
     }
     setDeepLinkPending(false)
-  }, [searchParams, clienti, clientiLoading, hasStarted, deepLinkPending])
+  }, [searchParams, clienti, clientiLoading, hasStarted, deepLinkPending, toast])
 
   const startMode = (mode: SourceMode) => {
     setSourceMode(mode)
@@ -174,20 +180,10 @@ export default function GenerareDocumentePage() {
     toast('Câmpuri extrase cu succes', 'ok')
     if (user) {
       try {
-        await addDoc(collection(db, 'users', user.uid, 'extractions'), {
-          createdAt: serverTimestamp(), sourceFile: filename, fields: result,
-        })
+        await logExtraction(user.uid, filename)
       } catch { /* Firestore might not be configured yet */ }
     }
   }, [user, toast])
-
-  const handleHistorySelect = (f: IDFields, filename: string) => {
-    setSourceMode('buletin')
-    setFields(f)
-    setSourceFile(filename)
-    setStep(2)
-    setHasStarted(true)
-  }
 
   // ── Societate (nou PJ) handlers ───────────────────────────────────────────────
 
@@ -200,8 +196,14 @@ export default function GenerareDocumentePage() {
 
   // Selectarea nu mai schimbă pasul — verificarea apare inline, sub selector,
   // pe același ecran (Pasul 1).
-  const handleClientSelect = (c: Client) => {
-    setSelectedClient(c)
+  const handleClientSelect = async (c: Client) => {
+    try {
+      const hydrated = await revealClient(c, 'generate')
+      selectedBaselineRef.current = hydrated
+      setSelectedClient(hydrated)
+    } catch {
+      toast('Nu s-au putut încărca datele sensibile ale clientului', 'err')
+    }
   }
 
   const handleMultiPersonContinue = (persons: ScannedPerson[], updatedClient: Client) => {
@@ -267,16 +269,14 @@ export default function GenerareDocumentePage() {
 
     if (user) {
       try {
-        await addDoc(collection(db, 'users', user.uid, 'extractions'), {
-          createdAt: serverTimestamp(), sourceFile: pfScanMode === 'manual' ? 'manual' : 'scan', fields: result,
-        })
+        await logExtraction(user.uid, pfScanMode === 'manual' ? 'manual' : 'scan')
       } catch { /* log non-critic — nu blocăm fluxul dacă eșuează */ }
     }
   }, [user, toast, selectedClient, pfScanMode])
 
   const handlePFContinue = () => {
     if (!selectedClient) return
-    const original = clienti.find(c => c.id === selectedClient.id)
+    const original = selectedBaselineRef.current
     const hasChanges = JSON.stringify(original?.titular ?? null) !== JSON.stringify(selectedClient.titular ?? null)
 
     setStep(3)
@@ -477,7 +477,6 @@ export default function GenerareDocumentePage() {
                       onClose={() => setShowDrivePicker(false)}
                     />
                   : <UploadZone
-                      accessToken={accessToken}
                       onExtracted={handleExtracted}
                       onToast={toast}
                       onShowDrivePicker={() => setShowDrivePicker(true)}
@@ -529,7 +528,6 @@ export default function GenerareDocumentePage() {
                 </div>
                 <div className="card-body">
                   <ScanQueue
-                    accessToken={accessToken}
                     initialPersons={scannedPersons}
                     onContinue={handleScanQueueContinue}
                     onToast={toast}
@@ -644,7 +642,6 @@ export default function GenerareDocumentePage() {
                 {pfScanMode && selectedClient && (
                   <PersonScanModal
                     personLabel={selectedClient.denumire}
-                    accessToken={accessToken}
                     initialFields={pfScanMode === 'manual' ? persoanaToIDFields(selectedClient.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' }) : undefined}
                     mode={pfScanMode}
                     onConfirm={handlePFPersonUpdate}
@@ -669,7 +666,6 @@ export default function GenerareDocumentePage() {
                         key={selectedClient.id}
                         ref={multiPersonRef}
                         client={selectedClient}
-                        accessToken={accessToken}
                         onContinue={handleMultiPersonContinue}
                         onToast={toast}
                       />
@@ -704,7 +700,6 @@ export default function GenerareDocumentePage() {
         <History
           user={user}
           open={historyOpen}
-          onSelect={handleHistorySelect}
           onClose={() => setHistoryOpen(false)}
         />
       )}

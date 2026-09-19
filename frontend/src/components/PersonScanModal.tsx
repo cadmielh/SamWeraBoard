@@ -13,7 +13,6 @@ const DATE_KEYS = new Set<keyof IDFields>(['data_nasterii', 'valabila_de_la', 'v
 
 interface Props {
   personLabel: string          // ex: "Asociat 1 — Ion Popescu"
-  accessToken: string
   initialFields?: IDFields
   mode?: 'scan' | 'manual'
   onConfirm: (fields: IDFields) => void
@@ -45,7 +44,7 @@ const FULL_WIDTH_FIELDS = new Set<keyof IDFields>(['adresa'])
 
 type Phase = 'upload' | 'review'
 
-export default function PersonScanModal({ personLabel, accessToken, initialFields, mode = 'scan', onConfirm, onClose, onToast }: Props) {
+export default function PersonScanModal({ personLabel, initialFields, mode = 'scan', onConfirm, onClose, onToast }: Props) {
   const [phase, setPhase] = useState<Phase>(initialFields ? 'review' : 'upload')
   const [loading, setLoading] = useState(false)
   const [file, setFile] = useState<File | null>(null)
@@ -68,7 +67,7 @@ export default function PersonScanModal({ personLabel, accessToken, initialField
     if (!file) return
     setLoading(true)
     try {
-      const result = await extractFile(file, accessToken)
+      const result = await extractFile(file)
       setFields(result)
       setPhase('review')
     } catch (err: unknown) {

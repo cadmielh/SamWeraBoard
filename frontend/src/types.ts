@@ -94,6 +94,13 @@ export interface Persoana {
   emisa_de: string
   valabila_de_la: string
   valabila_pana_la: string
+  /** Identificator stabil al persoanei în vault-ul de date sensibile (vezi lib/pii.ts).
+   * `cnp`/`serie_numar` NU se mai stochează în Firestore: doar variantele mascate de mai jos. */
+  pid?: string
+  cnpMasked?: string
+  serieMasked?: string
+  /** Doar în memorie (nu se persistă): `cnp`/`serie_numar` au fost aduse din vault. */
+  piiLoaded?: boolean
 }
 
 export interface CaenActivitate {
@@ -161,8 +168,10 @@ export function getClientDisplayName(c: Pick<Client, 'denumire' | 'tipClient' | 
   return c.denumire
 }
 
+export type WorkspaceRole = 'admin' | 'member' | 'viewer'
+
 export interface WorkspaceMember {
-  role: 'admin' | 'member'
+  role: WorkspaceRole
   email: string
   displayName: string
   addedAt: string | null
@@ -207,6 +216,8 @@ export interface Workspace {
   name: string
   ownerId: string
   members: Record<string, WorkspaceMember>
+  /** Versiunile de termeni/DPA acceptate (lipsește la workspace-urile migrate până la prima acceptare). */
+  consent?: { tos: string; dpa: string }
   facturareConfig?: FacturareConfig
   /** Feature flags active pentru acest workspace — comutate din pagina de
    * super admin (`/super-admin`), vezi lib/features.ts. Absent = niciun

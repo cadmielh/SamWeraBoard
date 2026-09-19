@@ -1,14 +1,25 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   collection, doc, getDoc, getDocs, query, where,
-  setDoc, updateDoc, addDoc, deleteField, serverTimestamp,
+  setDoc, updateDoc,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { FacturareConfig, Workspace, WorkspaceMember } from '../types'
+import { apiJson } from './api'
+import { TOS_VERSION, DPA_VERSION } from './legal'
+import type { FacturareConfig, Workspace, WorkspaceRole } from '../types'
 import type { FeatureKey } from './features'
 
-function encodeEmail(email: string) {
-  return email.replace(/\./g, '_DOT_').replace(/@/g, '_AT_')
+export interface PendingInvitation {
+  id: string
+  workspaceName: string
+  role: WorkspaceRole
+  invitedByEmail: string
+}
+
+export interface WorkspaceInvite {
+  id: string
+  email: string
+  role: WorkspaceRole
 }
 
 /** Scrie flag-ul de feature pe un workspace, indiferent dacă apelantul e
@@ -34,24 +45,37 @@ export function useWorkspace(uid: string | null) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [invitations, setInvitations] = useState<PendingInvitation[]>([])
   const [loading, setLoading] = useState(true)
+  // Încărcarea a eșuat (rețea, permisiuni): NU înseamnă „nu ai spații de lucru” și nu trebuie să ducă la ecranul de creare.
+  const [loadError, setLoadError] = useState(false)
 
   const loadWorkspaces = useCallback(async () => {
     if (!uid) { setWorkspaces([]); setActiveWorkspaceState(null); setIsSuperAdmin(false); return }
     setLoading(true)
+    setLoadError(false)
     try {
-      const q = query(collection(db, 'workspaces'), where(`members.${uid}.role`, 'in', ['admin', 'member']))
+      const q = query(collection(db, 'workspaces'), where(`members.${uid}.role`, 'in', ['admin', 'member', 'viewer']))
       const snap = await getDocs(q)
       const list: Workspace[] = snap.docs.map(d => ({ ...d.data(), id: d.id } as Workspace))
       setWorkspaces(list)
 
-      const userDoc = await getDoc(doc(db, 'users', uid))
-      const activeId = userDoc.data()?.activeWorkspaceId as string | undefined
-      const active = list.find(w => w.id === activeId) ?? list[0] ?? null
-      setActiveWorkspaceState(active)
-      setIsSuperAdmin(userDoc.data()?.isSuperAdmin === true)
+      // Profilul utilizatorului (workspace activ, super admin) se citește separat: dacă eșuează,
+      // spațiile de lucru deja încărcate rămân disponibile.
+      let activeId: string | undefined
+      let superAdmin = false
+      try {
+        const userDoc = await getDoc(doc(db, 'users', uid))
+        activeId = userDoc.data()?.activeWorkspaceId as string | undefined
+        superAdmin = userDoc.data()?.isSuperAdmin === true
+      } catch (e) {
+        console.error('useWorkspace user profile error', e)
+      }
+      setActiveWorkspaceState(list.find(w => w.id === activeId) ?? list[0] ?? null)
+      setIsSuperAdmin(superAdmin)
     } catch (e) {
       console.error('useWorkspace load error', e)
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -68,49 +92,41 @@ export function useWorkspace(uid: string | null) {
     }
   }, [uid])
 
-  const createWorkspace = useCallback(async (name: string, user: { uid: string; email: string; displayName: string }) => {
-    const member: WorkspaceMember = {
-      role: 'admin',
-      email: user.email,
-      displayName: user.displayName,
-      addedAt: null,
-    }
-    const ref = await addDoc(collection(db, 'workspaces'), {
+  /** Creează un workspace prin API (serverul înregistrează consimțământul la
+   * T&C + DPA). Clienții nu pot crea workspace-uri direct în Firestore. */
+  const createWorkspace = useCallback(async (name: string) => {
+    const { id } = await apiJson<{ id: string }>('POST', '/workspaces', {
       name,
-      ownerId: user.uid,
-      members: { [user.uid]: { ...member, addedAt: serverTimestamp() } },
-      createdAt: serverTimestamp(),
+      consent: { tos: TOS_VERSION, dpa: DPA_VERSION },
     })
-    await setDoc(doc(db, 'users', user.uid), { activeWorkspaceId: ref.id }, { merge: true })
     await loadWorkspaces()
-    return ref.id
+    return id
   }, [loadWorkspaces])
 
-  const inviteMember = useCallback(async (workspaceId: string, email: string, role: 'admin' | 'member', workspaceName: string, invitedByUid: string) => {
-    const normalizedEmail = email.trim().toLowerCase()
-    const encoded = encodeEmail(normalizedEmail)
-    await setDoc(doc(db, 'invitations', encoded), {
-      email: normalizedEmail,
-      workspaceId,
-      workspaceName,
-      role,
-      invitedBy: invitedByUid,
-      invitedAt: serverTimestamp(),
-      used: false,
-    })
+  /** Adminul acceptă versiunea curentă a termenilor și DPA pentru un workspace (ex. unul migrat). */
+  const acceptConsent = useCallback(async (workspaceId: string) => {
+    await apiJson('POST', `/workspaces/${workspaceId}/consent`, { tos: TOS_VERSION, dpa: DPA_VERSION })
+    await loadWorkspaces()
+  }, [loadWorkspaces])
+
+  const inviteMember = useCallback(async (workspaceId: string, email: string, role: WorkspaceRole) => {
+    await apiJson('POST', `/workspaces/${workspaceId}/invites`, { email: email.trim().toLowerCase(), role })
+  }, [])
+
+  const listWorkspaceInvites = useCallback(
+    (workspaceId: string) => apiJson<WorkspaceInvite[]>('GET', `/workspaces/${workspaceId}/invites`), [])
+
+  const revokeInvite = useCallback(async (workspaceId: string, inviteId: string) => {
+    await apiJson('DELETE', `/workspaces/${workspaceId}/invites/${inviteId}`)
   }, [])
 
   const removeMember = useCallback(async (workspaceId: string, memberUid: string) => {
-    await updateDoc(doc(db, 'workspaces', workspaceId), {
-      [`members.${memberUid}`]: deleteField(),
-    })
+    await apiJson('DELETE', `/workspaces/${workspaceId}/members/${memberUid}`)
     await loadWorkspaces()
   }, [loadWorkspaces])
 
-  const changeMemberRole = useCallback(async (workspaceId: string, memberUid: string, role: 'admin' | 'member') => {
-    await updateDoc(doc(db, 'workspaces', workspaceId), {
-      [`members.${memberUid}.role`]: role,
-    })
+  const changeMemberRole = useCallback(async (workspaceId: string, memberUid: string, role: WorkspaceRole) => {
+    await apiJson('PATCH', `/workspaces/${workspaceId}/members/${memberUid}`, { role })
     await loadWorkspaces()
   }, [loadWorkspaces])
 
@@ -133,40 +149,50 @@ export function useWorkspace(uid: string | null) {
     setActiveWorkspaceState(prev => prev?.id === workspaceId ? patch(prev) : prev)
   }, [])
 
-  const checkAndJoinInvitations = useCallback(async (user: { uid: string; email: string; displayName: string }) => {
-    const encoded = encodeEmail(user.email)
-    const invRef = doc(db, 'invitations', encoded)
-    const invSnap = await getDoc(invRef)
-    if (!invSnap.exists()) return
-    const inv = invSnap.data()
-    const member: WorkspaceMember = {
-      role: inv.role,
-      email: user.email,
-      displayName: user.displayName,
-      addedAt: null,
+  /** Invitațiile în așteptare pentru e-mailul utilizatorului. Nu se acceptă
+   * niciodată automat — utilizatorul vede cine l-a invitat și decide. */
+  const loadInvitations = useCallback(async () => {
+    if (!uid) { setInvitations([]); return }
+    try {
+      setInvitations(await apiJson<PendingInvitation[]>('GET', '/invitations'))
+    } catch {
+      setInvitations([])
     }
-    await updateDoc(doc(db, 'workspaces', inv.workspaceId), {
-      [`members.${user.uid}`]: { ...member, addedAt: serverTimestamp() },
-    })
-    // Delete invitation
-    await setDoc(invRef, { used: true }, { merge: true })
-    await loadWorkspaces()
-  }, [loadWorkspaces])
+  }, [uid])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadInvitations() }, [loadInvitations])
+
+  const acceptInvitation = useCallback(async (id: string) => {
+    await apiJson('POST', `/invitations/${id}/accept`)
+    await Promise.all([loadWorkspaces(), loadInvitations()])
+  }, [loadWorkspaces, loadInvitations])
+
+  const declineInvitation = useCallback(async (id: string) => {
+    await apiJson('POST', `/invitations/${id}/decline`)
+    await loadInvitations()
+  }, [loadInvitations])
 
   return {
     workspaces,
     activeWorkspace,
     isSuperAdmin,
+    invitations,
     loading,
+    loadError,
     setActiveWorkspace,
     createWorkspace,
+    acceptConsent,
     inviteMember,
+    listWorkspaceInvites,
+    revokeInvite,
     removeMember,
     changeMemberRole,
     renameWorkspace,
     updateFacturareConfig,
     setWorkspaceFeature,
-    checkAndJoinInvitations,
+    acceptInvitation,
+    declineInvitation,
     reload: loadWorkspaces,
   }
 }

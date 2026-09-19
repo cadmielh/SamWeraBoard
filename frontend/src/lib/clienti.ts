@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc,
+  collection, doc, setDoc, updateDoc,
   query, where, orderBy, limit, startAfter, getDocs,
   serverTimestamp, deleteField,
 } from 'firebase/firestore'
@@ -8,6 +8,7 @@ import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Client, Persoana } from '../types'
 import { EMPTY_ADRESA, formatAdresa, parseAdresa, type AdresaStructurata } from './adresa'
+import { sanitizeForSave, savePii, deleteClientOnServer } from './pii'
 
 export type ClientInput = Omit<Client, 'id' | 'denumireLower' | 'createdAt' | 'createdBy'>
 
@@ -73,6 +74,9 @@ export function useClienti(workspaceId: string | null) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const lastDocRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null)
+  // Ultima listă de clienți, pentru a afla persoanele existente la salvare (vezi sanitizeForSave).
+  const clientiRef = useRef<Client[]>([])
+  useEffect(() => { clientiRef.current = clienti }, [clienti])
   // Textul original al sediului social pentru clienții încă nemigrați (format
   // vechi, string) — folosit doar pentru banner-ul de comparație din
   // ClientModal, ținut separat de `clienti` (vezi clientFromDoc).
@@ -148,7 +152,10 @@ export function useClienti(workspaceId: string | null) {
   // vede efectul instant, fără să aștepte răspunsul rețelei. Dacă scrierea
   // eșuează, modificarea locală se anulează și eroarea e retrimisă mai
   // departe (apelantul își păstrează exact același catch/toast ca înainte).
-  const add = useCallback(async (workspaceId: string, data: ClientInput, uid: string) => {
+  const add = useCallback(async (workspaceId: string, rawData: ClientInput, uid: string) => {
+    // CNP/serie CI nu ajung în documentul Firestore: se separă și se trimit criptate
+    // către vault (vezi lib/pii.ts); în document rămân doar `pid` și variantele mascate.
+    const { data, vault } = sanitizeForSave(rawData, null)
     const displayName = resolveDisplayName(data)
     const payload: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(data)) {
@@ -165,10 +172,14 @@ export function useClienti(workspaceId: string | null) {
     payload.createdAt = serverTimestamp()
     payload.createdBy = uid
 
+    const ref = doc(clientiCol(workspaceId))
     const tempId = `temp-${crypto.randomUUID()}`
     setClienti(prev => [{ ...(payload as unknown as Client), id: tempId, createdAt: new Date().toISOString() }, ...prev])
     try {
-      const ref = await addDoc(clientiCol(workspaceId), payload)
+      // Vault întâi: dacă scrierea documentului eșuează, rămâne cel mult o înregistrare
+      // criptată orfană (inaccesibilă), niciodată un document fără datele lui sensibile.
+      if (vault) await savePii(ref.id, vault)
+      await setDoc(ref, payload)
       setClienti(prev => prev.map(c => c.id === tempId ? { ...c, id: ref.id } : c))
     } catch (err) {
       setClienti(prev => prev.filter(c => c.id !== tempId))
@@ -176,7 +187,9 @@ export function useClienti(workspaceId: string | null) {
     }
   }, [])
 
-  const update = useCallback(async (workspaceId: string, clientId: string, data: Partial<ClientInput>) => {
+  const update = useCallback(async (workspaceId: string, clientId: string, rawData: Partial<ClientInput>) => {
+    const existing = clientiRef.current.find(c => c.id === clientId) ?? null
+    const { data, vault } = sanitizeForSave(rawData, existing)
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(data)) {
       patch[k] = v === undefined ? deleteField() : v
@@ -199,6 +212,7 @@ export function useClienti(workspaceId: string | null) {
       return { ...c, ...(data as Partial<Client>) }
     }))
     try {
+      if (vault) await savePii(clientId, vault)
       await updateDoc(doc(clientiCol(workspaceId), clientId), patch)
     } catch (err) {
       if (previous) { const p = previous; setClienti(prev => prev.map(c => c.id === clientId ? p : c)) }
@@ -206,7 +220,7 @@ export function useClienti(workspaceId: string | null) {
     }
   }, [])
 
-  const remove = useCallback(async (workspaceId: string, clientId: string) => {
+  const remove = useCallback(async (_workspaceId: string, clientId: string) => {
     let removed: Client | undefined
     let removedAt = -1
     setClienti(prev => {
@@ -217,7 +231,8 @@ export function useClienti(workspaceId: string | null) {
       return prev.filter(c => c.id !== clientId)
     })
     try {
-      await deleteDoc(doc(clientiCol(workspaceId), clientId))
+      // Ștergerea trece prin API: șterge în cascadă și vault-ul + istoricul generărilor.
+      await deleteClientOnServer(clientId)
     } catch (err) {
       if (removed) {
         const r = removed

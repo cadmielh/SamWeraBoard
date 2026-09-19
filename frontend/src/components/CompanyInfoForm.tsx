@@ -26,7 +26,6 @@ interface Props {
   value: CompanyData
   onChange: (patch: Partial<CompanyData>) => void
   asociati: Persoana[]
-  accessToken: string
   onToast: (msg: string, type: ToastItem['type']) => void
 }
 
@@ -39,7 +38,7 @@ export interface CompanyInfoFormHandle {
 }
 
 const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function CompanyInfoForm(
-  { value, onChange, asociati, accessToken, onToast }, ref,
+  { value, onChange, asociati, onToast }, ref,
 ) {
   const [anafLoading, setAnafLoading] = useState(false)
   const [sediuPicker, setSediuPicker] = useState(false)
@@ -88,7 +87,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
     if (!value.codFiscal.trim()) return
     setAnafLoading(true)
     try {
-      const result = await fetchAnafCompany(value.codFiscal, accessToken)
+      const result = await fetchAnafCompany(value.codFiscal)
       if (!result.found) { onToast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
       const c = result.adresaSediuComponente
       const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)

@@ -22,3 +22,21 @@ Dockerfile
 *.bak
 *.tmp
 lf_test.html
+
+# Date locale de test/dezvoltare: NU trebuie încărcate niciodată la deploy (pot conține date reale exportate de emulator)
+.emulator-data/
+.emulator-data-google/
+.emulator-data*/
+tests/
+docs/
+scripts/
+**/node_modules/
+firestore-debug.log
+ui-debug.log
+firebase-debug.log
+.env.eu.local
+venv
+venv/**
+.venv
+.venv/**
+migrare.zip

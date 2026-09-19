@@ -45,7 +45,7 @@ function personKey(p: Persoana): string | null {
 }
 
 export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Props) {
-  const { accessToken, toast, activeWorkspace } = useApp()
+  const { toast, activeWorkspace } = useApp()
 
   const [form, setForm] = useState<ClientInput>(() => {
     if (!initial) return { ...EMPTY_CLIENT }
@@ -171,7 +171,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     if (!form.codFiscal.trim()) return
     setAnafLoading(true)
     try {
-      const result = await fetchAnafCompany(form.codFiscal, accessToken)
+      const result = await fetchAnafCompany(form.codFiscal)
       if (!result.found) { toast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
       setForm(prev => {
         const c = result.adresaSediuComponente

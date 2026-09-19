@@ -3,6 +3,7 @@ import { FONT_OPTIONS } from '../lib/settings'
 import type { Theme } from '../lib/settings'
 import { useSettingsCtx } from '../SettingsCtx'
 import { useApp } from '../AppContext'
+import AuditLogCard from '../components/AuditLogCard'
 import { resolveFacturareConfig } from '../types'
 import type { FacturareConfig } from '../types'
 
@@ -140,7 +141,7 @@ export default function SetariPage() {
         <div className="page-header">
           <div>
             <div className="page-title">Setări</div>
-            <div className="page-subtitle">Aspectul aplicației</div>
+            <div className="page-subtitle">{userRole === 'admin' ? 'Aspectul aplicației și jurnalul de acces' : 'Aspectul aplicației'}</div>
           </div>
         </div>
       </div>
@@ -197,6 +198,9 @@ export default function SetariPage() {
               </div>
             </div>
           </div>
+
+          {/* Jurnal de acces: doar administratorii; key=workspace id ca să nu rămână intrările altui workspace. */}
+          {userRole === 'admin' && activeWorkspace && <AuditLogCard key={activeWorkspace.id} />}
 
           {/* key=workspace id — forțează remount la schimbarea workspace-ului activ,
               ca `form` să nu rămână cu valorile vechiului workspace (altfel Save

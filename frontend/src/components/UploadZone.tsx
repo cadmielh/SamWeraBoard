@@ -4,7 +4,6 @@ import type { IDFields } from '../lib/api'
 import type { ToastItem } from '../types'
 
 interface Props {
-  accessToken: string
   onExtracted: (fields: IDFields, filename: string) => void
   onToast: (msg: string, type: ToastItem['type']) => void
   onShowDrivePicker: () => void
@@ -13,7 +12,7 @@ interface Props {
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf'
 
-export default function UploadZone({ accessToken, onExtracted, onToast, onShowDrivePicker, onManualEntry }: Props) {
+export default function UploadZone({ onExtracted, onToast, onShowDrivePicker, onManualEntry }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -38,10 +37,9 @@ export default function UploadZone({ accessToken, onExtracted, onToast, onShowDr
 
   const handleExtract = async () => {
     if (!file) return
-    if (!accessToken) { onToast('Te rugăm să te autentifici mai întâi', 'err'); return }
     setLoading(true)
     try {
-      const result = await extractFile(file, accessToken)
+      const result = await extractFile(file)
       onExtracted(result, file.name)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Extragere eșuată', 'err')

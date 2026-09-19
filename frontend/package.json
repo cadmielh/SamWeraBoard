@@ -7,12 +7,20 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "build:eu": "tsc -b && vite build --mode eu",
+    "dev:emu": "vite --mode emu",
+    "dev:google": "vite --mode google"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource-variable/montserrat": "^5.3.0",
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "firebase": "^12.13.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -32,6 +40,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^5.0.1"
   }
 }

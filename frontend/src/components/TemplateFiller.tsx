@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
-import type { IDFields } from '../lib/api'
+import type { IDFields, DriveTarget } from '../lib/api'
 import type { BuiltinTemplate, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
@@ -56,7 +56,7 @@ export default function TemplateFiller({
   accessToken, onToast, onBack, onClientSaved, stepNumber = 3,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
-  const { builtins } = useBuiltinTemplates(accessToken)
+  const { builtins } = useBuiltinTemplates()
   const { update: updateClient } = useClienti(workspaceId)
 
   const docxTemplates = templates.filter(t => t.type === 'docx')
@@ -77,6 +77,8 @@ export default function TemplateFiller({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [uploadToDrive, setUploadToDrive] = useState(false)
   const [driveFolder, setDriveFolder] = useState<{ id: string; name: string } | null>(null)
+  // Destinația Drive: încărcarea se face din browser, cu tokenul utilizatorului (nu trece prin serverul nostru).
+  const driveTarget = (): DriveTarget | null => uploadToDrive ? { token: accessToken, folderId: driveFolder?.id ?? null } : null
   const [showFolderPicker, setShowFolderPicker] = useState(false)
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
   const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({})
@@ -192,11 +194,11 @@ export default function TemplateFiller({
       let result: { blob?: Blob; name?: string; link?: string }
 
       if (tpl.driveFileId) {
-        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, uploadToDrive, driveFolder?.id, outputName, mergedGroups, cs?.selectedClauses)
+        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, driveTarget(), outputName, mergedGroups, cs?.selectedClauses)
       } else {
         const file = await resolveTemplateFile(tpl)
         if (!file) { onToast(`Fișierul pentru "${tpl.name}" nu este disponibil`, 'err'); return }
-        result = await fillDocx(file, mergedReplacements, accessToken, uploadToDrive, driveFolder?.id, outputName, mergedGroups, cs?.selectedClauses)
+        result = await fillDocx(file, mergedReplacements, driveTarget(), outputName, mergedGroups, cs?.selectedClauses)
       }
 
       if (result.link) {
@@ -244,7 +246,7 @@ export default function TemplateFiller({
           : ' '
       }
 
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, accessToken, uploadToDrive, driveFolder?.id, outputName, mergedGroups, cs?.selectedClauses)
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, mergedGroups, cs?.selectedClauses)
 
       if (result.link) {
         setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
@@ -292,7 +294,7 @@ export default function TemplateFiller({
       // singură dată, comun tuturor șabloanelor) — form.replacements le
       // suprascrie doar pe cele proprii formularului (declarant/sediu).
       const mergedReplacements = { ...replacements, ...form.replacements }
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, accessToken, false, undefined, outputName, undefined, undefined, form.rowGroups)
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, null, outputName, undefined, undefined, form.rowGroups)
       if (result.blob) {
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
@@ -863,6 +865,7 @@ export default function TemplateFiller({
                           accessToken={accessToken}
                           onToast={onToast}
                           onSelect={folder => { setDriveFolder(folder); setShowFolderPicker(false) }}
+                          onCancel={() => setShowFolderPicker(false)}
                         />
                       ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>

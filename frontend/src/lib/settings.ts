@@ -5,10 +5,10 @@ export type ResolvedTheme = 'light' | 'dark'
 export type FontKey = 'inter' | 'manrope' | 'jakarta' | 'montserrat'
 
 export const FONT_OPTIONS: { key: FontKey; label: string; stack: string }[] = [
-  { key: 'inter', label: 'Inter', stack: "'Inter', system-ui, sans-serif" },
-  { key: 'manrope', label: 'Manrope', stack: "'Manrope', system-ui, sans-serif" },
-  { key: 'jakarta', label: 'Plus Jakarta Sans', stack: "'Plus Jakarta Sans', system-ui, sans-serif" },
-  { key: 'montserrat', label: 'Montserrat', stack: "'Montserrat', system-ui, sans-serif" },
+  { key: 'inter', label: 'Inter', stack: "'Inter Variable', 'Inter', system-ui, sans-serif" },
+  { key: 'manrope', label: 'Manrope', stack: "'Manrope Variable', 'Manrope', system-ui, sans-serif" },
+  { key: 'jakarta', label: 'Plus Jakarta Sans', stack: "'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', system-ui, sans-serif" },
+  { key: 'montserrat', label: 'Montserrat', stack: "'Montserrat Variable', 'Montserrat', system-ui, sans-serif" },
 ]
 
 const THEME_KEY = 'swb_theme'

@@ -9,21 +9,22 @@ import { auth } from './firebase'
  * Google — acela lipsește adesea la reload/sesiune nouă și nu trebuie să blocheze
  * fetch-ul, altfel șabloanele dispar tăcut pentru orice utilizator fără popup-ul
  * de login încă activ în sessionStorage. */
-export function useBuiltinTemplates(accessToken: string) {
+export function useBuiltinTemplates() {
   const [builtins, setBuiltins] = useState<BuiltinTemplate[]>([])
   const [loading, setLoading] = useState(true)
+  const uid = auth.currentUser?.uid ?? null   // se reîncarcă la schimbarea utilizatorului
 
   useEffect(() => {
     let cancelled = false
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!auth.currentUser) { setLoading(false); return }
     setLoading(true)
-    fetchBuiltinTemplates(accessToken)
+    fetchBuiltinTemplates()
       .then(list => { if (!cancelled) setBuiltins(list) })
       .catch(() => { if (!cancelled) setBuiltins([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [accessToken])
+  }, [uid])
 
   return { builtins, loading }
 }
