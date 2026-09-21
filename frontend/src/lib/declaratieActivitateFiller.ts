@@ -179,3 +179,68 @@ export function buildDeclaratieDocxData(state: DeclaratieFormState, client?: Par
 
   return { replacements, rowGroups }
 }
+
+/** Semnul din documentul final pentru un câmp fără valoare (bloc, scară, etaj, telefon etc.). */
+export const EMPTY_FIELD_MARK = '-'
+
+/**
+ * Pentru declarație: orice câmp simplu al șablonului rămas necompletat primește „-”, în locul etichetei brute
+ * ({{DECLARANT_SC}}, {{SEDIU_ET}} etc.). Serverul exclude valorile goale din înlocuire, deci fără asta eticheta
+ * ar ajunge ca text în document. Câmpurile din tabelele repetitive (`rowGroups`: CAEN, sedii secundare) nu se ating:
+ * celulele lor goale sunt intenționat goale (ex. adresa apare doar pe primul rând al unui sediu).
+ */
+export function withEmptyFieldMarks(
+  placeholders: string[],
+  replacements: Record<string, string>,
+  rowGroups?: Record<string, Record<string, string>[]> | null,
+): Record<string, string> {
+  const rowKeys = new Set(Object.values(rowGroups ?? {}).flatMap(rows => rows.flatMap(r => Object.keys(r).map(k => `{{${k}}}`))))
+  const out = { ...replacements }
+  for (const ph of placeholders) {
+    if (rowKeys.has(ph)) continue
+    if (!(out[ph] ?? '').trim()) out[ph] = EMPTY_FIELD_MARK
+  }
+  return out
+}
+
+export const DECLARATIE_ACTIVITATE_KEY = 'declaratie_activitate'
+
+/** Șablonul e o declarație de activitate: cel de bază, o copie din bibliotecă a lui sau un document propriu cu aceleași etichete
+ * (declarant + sediu). Aceste șabloane se completează cu formularul dedicat, iar câmpurile goale primesc „-”. */
+export function isDeclaratieTemplate(tpl: { sourceKey?: string; key?: string; placeholders?: string[] }): boolean {
+  if (tpl.sourceKey === DECLARATIE_ACTIVITATE_KEY || tpl.key === DECLARATIE_ACTIVITATE_KEY) return true
+  const ph = new Set(tpl.placeholders ?? [])
+  return ph.has('{{DECLARANT_NUME}}') && ph.has('{{SEDIU_LOCALITATE}}')
+}
+
+// Etichete tipic opționale (bloc, scară, etaj, apartament, telefon, e-mail, site, județ) + datele de înregistrare ale firmei.
+const OPTIONAL_TAG = /^.+_(?:BL|SC|ET|AP|BLOC|SCARA|ETAJ|APARTAMENT|TEL|TELEFON|EMAIL|WEB|JUDET)$|^(?:SOCIETATE_CIF|SOCIETATE_NR_REG)$/
+const NUMBERED_TAG = /^(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_/
+
+/**
+ * Pentru orice alt șablon (bază, propriu sau Google Docs): etichetele tipic opționale rămase goale primesc „-”, ca la declarație,
+ * dar câmpurile obligatorii goale rămân vizibile ca etichetă, semn că lipsesc date. Etichetele numerotate (ASOCIAT_3_*)
+ * se marchează doar pentru poziții care există: serverul curăță pozițiile inexistente, iar un „-” ar face să pară că există.
+ */
+export function withOptionalFieldMarks(
+  placeholders: string[],
+  replacements: Record<string, string>,
+  groups?: Record<string, Record<string, string>[]> | null,
+): Record<string, string> {
+  const groupKeys = new Set(Object.values(groups ?? {}).flatMap(rows => rows.flatMap(r => Object.keys(r).map(k => `{{${k}}}`))))
+  const maxIdx: Record<string, number> = {}
+  for (const [k, v] of Object.entries(replacements)) {
+    const m = k.replace(/^\{\{|\}\}$/g, '').match(NUMBERED_TAG)
+    if (m && (v ?? '').trim()) maxIdx[m[1]] = Math.max(maxIdx[m[1]] ?? 0, Number(m[2]))
+  }
+  const out = { ...replacements }
+  for (const ph of placeholders) {
+    const inner = ph.replace(/^\{\{|\}\}$/g, '')
+    if (inner.startsWith('#') || inner.startsWith('/') || groupKeys.has(ph)) continue
+    if (!OPTIONAL_TAG.test(inner) || (out[ph] ?? '').trim()) continue
+    const n = inner.match(NUMBERED_TAG)
+    if (n && Number(n[2]) > (maxIdx[n[1]] ?? 0)) continue
+    out[ph] = EMPTY_FIELD_MARK
+  }
+  return out
+}

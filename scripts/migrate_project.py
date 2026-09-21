@@ -114,8 +114,10 @@ def migrate_workspace(src_ws, target, report: Report, dry_run: bool, vault_mod) 
         })
 
 
-def migrate_users(source, target, report: Report, dry_run: bool) -> None:
+def migrate_users(source, target, report: Report, dry_run: bool, only_uids: set[str] | None = None) -> None:
     for u in source.collection("users").stream():
+        if only_uids is not None and u.id not in only_uids:
+            continue
         report.add("users")
         if not dry_run:
             target.collection("users").document(u.id).set(u.to_dict() or {})
@@ -193,11 +195,14 @@ def run(source, target, dry_run: bool = False, only_workspaces: list[str] | None
 
     report = Report()
     authz._db = target  # vault-ul își ține cheile de workspace în baza țintă
+    member_uids: set[str] = set()
     for src_ws in source.collection("workspaces").stream():
         if only_workspaces and src_ws.id not in only_workspaces:
             continue
+        member_uids |= set((src_ws.to_dict() or {}).get("members", {}) or {})
         migrate_workspace(src_ws, target, report, dry_run, vault)
-    migrate_users(source, target, report, dry_run)
+    # Cu filtru pe cabinete, se copiază doar conturile membre ale lor (repetiții locale pe datele propriului cont).
+    migrate_users(source, target, report, dry_run, member_uids if only_workspaces else None)
     migrate_invitations(source, target, report, dry_run)
     return report
 

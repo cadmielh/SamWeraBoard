@@ -3,6 +3,7 @@ import type { Client, Persoana, ScannedPerson } from '../types'
 import { persoanaToIDFields } from './idFields'
 import { parsePercent } from './cota'
 import { formatAdresa } from './adresa'
+import { personSex } from './sex'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -97,7 +98,7 @@ export interface BuildOptions {
   scannedPersons?: ScannedPerson[]
 }
 
-function resolvePersons(
+export function resolvePersons(
   client: Partial<Client> | null | undefined,
   scannedPersons: ScannedPerson[] | undefined,
   role: 'asociat' | 'administrator',
@@ -136,6 +137,10 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     // CAEN_1 = activitate principală (unică — fără prefix numeric). Activitățile
     // secundare (număr nelimitat) se pun în blocul repetitiv {{#CAEN_SECUNDARE}}.
     out['{{CAEN_1}}'] = formatCaen(client.caenCod, client.caenDescriere)
+    // Doar codurile (fără denumire), pentru clauza „Actualizare cod CAEN REV3”: principal + secundarele pe o singură linie.
+    out['{{CAEN_PRINCIPAL_COD}}'] = client.caenCod ?? ''
+    const codSecundare = (client.caenSecundare ?? []).map(c => c.cod).filter(Boolean)
+    out['{{CAEN_SECUNDARE_COD}}'] = codSecundare.length > 0 ? codSecundare.join(', ') : '-'
   }
 
   if (!isPF) {
@@ -198,8 +203,9 @@ export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Rec
   const admini = resolvePersons(client, scannedPersons, 'administrator')
   const caenSecundare = client?.caenSecundare ?? []
   return {
-    ASOCIATI: asociati.map(p => persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, includeCota: true })),
-    ADMINISTRATORI: admini.map(p => persoanaToSingularMap(p)),
+    // SEX / SEX_REF: sexul fiecărei persoane, folosit de server la variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
+    ASOCIATI: asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` })),
+    ADMINISTRATORI: admini.map((p, i) => ({ ...persoanaToSingularMap(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` })),
     CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })),
   }
 }
@@ -300,6 +306,8 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
 
   if (inner === 'CAEN_1') return { group: 'Societate', field: 'Activitate principală (CAEN)' }
   if (inner === 'CAEN') return { group: 'Societate', field: 'Activitate secundară (CAEN)' }
+  if (inner === 'CAEN_PRINCIPAL_COD') return { group: 'Societate', field: 'Cod CAEN principal' }
+  if (inner === 'CAEN_SECUNDARE_COD') return { group: 'Societate', field: 'Coduri CAEN secundare' }
 
   if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
   if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import type { IDFields, DriveTarget } from '../lib/api'
-import type { BuiltinTemplate, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
+import type { BuiltinTemplate, ClauseMeta, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
 import { buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields } from '../lib/placeholders'
@@ -17,6 +17,8 @@ import type { ClauseSelectorValue } from './ClauseSelector'
 import DeclaratieActivitateFiller from './DeclaratieActivitateFiller'
 import type { DeclaratieActivitateFillerHandle, DeclaratieFormValue } from './DeclaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
+import { buildVariantContext, variantWarningMessage } from '../lib/variants'
+import { withEmptyFieldMarks, withOptionalFieldMarks, isDeclaratieTemplate, DECLARATIE_ACTIVITATE_KEY } from '../lib/declaratieActivitateFiller'
 import Modal from './Modal'
 
 interface Props {
@@ -34,7 +36,6 @@ interface Props {
   stepNumber?: number
 }
 
-type Tab = 'docx' | 'gdoc'
 
 // Placeholdere completate intern (ex. {{SUBTITLU_ACTUALIZARE}}, injectat abia
 // la generare, în funcție de toggle-ul Înființare/Actualizare) — niciodată
@@ -49,7 +50,6 @@ const builtinKey = (b: BuiltinTemplate) => `builtin:${b.key}`
 // parsare de adresă) în loc de placeholdere generice — analog cazului special
 // al act_constitutivMode, dar identificat după cheie, nu după `type`, ca un
 // eventual alt șablon docx viitor să nu fie tras din greșeală pe acest formular.
-const DECLARATIE_ACTIVITATE_KEY = 'declaratie_activitate'
 
 export default function TemplateFiller({
   workspaceId, user, fields, client, scannedPersons,
@@ -59,12 +59,8 @@ export default function TemplateFiller({
   const { builtins } = useBuiltinTemplates()
   const { update: updateClient } = useClienti(workspaceId)
 
-  const docxTemplates = templates.filter(t => t.type === 'docx')
-  const gdocTemplates = templates.filter(t => t.type === 'gdoc')
-
-  const [tab, setTab] = useState<Tab>('docx')
   const [clauseState, setClauseState] = useState<Record<string, ClauseSelectorValue>>({})
-  const [declaratieFormState, setDeclaratieFormState] = useState<Record<string, DeclaratieFormValue>>({})
+  const [declaratieFormState, setDeclaratieFormState] = useState<Record<string, DeclaratieFormValue & { forClient?: string }>>({})
   // Un singur formular de declarație e randat la un moment dat (panoul de
   // detaliu arată doar șablonul activ) — un singur ref, la fel ca
   // companyFormRef din MultiPersonPreview.
@@ -75,11 +71,64 @@ export default function TemplateFiller({
   // șabloanele de bază, sau tpl.id pentru cele din bibliotecă.
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [uploadToDrive, setUploadToDrive] = useState(false)
   const [driveFolder, setDriveFolder] = useState<{ id: string; name: string } | null>(null)
-  // Destinația Drive: încărcarea se face din browser, cu tokenul utilizatorului (nu trece prin serverul nostru).
-  const driveTarget = (): DriveTarget | null => uploadToDrive ? { token: accessToken, folderId: driveFolder?.id ?? null } : null
+  // Destinația documentului se alege la generare (fereastra „Unde salvezi documentul?”), nu dintr-o bifă permanentă.
+  // Alegerea se ține într-un ref, ca handlerele async să o vadă imediat după închiderea ferestrei. Încărcarea în Drive
+  // se face din browser, cu tokenul utilizatorului (nu trece prin serverul nostru).
+  const destRef = useRef<{ drive: boolean; folderId: string | null }>({ drive: false, folderId: null })
+  const driveTarget = (): DriveTarget | null => destRef.current.drive ? { token: accessToken, folderId: destRef.current.folderId } : null
   const [showFolderPicker, setShowFolderPicker] = useState(false)
+  // Lățimea coloanei cu șabloane, reglabilă prin tragerea mânerului (preferință locală, ținută în browser).
+  const LIST_W_MIN = 240, LIST_W_MAX = 720, LIST_W_DEFAULT = 340
+  const layoutRef = useRef<HTMLDivElement>(null)
+  const [listW, setListW] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem('cabinio-tf-list-w'))
+      return v >= LIST_W_MIN && v <= LIST_W_MAX ? v : LIST_W_DEFAULT
+    } catch { return LIST_W_DEFAULT }
+  })
+  const applyListW = (w: number, persist = false) => {
+    const max = Math.min(LIST_W_MAX, Math.max(LIST_W_MIN, (layoutRef.current?.clientWidth ?? LIST_W_MAX) - 320))
+    const next = Math.round(Math.min(max, Math.max(LIST_W_MIN, w)))
+    setListW(next)
+    if (persist) { try { localStorage.setItem('cabinio-tf-list-w', String(next)) } catch { /* fără stocare locală: rămâne doar pe sesiune */ } }
+    return next
+  }
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const left = layoutRef.current?.getBoundingClientRect().left ?? 0
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
+    let last = listW
+    const move = (ev: PointerEvent) => { last = applyListW(ev.clientX - left) }
+    const up = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      applyListW(last, true)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+  }
+  const resizeKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); applyListW(listW - 24, true) }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); applyListW(listW + 24, true) }
+    else if (e.key === 'Home') { e.preventDefault(); applyListW(LIST_W_DEFAULT, true) }
+  }
+  const [destDialogOpen, setDestDialogOpen] = useState(false)
+  const [destChoice, setDestChoice] = useState<'local' | 'drive'>('local')
+  const destResolver = useRef<((ok: boolean) => void) | null>(null)
+  const batchDestChosen = useRef(false)
+  const askDestination = (): Promise<boolean> => {
+    if (batchDestChosen.current) return Promise.resolve(true)
+    return new Promise<boolean>(resolve => { destResolver.current = resolve; setDestDialogOpen(true) })
+  }
+  const closeDestDialog = (ok: boolean) => {
+    if (ok) destRef.current = { drive: destChoice === 'drive', folderId: destChoice === 'drive' ? (driveFolder?.id ?? null) : null }
+    setDestDialogOpen(false)
+    setShowFolderPicker(false)
+    destResolver.current?.(ok)
+    destResolver.current = null
+  }
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
   const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({})
   const [showLibrary, setShowLibrary] = useState(false)
@@ -99,10 +148,7 @@ export default function TemplateFiller({
   // implicit "actualizare", cazul de utilizare mai frecvent.
   const [actConstitutivMode, setActConstitutivMode] = useState<'infiintare' | 'actualizare'>('actualizare')
 
-  const currentTabTemplates = tab === 'docx' ? docxTemplates : gdocTemplates
-  const selectedInTab = currentTabTemplates.filter(t => selectedIds.has(t.id))
-
-  const switchTab = (t: Tab) => { setTab(t); setActiveKey(null) }
+  const listTemplates = templates
 
   const replacements = buildReplacements({ idFields: fields, client, scannedPersons })
   const repeatGroups = buildRepeatGroups({ idFields: fields, client, scannedPersons })
@@ -110,6 +156,18 @@ export default function TemplateFiller({
   // Asociați existenți (client.asociati) sau doar scanați, nesalvați încă —
   // aceeași listă folosită deja la umplerea {{#ASOCIATI}}.
   const asociatiCount = repeatGroups.ASOCIATI?.length ?? 0
+  // Variantele „a/b” din document (sex, număr, categorie) le alege serverul; aici pregătim contextul din valorile finale.
+  const variantsFor = (finalReplacements: Record<string, string>) =>
+    buildVariantContext({ client, scannedPersons, idFields: fields, replacements: finalReplacements })
+  // Avertismentul rămâne pe ecran până e închis (nu dispare ca o notificare): documentul conține variante nealese.
+  const [variantNotices, setVariantNotices] = useState<string[]>([])
+  const notifyVariants = (warnings: string[] | undefined, labels: Record<string, string>) => {
+    const msg = variantWarningMessage(warnings, labels)
+    if (msg) setVariantNotices(prev => prev.includes(msg) ? prev : [...prev, msg])
+  }
+
+  // În lot intră doar ce se aplică clientului curent (o bifă rămasă de la alt client nu mai contează).
+  const selectedTemplates = listTemplates.filter(t => selectedIds.has(t.id) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
 
   // Diferențiere PF/PJ — un client PJ nu ar trebui să poată genera un șablon
   // gândit strict pentru PF (și invers). "universal"/lipsă = se aplică oricui.
@@ -120,29 +178,35 @@ export default function TemplateFiller({
     return `${tplLabel} e valabil doar pentru ${tipTemplate}, dar clientul selectat este ${clientTip}`
   }
 
+  // Șablon cu număr de asociați nepotrivit: nu se poate deschide; un click explică de ce.
+  const notApplicable = (name: string, reason: string) =>
+    onToast(`„${name}” nu se aplică clientului selectat: ${reason}.`, 'info')
+
   // Implicit — primul șablon compatibil cu tipul clientului (dacă există),
   // altfel primul disponibil — ca panoul din dreapta să nu rămână gol la
   // intrarea în pas; derivat la randare (nu stocat separat), ca selecția
   // explicită a userului să rămână prioritară.
   const defaultActiveKey = (() => {
-    if (tab === 'docx' && builtins.length > 0) {
-      const compatible = builtins.find(b => !tipMismatchMsg(b.tipTemplate, b.name))
+    if (builtins.length > 0) {
+      const compatible = builtins.find(b => !tipMismatchMsg(b.tipTemplate, b.name) && (b.key === DECLARATIE_ACTIVITATE_KEY || !asociatiCountMismatch(b.key, asociatiCount)))
+        ?? builtins.find(b => !tipMismatchMsg(b.tipTemplate, b.name))
       return builtinKey(compatible ?? builtins[0])
     }
-    const compatible = currentTabTemplates.find(t => !tipMismatchMsg(t.tipTemplate, t.name))
-    return (compatible ?? currentTabTemplates[0])?.id ?? null
+    const compatible = listTemplates.find(t => !tipMismatchMsg(t.tipTemplate, t.name) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
+      ?? listTemplates.find(t => !tipMismatchMsg(t.tipTemplate, t.name))
+    return (compatible ?? listTemplates[0])?.id ?? null
   })()
   const effectiveActiveKey = activeKey ?? defaultActiveKey
 
   // Doar șabloanele fără clauze au checkbox (vezi renderTemplateRow) — cele cu
   // tip incompatibil clientului sunt oricum disabled, excluse din select-all.
-  const selectableInTab = currentTabTemplates.filter(t => !t.clauses?.length && !tipMismatchMsg(t.tipTemplate, t.name))
-  const allSelectableSelected = selectableInTab.length > 0 && selectableInTab.every(t => selectedIds.has(t.id))
-  const selectAllInTab = () => setSelectedIds(prev => {
-    const next = new Set(prev); selectableInTab.forEach(t => next.add(t.id)); return next
+  const selectableTemplates = listTemplates.filter(t => !t.clauses?.length && !tipMismatchMsg(t.tipTemplate, t.name) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
+  const allSelectableSelected = selectableTemplates.length > 0 && selectableTemplates.every(t => selectedIds.has(t.id))
+  const selectAllTemplates = () => setSelectedIds(prev => {
+    const next = new Set(prev); selectableTemplates.forEach(t => next.add(t.id)); return next
   })
-  const deselectAllInTab = () => setSelectedIds(prev => {
-    const next = new Set(prev); selectableInTab.forEach(t => next.delete(t.id)); return next
+  const deselectAllTemplates = () => setSelectedIds(prev => {
+    const next = new Set(prev); selectableTemplates.forEach(t => next.delete(t.id)); return next
   })
 
   const toggleSelect = (id: string) =>
@@ -185,21 +249,38 @@ export default function TemplateFiller({
   }
 
   const handleGenerateDocx = async (tpl: DocTemplate) => {
+    // Declarație de activitate (copie din bibliotecă sau document propriu cu aceleași etichete): formularul dedicat.
+    const decl = tpl.type === 'docx' && isDeclaratieTemplate(tpl) ? declaratieFormState[tpl.id] : undefined
+    if (tpl.type === 'docx' && isDeclaratieTemplate(tpl)) {
+      const missing = declaratieFormRef.current?.scrollToFirstMissing() ?? []
+      if (missing.length > 0) { onToast(`Completează: ${missing.join(', ')}.`, 'err'); return }
+      if (!decl) return
+    }
+    if (!(await askDestination())) return
     setLoading(tpl.id, true)
     try {
       const outputName = resolveOutputName(tpl)
       const cs = clauseState[tpl.id]
-      const mergedReplacements = cs ? { ...replacements, ...cs.extraReplacements } : replacements
+      let mergedReplacements = cs ? { ...replacements, ...cs.extraReplacements } : replacements
       const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
-      let result: { blob?: Blob; name?: string; link?: string }
+      let rowGroups: Record<string, Record<string, string>[]> | undefined
+      if (decl) {
+        rowGroups = decl.rowGroups
+        mergedReplacements = withEmptyFieldMarks(tpl.placeholders ?? [], { ...replacements, ...decl.replacements }, decl.rowGroups)
+      } else {
+        mergedReplacements = withOptionalFieldMarks(tpl.placeholders ?? [], mergedReplacements, mergedGroups)
+      }
+      let result: { blob?: Blob; name?: string; link?: string; warnings?: string[] }
+      const { ctx: variantCtx, labels: variantLabels } = variantsFor(mergedReplacements)
 
       if (tpl.driveFileId) {
-        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, driveTarget(), outputName, mergedGroups, cs?.selectedClauses)
+        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, rowGroups, variantCtx)
       } else {
         const file = await resolveTemplateFile(tpl)
         if (!file) { onToast(`Fișierul pentru "${tpl.name}" nu este disponibil`, 'err'); return }
-        result = await fillDocx(file, mergedReplacements, driveTarget(), outputName, mergedGroups, cs?.selectedClauses)
+        result = await fillDocx(file, mergedReplacements, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, rowGroups, variantCtx)
       }
+      notifyVariants(result.warnings, variantLabels)
 
       if (result.link) {
         setGeneratedLinks(prev => ({ ...prev, [tpl.id]: result.link! }))
@@ -215,6 +296,7 @@ export default function TemplateFiller({
         maybePromptSaveClient()
       }
       offerClientPatches(cs)
+      if (decl) offerClientPatchList(decl.clientPatches)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
     } finally {
@@ -225,6 +307,7 @@ export default function TemplateFiller({
   // Șabloane de bază — generare directă, fără duplicare prealabilă în Firestore.
   const handleGenerateBuiltinDocx = async (b: BuiltinTemplate) => {
     const key = builtinKey(b)
+    if (!(await askDestination())) return
     setLoading(key, true)
     try {
       let outputName = b.outputNameTemplate || b.name
@@ -246,7 +329,10 @@ export default function TemplateFiller({
           : ' '
       }
 
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, mergedGroups, cs?.selectedClauses)
+      const marked = withOptionalFieldMarks(b.placeholders ?? [], mergedReplacements, mergedGroups)
+      const { ctx: variantCtx, labels: variantLabels } = variantsFor(marked)
+      const result = await fillDocxFromBuiltinTemplate(b.key, marked, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, undefined, variantCtx)
+      notifyVariants(result.warnings, variantLabels)
 
       if (result.link) {
         setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
@@ -282,6 +368,7 @@ export default function TemplateFiller({
       return
     }
     if (!form) return
+    if (!(await askDestination())) return
     setLoading(key, true)
     try {
       let outputName = b.outputNameTemplate || b.name
@@ -293,9 +380,15 @@ export default function TemplateFiller({
       // {{SOCIETATE_*}}/{{DATA_AZI}} etc. vin din `replacements` (calculate o
       // singură dată, comun tuturor șabloanelor) — form.replacements le
       // suprascrie doar pe cele proprii formularului (declarant/sediu).
-      const mergedReplacements = { ...replacements, ...form.replacements }
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, null, outputName, undefined, undefined, form.rowGroups)
-      if (result.blob) {
+      // Câmpurile necompletate ale declarației (bloc, scară, etaj, telefon...) apar ca „-”, nu ca etichetă brută.
+      const mergedReplacements = withEmptyFieldMarks(b.placeholders ?? [], { ...replacements, ...form.replacements }, form.rowGroups)
+      const { ctx: variantCtx, labels: variantLabels } = variantsFor(mergedReplacements)
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, undefined, undefined, form.rowGroups, variantCtx)
+      notifyVariants(result.warnings, variantLabels)
+      if (result.link) {
+        setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
+        onToast(`Salvat pe Drive: ${result.name}`, 'ok')
+      } else if (result.blob) {
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
         URL.revokeObjectURL(url)
@@ -353,7 +446,7 @@ export default function TemplateFiller({
     setLoading(tpl.id, true)
     try {
       const outputName = tpl.outputNameTemplate || tpl.name
-      const result = await fillGdoc(tpl.docId, replacements, accessToken, outputName)
+      const result = await fillGdoc(tpl.docId, withOptionalFieldMarks(tpl.placeholders ?? [], replacements), accessToken, outputName)
       setGeneratedLinks(prev => ({ ...prev, [tpl.id]: result.link }))
       onToast('Document Google creat', 'ok')
       await _logGeneration(tpl, outputName, result.link)
@@ -366,10 +459,17 @@ export default function TemplateFiller({
   }
 
   const handleBatchGenerate = async () => {
-    const targets = templates.filter(t => selectedIds.has(t.id))
-    for (const tpl of targets) {
-      if (tpl.type === 'docx') await handleGenerateDocx(tpl)
-      else await handleGenerateGdoc(tpl)
+    const targets = selectedTemplates
+    // Se întreabă o singură dată pentru tot lotul; șabloanele Google Doc se creează oricum în Drive.
+    if (targets.some(t => t.type === 'docx') && !(await askDestination())) return
+    batchDestChosen.current = true
+    try {
+      for (const tpl of targets) {
+        if (tpl.type === 'docx') await handleGenerateDocx(tpl)
+        else await handleGenerateGdoc(tpl)
+      }
+    } finally {
+      batchDestChosen.current = false
     }
   }
 
@@ -378,7 +478,7 @@ export default function TemplateFiller({
     // Șabloanele cu clauze au propria verificare de completitudine în
     // ClauseSelector (butonul Generează e dezactivat până e completă) —
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
-    if (tpl.clauses?.length) { handleGenerateDocx(tpl); return }
+    if (tpl.clauses?.length || (tpl.type === 'docx' && isDeclaratieTemplate(tpl))) { handleGenerateDocx(tpl); return }
 
     const { missing } = checkReadiness(tpl.placeholders ?? [], replacements, repeatGroups)
     if (missing.length > 0) {
@@ -403,7 +503,7 @@ export default function TemplateFiller({
   }
 
   const tryBatchGenerate = () => {
-    const targets = templates.filter(t => selectedIds.has(t.id))
+    const targets = selectedTemplates
     const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], replacements, repeatGroups).missing)
     const uniqueMissing = [...new Set(allMissing)]
     if (uniqueMissing.length > 0) {
@@ -483,6 +583,91 @@ export default function TemplateFiller({
     if (!placeholders || placeholders.length === 0) return null
     const { filled } = checkReadiness(placeholders, replacements, repeatGroups)
     return Math.round((filled.length / placeholders.length) * 100)
+  }
+
+  // Declarația: procentul vine din formularul dedicat (câmpurile obligatorii), nu din etichetele șablonului. Apare după
+  // prima deschidere a șablonului pentru clientul curent; starea unui client anterior nu se afișează.
+  const declCompletion = (id: string) => {
+    const st = declaratieFormState[id]
+    return st && st.forClient === client?.id ? st.completion : undefined
+  }
+  const declPct = (id: string): number | null => {
+    const c = declCompletion(id)
+    return c && c.total > 0 ? Math.round((c.done / c.total) * 100) : null
+  }
+
+  // Bara de completare: „X/Y câmpuri” + lista a ceea ce lipsește (deschisă la cerere).
+  const renderProgressBar = (id: string, c: { done: number; total: number; missing: string[] }, listTitle: string) => {
+    if (c.total === 0) return null
+    const pct = Math.round((c.done / c.total) * 100)
+    const isExpanded = expandedReadiness.has(id)
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+          <div style={{ flex: 1, height: 4, background: 'var(--s200)', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', width: `${pct}%`, borderRadius: 99, transition: 'width .3s',
+              background: pct === 100 ? 'var(--g500)' : pct > 60 ? 'var(--y500)' : 'var(--r400)',
+            }} />
+          </div>
+          <span style={{ fontSize: '.73rem', whiteSpace: 'nowrap', fontWeight: 600, color: pct === 100 ? 'var(--g600)' : pct > 60 ? 'var(--y700)' : 'var(--r500)' }}>
+            {pct === 100 ? '✓ Complet' : `${c.done}/${c.total} câmpuri`}
+          </span>
+          {c.missing.length > 0 && (
+            <button
+              onClick={() => toggleReadiness(id)}
+              style={{
+                border: 'none', cursor: 'pointer', padding: '.1rem .35rem', fontSize: '.72rem', borderRadius: 4, fontFamily: 'var(--font)',
+                color: 'var(--y700)', background: 'var(--y50)', display: 'flex', alignItems: 'center', gap: '.2rem', flexShrink: 0,
+              }}
+            >
+              ⚠️ {c.missing.length} lipsă {isExpanded ? '▴' : '▾'}
+            </button>
+          )}
+        </div>
+        {isExpanded && c.missing.length > 0 && (
+          <div style={{ background: 'var(--y50)', border: '1px solid var(--y200)', borderRadius: 'var(--r-sm)', padding: '.5rem .625rem', fontSize: '.78rem', color: 'var(--y800)' }}>
+            <div style={{ fontSize: '.7rem', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: '.25rem' }}>
+              {listTitle}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+              {c.missing.map(m => <li key={m}>{m}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderDeclaratieProgress = (id: string) => {
+    const c = declCompletion(id)
+    return c ? renderProgressBar(id, c, 'De completat înainte de generare') : null
+  }
+
+  // Șabloane cu clauze (Decizia Asociatului Unic, Hotărâre AGA și copiile lor): completarea = datele din afara clauzelor
+  // (din client) + „cel puțin o clauză bifată” + câmpurile clauzelor bifate. Fără nicio clauză bifată încă, procentul
+  // arată doar ce e deja completat din client.
+  const clauseCompletion = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[]) => {
+    const clausePh = new Set(clauses.flatMap(c => c.placeholders))
+    const base = (placeholders ?? []).filter(ph => !clausePh.has(ph) && !INTERNAL_BUILTIN_FIELDS.has(ph.replace(/^\{\{|\}\}$/g, '')) && ph !== '{{ART_NR}}')
+    const { filled, missing } = checkReadiness(base, replacements, repeatGroups)
+    const cs = clauseState[id]
+    const anySelected = !!cs && cs.selectedClauses.length > 0
+    const cc = cs?.completion ?? { done: 0, total: 0, missing: [] as string[] }
+    const grouped = missing.length > 0 ? groupMissingFields(missing) : {}
+    return {
+      done: filled.length + (anySelected ? 1 : 0) + cc.done,
+      total: base.length + 1 + cc.total,
+      missing: [
+        ...(anySelected ? [] : ['Bifează cel puțin o clauză']),
+        ...Object.entries(grouped).map(([group, fields]) => `${group}: ${fields.join(', ')}`),
+        ...cc.missing,
+      ],
+    }
+  }
+  const clausePct = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[]): number | null => {
+    const c = clauseCompletion(id, placeholders, clauses)
+    return c.total > 0 ? Math.round((c.done / c.total) * 100) : null
   }
 
   // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
@@ -569,21 +754,26 @@ export default function TemplateFiller({
     const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
     const mismatch = isDeclaratie ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = isDeclaratie ? null : readinessPct(builtinCheckablePlaceholders(b))
+    const pct = isDeclaratie ? declPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b))
     return (
-      <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}`}>
+      <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}${mismatch ? ' tf-row--na' : ''}`}>
         <button
-          type="button" className="tf-row-main" onClick={() => setActiveKey(key)}
-          disabled={!!tipMsg} title={tipMsg ?? undefined}
+          type="button" className="tf-row-main"
+          // Neaplicabil clientului (număr de asociați nepotrivit): rămâne clicabil doar ca să explice de ce nu se poate folosi.
+          onClick={() => mismatch ? notApplicable(b.name, mismatch) : setActiveKey(key)}
+          aria-disabled={mismatch ? true : undefined}
+          disabled={!!tipMsg}
+          title={tipMsg ? `${b.name} — ${tipMsg}` : mismatch ? undefined : b.name}
+          data-tooltip={!tipMsg && mismatch ? `⚠️ ${b.name} nu se aplică acestui client: ${mismatch}.` : undefined}
         >
           <span className="tf-row-badge">BAZĂ</span>
           {b.tipTemplate !== 'universal' && (
             <span className={`tf-row-tip tf-row-tip--${b.tipTemplate.toLowerCase()}`}>{b.tipTemplate}</span>
           )}
-          <span className="tf-row-name">{b.name}</span>
+          <span className="tf-row-name" title={b.name}>{b.name}</span>
           {link && <span className="tf-row-check" title="Generat">✓</span>}
-          {(mismatch || tipMsg) && <span className="tf-row-warn" title={tipMsg ?? mismatch ?? undefined}>⚠️</span>}
-          {pct !== null && !link && (
+          {(mismatch || tipMsg) && <span className="tf-row-warn" title={tipMsg ?? undefined}>⚠️</span>}
+          {pct !== null && !link && !mismatch && (
             <span className={`tf-row-pct${pct === 100 ? ' tf-row-pct--done' : ''}`}>{pct}%</span>
           )}
         </button>
@@ -598,28 +788,34 @@ export default function TemplateFiller({
     const link = generatedLinks[tpl.id]
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
-    const pct = readinessPct(tpl.placeholders)
+    const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
+    const pct = isDecl ? declPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders)
     return (
-      <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}`}>
-        {!hasClauses && (
+      <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}${asociatiMismatch ? ' tf-row--na' : ''}`}>
+        {!hasClauses && !isDecl && (
           <input
             type="checkbox"
-            checked={isSelected}
+            checked={isSelected && !asociatiMismatch}
             onChange={() => toggleSelect(tpl.id)}
-            disabled={!!tipMsg}
-            title={tipMsg ?? 'Include în generarea în lot'}
+            disabled={!!tipMsg || !!asociatiMismatch}
+            title={tipMsg ?? (asociatiMismatch ? `Nu se aplică: ${asociatiMismatch}` : 'Include în generarea în lot')}
           />
         )}
         <button
-          type="button" className="tf-row-main" onClick={() => setActiveKey(tpl.id)}
-          disabled={!!tipMsg} title={tipMsg ?? undefined}
+          type="button" className="tf-row-main"
+          onClick={() => asociatiMismatch ? notApplicable(tpl.name, asociatiMismatch) : setActiveKey(tpl.id)}
+          aria-disabled={asociatiMismatch ? true : undefined}
+          disabled={!!tipMsg}
+          title={tipMsg ? `${tpl.name} — ${tipMsg}` : asociatiMismatch ? undefined : tpl.name}
+          data-tooltip={!tipMsg && asociatiMismatch ? `⚠️ ${tpl.name} nu se aplică acestui client: ${asociatiMismatch}.` : undefined}
         >
           {tpl.tipTemplate && tpl.tipTemplate !== 'universal' && (
             <span className={`tf-row-tip tf-row-tip--${tpl.tipTemplate.toLowerCase()}`}>{tpl.tipTemplate}</span>
           )}
-          <span className="tf-row-name">{tpl.name}</span>
+          <span className="tf-row-name" title={tpl.name}>{tpl.name}</span>
+          <span className="tf-row-tip tf-row-tip--type" title={tpl.type === 'gdoc' ? 'Document Google Docs' : 'Document Word'}>{tpl.type === 'gdoc' ? 'GDoc' : 'Word'}</span>
           {link && <span className="tf-row-check" title="Generat">✓</span>}
-          {(asociatiMismatch || tipMsg) && <span className="tf-row-warn" title={tipMsg ?? asociatiMismatch ?? undefined}>⚠️</span>}
+          {(asociatiMismatch || tipMsg) && <span className="tf-row-warn" title={tipMsg ?? undefined}>⚠️</span>}
           {pct !== null && !link && (
             <span className={`tf-row-pct${pct === 100 ? ' tf-row-pct--done' : ''}`}>{pct}%</span>
           )}
@@ -637,6 +833,7 @@ export default function TemplateFiller({
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const isSelected = selectedIds.has(tpl.id)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
+    const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
 
     return (
       <div className="tf-detail-panel">
@@ -648,7 +845,7 @@ export default function TemplateFiller({
             disabled={isLoading || !!asociatiMismatch || !!tipMsg || (hasClauses && !clauseState[tpl.id]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : (tpl.type === 'gdoc' ? '🔷 ' : '↓ ')}
-            {uploadToDrive && tpl.type === 'docx' ? 'Upload' : 'Generează'}
+            Generează
           </button>
         </div>
 
@@ -658,7 +855,16 @@ export default function TemplateFiller({
           <div style={WARN_BOX}>⚠️ {tpl.name} {asociatiMismatch}</div>
         )}
 
-        {!asociatiMismatch && (hasClauses ? (
+        {!asociatiMismatch && isDecl && renderDeclaratieProgress(tpl.id)}
+        {!asociatiMismatch && !isDecl && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!), 'De completat înainte de generare')}
+        {!asociatiMismatch && (isDecl ? (
+          <DeclaratieActivitateFiller
+            key={`${tpl.id}:${client?.id ?? 'none'}`}
+            ref={declaratieFormRef}
+            client={client}
+            onChange={v => setDeclaratieFormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
+          />
+        ) : hasClauses ? (
           <ClauseSelector
             clauses={tpl.clauses!}
             client={client}
@@ -705,7 +911,7 @@ export default function TemplateFiller({
             disabled={isLoading || !!mismatch || !!tipMsg || (!isDeclaratie && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : '↓ '}
-            {!isDeclaratie && uploadToDrive ? 'Upload' : 'Generează'}
+            Generează
           </button>
         </div>
 
@@ -731,12 +937,14 @@ export default function TemplateFiller({
           </div>
         )}
 
+        {!mismatch && isDeclaratie && renderDeclaratieProgress(key)}
+        {!mismatch && !isDeclaratie && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses), 'De completat înainte de generare')}
         {!mismatch && (isDeclaratie ? (
           <DeclaratieActivitateFiller
             key={client?.id ?? 'none'}
             ref={declaratieFormRef}
             client={client}
-            onChange={v => setDeclaratieFormState(prev => ({ ...prev, [key]: v }))}
+            onChange={v => setDeclaratieFormState(prev => ({ ...prev, [key]: { ...v, forClient: client?.id } }))}
           />
         ) : b.clauses.length > 0 ? (
           <ClauseSelector
@@ -766,7 +974,7 @@ export default function TemplateFiller({
       const b = builtins.find(x => builtinKey(x) === effectiveActiveKey)
       return b ? renderBuiltinDetail(b) : <div className="tf-empty">Șablonul nu mai este disponibil.</div>
     }
-    const tpl = currentTabTemplates.find(t => t.id === effectiveActiveKey)
+    const tpl = listTemplates.find(t => t.id === effectiveActiveKey)
     return tpl ? renderTemplateDetail(tpl) : <div className="tf-empty">Selectează un șablon din listă pentru a-l completa.</div>
   }
 
@@ -790,107 +998,62 @@ export default function TemplateFiller({
         </div>
 
         <div className="card-body">
-          <div className="tf-layout">
+          <div className="tf-layout" ref={layoutRef} style={{ ['--tf-list-w' as string]: `${listW}px` }}>
 
             {/* ── Coloana din stânga — listă ── */}
             <div className="tf-list">
-              {/* Tab switcher */}
-              <div style={{ display: 'flex', gap: '.25rem', background: 'var(--s100)', borderRadius: 'var(--r-sm)', padding: '.25rem' }}>
-                {(['docx', 'gdoc'] as Tab[]).map(t => (
-                  <button key={t} onClick={() => switchTab(t)} style={{
-                    flex: 1, padding: '.4rem .75rem', borderRadius: 6, border: 'none', cursor: 'pointer',
-                    background: tab === t ? 'var(--surface)' : 'transparent',
-                    boxShadow: tab === t ? 'var(--sh-sm)' : 'none',
-                    color: tab === t ? 'var(--s800)' : 'var(--s400)',
-                    fontWeight: tab === t ? 600 : 400, fontSize: '.85rem',
-                    fontFamily: 'var(--font)', transition: 'all var(--t)',
-                  }}>
-                    {t === 'docx' ? '📄 Word Document' : '🔷 Google Doc'}
-                  </button>
-                ))}
-              </div>
-
+              <div
+                className="tf-resizer" role="separator" aria-orientation="vertical" tabIndex={0}
+                aria-label="Lățimea listei de șabloane" aria-valuemin={LIST_W_MIN} aria-valuemax={LIST_W_MAX} aria-valuenow={listW}
+                title="Trage pentru a lărgi lista (dublu-click: lățimea implicită)"
+                onPointerDown={startResize} onKeyDown={resizeKey} onDoubleClick={() => applyListW(LIST_W_DEFAULT, true)}
+              />
               {tplLoading && (
                 <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--s400)' }}>
                   <span className="spin" style={{ display: 'inline-block' }} />
                 </div>
               )}
 
-              {tab === 'docx' && builtins.length > 0 && (
+              {builtins.length > 0 && (
                 <>
                   <div className="tf-list-label">Șabloane de bază</div>
                   <div className="tf-rows">{builtins.map(renderBuiltinRow)}</div>
                 </>
               )}
 
-              {!tplLoading && currentTabTemplates.length === 0 && (
+              {!tplLoading && listTemplates.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--s400)', fontSize: '.875rem' }}>
-                  Niciun șablon {tab === 'docx' ? 'Word' : 'Google Doc'} adăugat.{' '}
+                  Niciun șablon propriu adăugat.{' '}
                   <button className="btn btn-ghost btn-sm" onClick={() => setShowLibrary(true)} style={{ marginTop: '.5rem', display: 'block', margin: '.375rem auto 0' }}>
                     + Adaugă din biblioteca de șabloane
                   </button>
                 </div>
               )}
 
-              {!tplLoading && currentTabTemplates.length > 0 && (
+              {!tplLoading && listTemplates.length > 0 && (
                 <>
                   <div className="tf-list-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span>Șabloanele mele</span>
-                    {selectableInTab.length > 1 && (
+                    {selectableTemplates.length > 1 && (
                       <button
                         type="button" className="btn btn-ghost btn-xs"
                         style={{ textTransform: 'none', letterSpacing: 'normal', fontWeight: 600 }}
-                        onClick={allSelectableSelected ? deselectAllInTab : selectAllInTab}
+                        onClick={allSelectableSelected ? deselectAllTemplates : selectAllTemplates}
                       >
                         {allSelectableSelected ? 'Deselectează tot' : 'Selectează tot'}
                       </button>
                     )}
                   </div>
-                  <div className="tf-rows">{currentTabTemplates.map(renderTemplateRow)}</div>
+                  <div className="tf-rows">{listTemplates.map(renderTemplateRow)}</div>
                 </>
               )}
 
-              {/* Drive upload option (docx only) */}
-              {tab === 'docx' && !tplLoading && currentTabTemplates.length > 0 && (
-                <div style={{ marginTop: '.5rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem', cursor: 'pointer', fontSize: '.875rem', color: 'var(--s700)' }}>
-                    <input type="checkbox" checked={uploadToDrive} onChange={e => setUploadToDrive(e.target.checked)} />
-                    Salvează documentele generate pe Google Drive
-                  </label>
-                  {uploadToDrive && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
-                      <label style={LABEL}>Folder destinație</label>
-                      {showFolderPicker ? (
-                        <DriveFolderPicker
-                          accessToken={accessToken}
-                          onToast={onToast}
-                          onSelect={folder => { setDriveFolder(folder); setShowFolderPicker(false) }}
-                          onCancel={() => setShowFolderPicker(false)}
-                        />
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-                          <span style={{ flex: 1, fontSize: '.875rem', color: driveFolder ? 'var(--s800)' : 'var(--s400)' }}>
-                            {driveFolder ? `📁 ${driveFolder.name}` : 'Rădăcina Drive'}
-                          </span>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setShowFolderPicker(true)}>
-                            {driveFolder ? 'Schimbă' : 'Alege folder'}
-                          </button>
-                          {driveFolder && (
-                            <button onClick={() => setDriveFolder(null)} style={BTN_X} title="Elimină">×</button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Batch generate */}
-              {selectedInTab.length > 1 && (
+              {selectedTemplates.length > 1 && (
                 <button className="btn btn-primary" onClick={tryBatchGenerate} disabled={loadingIds.size > 0}>
                   {loadingIds.size > 0
                     ? <><span className="spin" />&nbsp;Generare în curs…</>
-                    : `⚡ Generează toate (${selectedInTab.length})`
+                    : `⚡ Generează toate (${selectedTemplates.length})`
                   }
                 </button>
               )}
@@ -906,6 +1069,89 @@ export default function TemplateFiller({
           </div>
         </div>
       </div>
+
+      {/* Sex necunoscut pentru unele persoane: în document au rămas ambele variante („numit/ă”) */}
+      {variantNotices.length > 0 && (
+        <Modal
+          onClose={() => setVariantNotices([])}
+          ariaLabel="Sex necunoscut"
+          backdropStyle={{ background: 'var(--backdrop)', zIndex: 410 }}
+          boxStyle={{ maxWidth: 480, display: 'flex', flexDirection: 'column' }}
+        >
+          <div style={{ padding: '1.125rem 1.25rem', borderBottom: '1px solid var(--s200)' }}>
+            <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>⚠️ Verifică documentul generat</div>
+          </div>
+          <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.625rem', fontSize: '.875rem', color: 'var(--s700)' }}>
+            {variantNotices.map(m => <div key={m}>{m}</div>)}
+          </div>
+          <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--s200)', display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => setVariantNotices([])}>Am înțeles</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Unde se salvează documentul generat — întrebat la generare, o dată pe acțiune (sau pe lot) */}
+      {destDialogOpen && (
+        <Modal
+          onClose={() => closeDestDialog(false)}
+          ariaLabel="Unde salvezi documentul"
+          backdropStyle={{ background: 'var(--backdrop)', zIndex: 400 }}
+          boxStyle={{ maxWidth: 460, display: 'flex', flexDirection: 'column' }}
+        >
+          <div style={{ padding: '1.125rem 1.25rem', borderBottom: '1px solid var(--s200)' }}>
+            <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>Unde salvezi documentul?</div>
+          </div>
+          <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+            {([
+              ['local', '💻 Pe calculator', 'Se descarcă fișierul Word.'],
+              ['drive', '☁️ În Google Drive', 'Se salvează în Drive-ul tău, în folderul ales.'],
+            ] as const).map(([val, title, sub]) => (
+              <label key={val} style={{
+                display: 'flex', gap: '.625rem', alignItems: 'flex-start', cursor: 'pointer', padding: '.625rem .75rem',
+                border: `1.5px solid ${destChoice === val ? 'var(--p500)' : 'var(--s200)'}`, borderRadius: 'var(--r-sm)',
+                background: destChoice === val ? 'var(--p50)' : 'transparent',
+              }}>
+                <input type="radio" name="dest" checked={destChoice === val} onChange={() => setDestChoice(val)} style={{ marginTop: '.2rem' }} />
+                <span>
+                  <div style={{ fontWeight: 600, fontSize: '.9rem', color: 'var(--s800)' }}>{title}</div>
+                  <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{sub}</div>
+                </span>
+              </label>
+            ))}
+
+            {destChoice === 'drive' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+                <label style={LABEL}>Folder destinație</label>
+                {showFolderPicker ? (
+                  <DriveFolderPicker
+                    accessToken={accessToken}
+                    onToast={onToast}
+                    onSelect={folder => { setDriveFolder(folder); setShowFolderPicker(false) }}
+                    onCancel={() => setShowFolderPicker(false)}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+                    <span style={{ flex: 1, fontSize: '.875rem', color: driveFolder ? 'var(--s800)' : 'var(--s400)' }}>
+                      {driveFolder ? `📁 ${driveFolder.name}` : 'Rădăcina Drive'}
+                    </span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowFolderPicker(true)}>
+                      {driveFolder ? 'Schimbă' : 'Alege folder'}
+                    </button>
+                    {driveFolder && <button onClick={() => setDriveFolder(null)} style={BTN_X} title="Elimină">×</button>}
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>
+              Șabloanele Google Doc se creează întotdeauna direct în Drive, indiferent de alegere.
+            </div>
+          </div>
+          <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--s200)', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => closeDestDialog(false)}>Anulează</button>
+            <button className="btn btn-primary btn-sm" onClick={() => closeDestDialog(true)} disabled={showFolderPicker}>Generează</button>
+          </div>
+        </Modal>
+      )}
 
       {/* Template Library slide-over */}
       {showLibrary && (

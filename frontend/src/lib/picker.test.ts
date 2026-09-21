@@ -15,6 +15,8 @@ function installFakePicker() {
     setIncludeFolders(v: boolean) { this.cfg.includeFolders = v; return this }
     setFileIds(ids: string) { this.cfg.fileIds = ids; return this }
     setMode(m: unknown) { this.cfg.mode = m; return this }
+    setParent(id: string) { this.cfg.parent = id; return this }
+    setOwnedByMe(v: boolean) { this.cfg.ownedByMe = v; return this }
   }
   class PickerBuilder {
     setAppId(v: string) { built.appId = v; return this }
@@ -69,10 +71,13 @@ describe('deschiderea ferestrei', () => {
     expect(await p).toBeNull()
   })
 
-  it('folderul: vedere de foldere cu selectarea folderelor activată', async () => {
+  it('folderul: „Drive-ul meu” navigabil din rădăcină (nu lista plată cu toate folderele) + folderele partajate', async () => {
     const p = pickFolder('tok', CFG)
     await settle()
-    expect(built.views[0]).toMatchObject({ viewId: 'FOLDERS', selectFolder: true, includeFolders: true, mime: 'application/vnd.google-apps.folder' })
+    expect(built.views).toHaveLength(2)
+    expect(built.views[0]).toMatchObject({ viewId: 'DOCS', parent: 'root', selectFolder: true, includeFolders: true, mime: 'application/vnd.google-apps.folder' })
+    expect(built.views[1]).toMatchObject({ viewId: 'DOCS', ownedByMe: false, selectFolder: true, includeFolders: true })
+    expect(built.views.some(v => v.viewId === 'FOLDERS')).toBe(false)
     built.cb!({ action: 'picked', docs: [{ id: 'fold1', name: 'Acte', mimeType: 'application/vnd.google-apps.folder' }] })
     expect((await p)?.id).toBe('fold1')
   })

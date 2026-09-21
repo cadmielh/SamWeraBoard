@@ -13,6 +13,8 @@ interface DocsViewLike {
   setIncludeFolders(v: boolean): DocsViewLike
   setFileIds(ids: string): DocsViewLike
   setMode(m: unknown): DocsViewLike
+  setParent(id: string): DocsViewLike
+  setOwnedByMe(v: boolean): DocsViewLike
 }
 interface PickerBuilderLike {
   setAppId(id: string): PickerBuilderLike
@@ -73,7 +75,7 @@ export function loadPicker(): Promise<void> {
   return loading
 }
 
-type ViewBuilder = (g: PickerNamespace) => DocsViewLike
+type ViewBuilder = (g: PickerNamespace) => DocsViewLike | DocsViewLike[]
 
 async function open(
   token: string, title: string, buildView: ViewBuilder, cfg: PickerConfig,
@@ -82,13 +84,15 @@ async function open(
   await loadPicker()
   const g = (window as unknown as PickerWindow).google!.picker!
   return new Promise<DriveItem | null>(resolve => {
-    const picker = new g.PickerBuilder()
+    const builder = new g.PickerBuilder()
       .setAppId(cfg.appId)               // necesar ca alegerea să acorde acces sub `drive.file`
       .setOAuthToken(token)
       .setDeveloperKey(cfg.apiKey)
       .setLocale('ro')
       .setTitle(title)
-      .addView(buildView(g))
+    const views = buildView(g)
+    for (const v of Array.isArray(views) ? views : [views]) builder.addView(v)
+    const picker = builder
       .setCallback((r: PickerResponse) => {
         if (r.action === g.Action.PICKED && r.docs?.[0]) {
           const d = r.docs[0]
@@ -109,11 +113,17 @@ export function pickIdDocument(token: string, cfg: PickerConfig = DEFAULT_PICKER
   return open(token, 'Alege actul de identitate', g => new g.DocsView(g.ViewId.DOCS).setMimeTypes(IMAGE_OR_PDF).setMode(g.DocsViewMode.LIST), cfg)
 }
 
-/** Alege folderul în care se salvează documentele generate. */
+const FOLDER_MIME = 'application/vnd.google-apps.folder'
+
+/** Alege folderul în care se salvează documentele generate. Prima filă e „Drive-ul meu”, de unde se intră folder cu folder
+ * (ca în Drive); a doua arată folderele partajate cu tine. Vederea plată „Foldere” (toate, amestecate) nu se mai folosește. */
 export function pickFolder(token: string, cfg: PickerConfig = DEFAULT_PICKER_CONFIG) {
-  return open(token, 'Alege folderul de destinație', g =>
-    new g.DocsView(g.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true)
-      .setMimeTypes('application/vnd.google-apps.folder'), cfg)
+  return open(token, 'Alege folderul de destinație', g => [
+    new g.DocsView(g.ViewId.DOCS).setParent('root').setIncludeFolders(true).setSelectFolderEnabled(true)
+      .setMimeTypes(FOLDER_MIME).setMode(g.DocsViewMode.LIST),
+    new g.DocsView(g.ViewId.DOCS).setOwnedByMe(false).setIncludeFolders(true).setSelectFolderEnabled(true)
+      .setMimeTypes(FOLDER_MIME).setMode(g.DocsViewMode.LIST),
+  ], cfg)
 }
 
 /** Alege un șablon Google Docs. */

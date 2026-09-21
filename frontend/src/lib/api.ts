@@ -2,6 +2,7 @@ import { auth } from "./firebase";
 import { DOCX_MIME, DriveError, driveDownload, driveUpload, fillGoogleDoc } from "./drive";
 import { pickAgain } from "./picker";
 import type { BuiltinTemplate, ClauseMeta } from "../types";
+import type { VariantContext } from './variants'
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5001";
 // OCR calls go directly to Cloud Run to bypass Firebase Hosting's 60s proxy timeout
@@ -115,7 +116,21 @@ export async function extractFile(file: File, source: "upload" | "drive" = "uplo
 /** Destinația „Google Drive” pentru un document generat: tokenul Google (rămâne în browser) și folderul ales prin Picker. */
 export interface DriveTarget { token: string; folderId?: string | null }
 
-export interface FillResult { blob?: Blob; name?: string; link?: string }
+/** Persoanele cu sex necunoscut, din antetul X-Variant-Warnings (listă JSON de prefixe). Absent sau ilizibil: fără avertisment. */
+export function parseVariantWarnings(raw: string | null): string[] | undefined {
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return undefined;
+    const list = parsed.filter((x): x is string => typeof x === "string");
+    return list.length > 0 ? list : undefined;
+  } catch { return undefined; }
+}
+
+export interface FillResult {
+  blob?: Blob; name?: string; link?: string
+  /** Persoane (prefixe de etichete) al căror sex nu s-a putut stabili: variantele „numit/ă” au rămas neschimbate. */
+  warnings?: string[]
+}
 
 /** Rulează o operațiune pe un fișier Drive; dacă aplicația nu are (încă) acces la el — de ex. un șablon ales de un coleg —
  * cere utilizatorului să-l confirme prin Google Picker și reîncearcă o singură dată. */
@@ -144,18 +159,20 @@ async function postFillDocx(fd: FormData, drive: DriveTarget | null | undefined,
     throw new Error(apiErrorMessage(err, res, "Fill failed"));
   }
   const blob = await res.blob();
-  if (!drive) return { blob };
+  const warnings = parseVariantWarnings(res.headers.get("X-Variant-Warnings"));
+  if (!drive) return { blob, warnings };
   const up = await driveUpload(blob, fileNameFrom(res, outputName || "document.docx"), DOCX_MIME, drive.folderId ?? null, drive.token);
-  return { name: up.name, link: up.webViewLink };
+  return { name: up.name, link: up.webViewLink, warnings };
 }
 
-function docxForm(fields: Record<string, string>, outputName?: string, groups?: Record<string, Record<string, string>[]>, selectedClauses?: string[], rowGroups?: Record<string, Record<string, string>[]>, upperKeys = false): FormData {
+function docxForm(fields: Record<string, string>, outputName?: string, groups?: Record<string, Record<string, string>[]>, selectedClauses?: string[], rowGroups?: Record<string, Record<string, string>[]>, upperKeys = false, variantCtx?: VariantContext): FormData {
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => fd.append(upperKeys ? k.toUpperCase() : k, v));
   if (outputName) fd.append("_output_name", outputName);
   if (groups) fd.append("_groups", JSON.stringify(groups));
   if (selectedClauses) fd.append("_clauses", JSON.stringify(selectedClauses));
   if (rowGroups) fd.append("_row_groups", JSON.stringify(rowGroups));
+  if (variantCtx) fd.append("_ctx", JSON.stringify(variantCtx));   // sex/număr/categorie: serverul alege variantele „a/b”
   return fd;
 }
 
@@ -166,8 +183,10 @@ export async function fillDocx(
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
+  rowGroups?: Record<string, Record<string, string>[]>,
+  variantCtx?: VariantContext,
 ): Promise<FillResult> {
-  const fd = docxForm(fields, outputName, groups, selectedClauses, undefined, true);
+  const fd = docxForm(fields, outputName, groups, selectedClauses, rowGroups, true, variantCtx);
   fd.append("template", templateFile);
   return postFillDocx(fd, drive, outputName);
 }
@@ -234,10 +253,12 @@ export async function fillDocxFromDriveTemplate(
   outputName?: string,
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
+  rowGroups?: Record<string, Record<string, string>[]>,
+  variantCtx?: VariantContext,
 ): Promise<FillResult> {
   const tpl = await withDriveAccess(templateDriveId, token, () => driveDownload(templateDriveId, token));
   const file = new File([tpl.blob], tpl.name.endsWith(".docx") ? tpl.name : `${tpl.name}.docx`, { type: DOCX_MIME });
-  const fd = docxForm(fields, outputName, groups, selectedClauses);
+  const fd = docxForm(fields, outputName, groups, selectedClauses, rowGroups, false, variantCtx);
   fd.append("template", file);
   return postFillDocx(fd, drive, outputName);
 }
@@ -250,8 +271,9 @@ export async function fillDocxFromBuiltinTemplate(
   groups?: Record<string, Record<string, string>[]>,
   selectedClauses?: string[],
   rowGroups?: Record<string, Record<string, string>[]>,
+  variantCtx?: VariantContext,
 ): Promise<FillResult> {
-  const fd = docxForm(fields, outputName, groups, selectedClauses, rowGroups);
+  const fd = docxForm(fields, outputName, groups, selectedClauses, rowGroups, false, variantCtx);
   fd.append("template_builtin_key", builtinKey);
   return postFillDocx(fd, drive, outputName);
 }

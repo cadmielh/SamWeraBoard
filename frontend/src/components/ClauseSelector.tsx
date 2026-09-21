@@ -17,6 +17,9 @@ export interface ClauseSelectorValue {
   extraGroups: Record<string, Record<string, string>[]>
   clientPatches: Record<string, ClientPatchProposal>
   isComplete: boolean
+  /** Câmpurile obligatorii ale clauzelor bifate (baza procentului afișat lângă șablon). `missing` conține etichete de câmp
+   * ({{CAMP}}) sau, pentru listele repetitive, un text „listă: …”. */
+  completion: { done: number; total: number; missing: string[] }
 }
 
 interface Props {
@@ -81,27 +84,31 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
   const setClientPatch = (tag: string, proposal: ClientPatchProposal | null) =>
     setClientPatchByClause(prev => ({ ...prev, [tag]: proposal }))
 
-  const isClauseComplete = (c: ClauseMeta): boolean => {
+  // Condițiile de completare ale unei clauze: câte una pentru fiecare câmp plat, plus una pentru lista repetitivă, dacă are.
+  const clauseChecks = (c: ClauseMeta): { label: string; ok: boolean }[] => {
     const spec = CLAUSE_FIELD_SPECS[c.tag]
     const useWidget = !!spec && specMatchesClause(spec, c.placeholders)
     const groupFieldSet = new Set(useWidget && spec.groupFields ? spec.groupFields : [])
-    const flatOk = c.placeholders.every(ph => {
-      const key = ph.replace(/^\{\{|\}\}$/g, '')
-      if (groupFieldSet.has(key)) return true // verificat separat, ca grup
-      const v = fieldsByClause[c.tag]?.[key] ?? baseReplacements[ph]
-      return !!v && v.trim() !== ''
-    })
-    const groupOk = useWidget && spec.groupName
-      ? (groupsByClause[c.tag]?.[spec.groupName]?.length ?? 0) > 0
-      : true
-    return flatOk && groupOk
+    const checks = c.placeholders
+      .filter(ph => !groupFieldSet.has(ph.replace(/^\{\{|\}\}$/g, ''))) // câmpurile din listă se verifică separat, ca grup
+      .map(ph => {
+        const key = ph.replace(/^\{\{|\}\}$/g, '')
+        const v = fieldsByClause[c.tag]?.[key] ?? baseReplacements[ph]
+        return { label: ph, ok: !!v && v.trim() !== '' }
+      })
+    if (useWidget && spec.groupName) {
+      checks.push({ label: `listă: ${spec.groupName}`, ok: (groupsByClause[c.tag]?.[spec.groupName]?.length ?? 0) > 0 })
+    }
+    return checks
   }
+  const isClauseComplete = (c: ClauseMeta): boolean => clauseChecks(c).every(x => x.ok)
 
   useEffect(() => {
     const extraReplacements: Record<string, string> = {}
     const extraGroups: Record<string, Record<string, string>[]> = {}
     const clientPatches: Record<string, ClientPatchProposal> = {}
     let complete = selected.size > 0
+    const completion = { done: 0, total: 0, missing: [] as string[] }
     for (const tag of selected) {
       const fields = fieldsByClause[tag] ?? {}
       for (const [k, v] of Object.entries(fields)) {
@@ -115,8 +122,14 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
       if (patch) clientPatches[tag] = patch
       const clause = clauses.find(c => c.tag === tag)
       if (clause && !isClauseComplete(clause)) complete = false
+      if (clause) {
+        for (const chk of clauseChecks(clause)) {
+          completion.total += 1
+          if (chk.ok) completion.done += 1; else completion.missing.push(chk.label)
+        }
+      }
     }
-    onChange({ selectedClauses: [...selected], extraReplacements, extraGroups, clientPatches, isComplete: complete })
+    onChange({ selectedClauses: [...selected], extraReplacements, extraGroups, clientPatches, isComplete: complete, completion })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, fieldsByClause, groupsByClause, clientPatchByClause, clauses, client])
 

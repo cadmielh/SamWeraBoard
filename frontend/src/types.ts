@@ -97,6 +97,8 @@ export interface Persoana {
   /** Identificator stabil al persoanei în vault-ul de date sensibile (vezi lib/pii.ts).
    * `cnp`/`serie_numar` NU se mai stochează în Firestore: doar variantele mascate de mai jos. */
   pid?: string
+  /** Alegere explicită a sexului (M/F) pentru variantele „numit/ă” din documente; lipsă = din CNP. */
+  sex?: 'M' | 'F'
   cnpMasked?: string
   serieMasked?: string
   /** Doar în memorie (nu se persistă): `cnp`/`serie_numar` au fost aduse din vault. */

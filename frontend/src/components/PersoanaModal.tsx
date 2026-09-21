@@ -3,6 +3,7 @@ import type { Persoana } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_PERSOANA } from '../lib/clienti'
 import { isValidCNP } from '../lib/cnp'
+import { sexFromCnp } from '../lib/sex'
 import { roDateToISO, isoDateToRo } from '../lib/dates'
 import { JUDETE_ROMANIA } from '../lib/counties'
 import { CETATENII } from '../lib/citizenships'
@@ -92,6 +93,18 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
                 aria-invalid={!!cnpError}
               />
               {cnpError && <span className="field-error">{cnpError}</span>}
+            </div>
+            <div className="field">
+              <label className="field-label">Sex (pentru „numit/ă”, „Domnul/Doamna” din documente)</label>
+              <select
+                className="field-input"
+                value={p.sex ?? ''}
+                onChange={e => setP(prev => ({ ...prev, sex: e.target.value === 'M' || e.target.value === 'F' ? e.target.value : undefined }))}
+              >
+                <option value="">{`Automat (din CNP${sexFromCnp(p.cnp) ? `: ${sexFromCnp(p.cnp) === 'M' ? 'masculin' : 'feminin'}` : ', necunoscut deocamdată'})`}</option>
+                <option value="M">Masculin</option>
+                <option value="F">Feminin</option>
+              </select>
             </div>
             <div className="field">
               <label className="field-label">Serie / Număr buletin</label>

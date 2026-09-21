@@ -805,8 +805,13 @@ body {
    nu din conținut — spre deosebire de flex, unde un descendant care refuză să
    se micșoreze (ex. un rând cu mai multe input-uri) putea forța întreaga
    coloană de detaliu, și implicit poziția listei, mai lată decât spațiul alocat. */
-.tf-layout { display:grid; grid-template-columns:340px minmax(0,1fr); gap:1.25rem; align-items:start; max-width:100%; overflow-x:hidden; }
-.tf-list { min-width:0; display:flex; flex-direction:column; gap:.625rem; }
+.tf-layout { display:grid; grid-template-columns:var(--tf-list-w, 340px) minmax(0,1fr); gap:1.25rem; align-items:start; max-width:100%; overflow-x:hidden; }
+.tf-list { min-width:0; display:flex; flex-direction:column; gap:.625rem; position:relative; }
+/* Mâner pentru lățimea listei: pe marginea din dreapta, în spațiul dintre listă și detaliu */
+.tf-resizer { position:absolute; top:0; bottom:0; right:-.9rem; width:.7rem; cursor:col-resize; z-index:2; touch-action:none; }
+.tf-resizer::after { content:''; position:absolute; top:0; bottom:0; left:50%; width:2px; transform:translateX(-50%); border-radius:2px; background:transparent; transition:background var(--t); }
+.tf-resizer:hover::after, .tf-resizer:focus-visible::after, .tf-resizer:active::after { background:var(--p500); }
+.tf-resizer:focus-visible { outline:none; }
 .tf-list-label { font-size:.7rem; font-weight:700; color:var(--s500); letter-spacing:.06em; text-transform:uppercase; margin-top:.25rem; }
 .tf-rows { display:flex; flex-direction:column; gap:.375rem; }
 .tf-row { display:flex; align-items:center; gap:.5rem; }
@@ -821,10 +826,20 @@ body {
 .tf-row-main:disabled { cursor:not-allowed; opacity:.55; }
 .tf-row-main:disabled:hover { border-color:var(--s200); }
 .tf-row--active .tf-row-main { border-color:var(--p500); background:var(--p50); }
+/* Neaplicabil clientului selectat (ex. număr de asociați nepotrivit): estompat, fără stare activă; clicul explică motivul */
+/* Se estompează doar conținutul rândului: `opacity` pe buton ar face transparent și balonul de avertizare (::after) */
+.tf-row--na .tf-row-main { cursor:not-allowed; }
+.tf-row--na .tf-row-main > * { opacity:.55; }
+.tf-row--na .tf-row-main:hover { border-color:var(--s200); }
+.tf-row--na .tf-row-name { text-decoration:line-through; text-decoration-color:var(--s300); }
+/* Avertisment la hover: bubble-ul aplicației, în culorile de avertizare (apare imediat, nu ca `title`-ul browserului) */
+.tf-row--na .tf-row-main[data-tooltip]::after { background:var(--y50); color:var(--y800); border:1.5px solid var(--y400); box-shadow:var(--sh-xl); font-weight:600; max-width:300px; opacity:0; }
+.tf-row--na .tf-row-main[data-tooltip]:hover::after, .tf-row--na .tf-row-main[data-tooltip]:focus-visible::after { opacity:1; }
 .tf-row-badge { flex-shrink:0; font-size:.65rem; font-weight:700; padding:.1rem .35rem; border-radius:3px; background:var(--p50); color:var(--p700); }
 .tf-row-tip { flex-shrink:0; font-size:.65rem; font-weight:700; padding:.1rem .35rem; border-radius:3px; }
 .tf-row-tip--pj { background:var(--g100); color:var(--g700); }
 .tf-row-tip--pf { background:var(--b100); color:var(--b700); }
+.tf-row-tip--type { background:var(--s100); color:var(--s500); }
 .tf-row-name { flex:1; min-width:0; font-size:.8125rem; font-weight:600; color:var(--s800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tf-row-check { flex-shrink:0; color:var(--g600); }
 .tf-row-warn { flex-shrink:0; }
@@ -1085,6 +1100,7 @@ body {
 /* ── Responsive ── */
 @media (max-width:900px) {
   .tf-layout { grid-template-columns:1fr; }
+  .tf-resizer { display:none; }
   .tf-detail { position:static; }
 }
 @media (max-width:768px) {

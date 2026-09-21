@@ -448,3 +448,38 @@ def test_ocr_result_is_cleaned_of_line_breaks_at_the_source(app_ctx, monkeypatch
     assert r.status_code == 200
     assert d["serie_numar"] == "MX 123456" and d["adresa"] == "Jud. TM Sat X, nr. 5"
     assert d["cnp"] == VALID_CNP
+
+
+def test_fill_docx_alege_variantele_dupa_context_si_avertizeaza_la_sex_necunoscut(app_ctx):
+    import io
+    import json as _json
+    from docx import Document
+
+    c, _ = app_ctx
+    tok = _idp_sign_in("g-var-1", "var1@ex.ro")["idToken"]
+    wid = make_ws(c, tok)
+    h = hdr(tok, wid)
+
+    def template() -> io.BytesIO:
+        d = Document()
+        d.add_paragraph("{{ASOCIAT_1_NUME}}, născut/ă la X. Asociat unic/asociați, sediul social/profesional.")
+        b = io.BytesIO(); d.save(b); b.seek(0)
+        return b
+
+    def fill(ctx):
+        return c.post("/fill/docx", headers=h, data={"template": (template(), "t.docx"), "{{ASOCIAT_1_NUME}}": "Ionescu", "_ctx": _json.dumps(ctx)},
+                      content_type="multipart/form-data")
+
+    def text(resp) -> str:
+        return Document(io.BytesIO(resp.data)).paragraphs[0].text
+
+    r = fill({"sex": {"ASOCIAT_1": "F"}, "asociati": 1, "tip": "PJ"})
+    assert r.status_code == 200 and text(r) == "Ionescu, născută la X. Asociat unic, sediul social."
+    assert "X-Variant-Warnings" not in r.headers
+
+    r = fill({"sex": {"ASOCIAT_1": None}, "asociati": 2, "tip": "PF"})               # sex necunoscut: nu se ghicește
+    assert text(r) == "Ionescu, născut/ă la X. Asociați, sediul profesional."
+    assert _json.loads(r.headers["X-Variant-Warnings"]) == ["ASOCIAT_1"]
+
+    r = c.post("/fill/docx", headers=h, data={"template": (template(), "t.docx"), "_ctx": "nu e json"}, content_type="multipart/form-data")
+    assert r.status_code == 400 and r.get_json()["error"] == "invalid_ctx"

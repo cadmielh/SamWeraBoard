@@ -6,6 +6,8 @@ import re
 from docx import Document
 from docx.text.paragraph import Paragraph
 
+import variants
+
 
 def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
     """Replace placeholders in a paragraph, preserving each run's own formatting
@@ -90,7 +92,8 @@ def _cell_text(cell) -> str:
     return "".join("".join(r.text for r in p.runs) for p in cell.paragraphs).strip()
 
 
-def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]) -> None:
+def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]],
+                          variant_ctx: dict | None = None, variant_warnings: set | None = None) -> None:
     """
     Expand {{#TAG}} ... {{/TAG}} paragraph ranges (top-level body paragraphs) into
     one copy of the enclosed paragraphs per item in groups[TAG], substituting
@@ -120,10 +123,17 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
             for i, item in enumerate(items, start=1):
                 person = {**item, "INDEX": str(i)}
                 item_replacements = {"{{" + k + "}}": v for k, v in person.items()}
+                # Sexul persoanei din acest element (SEX / SEX_REF) decide variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
+                fixed = (person.get("SEX") or None, person.get("SEX_REF") or None)
                 for bp in block_paragraphs:
                     clone = copy.deepcopy(bp._p)
                     anchor.addprevious(clone)
-                    _replace_in_paragraph(Paragraph(clone, bp._parent), item_replacements)
+                    clone_par = Paragraph(clone, bp._parent)
+                    if variant_ctx is not None:
+                        choices = variants.resolve_paragraph(clone_par, variant_ctx, {}, fixed)
+                        if variant_warnings is not None:
+                            variant_warnings |= variants.unresolved_persons(choices)
+                    _replace_in_paragraph(clone_par, item_replacements)
 
             # Remove the original template block + both markers
             for bp in block_paragraphs:
@@ -391,6 +401,8 @@ def fill_docx(
     groups: dict[str, list[dict[str, str]]] | None = None,
     selected_clauses: list[str] | None = None,
     row_groups: dict[str, list[dict[str, str]]] | None = None,
+    variant_ctx: dict | None = None,
+    variant_warnings: set | None = None,
 ) -> bytes:
     """
     Fill a .docx template by replacing {{PLACEHOLDER}} markers.
@@ -413,13 +425,18 @@ def fill_docx(
     Returns the filled document as bytes.
     """
     doc = Document(io.BytesIO(template_bytes))
+    ctx = variants.sanitize_ctx(variant_ctx) if variant_ctx is not None else None
 
     if groups:
-        _expand_repeat_blocks(doc, groups)
+        _expand_repeat_blocks(doc, groups, ctx, variant_warnings)
 
     _expand_repeat_table_rows(doc, row_groups)
 
     _expand_clause_library(doc, selected_clauses)
+
+    # Variante „a/b” (sex, număr, categorie) — înaintea înlocuirii etichetelor, ca să se vadă persoanele la care se referă
+    if ctx is not None:
+        _resolve_variants(doc, ctx, replacements, variant_warnings)
 
     # Replace in main body paragraphs
     for paragraph in doc.paragraphs:
@@ -450,6 +467,25 @@ def fill_docx(
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
+
+
+def _resolve_variants(doc: Document, ctx: dict, replacements: dict[str, str], warnings: set | None) -> None:
+    def run(paragraphs) -> None:
+        for p in paragraphs:
+            ch = variants.resolve_paragraph(p, ctx, replacements)
+            if warnings is not None:
+                warnings.update(variants.unresolved_persons(ch))
+
+    run(doc.paragraphs)
+    for table in _iter_all_tables(doc):
+        for row in table.rows:
+            for cell in row.cells:
+                run(cell.paragraphs)
+    for section in doc.sections:
+        for part in (section.header, section.first_page_header, section.even_page_header,
+                     section.footer, section.first_page_footer, section.even_page_footer):
+            if part is not None:
+                run(part.paragraphs)
 
 
 def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:

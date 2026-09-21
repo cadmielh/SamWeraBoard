@@ -33,6 +33,13 @@ case "${1:-}" in
   emulators-google)
     ensure_java
     mkdir -p .emulator-data-google
+    # Salvare periodică: datele locale supraviețuiesc și dacă emulatorul e oprit brusc (se pierd cel mult ~2 minute).
+    # Bucla se oprește singură după 3 eșecuri consecutive (emulator oprit).
+    ( fails=0
+      while sleep 120; do
+        if firebase emulators:export .emulator-data-google --project samwera-board-eu --force >/dev/null 2>&1; then fails=0
+        else fails=$((fails+1)); [ "$fails" -ge 3 ] && break; fi
+      done ) &
     exec firebase emulators:start --only firestore --project samwera-board-eu \
       --import .emulator-data-google --export-on-exit .emulator-data-google
     ;;

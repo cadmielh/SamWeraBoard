@@ -16,6 +16,9 @@ export interface DeclaratieFormValue {
   rowGroups: Record<string, Record<string, string>[]>
   isComplete: boolean
   clientPatches: ClientPatchProposal[]
+  /** Câte dintre câmpurile obligatorii sunt completate (baza procentului afișat lângă șablon). Numărătoarea include
+   * mereu câmpurile declarantului, chiar înainte de alegerea lui, ca procentul să nu scadă după alegere. */
+  completion: { done: number; total: number; missing: string[] }
 }
 
 interface Props {
@@ -312,7 +315,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
   // Sursă unică pentru validare — folosită atât de scrollToFirstMissing (care
   // mai și derulează spre primul câmp lipsă), cât și pentru `isComplete`
   // raportat prin onChange, ca cele două să nu poată ajunge vreodată în dezacord.
-  const buildValidationChecks = (): { invalid: boolean; id: string; message: string }[] => {
+  const buildValidationChecks = (includeDeclarant = false): { invalid: boolean; id: string; message: string }[] => {
     const checks: { invalid: boolean; id: string; message: string }[] = [
       { invalid: !sediu.localitate.trim(), id: 'sediu-localitate', message: 'localitatea sediului' },
       { invalid: !sediu.strada.trim(), id: 'sediu-strada', message: 'strada sediului' },
@@ -322,7 +325,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
     ]
     // Câmpurile declarantului nu sunt randate până nu se alege o persoană —
     // n-are sens să le cerem înainte (și n-ar avea nici ref de derulat spre ele).
-    if (declarantChoice.trim()) {
+    if (declarantChoice.trim() || includeDeclarant) {
       checks.push(
         { invalid: !declarant.nume.trim(), id: 'declarant-nume', message: 'numele declarantului' },
         { invalid: !declarant.prenume.trim(), id: 'declarant-prenume', message: 'prenumele declarantului' },
@@ -348,9 +351,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
     }
     checks.push({ invalid: !anyCaenAnywhere, id: 'caen-section', message: 'cel puțin un cod CAEN (sediu, terți sau sediu secundar)' })
     sediiSecundare.forEach((row, i) => {
-      if (!row.adresa.trim() || row.caenCodes.length === 0) {
-        checks.push({ invalid: true, id: `sediu-secundar-${i}`, message: `adresa și codul CAEN ale sediului secundar #${i + 1}` })
-      }
+      checks.push({ invalid: !row.adresa.trim() || row.caenCodes.length === 0, id: `sediu-secundar-${i}`, message: `adresa și codul CAEN ale sediului secundar #${i + 1}` })
     })
     return checks
   }
@@ -372,6 +373,12 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
     const { replacements, rowGroups } = buildDeclaratieDocxData(state, client)
 
     const isComplete = buildValidationChecks().every(c => !c.invalid)
+    const allChecks = buildValidationChecks(true)
+    const completion = {
+      total: allChecks.length,
+      done: allChecks.filter(c => !c.invalid).length,
+      missing: allChecks.filter(c => c.invalid).map(c => c.message),
+    }
 
     const noiAdrese = sediiSecundare.map(r => r.adresa).filter(Boolean).filter(a => !puncteLucruExistente.includes(a))
     const clientPatches: ClientPatchProposal[] = noiAdrese.length > 0 ? [{
@@ -399,7 +406,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
       }
     }
 
-    onChange({ replacements, rowGroups, isComplete, clientPatches })
+    onChange({ replacements, rowGroups, isComplete, clientPatches, completion })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sediu, declarant, declarantChoice, caenSediu, caenTerti, sediiSecundare, client])
 

@@ -82,7 +82,7 @@ app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB — OCR uploads onl
 _cors_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 CORS(app, origins=_cors_origins,
      allow_headers=["Content-Type", "X-Firebase-Token", "X-Workspace-Id"],
-     expose_headers=["Content-Disposition", "Retry-After"])
+     expose_headers=["Content-Disposition", "Retry-After", "X-Variant-Warnings"])
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 
@@ -354,16 +354,25 @@ def fill_docx_route():
         selected_clauses  = json.loads(clauses_raw) if clauses_raw else None
         row_groups_raw    = fields.pop("_row_groups", None)
         row_groups        = json.loads(row_groups_raw) if row_groups_raw else None
+        ctx_raw           = fields.pop("_ctx", None)          # context pentru variantele „a/b” (sex, număr, categorie)
+        try:
+            variant_ctx = json.loads(ctx_raw) if ctx_raw else None
+        except ValueError:
+            return jsonify({"error": "invalid_ctx"}), 400
+        variant_warnings: set = set()
         # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
         replacements = {k: v for k, v in fields.items() if v}
-        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups)
+        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups, variant_ctx, variant_warnings)
     except Exception as e:
         return _server_error("Fill failed", e)
 
     out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
     _audit(uid, "document.generate", _fill_meta("docx", _template_source(request.form.get("template_builtin_key")), replacements, destination))
-    return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
+    resp = send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    if variant_warnings:
+        resp.headers["X-Variant-Warnings"] = json.dumps(sorted(variant_warnings)[:20])   # persoane cu sex necunoscut (ASCII)
+    return resp
 
 
 @app.route("/fill/pdf", methods=["POST"])
@@ -711,7 +720,8 @@ def anaf_company():
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    # Versiunile șabloanelor de bază încărcate de instanța care răspunde: după un deploy se poate verifica ce rulează efectiv.
+    return jsonify({"status": "ok", "templates": {k: t.get("version") for k, t in BUILTIN_TEMPLATES.items()}})
 
 
 if __name__ == "__main__":

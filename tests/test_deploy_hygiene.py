@@ -17,7 +17,7 @@ MUST_IGNORE = [
     "credentials.json", "token.json", ".emulator-data-google",         # chei și date reale de test
     "migrare.zip", "firestore-debug.log",
 ]
-MUST_SHIP = ["app.py", "main.py", "authz.py", "vault.py", "ratelimit.py", "requirements.txt",
+MUST_SHIP = ["app.py", "main.py", "authz.py", "vault.py", "ratelimit.py", "variants.py", "doc_filler.py", "requirements.txt",
              "fisiere_template/registry.json", "fonts/DejaVuSans.ttf", "local_extractor.py"]
 
 

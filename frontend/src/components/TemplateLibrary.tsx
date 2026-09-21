@@ -48,6 +48,7 @@ const GUIDE_SECTIONS = [
       '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_FORMA_JURIDICA}}',
       '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}',
       '{{CAEN_1}} (activitate principală, format "cod - descriere")',
+      '{{CAEN_PRINCIPAL_COD}} (doar codul CAEN principal)', '{{CAEN_SECUNDARE_COD}} (codurile CAEN secundare, separate prin virgulă; „-” dacă nu există)',
     ],
   },
   {

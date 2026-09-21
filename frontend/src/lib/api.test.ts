@@ -10,7 +10,7 @@ vi.mock('./drive', async () => {
 const pickAgain = vi.fn()
 vi.mock('./picker', () => ({ pickAgain: (...a: unknown[]) => pickAgain(...a) }))
 
-import { fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, extractFile, apiErrorMessage, setApiWorkspace } from './api'
+import { fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, extractFile, apiErrorMessage, setApiWorkspace, parseVariantWarnings } from './api'
 import { DriveError } from './drive'
 
 type Call = { url: string; init: RequestInit }
@@ -128,5 +128,32 @@ describe('mesaje de eroare', () => {
     expect(apiErrorMessage({ error: 'Forbidden' }, res(), 'x')).toContain('drepturile necesare')
     expect(apiErrorMessage({ error: 'altceva' }, res(), 'x')).toBe('altceva')
     expect(apiErrorMessage(undefined, res(), 'implicit')).toBe('implicit')
+  })
+})
+
+
+describe('variante „a/b”: contextul trimis și avertismentul primit', () => {
+  const ctx = { sex: { ASOCIAT_1: null }, asociati: 1, administratori: 0, tip: 'PJ' as const }
+
+  it('contextul ajunge la server ca „_ctx”', async () => {
+    mockFetch(() => docx())
+    await fillDocxFromBuiltinTemplate('act_constitutiv', { A: 'b' }, null, 'x.docx', undefined, undefined, undefined, ctx)
+    expect(JSON.parse((calls[0].init.body as FormData).get('_ctx') as string)).toEqual(ctx)
+  })
+
+  it('persoanele cu sex necunoscut vin în rezultat, cu descărcare și cu Drive', async () => {
+    mockFetch(() => docx({ 'X-Variant-Warnings': JSON.stringify(['ASOCIAT_2']) }))
+    expect((await fillDocxFromBuiltinTemplate('act_constitutiv', { A: 'b' }, null, 'x.docx')).warnings).toEqual(['ASOCIAT_2'])
+    mockFetch(() => docx({ 'X-Variant-Warnings': JSON.stringify(['ASOCIAT_2']), 'Content-Disposition': 'attachment; filename=x.docx' }))
+    const r = await fillDocxFromBuiltinTemplate('act_constitutiv', { A: 'b' }, { token: 't', folderId: 'f' }, 'x.docx')
+    expect(r.warnings).toEqual(['ASOCIAT_2'])
+  })
+
+  it('fără antet sau cu antet ilizibil: fără avertisment', () => {
+    expect(parseVariantWarnings(null)).toBeUndefined()
+    expect(parseVariantWarnings('nu e json')).toBeUndefined()
+    expect(parseVariantWarnings('[]')).toBeUndefined()
+    expect(parseVariantWarnings('{"a":1}')).toBeUndefined()
+    expect(parseVariantWarnings('["ASOCIAT_1",3]')).toEqual(['ASOCIAT_1'])
   })
 })
