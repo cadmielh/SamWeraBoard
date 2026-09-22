@@ -118,6 +118,12 @@ def test_numar_necunoscut_lasa_alternativa():
     assert resolve(t, {"asociati": 0})[0] == t
 
 
+def test_perechi_de_numar_cu_pluralul_primul():
+    t = "În calitate de asociat unic/asociați {{ASOCIATI_LISTA}} au/are drepturile."
+    assert resolve(t, {"asociati": 1})[0] == "În calitate de asociat unic {{ASOCIATI_LISTA}} are drepturile."
+    assert resolve(t, {"asociati": 3})[0] == "În calitate de asociați {{ASOCIATI_LISTA}} au drepturile."
+
+
 # ── categorie ────────────────────────────────────────────────────────────────
 def test_social_sau_profesional_dupa_tipul_clientului():
     t = "sediul social/profesional"

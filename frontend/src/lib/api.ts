@@ -243,6 +243,69 @@ export async function detectPlaceholders(
   return { placeholders: data.placeholders as string[], clauses: (data.clauses ?? []) as ClauseMeta[] };
 }
 
+/** Un loc liber („……”) dintr-un document fără etichete, cu contextul și propunerea serverului. */
+export interface BlankSuggestion {
+  id: number;
+  scope: "company" | "person" | "manual";
+  field: string | null;
+  role?: "ASOCIAT" | "ADMINISTRATOR";
+  person?: number;
+  confidence: "high" | "medium" | "low";
+  before: string;
+  after: string;
+  label: string;
+  tag: string;
+}
+
+/** Grup candidat de bloc repetitiv: mai multe persoane cu aceeași structură, în aceeași frază („X … si Y …” —
+ * kind „inline”) sau în paragrafe separate consecutive (kind „paragraph”). Ales „repeat”, devine un
+ * {{#ASOCIATI}}/{{#ADMINISTRATORI}} care scalează la orice număr de persoane; „fixed” păstrează poziții numerotate.
+ * role „CAEN” e diferit — nu o persoană, ci o listă de activități secundare needitate de la firma-exemplu
+ * (câte un cod CAEN pe rând); devine {{#CAEN_SECUNDARE}}, la fel scalabilă. */
+export interface BlankGroup {
+  id: number;
+  kind: "inline" | "paragraph";
+  role: "ASOCIAT" | "ADMINISTRATOR" | "CAEN";
+  count: number;
+  blank_ids: number[];
+  template_blank_ids: number[];
+  label: string;
+}
+
+export interface BlankAnalysis {
+  blanks: BlankSuggestion[];
+  groups: BlankGroup[];
+  companyFields: Record<string, string>;
+  personFields: Record<string, string>;
+}
+
+/** Găsește locurile libere dintr-un .docx și propune câmpul potrivit pentru fiecare (nu modifică nimic). */
+export async function analyzeBlanks(templateFile: File): Promise<BlankAnalysis> {
+  const fd = new FormData();
+  fd.append("template", templateFile);
+  const res = await fetch(`${BASE}/template/blanks`, { method: "POST", headers: await authHeaders(), body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(apiErrorMessage(data as { error?: string }, res, "Analiza documentului a eșuat"));
+  return data as BlankAnalysis;
+}
+
+/** Înlocuiește locurile libere cu etichetele alese ({id: „{{CÂMP}}”}) și întoarce șablonul rezultat.
+ * `groupChoices` ({group_id: "repeat"|"fixed"}) decide soarta grupurilor găsite de analyzeBlanks. */
+export async function applyBlanks(
+  templateFile: File, choices: Record<number, string>, groupChoices?: Record<number, "repeat" | "fixed">,
+): Promise<File> {
+  const fd = new FormData();
+  fd.append("template", templateFile);
+  fd.append("choices", JSON.stringify(choices));
+  if (groupChoices) fd.append("groups", JSON.stringify(groupChoices));
+  const res = await fetch(`${BASE}/template/blanks/apply`, { method: "POST", headers: await authHeaders(), body: fd });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(data as { error?: string }, res, "Crearea șablonului a eșuat"));
+  }
+  return new File([await res.blob()], templateFile.name, { type: DOCX_MIME });
+}
+
 /** Șablon .docx aflat în Drive: se descarcă în browser (cu confirmarea accesului prin Picker, dacă e nevoie),
  * apoi se completează ca orice șablon încărcat. */
 export async function fillDocxFromDriveTemplate(

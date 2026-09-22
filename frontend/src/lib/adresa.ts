@@ -156,9 +156,11 @@ const STREET_TYPE_RE = /^(?:str\.?|strada|[sșş]os\.?|[sșş]oseaua|bd\.?|bulev
  * adresă, în formatul standard (Județ, Localitate, Str./nr./bl./sc./et./ap.)
  * pe care parseAdresa știe deja să-l descompună, dacă adresa mai e reeditată
  * ulterior. Omite orice componentă necompletată. */
-export function formatAdresa(a: AdresaStructurata): string {
+/** `includeJudet: false` omite județul — pentru șabloane care îl cer separat (ex. „sediul în ……, jud. ……”),
+ * ca să nu apară de două ori în document. */
+export function formatAdresa(a: AdresaStructurata, opts: { includeJudet?: boolean } = {}): string {
   const parts: string[] = []
-  if (a.judet) parts.push(a.judet)
+  if (a.judet && opts.includeJudet !== false) parts.push(a.judet)
   if (a.localitate) parts.push(a.localitate)
   if (a.strada) parts.push(STREET_TYPE_RE.test(a.strada) ? a.strada : `Str. ${a.strada}`)
   if (a.numar) parts.push(`nr. ${a.numar}`)

@@ -14,6 +14,7 @@ const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
 import { detectPlaceholders } from '../lib/api'
 import { pickGoogleDoc } from '../lib/picker'
 import Modal from './Modal'
+import BlankImportModal from './BlankImportModal'
 
 const MAX_BASE64_BYTES = 500 * 1024  // 500 KB
 
@@ -45,7 +46,9 @@ const GUIDE_SECTIONS = [
   {
     title: 'Entitate / Societate',
     items: [
-      '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_FORMA_JURIDICA}}',
+      '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_JUDET}}', '{{SOCIETATE_FORMA_JURIDICA}}',
+      '{{ASOCIATI_LISTA}} / {{ADMINISTRATORI_LISTA}} (numele pe o singură linie: „A, B și C”)',
+      '{{CAMP_ORICE_NUME}} — câmp completat manual la generare (ex. {{CAMP_NR_HOTARARE}}); numele apare ca titlu al câmpului',
       '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}',
       '{{CAEN_1}} (activitate principală, format "cod - descriere")',
       '{{CAEN_PRINCIPAL_COD}} (doar codul CAEN principal)', '{{CAEN_SECUNDARE_COD}} (codurile CAEN secundare, separate prin virgulă; „-” dacă nu există)',
@@ -54,7 +57,7 @@ const GUIDE_SECTIONS = [
   {
     title: 'Asociați — PJ (N = 1, 2, 3 …)',
     items: [
-      '{{ASOCIAT_N_NUME}}', '{{ASOCIAT_N_PRENUME}}', '{{ASOCIAT_N_CNP}}', '{{ASOCIAT_N_ADRESA}}', '{{ASOCIAT_N_DATA_NASTERII}}', '{{ASOCIAT_N_LOCUL_NASTERII}}', '{{ASOCIAT_N_CETATENIA}}', '{{ASOCIAT_N_SERIE_NUMAR}}', '{{ASOCIAT_N_EMISA_DE}}', '{{ASOCIAT_N_VALABILA_DE_LA}}', '{{ASOCIAT_N_VALABILA_PANA_LA}}', '{{ASOCIAT_N_COTA_PARTICIPARE}}',
+      '{{ASOCIAT_N_NUME}}', '{{ASOCIAT_N_PRENUME}}', '{{ASOCIAT_N_CNP}}', '{{ASOCIAT_N_ADRESA}}', '{{ASOCIAT_N_DATA_NASTERII}}', '{{ASOCIAT_N_LOCUL_NASTERII}}', '{{ASOCIAT_N_CETATENIA}}', '{{ASOCIAT_N_SERIE_NUMAR}}', '{{ASOCIAT_N_SERIE_ACT}}', '{{ASOCIAT_N_NR_ACT}}', '{{ASOCIAT_N_EMISA_DE}}', '{{ASOCIAT_N_VALABILA_DE_LA}}', '{{ASOCIAT_N_VALABILA_PANA_LA}}', '{{ASOCIAT_N_COTA_PARTICIPARE}}',
       '{{CAPITAL_SOCIAL_ASOCIAT_N}}', '{{PARTI_SOCIALE_ASOCIAT_N}}',
     ],
   },
@@ -71,7 +74,7 @@ const GUIDE_SECTIONS = [
     items: [
       '{{#ASOCIATI}} ... {{/ASOCIATI}} — paragraful/paragrafele dintre cele două marcaje se repetă o dată pentru fiecare asociat',
       '{{#ADMINISTRATORI}} ... {{/ADMINISTRATORI}} — la fel, pentru administratori',
-      'În interiorul {{#ASOCIATI}}/{{#ADMINISTRATORI}}: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{SERIE_NUMAR}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
+      'În interiorul {{#ASOCIATI}}/{{#ADMINISTRATORI}}: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{SERIE_NUMAR}}, {{SERIE_ACT}}, {{NR_ACT}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
       '{{INDEX}} — numărul de ordine (1, 2, 3…) în cadrul blocului',
       '{{CAPITAL_SOCIAL}}, {{PARTI_SOCIALE}} — doar în {{#ASOCIATI}}, calculate din cota asociatului',
       '{{#CAEN_SECUNDARE}} {{CAEN}} {{/CAEN_SECUNDARE}} — un rând per activitate secundară CAEN (nelimitat); dacă nu există niciuna, tot blocul dispare din document',
@@ -118,7 +121,10 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   const [gdocOutput, setGdocOutput] = useState('')
   const [gdocTip, setGdocTip] = useState<TipTemplate>('universal')
 
-  const handleDocxFileSelect = async (f: File) => {
+  // Un document fără etichete (dar cu locuri libere „……”): aplicația propune singură câmpurile din context (BlankImportModal).
+  const [blankFile, setBlankFile] = useState<File | null>(null)
+
+  const handleDocxFileSelect = async (f: File, offerBlanks = true) => {
     setDocxFile(f)
     setDocxName(prev => prev || f.name.replace(/\.[^.]+$/, ''))
     setDocxOutput(prev => prev || `${f.name.replace(/\.[^.]+$/, '')}_completat.docx`)
@@ -127,6 +133,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
       const { placeholders, clauses } = await detectPlaceholders(f)
       setDocxPlaceholders(placeholders)
       setDocxClauses(clauses)
+      if (placeholders.length === 0 && offerBlanks) setBlankFile(f)
     } catch {
       setDocxPlaceholders([])
       setDocxClauses([])
@@ -168,6 +175,23 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     } finally {
       setSaving(false)
     }
+  }
+
+  // Șablon creat din locuri libere: se întoarce în formularul de adăugare, cu un mesaj clar și cursorul pe „Nume șablon”;
+  // rămâne doar să completezi numele și secțiunea (tipul), apoi „Salvează șablon”.
+  const [justImported, setJustImported] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const showImportedTemplate = async (file: File) => {
+    setView('add')
+    setAddTab('docx')
+    setJustImported(true)
+    setDocxName(file.name.replace(/\.[^.]+$/, ''))
+    await handleDocxFileSelect(file, false)
+    setTimeout(() => {
+      nameInputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      nameInputRef.current?.focus()
+      nameInputRef.current?.select()
+    }, 80)
   }
 
   // Alege șablonul prin Google Picker (drive.file): id-ul nu se mai lipește de mână, iar aplicația primește acces la el.
@@ -231,7 +255,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     URL.revokeObjectURL(url)
   }
 
-  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxTip('universal') }
+  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxTip('universal'); setJustImported(false) }
   const resetGdocForm = () => {
     setGdocPickedName(''); setGdocName(''); setGdocDocId(''); setGdocDesc(''); setGdocOutput(''); setGdocTip('universal') }
 
@@ -404,6 +428,14 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
 
               {addTab === 'docx' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '.875rem' }}>
+                  {justImported && docxFile && (
+                    <div role="status" style={{ background: 'var(--g50)', border: '1.5px solid var(--g300)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', fontSize: '.85rem', color: 'var(--s700)', lineHeight: 1.5 }}>
+                      <strong style={{ color: 'var(--g700)' }}>✓ Șablonul cu etichete a fost creat din „{docxFile.name}”.</strong>
+                      <br />
+                      Mai ai de făcut doar doi pași: completează mai jos <strong>Nume șablon</strong> și <strong>Tip șablon</strong> (secțiunea:
+                      Universal, Persoană fizică sau Persoană juridică), apoi apasă <strong>„💾 Salvează șablon”</strong>. Abia după aceea apare în „Șabloanele mele”.
+                    </div>
+                  )}
                   {/* File picker */}
                   <div className="field">
                     <label className="field-label">Fișier .docx</label>
@@ -436,12 +468,16 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
                     </div>
                   )}
                   {!detecting && docxFile && docxPlaceholders.length === 0 && (
-                    <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Nu s-au detectat placeholder-e. Asigură-te că folosești formatul <code style={{ background: 'var(--s100)', padding: '.1rem .3rem', borderRadius: 3 }}>{'{{CAMP}}'}</code>.</div>
+                    <div style={{ fontSize: '.8rem', color: 'var(--s400)', display: 'flex', flexDirection: 'column', gap: '.375rem', alignItems: 'flex-start' }}>
+                      <span>Documentul nu are etichete <code style={{ background: 'var(--s100)', padding: '.1rem .3rem', borderRadius: 3 }}>{'{{CAMP}}'}</code>. Dacă are locuri libere („……”, „.....”), aplicația le poate recunoaște din context.</span>
+                      <button className="btn btn-outline-primary btn-sm" onClick={() => setBlankFile(docxFile)}>Recunoaște locurile libere</button>
+                    </div>
                   )}
 
                   <div className="field">
                     <label className="field-label">Nume șablon *</label>
-                    <input className="field-input" value={docxName} onChange={e => setDocxName(e.target.value)} placeholder="ex: Contract de asociere" />
+                    <input ref={nameInputRef} className="field-input" value={docxName} onChange={e => setDocxName(e.target.value)} placeholder="ex: Contract de asociere"
+                      style={justImported ? { borderColor: 'var(--p500)', boxShadow: '0 0 0 3px var(--p100)' } : undefined} />
                   </div>
                   <div className="field">
                     <label className="field-label">Descriere (opțional)</label>
@@ -528,6 +564,18 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
             </div>
           )}
         </div>
+
+        {blankFile && (
+          <BlankImportModal
+            file={blankFile}
+            onClose={() => setBlankFile(null)}
+            onToast={onToast}
+            onDone={tpl => {
+              setBlankFile(null)
+              void showImportedTemplate(tpl)                 // formularul de salvare: nume + secțiune, apoi „Salvează șablon”
+            }}
+          />
+        )}
     </Modal>
   )
 }

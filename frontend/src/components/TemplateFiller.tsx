@@ -5,7 +5,7 @@ import type { IDFields, DriveTarget } from '../lib/api'
 import type { BuiltinTemplate, ClauseMeta, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
-import { buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields } from '../lib/placeholders'
+import { buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel } from '../lib/placeholders'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
@@ -156,6 +156,10 @@ export default function TemplateFiller({
   // Asociați existenți (client.asociati) sau doar scanați, nesalvați încă —
   // aceeași listă folosită deja la umplerea {{#ASOCIATI}}.
   const asociatiCount = repeatGroups.ASOCIATI?.length ?? 0
+  // Câmpuri completate manual la generare ({{CAMP_…}}): valori per șablon, peste cele calculate din client.
+  const [manualValues, setManualValues] = useState<Record<string, Record<string, string>>>({})
+  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}) })
+
   // Variantele „a/b” din document (sex, număr, categorie) le alege serverul; aici pregătim contextul din valorile finale.
   const variantsFor = (finalReplacements: Record<string, string>) =>
     buildVariantContext({ client, scannedPersons, idFields: fields, replacements: finalReplacements })
@@ -261,7 +265,7 @@ export default function TemplateFiller({
     try {
       const outputName = resolveOutputName(tpl)
       const cs = clauseState[tpl.id]
-      let mergedReplacements = cs ? { ...replacements, ...cs.extraReplacements } : replacements
+      let mergedReplacements = { ...repl(tpl.id), ...(cs?.extraReplacements ?? {}) }
       const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
       let rowGroups: Record<string, Record<string, string>[]> | undefined
       if (decl) {
@@ -317,7 +321,7 @@ export default function TemplateFiller({
       const cs = clauseState[key]
       // Copie proprie, mereu — "replacements" e obiectul partajat de toate
       // șabloanele randate în același pas, nu trebuie mutat direct.
-      const mergedReplacements = { ...replacements, ...(cs?.extraReplacements ?? {}) }
+      const mergedReplacements = { ...repl(key), ...(cs?.extraReplacements ?? {}) }
       const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
 
       if (b.key === 'act_constitutiv') {
@@ -480,7 +484,7 @@ export default function TemplateFiller({
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
     if (tpl.clauses?.length || (tpl.type === 'docx' && isDeclaratieTemplate(tpl))) { handleGenerateDocx(tpl); return }
 
-    const { missing } = checkReadiness(tpl.placeholders ?? [], replacements, repeatGroups)
+    const { missing } = checkReadiness(tpl.placeholders ?? [], repl(tpl.id), repeatGroups)
     if (missing.length > 0) {
       setPendingGenerate({ tpl, missing })
     } else {
@@ -494,7 +498,7 @@ export default function TemplateFiller({
   // panoul de detaliu (blocat dur de ClauseSelector.isComplete).
   const tryGenerateBuiltinSingle = (b: BuiltinTemplate) => {
     if (b.clauses.length > 0) { handleGenerateBuiltinDocx(b); return }
-    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), replacements, repeatGroups)
+    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), repl(builtinKey(b)), repeatGroups)
     if (missing.length > 0) {
       setPendingGenerate({ tpl: b, missing, isBuiltin: true })
     } else {
@@ -504,7 +508,7 @@ export default function TemplateFiller({
 
   const tryBatchGenerate = () => {
     const targets = selectedTemplates
-    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], replacements, repeatGroups).missing)
+    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], repl(t.id), repeatGroups).missing)
     const uniqueMissing = [...new Set(allMissing)]
     if (uniqueMissing.length > 0) {
       // Show confirmation using the first template as representative (batch flag)
@@ -579,9 +583,9 @@ export default function TemplateFiller({
 
   // Procentul de completare pentru afișarea pe rândul compact din listă —
   // aceeași sursă de adevăr ca renderReadiness, doar rezumată la un număr.
-  const readinessPct = (placeholders?: string[]): number | null => {
+  const readinessPct = (placeholders?: string[], id?: string): number | null => {
     if (!placeholders || placeholders.length === 0) return null
-    const { filled } = checkReadiness(placeholders, replacements, repeatGroups)
+    const { filled } = checkReadiness(placeholders, id ? repl(id) : replacements, repeatGroups)
     return Math.round((filled.length / placeholders.length) * 100)
   }
 
@@ -674,14 +678,30 @@ export default function TemplateFiller({
   // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
   const renderReadiness = (tpl: { id: string; placeholders?: string[] }) => {
     if (!tpl.placeholders || tpl.placeholders.length === 0) return null
-    const { filled, missing } = checkReadiness(tpl.placeholders, replacements, repeatGroups)
+    const { filled, missing } = checkReadiness(tpl.placeholders, repl(tpl.id), repeatGroups)
     const total = tpl.placeholders.length
     const pct = Math.round((filled.length / total) * 100)
     const isExpanded = expandedReadiness.has(tpl.id)
     const grouped = missing.length > 0 ? groupMissingFields(missing) : {}
+    // {{CAMP_NR_HOTARARE}} etc.: câmpuri care nu vin din client, ci se scriu aici la generare
+    const manualFields = tpl.placeholders.filter(isManualPlaceholder)
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+        {manualFields.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
+            <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De completat manual</div>
+            {manualFields.map(ph => (
+              <div className="field" key={ph}>
+                <label className="field-label" htmlFor={`manual-${tpl.id}-${ph}`}>{manualLabel(ph)}</label>
+                <input
+                  id={`manual-${tpl.id}-${ph}`} className="field-input" value={manualValues[tpl.id]?.[ph] ?? ''}
+                  onChange={e => setManualValues(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [ph]: e.target.value } }))}
+                />
+              </div>
+            ))}
+          </div>
+        )}
         {/* Progress bar row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
           <div style={{ flex: 1, height: 4, background: 'var(--s200)', borderRadius: 99, overflow: 'hidden' }}>
@@ -754,7 +774,7 @@ export default function TemplateFiller({
     const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
     const mismatch = isDeclaratie ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = isDeclaratie ? declPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b))
+    const pct = isDeclaratie ? declPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b), key)
     return (
       <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}${mismatch ? ' tf-row--na' : ''}`}>
         <button
@@ -789,7 +809,7 @@ export default function TemplateFiller({
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
     const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
-    const pct = isDecl ? declPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders)
+    const pct = isDecl ? declPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders, tpl.id)
     return (
       <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}${asociatiMismatch ? ' tf-row--na' : ''}`}>
         {!hasClauses && !isDecl && (

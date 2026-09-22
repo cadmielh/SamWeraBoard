@@ -16,8 +16,9 @@ MUST_IGNORE = [
     ".env", ".env.local", ".env.samwera-board-eu", "firebase-service-account.json",   # secrete/mediu (mediul se transmite din .env.<proiect>)
     "credentials.json", "token.json", ".emulator-data-google",         # chei și date reale de test
     "migrare.zip", "firestore-debug.log",
+    "fisiere_template/SabloaneAvocatTavi", "fisiere_template/3 Hot AGA_original.docx", "fisiere_template/Facturare_Sami_Adi.xlsx",   # documente reale ale unor clienți (CNP, adrese), nefolosite de aplicație
 ]
-MUST_SHIP = ["app.py", "main.py", "authz.py", "vault.py", "ratelimit.py", "variants.py", "doc_filler.py", "requirements.txt",
+MUST_SHIP = ["app.py", "main.py", "authz.py", "vault.py", "ratelimit.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
              "fisiere_template/registry.json", "fonts/DejaVuSans.ttf", "local_extractor.py"]
 
 

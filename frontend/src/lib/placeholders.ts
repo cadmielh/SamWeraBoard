@@ -2,7 +2,7 @@ import type { IDFields } from './api'
 import type { Client, Persoana, ScannedPerson } from '../types'
 import { persoanaToIDFields } from './idFields'
 import { parsePercent } from './cota'
-import { formatAdresa } from './adresa'
+import { formatAdresa, splitSerieNumar } from './adresa'
 import { personSex } from './sex'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
@@ -62,6 +62,13 @@ function persoanaToMap(p: Persoana, prefix: string): Record<string, string> {
   for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {
     out[`{{${prefix}_${key}}}`] = (p as unknown as Record<string, string>)[field as string] ?? ''
   }
+  // Seria și numărul actului, separat (pentru texte de tipul „CI seria …… nr. ……”)
+  const { serie, numar } = splitSerieNumar(p.serie_numar)
+  out[`{{${prefix}_SERIE_ACT}}`] = serie
+  out[`{{${prefix}_NR_ACT}}`] = numar
+  // Alias retro-compatibil: șabloane importate înainte de redenumirea SERIE → SERIE_ACT
+  // au tag-ul vechi scris literal în fișier; fără alias ar rămâne goale definitiv.
+  out[`{{${prefix}_SERIE}}`] = serie
   return out
 }
 
@@ -127,6 +134,9 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     out['{{SOCIETATE_CIF}}'] = client.codFiscal ?? ''
     out['{{SOCIETATE_NR_REG}}'] = client.nrRegistrul ?? ''
     out['{{SOCIETATE_SEDIU}}'] = client.sediuSocial ? formatAdresa(client.sediuSocial) : ''
+    // Pentru șabloane care cer județul separat („sediul în ……, jud. ……”) — fără județ, ca să nu apară de două ori.
+    out['{{SOCIETATE_SEDIU_FARA_JUDET}}'] = client.sediuSocial ? formatAdresa(client.sediuSocial, { includeJudet: false }) : ''
+    out['{{SOCIETATE_JUDET}}'] = client.sediuSocial?.judet ?? ''
     out['{{SOCIETATE_FORMA_JURIDICA}}'] = client.formaJuridica ?? ''
 
     if (client.capitalSocial != null) {
@@ -160,6 +170,9 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     adminiToUse.forEach((p, i) => {
       Object.assign(out, persoanaToMap(p, `ADMINISTRATOR_${i + 1}`))
     })
+    // Numele pe o singură linie, pentru fraze de tipul „în calitate de asociați X și Y au drepturile…”
+    out['{{ASOCIATI_LISTA}}'] = joinNames(asociatiToUse)
+    out['{{ADMINISTRATORI_LISTA}}'] = joinNames(adminiToUse)
   }
 
   // Membri familie IF
@@ -174,6 +187,22 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
   return out
 }
 
+/** Câmp completat manual la generare: {{CAMP_ORICE_NUME}} (ex. {{CAMP_NR_HOTARARE}}). */
+export const isManualPlaceholder = (ph: string): boolean => /^\{\{CAMP_[A-Z0-9_]+\}\}$/.test(ph)
+
+/** Titlul afișat pentru un câmp manual: {{CAMP_NR_HOTARARE}} → „Nr hotarare”. */
+export function manualLabel(ph: string): string {
+  const words = ph.replace(/^\{\{CAMP_|\}\}$/g, '').toLowerCase().replace(/_/g, ' ').trim()
+  return words ? words[0].toUpperCase() + words.slice(1) : 'Valoare'
+}
+
+/** „Ion Popescu”, „Ion Popescu și Ana Ionescu”, „A, B și C” (numele complete ale persoanelor, fără cele goale). */
+export function joinNames(persons: Persoana[]): string {
+  const names = persons.map(p => `${p.nume ?? ''} ${p.prenume ?? ''}`.trim()).filter(Boolean)
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} și ${names[names.length - 1]}`
+}
+
 function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number | null; includeCota?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {
@@ -183,6 +212,13 @@ function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number 
     if (key === 'COTA_PARTICIPARE' && !opts.includeCota) continue
     out[key] = (p as unknown as Record<string, string>)[field as string] ?? ''
   }
+  // Seria și numărul actului, separat — la fel ca la persoanaToMap (poziții numerotate), pentru blocurile
+  // {{#ASOCIATI}}/{{#ADMINISTRATORI}} generate din documente fără etichete (vezi blanks.py: SERIE_ACT/NR_ACT).
+  const { serie, numar } = splitSerieNumar(p.serie_numar)
+  out.SERIE_ACT = serie
+  out.NR_ACT = numar
+  // Alias retro-compatibil: vezi persoanaToMap mai sus.
+  out.SERIE = serie
   if (opts.capitalSocialTotal != null) {
     const capitalAsociat = opts.capitalSocialTotal * parsePercent(p.cotaParticipare) / 100
     out.CAPITAL_SOCIAL = formatNumber(capitalAsociat)
@@ -215,7 +251,10 @@ export interface ReadinessResult {
   missing: string[]
 }
 
-const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN'])
+// SERIE_ACT/NR_ACT: calculate separat (splitSerieNumar), nu vin din PERSOANA_FIELD_MAP — trebuie adăugate explicit,
+// altfel checkReadiness nu le recunoaște ca fiind câmpuri per-persoană dintr-un {{#ASOCIATI}}/{{#ADMINISTRATORI}}
+// și le raportează mereu ca lipsă, chiar și cu Serie & Nr. CI completat la toate persoanele.
+const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'SERIE_ACT', 'NR_ACT', 'SERIE'])
 
 export function checkReadiness(
   placeholders: string[],
@@ -262,6 +301,10 @@ const FRIENDLY_FIELD: Record<string, string> = {
   LOCUL_NASTERII: 'Locul nașterii',
   CETATENIA: 'Cetățenia',
   SERIE_NUMAR: 'Serie & Nr. CI',
+  SERIE_ACT: 'Serie CI',
+  SERIE: 'Serie CI',
+  NR_ACT: 'Nr. CI',
+  SEDIU_FARA_JUDET: 'Sediul (fără județ)',
   EMISA_DE: 'Emisă de',
   VALABILA_DE_LA: 'Valabilă de la',
   VALABILA_PANA_LA: 'Valabilă până la',

@@ -343,7 +343,88 @@ def _has_unresolved_numbered_tag(text: str, max_idx: dict[str, int]) -> bool:
     return False
 
 
-def _clean_unresolved_numbered_positions(doc: Document, replacements: dict[str, str]) -> None:
+_PLURAL_RO = {"ASOCIAT": "asociați", "ADMINISTRATOR": "administratori", "MEMBRU_IF": "membri de familie"}
+
+
+def _numbered_positions_in(paragraphs) -> dict[str, set[int]]:
+    """(prefix -> {N, ...}) pentru toate etichetele numerotate găsite ca text literal în paragrafele date."""
+    out: dict[str, set[int]] = {}
+    for p in paragraphs:
+        text = "".join(r.text for r in p.runs)
+        for m in _NUMBERED_TAG_RE.finditer(text):
+            out.setdefault(m.group(1), set()).add(int(m.group(2)))
+    return out
+
+
+def _capacity_note_missing(prefix: str, template_max: int, have: int) -> str:
+    plural = _PLURAL_RO.get(prefix, prefix.lower())
+    return (f"Șablonul are text scris pentru {template_max} {plural}, dar sunt {have} — cei de la poziția "
+            f"{template_max + 1} în sus nu apar deloc în document. Verifică manual sau folosește un șablon cu bloc repetitiv "
+            f"(se adaptează automat la orice număr).")
+
+
+def _capacity_note_left_visible(prefix: str, position: int) -> str:
+    plural = _PLURAL_RO.get(prefix, prefix.lower())
+    return (f"Șablonul are un paragraf scris pentru {position} {plural}, dar nu toate datele sunt disponibile — o parte din "
+            f"text a rămas vizibilă ca etichetă necompletată ({{...}}) în document, ca să nu dispară datele deja completate. "
+            f"Verifică documentul înainte de a-l folosi.")
+
+
+#  Atribut XML temporar (fără spațiu de nume — invalid pentru schema OOXML, dar șters mereu înainte de salvare,
+#  deci nu ajunge niciodată în fișierul final) folosit ca marcaj stabil pentru un paragraf anume. Identitatea
+#  Python a elementelor lxml NU e stabilă între interogări repetate ale arborelui (doc.paragraphs poate întoarce
+#  un proxy Python nou pentru același nod XML la fiecare apel, deci id(paragraph._p) diferă de la o etapă la
+#  alta) — un atribut scris direct pe nodul XML rămâne vizibil oricărui proxy care îl citește ulterior.
+_PROTECT_ATTR = "swbProtected"
+
+
+def _protected_numbered_paragraphs(all_paragraphs, max_idx: dict[str, int]) -> dict[str, str]:
+    """Marchează (vezi _PROTECT_ATTR) paragrafele care amestecă o poziție rezolvată (N <= max) cu una nerezolvată
+    (N > max) a aceluiași prefix — ștergerea întregului paragraf ar arunca și persoana deja rezolvată din el.
+    Întoarce {marcaj: mesaj}, verificat mai târziu la curățare."""
+    notes: dict[str, str] = {}
+    n = 0
+    for p in all_paragraphs:
+        text = "".join(r.text for r in p.runs)
+        seen: dict[str, set[int]] = {}
+        for m in _NUMBERED_TAG_RE.finditer(text):
+            seen.setdefault(m.group(1), set()).add(int(m.group(2)))
+        for prefix, ns in seen.items():
+            mx = max_idx.get(prefix, 0)
+            if any(nn <= mx for nn in ns) and any(nn > mx for nn in ns):
+                n += 1
+                marker = f"p{n}"
+                p._p.set(_PROTECT_ATTR, marker)
+                notes[marker] = _capacity_note_left_visible(prefix, mx)
+                break  # un singur marcaj per paragraf e suficient
+    return notes
+
+
+def _strip_protect_markers(all_paragraphs) -> None:
+    for p in all_paragraphs:
+        if p._p.get(_PROTECT_ATTR) is not None:
+            del p._p.attrib[_PROTECT_ATTR]
+
+
+def _all_paragraphs(doc: Document) -> list:
+    """Corp + tabele (inclusiv imbricate) + antete/subsoluri — același univers peste care rulează completarea."""
+    out = list(doc.paragraphs)
+    for table in _iter_all_tables(doc):
+        for row in table.rows:
+            for cell in row.cells:
+                out.extend(cell.paragraphs)
+    for section in doc.sections:
+        for part in (section.header, section.first_page_header, section.even_page_header,
+                     section.footer, section.first_page_footer, section.even_page_footer):
+            if part is not None:
+                out.extend(part.paragraphs)
+    return out
+
+
+def _clean_unresolved_numbered_positions(
+    doc: Document, replacements: dict[str, str], protected: dict[str, str] | None = None,
+    capacity_warnings: set[str] | None = None,
+) -> None:
     """
     Known numbered tags (ASOCIAT_N_*, ADMINISTRATOR_N_*, MEMBRU_IF_N_*) that
     reference a position beyond how many actually exist — e.g. {{ASOCIAT_3_NUME}}
@@ -355,10 +436,20 @@ def _clean_unresolved_numbered_positions(doc: Document, replacements: dict[str, 
         isn't structurally broken.
     Unrecognized/misspelled tags are left untouched, so they stay visible —
     a clear signal something needs fixing before the document is final.
+
+    Exception: a paragraph marked in `protected` (see `_protected_numbered_paragraphs`, computed before the
+    flat replace pass, since afterwards a resolved position is no longer literal text to detect) also contains
+    a *resolved* position of the same prefix — deleting it wholesale would silently discard that resolved
+    person's data along with the unresolved leftover. It's left as-is (visible `{{...}}`) and reported instead.
     """
     max_idx = _max_numbered_index(replacements)
     if not max_idx:
         return
+    protected = protected or {}
+
+    def note_for(paragraph) -> str | None:
+        marker = paragraph._p.get(_PROTECT_ATTR)
+        return protected.get(marker) if marker else None
 
     def delete_paragraph(paragraph) -> None:
         p = paragraph._p
@@ -366,33 +457,42 @@ def _clean_unresolved_numbered_positions(doc: Document, replacements: dict[str, 
         if parent is not None:
             parent.remove(p)
 
-    for paragraph in list(doc.paragraphs):
-        text = "".join(run.text for run in paragraph.runs)
-        if _has_unresolved_numbered_tag(text, max_idx):
+    def handle_deletable(paragraphs) -> None:
+        for paragraph in list(paragraphs):
+            text = "".join(run.text for run in paragraph.runs)
+            if not _has_unresolved_numbered_tag(text, max_idx):
+                continue
+            note = note_for(paragraph)
+            if note:
+                if capacity_warnings is not None:
+                    capacity_warnings.add(note)
+                continue
             delete_paragraph(paragraph)
+
+    handle_deletable(doc.paragraphs)
 
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     text = "".join(run.text for run in paragraph.runs)
-                    if _has_unresolved_numbered_tag(text, max_idx):
-                        for run in paragraph.runs:
-                            run.text = ""
+                    if not _has_unresolved_numbered_tag(text, max_idx):
+                        continue
+                    note = note_for(paragraph)
+                    if note:
+                        if capacity_warnings is not None:
+                            capacity_warnings.add(note)
+                        continue
+                    for run in paragraph.runs:
+                        run.text = ""
 
     for section in doc.sections:
         for header in [section.header, section.first_page_header, section.even_page_header]:
             if header is not None:
-                for paragraph in list(header.paragraphs):
-                    text = "".join(run.text for run in paragraph.runs)
-                    if _has_unresolved_numbered_tag(text, max_idx):
-                        delete_paragraph(paragraph)
+                handle_deletable(header.paragraphs)
         for footer in [section.footer, section.first_page_footer, section.even_page_footer]:
             if footer is not None:
-                for paragraph in list(footer.paragraphs):
-                    text = "".join(run.text for run in paragraph.runs)
-                    if _has_unresolved_numbered_tag(text, max_idx):
-                        delete_paragraph(paragraph)
+                handle_deletable(footer.paragraphs)
 
 
 def fill_docx(
@@ -403,6 +503,7 @@ def fill_docx(
     row_groups: dict[str, list[dict[str, str]]] | None = None,
     variant_ctx: dict | None = None,
     variant_warnings: set | None = None,
+    capacity_warnings: set | None = None,
 ) -> bytes:
     """
     Fill a .docx template by replacing {{PLACEHOLDER}} markers.
@@ -422,10 +523,28 @@ def fill_docx(
     sequentially over just the kept ones. Templates without that section are
     unaffected regardless of `selected_clauses`.
 
+    `capacity_warnings`, if given, collects Romanian sentences (mutated set) when a numbered-position
+    template (ASOCIAT_N_*, ADMINISTRATOR_N_*, ...) doesn't have room for everyone: either some people
+    have no matching position anywhere in the template (silently missing otherwise — see
+    _capacity_note_missing), or a paragraph mixing a resolved and an unresolved position was kept
+    instead of deleted, to avoid losing the resolved person's data (see _capacity_note_left_visible).
+    A template built with {{#ASOCIATI}}/{{#ADMINISTRATORI}} blocks isn't affected — it already scales.
+
     Returns the filled document as bytes.
     """
     doc = Document(io.BytesIO(template_bytes))
     ctx = variants.sanitize_ctx(variant_ctx) if variant_ctx is not None else None
+
+    # Câte poziții numerotate are ȘABLONUL ORIGINAL (înainte de orice expandare) pentru fiecare prefix — dacă
+    # clientul are mai multe persoane decât poziții scrise în șablon, cele în plus n-ar apărea nicăieri, fără
+    # niciun semn vizibil. Un șablon care folosește exclusiv {{#ASOCIATI}}/{{#ADMINISTRATORI}} (fără nicio
+    # poziție numerotată) nu are această problemă — se sare peste verificare pentru acel prefix.
+    if capacity_warnings is not None:
+        template_positions = _numbered_positions_in(_all_paragraphs(doc))
+        for prefix, have in _max_numbered_index(replacements).items():
+            template_max = template_positions.get(prefix)
+            if template_max and have > max(template_max):
+                capacity_warnings.add(_capacity_note_missing(prefix, max(template_max), have))
 
     if groups:
         _expand_repeat_blocks(doc, groups, ctx, variant_warnings)
@@ -433,6 +552,11 @@ def fill_docx(
     _expand_repeat_table_rows(doc, row_groups)
 
     _expand_clause_library(doc, selected_clauses)
+
+    # Paragrafele care amestecă o poziție rezolvată cu una nerezolvată a aceluiași prefix — calculat ACUM, cât
+    # etichetele numerotate sunt încă text literal (după înlocuire, poziția rezolvată nu mai lasă nicio urmă
+    # de identificat) — protejate mai jos de ștergere, la _clean_unresolved_numbered_positions.
+    protected_paragraphs = _protected_numbered_paragraphs(_all_paragraphs(doc), _max_numbered_index(replacements))
 
     # Variante „a/b” (sex, număr, categorie) — înaintea înlocuirii etichetelor, ca să se vadă persoanele la care se referă
     if ctx is not None:
@@ -462,7 +586,9 @@ def fill_docx(
                 for paragraph in footer.paragraphs:
                     _replace_in_paragraph(paragraph, replacements)
 
-    _clean_unresolved_numbered_positions(doc, replacements)
+    _clean_unresolved_numbered_positions(doc, replacements, protected_paragraphs, capacity_warnings)
+    if protected_paragraphs:
+        _strip_protect_markers(_all_paragraphs(doc))  # marcaj intern, nu trebuie să ajungă în fișierul salvat
 
     out = io.BytesIO()
     doc.save(out)

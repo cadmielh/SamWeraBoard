@@ -37,6 +37,7 @@ _NOT_ABOUT_PERSON = {"emis", "eliberat", "valabil", "expirat", "intocmit", "reda
 
 _SEX_PAIRS = {  # formă masculină → formă feminină (comparație fără diacritice, minuscule)
     "domnul": "doamna", "domnului": "doamnei", "dumnealui": "dumneaei", "el": "ea", "dansul": "dansa",
+    "asociatului": "asociatei", "asociatul": "asociata",
 }
 _HONORIFICS = {"domnul", "doamna", "domnului", "doamnei", "dumnealui", "dumneaei", "subsemnatul", "subsemnata"}
 
@@ -45,6 +46,7 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("nemultumit", "nemultumiti"): "asociati", ("desemnat", "desemnati"): "asociati",
     ("administratorul", "administratorii"): "administratori", ("administrator", "administratori"): "administratori",
     ("administratorului", "administratorilor"): "administratori",
+    ("are", "au"): "asociati", ("este", "sunt"): "asociati", ("acesta", "acestia"): "asociati",
 }
 
 # „asociat unic/asociați”, „asociatului unic/ asociaților”, „asociatul/ asociații”, „ASOCIAT UNIC/ASOCIAȚI”
@@ -168,8 +170,12 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
         a, b = m.group(1), m.group(2)
         na, nb = _norm(a), _norm(b)
         whole = m.group(0)
-        if (na, nb) in _NUMBER_TOKENS:
-            i = by_count(ctx.get({"asociati": "asociati", "administratori": "administratori"}[_NUMBER_TOKENS[(na, nb)]]))
+        if (na, nb) in _NUMBER_TOKENS or (nb, na) in _NUMBER_TOKENS:
+            reversed_order = (na, nb) not in _NUMBER_TOKENS           # „au/are”: pluralul apare primul
+            domain = _NUMBER_TOKENS[(nb, na) if reversed_order else (na, nb)]
+            i = by_count(ctx.get(domain))
+            if i is not None and reversed_order:
+                i = 1 - i
             add(Choice(m.start(), m.end(), None if i is None else _match_case(whole, (a, b)[i]), "number"))
             continue
         if {na, nb} == {"social", "profesional"}:

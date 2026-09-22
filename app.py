@@ -42,6 +42,7 @@ import ratelimit
 import local_extractor
 import azure_extractor
 from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx
+import blanks
 from pdf_filler import fill_pdf, list_pdf_fields
 
 # Pre-load EasyOCR models at container startup so requests don't time out waiting
@@ -82,7 +83,7 @@ app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB — OCR uploads onl
 _cors_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 CORS(app, origins=_cors_origins,
      allow_headers=["Content-Type", "X-Firebase-Token", "X-Workspace-Id"],
-     expose_headers=["Content-Disposition", "Retry-After", "X-Variant-Warnings"])
+     expose_headers=["Content-Disposition", "Retry-After", "X-Variant-Warnings", "X-Capacity-Warnings"])
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 
@@ -360,9 +361,10 @@ def fill_docx_route():
         except ValueError:
             return jsonify({"error": "invalid_ctx"}), 400
         variant_warnings: set = set()
+        capacity_warnings: set = set()
         # Cheile trimise de frontend sunt deja în forma {{CAMP}} — nu se re-împachetează.
         replacements = {k: v for k, v in fields.items() if v}
-        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups, variant_ctx, variant_warnings)
+        filled_bytes = fill_docx(file_bytes, replacements, groups, selected_clauses, row_groups, variant_ctx, variant_warnings, capacity_warnings)
     except Exception as e:
         return _server_error("Fill failed", e)
 
@@ -372,6 +374,9 @@ def fill_docx_route():
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     if variant_warnings:
         resp.headers["X-Variant-Warnings"] = json.dumps(sorted(variant_warnings)[:20])   # persoane cu sex necunoscut (ASCII)
+    if capacity_warnings:
+        # propoziții complete (deja în română), spre deosebire de X-Variant-Warnings care trimite doar coduri
+        resp.headers["X-Capacity-Warnings"] = json.dumps(sorted(capacity_warnings)[:10], ensure_ascii=True)
     return resp
 
 
@@ -450,6 +455,66 @@ def get_placeholders():
         "placeholders": list_placeholders_in_docx(file_bytes),
         "clauses": list_clauses_in_docx(file_bytes),
     })
+
+
+# ── Șabloane fără etichete: locuri libere („……”) recunoscute din context (vezi blanks.py) ────────────────
+_MAX_TEMPLATE_BYTES = 5 * 1024 * 1024
+
+
+def _read_docx_upload():
+    f = request.files.get("template")
+    if f is None or Path(f.filename or "").suffix.lower() != ".docx":
+        return None
+    data = f.read(_MAX_TEMPLATE_BYTES + 1)
+    return data if 0 < len(data) <= _MAX_TEMPLATE_BYTES else None
+
+
+@app.route("/template/blanks", methods=["POST"])
+def template_blanks():
+    """Locurile libere dintr-un .docx, cu contextul și câmpul propus pentru fiecare (nimic nu se aplică aici)."""
+    try:
+        _verify(limit="fill")
+    except PermissionError as e:
+        return _auth_error(e)
+    data = _read_docx_upload()
+    if data is None:
+        return jsonify({"error": "invalid_template"}), 400
+    try:
+        found = blanks.analyze(data)
+        return jsonify({
+            "blanks": found, "groups": blanks.detect_groups(found),
+            "companyFields": blanks.COMPANY_FIELDS, "personFields": blanks.PERSON_FIELDS,
+        })
+    except Exception as e:
+        return _server_error("Analiza a eșuat", e)
+
+
+@app.route("/template/blanks/apply", methods=["POST"])
+def template_blanks_apply():
+    """Înlocuiește locurile libere cu etichetele alese de utilizator ({id: {{ETICHETĂ}}}) și întoarce șablonul rezultat."""
+    try:
+        _verify(limit="fill")
+    except PermissionError as e:
+        return _auth_error(e)
+    data = _read_docx_upload()
+    if data is None:
+        return jsonify({"error": "invalid_template"}), 400
+    try:
+        raw = json.loads(request.form.get("choices", "{}"))
+        choices = {int(k): v for k, v in raw.items() if blanks.valid_tag(v)}
+    except (ValueError, AttributeError):
+        return jsonify({"error": "invalid_choices"}), 400
+    try:
+        groups_raw = json.loads(request.form.get("groups", "{}"))
+        group_choices = {int(k): v for k, v in groups_raw.items() if v in ("repeat", "fixed")}
+    except (ValueError, AttributeError):
+        return jsonify({"error": "invalid_groups"}), 400
+    try:
+        out = blanks.apply(data, choices, group_choices)
+    except Exception as e:
+        return _server_error("Aplicarea a eșuat", e)
+    return send_file(io.BytesIO(out), as_attachment=True, download_name="sablon.docx",
+                     mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 _ANAF_URL        = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
