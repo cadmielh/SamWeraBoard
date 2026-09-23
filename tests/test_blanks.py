@@ -145,3 +145,57 @@ def test_actul_constitutiv_real_e_recunoscut_aproape_complet():
     found = blanks.analyze((LOCAL / "ACTUL CONSTITUTIV.docx").read_bytes())
     manual = [f for f in found if f["scope"] == "manual"]
     assert len(found) > 60 and len(manual) <= 3, (len(found), [m["tag"] for m in manual])
+
+
+# ── câmpuri manuale cu etichetă curată (nu ghicită) — „a câte …. pagini”, „…… exemplare” ────────────────────
+def test_numar_de_pagini_devine_camp_manual_cu_eticheta_curata():
+    """Numărul de pagini nu se poate calcula automat (paginarea reală ține de motorul de randare — Word,
+    LibreOffice —, nu de conținutul .docx), deci rămâne completat manual — dar cu etichetă clară, nu ghicită
+    din ultimele cuvinte dinainte de loc liber."""
+    raw = make_doc(["în 2 exemplare originale, a câte …. pagini, fiind semnat azi …….-----"])
+    found = blanks.analyze(raw)
+    pagini = [f for f in found if f["label"] == "Număr de pagini"]
+    assert len(pagini) == 1 and pagini[0]["scope"] == "manual" and pagini[0]["confidence"] == "high"
+    assert pagini[0]["tag"] == "{{CAMP_NUMAR_DE_PAGINI}}"
+
+    # exact tiparul din documentul real avocatului: „…. pagini” — elipsă + un punct literal rămas lipit
+    tpl = blanks.apply(raw, {pagini[0]["id"]: pagini[0]["tag"]})
+    out = fill_docx(tpl, {"{{CAMP_NUMAR_DE_PAGINI}}": "5"})
+    text = Document(io.BytesIO(out)).paragraphs[0].text
+    assert "5 pagini" in text and "5. pagini" not in text     # fără punctul rătăcit din elipsa incompletă
+
+
+def test_numar_de_exemplare_devine_camp_manual_cu_eticheta_curata():
+    raw = make_doc(["Redactat prin grija asociaților în …… exemplare originale, a câte 3 pagini."])
+    found = blanks.analyze(raw)
+    exemplare = [f for f in found if f["label"] == "Număr de exemplare"]
+    assert len(exemplare) == 1 and exemplare[0]["scope"] == "manual" and exemplare[0]["confidence"] == "high"
+    assert exemplare[0]["tag"] == "{{CAMP_NUMAR_DE_EXEMPLARE}}"
+
+
+# ── puncte literale rămase lipite de o elipsă incompletă („….,”, „….. jud”) ──────────────────────────────────
+def test_punctele_ramase_dupa_elipsa_nu_apar_in_documentul_completat():
+    """Documentul real al avocatului are des „….,” / „….. jud” — autorul a tastat mai multe puncte decât a
+    convertit Word în elipsă. Dacă propoziția chiar continuă după (literă mică sau virgulă), punctele fac
+    parte din locul liber și trebuie înghițite — altfel rămân vizibile în text („cetătean romana., născut”).
+    (Un punct rămas chiar la finalul paragrafului, fără nimic după, e ambiguu — nu se atinge, ca să nu riște
+    să înghită vreodată un punct real de sfârșit de propoziție; vezi testul următor.)"""
+    raw = make_doc(["……, cetătean …., născut la data de …… în ….. jud. Cluj, domiciliat/ă în ……, adresa reședinței."])
+    found = blanks.analyze(raw)
+    tpl = blanks.apply(raw, {f["id"]: f["tag"] for f in found})
+    out = fill_docx(tpl, {f["tag"]: "X" for f in found})
+    text = Document(io.BytesIO(out)).paragraphs[0].text
+    assert ".," not in text and "X. jud" not in text and "X. Cluj" not in text
+    assert "cetătean X, născut" in text and "în X jud. Cluj" in text
+
+
+def test_punctul_final_de_propozitie_dupa_elipsa_ramane_neschimbat():
+    """Spre deosebire de cazul de mai sus: dacă după puncte urmează literă MARE (propoziție nouă) sau
+    paragraful se termină acolo, punctul e chiar sfârșit de propoziție — nu se atinge."""
+    raw = make_doc(["Reprezentantul legal va fi asociatul ……. Reprezentarea este generală."])
+    found = blanks.analyze(raw)
+    assert len(found) == 1
+    tpl = blanks.apply(raw, {found[0]["id"]: found[0]["tag"]})
+    out = fill_docx(tpl, {found[0]["tag"]: "Popescu Ion"})
+    text = Document(io.BytesIO(out)).paragraphs[0].text
+    assert text == "Reprezentantul legal va fi asociatul Popescu Ion. Reprezentarea este generală."

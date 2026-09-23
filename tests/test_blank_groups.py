@@ -245,16 +245,15 @@ def test_lista_scalabila_functioneaza_la_1_2_si_3_persoane():
         assert lista in Document(io.BytesIO(out)).paragraphs[0].text and "{{" not in Document(io.BytesIO(out)).paragraphs[0].text
 
 
-def test_actul_constitutiv_real_recunoaste_ambele_liste_de_asociati():
-    """Documentare a unui caz real: p7 (după lista de identitate completă, „controlul se exercită de …… si ……”)
-    și p31 („În calitate de asociati …… si …… au drepturile”) — ambele deveneau poziții fixe (2 locuri, fără loc
-    pentru un al treilea asociat); acum devin ASOCIATI_LISTA."""
+def test_actul_constitutiv_real_recunoaste_lista_de_asociati():
+    """Documentare a unui caz real: p31 („În calitate de asociati …… si …… au drepturile”) — devenea poziții
+    fixe (2 locuri, fără loc pentru un al treilea asociat); acum devine ASOCIATI_LISTA."""
     raw = (Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate" / "ACTUL CONSTITUTIV.docx")
     if not raw.exists():
         return
     found = blanks.analyze(raw.read_bytes())
     lista = [f for f in found if f["field"] == "ASOCIATI_LISTA"]
-    assert len(lista) == 2
+    assert len(lista) == 1
 
 
 # ── sediul defalcat (localitate + județ separat) vs. întreg ────────────────────────────────────────────────────
@@ -275,13 +274,16 @@ def test_sediul_intreg_fara_judet_separat_ramane_campul_complet():
     assert [f["field"] for f in found] == ["SOCIETATE_SEDIU"]
 
 
-def test_actul_constitutiv_real_are_sediul_defalcat():
+def test_actul_constitutiv_real_are_sediul_intreg():
+    """Sediul e scris ca un singur loc liber („îşi are sediul în ………….”), fără județ defalcat separat alături —
+    rămâne SOCIETATE_SEDIU complet. Un SOCIETATE_JUDET apare separat, la p17 (banca „de pe teritoriul jud.……”),
+    fără legătură cu sediul."""
     raw = Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate" / "ACTUL CONSTITUTIV.docx"
     if not raw.exists():
         return
     found = blanks.analyze(raw.read_bytes())
     fields = [f["field"] for f in found if f["field"] in ("SOCIETATE_SEDIU", "SOCIETATE_SEDIU_FARA_JUDET", "SOCIETATE_JUDET")]
-    assert fields[:2] == ["SOCIETATE_SEDIU_FARA_JUDET", "SOCIETATE_JUDET"]
+    assert fields == ["SOCIETATE_SEDIU", "SOCIETATE_JUDET"]
 
 
 # ── font ─────────────────────────────────────────────────────────────────────
@@ -315,21 +317,23 @@ def test_paragrafele_generate_pastreaza_fontul_sablonului_nu_cad_pe_cel_implicit
 
 
 # ── CAEN (obiectul de activitate), needitat de la firma-exemplu ───────────────
-def test_domeniul_si_activitatea_principala_needitate_devin_caen_1():
+def test_domeniul_si_activitatea_principala_needitate_devin_caen_domeniu_si_caen_1():
     """„Domeniul principal de activitate este: 953 Repararea ...” / „Activitatea principală este: 9531
-    Repararea ...” — needitate de la firma-exemplu (fără „……”) — devin {{CAEN_1}}, ca la șablonul de bază."""
+    Repararea ...” — needitate de la firma-exemplu (fără „……”) — devin {{CAEN_DOMENIU}} (grupa, 3 cifre) și
+    {{CAEN_1}} (clasa, 4 cifre) — două câmpuri distincte, aplicația derivă automat grupa din clasă."""
     raw = make_doc([
         "Art.7.- Domeniul principal de activitate este: 953 Repararea și întreținerea autovehiculelor ; -",
         "Activitatea principală este: 9531 Repararea și întreținerea autovehiculelor  ---------",
     ])
     found = blanks.analyze(raw)
-    assert [f["field"] for f in found] == ["CAEN_1", "CAEN_1"]
+    assert [f["field"] for f in found] == ["CAEN_DOMENIU", "CAEN_1"]
     assert all(f["confidence"] == "high" for f in found)
 
     tpl = blanks.apply(raw, {f["id"]: f["tag"] for f in found})
-    out = fill_docx(tpl, {"{{CAEN_1}}": "9531 - Repararea și întreținerea autovehiculelor"})
+    out = fill_docx(tpl, {"{{CAEN_DOMENIU}}": "953 - Repararea și întreținerea autovehiculelor",
+                          "{{CAEN_1}}": "9531 - Repararea și întreținerea autovehiculelor"})
     texts = [p.text for p in Document(io.BytesIO(out)).paragraphs]
-    assert texts[0] == "Art.7.- Domeniul principal de activitate este: 9531 - Repararea și întreținerea autovehiculelor ; -"
+    assert texts[0] == "Art.7.- Domeniul principal de activitate este: 953 - Repararea și întreținerea autovehiculelor ; -"
     assert texts[1] == "Activitatea principală este: 9531 - Repararea și întreținerea autovehiculelor  ---------"
 
 
@@ -364,18 +368,22 @@ def test_lista_activitati_secundare_needitata_devine_grup_repetitiv_caen():
 
 
 def test_actul_constitutiv_real_recunoaste_sectiunea_caen_completa():
+    """Documentul are acum două forme, ambele recunoscute: „Domeniul principal de activitate este: ……” (loc
+    liber simplu, fără indiciu → {{CAEN_DOMENIU}}, grupa) și „Activitatea principală este: …(CAEN PRINCIPAL)……”
+    / „…(CAEN SECUNDARE)……….” (cu indiciu explicit din paranteze, scris de utilizator) — vezi _resolve_hint."""
     raw = Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate" / "ACTUL CONSTITUTIV.docx"
     if not raw.exists():
         return
     data = raw.read_bytes()
     found = blanks.analyze(data)
-    assert sum(f["field"] == "CAEN_1" for f in found) == 2                    # domeniul + activitatea principală
+    assert sum(f["field"] == "CAEN_DOMENIU" for f in found) == 1              # domeniul (grupa, fără indiciu)
+    assert sum(f["field"] == "CAEN_1" for f in found) == 1                    # activitatea principală (indiciu)
     caen_secundare = [f for f in found if f["field"] == "CAEN"]
-    assert len(caen_secundare) == 5                                          # cele 5 activități secundare din document
+    assert len(caen_secundare) == 1                                          # un singur indiciu „(CAEN SECUNDARE)”, care scalează oricum
 
     groups = blanks.detect_groups(found)
     caen_groups = [g for g in groups if g["role"] == "CAEN"]
-    assert len(caen_groups) == 1 and caen_groups[0]["count"] == 5
+    assert len(caen_groups) == 1 and caen_groups[0]["count"] == 1
 
     gids = {g["id"]: "repeat" for g in groups}
     grouped_ids = {i for g in groups for i in g["blank_ids"]}
@@ -388,3 +396,124 @@ def test_actul_constitutiv_real_recunoaste_sectiunea_caen_completa():
     assert texts.count("COD1") == 1 and texts.count("COD2") == 1 and texts.count("COD3") == 1
     assert texts.count("7022 - Activități de consultanță") == 0              # nu apare singur — mereu în frază
     assert any("7022 - Activități de consultanță" in t for t in texts)
+
+
+# ── indiciu explicit din paranteze, lipit de locul liber ───────────────────────
+def test_indiciu_intre_doua_locuri_libere_devine_o_singura_eticheta():
+    """„…(CAEN PRINCIPAL)……” — indiciul scris de utilizator, lipit de locul liber, are prioritate maximă;
+    cele două locuri libere + indiciul devin O SINGURĂ etichetă, nu rămân separate."""
+    raw = make_doc(["Activitatea principală este: …(CAEN PRINCIPAL)……."])
+    found = blanks.analyze(raw)
+    assert len(found) == 1
+    f = found[0]
+    assert f["scope"] == "company" and f["field"] == "CAEN_1" and f["confidence"] == "high"
+
+    tpl = blanks.apply(raw, {f["id"]: f["tag"]})
+    out = fill_docx(tpl, {"{{CAEN_1}}": "6201 - Activități de realizare a soft-ului la comandă"})
+    text = Document(io.BytesIO(out)).paragraphs[0].text
+    assert text == "Activitatea principală este: 6201 - Activități de realizare a soft-ului la comandă."
+    assert "(" not in text and ")" not in text          # indiciul nu rămâne vizibil în documentul generat
+
+
+def test_indiciu_caen_secundare_singur_devine_grup_repetitiv_de_1():
+    """„…(CAEN SECUNDARE)……….” — un singur indiciu, fără listă de exemple alături — tot devine bloc repetitiv
+    {{#CAEN_SECUNDARE}}, scalabil la câte activități secundare are clientul, nu doar la una."""
+    raw = make_doc(["Societatea va mai desfășura și următoarele activități:", "…(CAEN SECUNDARE)……….",])
+    found = blanks.analyze(raw)
+    caen = [f for f in found if f["field"] == "CAEN"]
+    assert len(caen) == 1 and caen[0]["role"] == "CAEN"
+
+    groups = blanks.detect_groups(found)
+    assert len(groups) == 1 and groups[0]["role"] == "CAEN" and groups[0]["count"] == 1
+    tpl = blanks.apply(raw, {}, {groups[0]["id"]: "repeat"})
+    out = fill_docx(tpl, {}, groups={"CAEN_SECUNDARE": [{"CAEN": f"C{i}"} for i in range(1, 4)]})
+    texts = [p.text for p in Document(io.BytesIO(out)).paragraphs if p.text.strip()]
+    assert texts[1:] == ["C1", "C2", "C3", "."]     # punctul final al frazei rămâne text fix, o singură dată, după listă
+
+
+def test_indiciu_necunoscut_devine_camp_manual_etichetat_din_indiciu():
+    """Un indiciu care nu corespunde niciunui câmp cunoscut (ex. „(Suma penalitate)”) devine automat câmp
+    manual, cu indiciul ca etichetă — mai bun decât ghicirea din ultimele cuvinte dinainte de loc liber."""
+    raw = make_doc(["Suma datorată este de …(Suma penalitate)…… lei."])
+    found = blanks.analyze(raw)
+    assert len(found) == 1
+    f = found[0]
+    assert f["scope"] == "manual" and f["label"] == "Suma penalitate" and f["confidence"] == "high"
+    assert f["tag"] == "{{CAMP_SUMA_PENALITATE}}"
+
+
+def test_indiciu_cu_numele_intern_al_campului_functioneaza_direct():
+    """Utilizatorul poate scrie direct numele intern al câmpului în paranteză (ex. „(SOCIETATE_SEDIU)”), nu
+    doar aliasurile cunoscute — util când nicio formulare din alias-uri nu i se potrivește."""
+    raw = make_doc(["Sediul social este în …(SOCIETATE_SEDIU)…… ."])
+    found = blanks.analyze(raw)
+    assert found[0]["scope"] == "company" and found[0]["field"] == "SOCIETATE_SEDIU"
+
+
+def test_domeniul_si_activitatea_principala_fara_indiciu_raman_recunoscute():
+    """Fără niciun indiciu, doar loc liber simplu după formulările uzuale — devin {{CAEN_DOMENIU}} / {{CAEN_1}}, din context."""
+    raw = make_doc([
+        "Domeniul principal de activitate este: …………………",
+        "Activitatea principală este: …….",
+    ])
+    found = blanks.analyze(raw)
+    assert [f["field"] for f in found] == ["CAEN_DOMENIU", "CAEN_1"]
+    assert all(f["confidence"] == "high" for f in found)
+
+
+# ── o singură clauză, dar cu marcaj explicit de plural („asociatul/asociații ……”) ──────────────────────────────
+def test_o_singura_clauza_cu_marcaj_asociatul_asociatii_devine_grup_scalabil():
+    """Cerință directă a utilizatorului: „acolo unde am pus asociatul/asociații ... și o singură suită de
+    câmpuri, mă aștept să multiplici acel paragraf de câte ori e cazul”. O singură persoană-exemplu, dar
+    marcajul de plural alături, devine grup — la fel ca la 2+ clauze, scalează la orice număr."""
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc([f"constituită de asociatul/asociații {a}."])
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 1
+    g = groups[0]
+    assert g["kind"] == "inline" and g["role"] == "ASOCIAT" and g["count"] == 1
+
+    tpl = blanks.apply(raw, {}, {g["id"]: "repeat"})
+    text_tpl = "\n".join(p.text for p in Document(io.BytesIO(tpl)).paragraphs)
+    assert "{{#ASOCIATI}}" in text_tpl and "{{NUME}} {{PRENUME}}" in text_tpl
+    for n in (1, 3):
+        out = fill_docx(tpl, {}, groups={"ASOCIATI": [person(f"P{i}") for i in range(1, n + 1)]})
+        text = "\n".join(p.text for p in Document(io.BytesIO(out)).paragraphs)
+        assert all(f"P{i}" in text for i in range(1, n + 1))
+
+
+def test_marcajul_de_plural_intr_un_paragraf_separat_dinainte_tot_functioneaza():
+    """Caz real (ACTUL CONSTITUTIV): „...asociatul/asociații” rămâne singur, ca ultim rând al unui paragraf
+    Word, iar persoana cu datele complete începe într-un paragraf SEPARAT, imediat următor — tot trebuie
+    recunoscut, nu doar când marcajul e în același paragraf cu persoana."""
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc(["constituită de asociatul/asociații", a + "."])
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 1 and groups[0]["role"] == "ASOCIAT" and groups[0]["paragraph"] == 1
+
+
+def test_administrator_administratori_ca_marcaj_de_plural():
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc([f"administrarea e îndeplinită de administratorul/administratorii {a}."])
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 1 and groups[0]["role"] == "ADMINISTRATOR"
+
+
+def test_fara_marcaj_de_plural_o_singura_clauza_nu_devine_grup():
+    """Păstrează comportamentul actual: fără „X/Y” alături, o singură persoană rămâne poziție simplă (1),
+    nu se oferă nicio grupare — exact cerința utilizatorului („dar păstrează și cum faci acum”)."""
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc([f"constituită de asociatul {a}."])
+    found = blanks.analyze(raw)
+    assert blanks.detect_groups(found, raw) == []
+
+
+def test_fara_docx_bytes_grupul_cu_o_clauza_nu_se_ofera_dar_restul_functioneaza():
+    """Compatibilitate: apelul vechi detect_groups(found), fără al doilea argument, nu se strică — doar nu
+    beneficiază de grupul cu o singură clauză (are nevoie de textul paragrafului dinainte)."""
+    raw = make_doc([two_person_sentence()])
+    found = blanks.analyze(raw)
+    assert blanks.detect_groups(found) == blanks.detect_groups(found, raw)   # 2+ clauze nu depind de docx_bytes

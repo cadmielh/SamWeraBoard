@@ -51,6 +51,7 @@ const GUIDE_SECTIONS = [
       '{{CAMP_ORICE_NUME}} — câmp completat manual la generare (ex. {{CAMP_NR_HOTARARE}}); numele apare ca titlu al câmpului',
       '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}',
       '{{CAEN_1}} (activitate principală, format "cod - descriere")',
+      '{{CAEN_DOMENIU}} (domeniul principal de activitate — grupa CAEN, 3 cifre, derivată automat din CAEN_1)',
       '{{CAEN_PRINCIPAL_COD}} (doar codul CAEN principal)', '{{CAEN_SECUNDARE_COD}} (codurile CAEN secundare, separate prin virgulă; „-” dacă nu există)',
     ],
   },

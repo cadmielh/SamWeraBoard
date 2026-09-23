@@ -23,6 +23,26 @@ from docx.text.paragraph import Paragraph
 from variants import _norm, _replace_span
 
 BLANK_RE = re.compile(r"…+|\.{4,}|_{3,}")
+_ARTIFACT_DOTS_RE = re.compile(r"\.{1,3}")
+
+
+def _extend_past_artifact_dots(text: str, end: int) -> int:
+    """„….,” / „….. jud” — puncte literale rămase lipite de o elipsă („…”): BLANK_RE prinde doar elipsa în
+    sine, nu și punctele care mai rămân când autorul a tastat mai multe puncte decât a convertit Word automat
+    (de obicei primele trei) în elipsă. Dacă imediat după aceste puncte urmează o literă mică sau o virgulă
+    (propoziția chiar continuă), punctele fac parte din locul liber, nu sunt punctuație reală — altfel ar
+    rămâne vizibile în documentul completat („cetătean romana., născut”). Dacă urmează literă mare sau
+    paragraful se termină acolo, punctele sunt sfârșit de propoziție — rămân neschimbate."""
+    m = _ARTIFACT_DOTS_RE.match(text, end)
+    if not m:
+        return end
+    j = m.end()
+    while j < len(text) and text[j] == " ":     # un spațiu între puncte și cuvântul următor nu schimbă nimic
+        j += 1
+    nxt = text[j:j + 1]
+    if nxt == "," or (nxt.isalpha() and nxt.islower()):
+        return m.end()
+    return end
 
 # Câmpuri ale societății (etichetele există deja în aplicație)
 COMPANY_FIELDS = {
@@ -35,6 +55,7 @@ COMPANY_FIELDS = {
     "CAPITAL_SOCIAL_TOTAL": "Capitalul social (lei)",
     "PARTI_SOCIALE_TOTALE": "Numărul total de părți sociale",
     "CAEN_1": "Activitatea principală (cod și denumire)",
+    "CAEN_DOMENIU": "Domeniul principal de activitate (grupa CAEN, cod și denumire)",
     "CAEN_PRINCIPAL_COD": "Cod CAEN principal",
     "CAEN": "O activitate secundară (cod și denumire)",
     "DATA_AZI": "Data de azi",
@@ -164,6 +185,13 @@ def suggest(before: str, after: str, para_before: str, state: _State, pi: int = 
         return person("CETATENIA", "medium")
 
     # — societate —
+    # „Domeniul principal de activitate” = grupa CAEN (3 cifre, cu denumirea ei — derivată în aplicație din
+    # codul principal), distinctă de „Activitatea principală” (clasa CAEN, 4 cifre — CAEN_1); unele acte cer
+    # amândouă, una după alta.
+    if re.search(r"domeniul principal de activitate este:?\s*$", b):
+        return company("CAEN_DOMENIU")
+    if re.search(r"activitatea principala este:?\s*$", b):
+        return company("CAEN_1")
     if re.search(r"c\.?\s?u\.?\s?i\.?\s*:?$", b) or re.search(r"cod\s+fiscal\s*:?$", b):
         return company("SOCIETATE_CIF")
     if re.search(r"\bsediul(?:\s+social)?(?:\s+in)?\s*$", b) or re.search(r"\bsediu\s+social\s*(?:in)?\s*$", b):
@@ -204,6 +232,16 @@ def suggest(before: str, after: str, para_before: str, state: _State, pi: int = 
     # — date —
     if re.search(r"\b(?:semnat\s+azi|incheiat\s+astazi|astazi|azi)\s*$", b) or re.search(r"\bnr\.?\s*\S*\s*din\s*$", b):
         return {"scope": "company", "field": "DATA_AZI", "confidence": "medium"}
+
+    # — câmpuri manuale, dar cu etichetă curată (nu ghicită din ultimele cuvinte) —
+    # „a câte …. pagini”: numărul de pagini al documentului nu se poate calcula automat (paginarea reală ține
+    # de motorul de randare — Word, LibreOffice —, nu de conținutul .docx), deci rămâne completat manual.
+    if re.search(r"\bcate\s*$", b) and re.match(r"^\s*\.?\s*pagini\b", a):
+        return {"scope": "manual", "field": None, "confidence": "high", "label": "Număr de pagini"}
+    # „redactat în …… exemplare” — numărul de exemplare originale, tipic scris literal (ex. „2 exemplare”) în
+    # șablonul lawyer-ului, nu ca loc liber; dacă a fost înlocuit cu „……”, rămâne tot manual, dar etichetat clar.
+    if re.match(r"^\s*exemplare\b", a):
+        return {"scope": "manual", "field": None, "confidence": "high", "label": "Număr de exemplare"}
     return {"scope": "manual", "field": None, "confidence": "low"}
 
 
@@ -242,15 +280,14 @@ _CAEN_LINE_RE = re.compile(r"^\s*(\d{4})\s+(.+?)\s*-{0,}\s*$")
 
 def _find_caen_singles(text: str) -> list[dict]:
     """„Domeniul principal de activitate este: 953 ...” / „Activitatea principală este: 9531 ...” — codul și
-    denumirea (nu fraza dinainte) devin locul liber, propus direct ca activitatea principală a societății
-    ({{CAEN_1}}), la fel ca în șablonul de bază („Activitatea principala: {{CAEN_1}}”). Nu se face distincție
-    între „domeniul” (grupa CAEN, 3 cifre) și „activitatea principală” (clasa CAEN, 4 cifre) — aplicația
-    ține un singur cod CAEN principal per firmă, ca și șablonul de bază."""
+    denumirea (nu fraza dinainte) devin locul liber: domeniul (grupa CAEN, 3 cifre) → {{CAEN_DOMENIU}},
+    activitatea principală (clasa CAEN, 4 cifre) → {{CAEN_1}} — aplicația derivă automat grupa din clasă
+    (vezi frontend/src/data/caenGrupe.ts), deci cele două rămân consistente fără completare separată."""
     norm = _ascii(text)
     out = []
-    for rx in (_CAEN_DOMENIU_RE, _CAEN_PRINCIPAL_RE):
+    for rx, field in ((_CAEN_DOMENIU_RE, "CAEN_DOMENIU"), (_CAEN_PRINCIPAL_RE, "CAEN_1")):
         for m in rx.finditer(norm):
-            out.append({"scope": "company", "field": "CAEN_1", "confidence": "high", "start": m.start(1), "end": m.end(2)})
+            out.append({"scope": "company", "field": field, "confidence": "high", "start": m.start(1), "end": m.end(2)})
     return out
 
 
@@ -265,6 +302,41 @@ def _find_caen_secondary_cluster(paragraphs: list, pi: int) -> list[int]:
         lines.append(j)
         j += 1
     return lines
+
+
+# ── Indiciu explicit din paranteze: „…(CAEN PRINCIPAL)……” — utilizatorul scrie chiar el, lipit de locul
+# liber, ce reprezintă acesta, când nu are încredere că formularea din jur e destul de clară pentru
+# recunoașterea automată. Are prioritate maximă, înaintea oricărei ghiciri din context (vezi suggest()).
+_HINT_RE = re.compile(r"\s*\(([^()]{1,80})\)")
+_HINT_ALIASES = {
+    "caen principal": ("company", "CAEN_1"),
+    "caen secundar": ("company", "CAEN"),
+    "caen secundara": ("company", "CAEN"),
+    "caen secundare": ("company", "CAEN"),
+    "caen secundari": ("company", "CAEN"),
+    "caen domeniu": ("company", "CAEN_DOMENIU"),
+    "domeniu caen": ("company", "CAEN_DOMENIU"),
+    "domeniul caen": ("company", "CAEN_DOMENIU"),
+    "domeniu principal": ("company", "CAEN_DOMENIU"),
+    "domeniul principal": ("company", "CAEN_DOMENIU"),
+}
+
+
+def _resolve_hint(hint: str) -> tuple[str, str] | None:
+    """(scope, field) pentru un indiciu din paranteze, sau None dacă nu se recunoaște — caz în care indiciul
+    devine el însuși eticheta unui câmp manual (vezi analyze()), nu se ghicește nimic. Acceptă fie un alias
+    cunoscut (tabelul de mai sus), fie chiar numele câmpului intern, scris direct (ex. „(SOCIETATE_SEDIU)”)."""
+    norm = re.sub(r"[^a-z0-9]+", " ", _ascii(hint)).strip()
+    if not norm:
+        return None
+    if norm in _HINT_ALIASES:
+        return _HINT_ALIASES[norm]
+    key = norm.upper().replace(" ", "_")
+    if key in COMPANY_FIELDS:
+        return ("company", key)
+    if key in PERSON_FIELDS:
+        return ("person", key)
+    return None
 
 
 def analyze(docx_bytes: bytes) -> list[dict]:
@@ -298,10 +370,54 @@ def analyze(docx_bytes: bytes) -> list[dict]:
         state = _State()
         list_entry: dict | None = None     # entry-ul „ASOCIATI_LISTA”/„ADMINISTRATORI_LISTA” aflat în curs de extindere
         list_role: str | None = None       # rolul lui list_entry — ținut separat, fiindcă odată convertit entry-ul nu mai are „role”
+        consumed_hint_blanks: set[int] = set()   # indicele (în `matches`) al blank-ului al 2-lea dintr-un „…(indiciu)……” deja înghițit
         for k, m in enumerate(matches):
+            if k in consumed_hint_blanks:
+                continue
+            blank_end = _extend_past_artifact_dots(text, m.end())    # vezi _extend_past_artifact_dots
             before = text[max(0, m.start() - 110):m.start()]
-            after = text[m.end():m.end() + 60]
-            s = suggest(before, after, text[:m.start()], state, pi, alone=text.strip(" -\t") == m.group())
+            after = text[blank_end:blank_end + 60]
+
+            # indiciu explicit lipit de locul liber, ex. „…(CAEN PRINCIPAL)……” — prioritate maximă, înaintea
+            # oricărei ghiciri din context (vezi _resolve_hint); dacă mai urmează imediat un al doilea loc
+            # liber (doar spații între ele), cele două + indiciul devin O SINGURĂ etichetă, nu două separate.
+            hint_m = _HINT_RE.match(text, blank_end)
+            if hint_m:
+                end = hint_m.end()
+                nxt = k + 1
+                if nxt < len(matches) and not text[end:matches[nxt].start()].strip():
+                    end = _extend_past_artifact_dots(text, matches[nxt].end())
+                    consumed_hint_blanks.add(nxt)
+                resolved = _resolve_hint(hint_m.group(1))
+                if resolved:
+                    scope, field = resolved
+                    if scope == "company":
+                        s = {"scope": "company", "field": field, "confidence": "high"}
+                        if field == "CAEN":
+                            s["role"] = "CAEN"
+                    else:
+                        if state.person == 0:
+                            state.person = 1
+                        s = {"scope": "person", "field": field, "role": _role_for(text[:m.start()]), "person": state.person, "confidence": "high"}
+                    state.last_field, state.last_scope = field, scope
+                else:
+                    s = {"scope": "manual", "field": None, "confidence": "high", "_hint_label": hint_m.group(1).strip()}
+                s.update({"id": len(out), "paragraph": pi, "start": m.start(), "end": end,
+                          "before": before[-70:], "after": text[end:end + 40]})
+                if s["scope"] == "manual":
+                    s["label"] = s.pop("_hint_label")
+                    s["tag"] = manual_tag(s["label"])
+                elif s["scope"] == "company":
+                    s["label"] = COMPANY_FIELDS[s["field"]]
+                    s["tag"] = "{{" + s["field"] + "}}"
+                else:
+                    s["label"] = f'{PERSON_FIELDS[s["field"]]} ({"administrator" if s["role"] == "ADMINISTRATOR" else "asociat"} {s["person"]})'
+                    s["tag"] = person_tag(s["role"], s["person"], s["field"])
+                out.append(s)
+                list_entry, list_role = None, None
+                continue
+
+            s = suggest(before, after, text[:m.start()], state, pi, alone=text.strip(" -\t") == text[m.start():blank_end])
             is_mention = s["scope"] == "person" and s["field"] == "NUME_COMPLET" and s["confidence"] == "medium"
             if is_mention and re.match(r"^\s*_{5,}", after) and not before.strip():
                 sig_idx += 1                              # semnături: câte un paragraf per persoană, numărate pe tot documentul
@@ -314,7 +430,7 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             # anume (ex. „administratorul ……” dintr-o singură mențiune), nu neapărat lista completă.
             if is_mention and list_entry is not None and list_role == s["role"] \
                     and _CONNECTOR_RE.match(text[list_entry["end"]:m.start()]):
-                list_entry["end"] = m.end()
+                list_entry["end"] = blank_end
                 list_entry["after"] = after[:40]
                 if list_entry["scope"] != "company":
                     field = _LIST_FIELD[list_role]
@@ -322,11 +438,11 @@ def analyze(docx_bytes: bytes) -> list[dict]:
                                       label=COMPANY_FIELDS[field], tag="{{" + field + "}}")
                 continue
             s.update({
-                "id": len(out), "paragraph": pi, "start": m.start(), "end": m.end(),
+                "id": len(out), "paragraph": pi, "start": m.start(), "end": blank_end,
                 "before": before[-70:], "after": after[:40],
             })
             if s["scope"] == "manual":
-                s["label"] = _label_before(before)
+                s["label"] = s.get("label") or _label_before(before)   # etichetă curată, dacă suggest() a dat una (ex. „Număr de pagini”)
                 s["tag"] = manual_tag(s["label"])
             elif s["scope"] == "company":
                 s["label"] = COMPANY_FIELDS[s["field"]]
@@ -344,12 +460,33 @@ def analyze(docx_bytes: bytes) -> list[dict]:
 _ROLE_PLURAL = {"ASOCIAT": "ASOCIATI", "ADMINISTRATOR": "ADMINISTRATORI", "CAEN": "CAEN_SECUNDARE"}
 _ORDINAL_RE = re.compile(r"^(\s*)(\d+)(\.\s*)")
 
+# „asociatul/asociații”, „administratorul/administratorii” (cu variații: verb schimbat — „este asociatul/sunt
+# asociații” —, sau typo real „adminstratorul”) — autorul spune explicit că poate fi una sau mai multe
+# persoane, chiar dacă a scris o singură persoană ca exemplu. Tolerant la forma exactă a cuvântului al doilea
+# (`adm\w*strat\w*` prinde și typo-ul „adminstrator”, căruia îi lipsește un „i”).
+_PLURAL_MARKER_RE = re.compile(r"(asociat\w*|adm\w*strat\w*)\s*/\s*(?:\w+\s+)?(asociat\w*|adm\w*strat\w*)")
 
-def detect_groups(blanks: list[dict]) -> list[dict]:
+
+def _has_plural_marker(text: str) -> bool:
+    return bool(_PLURAL_MARKER_RE.search(_ascii(text)))
+
+
+def _paragraph_has_plural_marker(paragraphs: list, pi: int, marker_start: int) -> bool:
+    """Marcajul poate fi în ACELAȘI paragraf, înaintea persoanei (fraza obișnuită), sau — cum apare des în
+    documentul real — într-un paragraf Word separat, chiar înaintea celui cu datele persoanei (o ruptură de
+    paragraf pe care autorul n-a intenționat-o, dar care există în fișier)."""
+    if _has_plural_marker(_par_text(paragraphs[pi])[:marker_start]):
+        return True
+    return pi > 0 and _has_plural_marker(_par_text(paragraphs[pi - 1])[-160:])
+
+
+def detect_groups(blanks: list[dict], docx_bytes: bytes | None = None) -> list[dict]:
     """Grupuri candidate de bloc repetitiv: mai multe persoane cu exact aceeași structură de câmpuri, fie în
     aceeași frază ([]„X, cetățenia…, CNP … si Y, cetățenia…, CNP …”] — kind='inline'), fie în paragrafe separate
-    consecutive (kind='paragraph'). Nu se schimbă nimic aici — doar se propun; utilizatorul alege în interfață
-    dacă se repetă automat (scalează la orice număr) sau rămân poziții fixe (vezi apply())."""
+    consecutive (kind='paragraph'), fie o SINGURĂ persoană scrisă ca exemplu, dar cu marcaj explicit de plural
+    alături („asociatul/asociații ……, cetățean…” — vezi _paragraph_has_plural_marker; are nevoie de `docx_bytes`,
+    ca să poată citi și paragraful dinainte). Nu se schimbă nimic aici — doar se propun; utilizatorul alege în
+    interfață dacă se repetă automat (scalează la orice număr) sau rămân poziții fixe (vezi apply())."""
     groups: list[dict] = []
     by_par: dict[int, list[dict]] = {}
     for b in blanks:
@@ -423,12 +560,39 @@ def detect_groups(blanks: list[dict]) -> list[dict]:
         while j + 1 < len(caen_lines) and caen_lines[j + 1]["paragraph"] == cluster[-1]["paragraph"] + 1:
             cluster.append(caen_lines[j + 1])
             j += 1
+        cod_word = "cod găsit" if len(cluster) == 1 else "coduri găsite"
         groups.append({
             "id": len(groups), "kind": "paragraph", "paragraphs": [b["paragraph"] for b in cluster], "role": "CAEN",
             "count": len(cluster), "blank_ids": [b["id"] for b in cluster], "template_blank_ids": [cluster[0]["id"]],
-            "label": f'activități CAEN secundare — {len(cluster)} coduri găsite, câte unul pe rând',
+            "label": f'activități CAEN secundare — {len(cluster)} {cod_word}, câte unul pe rând',
         })
         i = j + 1
+
+    # kind='inline', o SINGURĂ clauză — „asociatul/asociații ……, cetățean…” — marcaj explicit de plural,
+    # chiar dacă e scrisă o singură persoană ca exemplu (vezi _paragraph_has_plural_marker mai sus). Se
+    # oferă exact ca la 2+ clauze: „repeat” scalează la orice număr, „fixed” rămâne o singură poziție.
+    if docx_bytes is not None:
+        pars = _paragraphs(Document(io.BytesIO(docx_bytes)))
+        already_grouped = {g["paragraph"] for g in groups if g["kind"] == "inline"} | \
+            {pi for g in groups if g["kind"] == "paragraph" for pi in g["paragraphs"]}
+        for pi, items in sorted(by_par.items()):
+            if pi in already_grouped or pi >= len(pars):
+                continue
+            person_items = [b for b in items if b["scope"] == "person"]
+            markers = [i for i, b in enumerate(person_items) if is_marker(b)]
+            if len(markers) != 1:
+                continue
+            clause = person_items[markers[0]:]
+            if not _paragraph_has_plural_marker(pars, pi, clause[0]["start"]):
+                continue
+            role = clause[0]["role"]
+            groups.append({
+                "id": len(groups), "kind": "inline", "paragraph": pi, "role": role, "count": 1,
+                "blank_ids": [b["id"] for b in clause], "template_blank_ids": [b["id"] for b in clause],
+                "label": f'{"administrator" if role == "ADMINISTRATOR" else "asociat"} — marcat cu '
+                         f'„{"administratorul/administratorii" if role == "ADMINISTRATOR" else "asociatul/asociații"}”, '
+                         f'o singură persoană scrisă ca exemplu',
+            })
     return groups
 
 
@@ -567,7 +731,7 @@ def apply(docx_bytes: bytes, choices: dict[int, str | None], groups: dict[int, s
     doc = Document(io.BytesIO(docx_bytes))
     found = analyze(docx_bytes)
     blanks_by_id = {b["id"]: b for b in found}
-    detected = detect_groups(found)
+    detected = detect_groups(found, docx_bytes)
     accepted = [g for g in detected if (groups or {}).get(g["id"]) == "repeat"]
     grouped_paragraphs = {g["paragraph"] for g in accepted if g["kind"] == "inline"} | \
         {pi for g in accepted if g["kind"] == "paragraph" for pi in g["paragraphs"]}

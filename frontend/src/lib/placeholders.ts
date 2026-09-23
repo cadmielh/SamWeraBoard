@@ -4,6 +4,7 @@ import { persoanaToIDFields } from './idFields'
 import { parsePercent } from './cota'
 import { formatAdresa, splitSerieNumar } from './adresa'
 import { personSex } from './sex'
+import { findCaenGrupaDescriere } from '../data/caenGrupe'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -147,6 +148,11 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     // CAEN_1 = activitate principală (unică — fără prefix numeric). Activitățile
     // secundare (număr nelimitat) se pun în blocul repetitiv {{#CAEN_SECUNDARE}}.
     out['{{CAEN_1}}'] = formatCaen(client.caenCod, client.caenDescriere)
+    // CAEN_DOMENIU = „domeniul principal de activitate” din actele societăților — grupa CAEN (3 cifre),
+    // derivată din codul principal (clasă, 4 cifre), cu denumirea ei oficială. Distinct de CAEN_1 (clasa
+    // însăși) — unele șabloane cer amândouă („Domeniul principal... 620 ... Activitatea principală... 6201...”).
+    const caenGrupaCod = client.caenCod ? client.caenCod.slice(0, 3) : ''
+    out['{{CAEN_DOMENIU}}'] = formatCaen(caenGrupaCod, findCaenGrupaDescriere(client.caenCod ?? ''))
     // Doar codurile (fără denumire), pentru clauza „Actualizare cod CAEN REV3”: principal + secundarele pe o singură linie.
     out['{{CAEN_PRINCIPAL_COD}}'] = client.caenCod ?? ''
     const codSecundare = (client.caenSecundare ?? []).map(c => c.cod).filter(Boolean)
@@ -348,6 +354,7 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
   if (partiAsoc) return { group: `Asociat ${partiAsoc[1]}`, field: 'Părți sociale' }
 
   if (inner === 'CAEN_1') return { group: 'Societate', field: 'Activitate principală (CAEN)' }
+  if (inner === 'CAEN_DOMENIU') return { group: 'Societate', field: 'Domeniul principal de activitate (grupa CAEN)' }
   if (inner === 'CAEN') return { group: 'Societate', field: 'Activitate secundară (CAEN)' }
   if (inner === 'CAEN_PRINCIPAL_COD') return { group: 'Societate', field: 'Cod CAEN principal' }
   if (inner === 'CAEN_SECUNDARE_COD') return { group: 'Societate', field: 'Coduri CAEN secundare' }

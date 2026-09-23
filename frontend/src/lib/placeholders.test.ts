@@ -23,6 +23,23 @@ describe('coduri CAEN pentru clauza „Actualizare cod CAEN REV3”', () => {
   })
 })
 
+describe('CAEN_DOMENIU — „domeniul principal de activitate” (grupa CAEN, 3 cifre), derivată din codul principal', () => {
+  it('grupa (3 cifre) și denumirea ei oficială, derivate din clasa (4 cifre) aleasă de client', () => {
+    const r = build(client({ caenCod: '7020', caenDescriere: 'Activități de consultanță pentru afaceri' }))
+    expect(r['{{CAEN_DOMENIU}}']).toBe('702 - Activităţi de consultanţă în management')
+    expect(r['{{CAEN_1}}']).toBe('7020 - Activități de consultanță pentru afaceri')   // clasa rămâne distinctă
+  })
+
+  it('cod CAEN necunoscut în lista de grupe: rămâne doar codul de 3 cifre, fără denumire', () => {
+    const r = build(client({ caenCod: '9999' }))
+    expect(r['{{CAEN_DOMENIU}}']).toBe('999')
+  })
+
+  it('fără CAEN principal completat: gol, fără eroare', () => {
+    expect(build(client({ caenCod: '' }))['{{CAEN_DOMENIU}}']).toBe('')
+  })
+})
+
 describe('etichete pentru șabloane importate din documente cu locuri libere', () => {
   const p = (o: Partial<Persoana>): Persoana => ({
     calitate: 'Asociat', cotaParticipare: '50%', cnp: '', nume: '', prenume: '', serie_numar: '', data_nasterii: '', locul_nasterii: '',

@@ -482,7 +482,7 @@ def template_blanks():
     try:
         found = blanks.analyze(data)
         return jsonify({
-            "blanks": found, "groups": blanks.detect_groups(found),
+            "blanks": found, "groups": blanks.detect_groups(found, data),
             "companyFields": blanks.COMPANY_FIELDS, "personFields": blanks.PERSON_FIELDS,
         })
     except Exception as e:
