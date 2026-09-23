@@ -25,7 +25,11 @@ export default function SumarLunarCard({ stats, facturareConfig, expanded, onTog
       : `însumat pe ${luniActive.length} luni active`
 
   const deltaCaa = stats.caaReala - stats.caaPerDosare
-  const explainText = `De ce diferă cifrele față de profiturile din dosare? Suma profiturilor din dosare este fără CAA și Taxa de Barou. Sumarul lunar aplică regula reală — CAA cu prag și Taxa de Barou fixă, împărțite proporțional între Sami și Adi după cât a cuvenit fiecăruia — cifra care contează la facturare.`
+  // Profit Sami și Profit Adi nu mai au aceeași relație cu Barou/CAA: Adi are o cotă proporțională, clară,
+  // pe venitul semnat; Sami suportă tot restul (nu doar cota lui), inclusiv pe venitul nesemnat, care altfel
+  // ar rămâne neatins — de-aia au nevoie de explicații separate, nu una comună.
+  const explainTextSami = `Din toate dosarele (semnate + nesemnate). Cifra oficială scade tot ce nu-i revine lui Adi din Barou + CAA reală (calculate pe venitul semnat) — indiferent de venitul nesemnat, restul cade integral pe Sami.`
+  const explainTextAdi = `Din dosare, fără CAA/Barou. Cifra oficială îi scade doar cota lui proporțională din Barou + CAA reală, calculată pe venitul dosarelor semnate — un dosar nesemnat nu-i schimbă cifra.`
 
   const cardClass = `sumar-lunar-card${clickable ? ' sumar-lunar-card--clickable' : ''}`
 
@@ -66,6 +70,14 @@ export default function SumarLunarCard({ stats, facturareConfig, expanded, onTog
       {luniActive.length > 0 && !expanded && (
         <div className="sumar-lunar-compact">
           <div className="sumar-lunar-compact-item">
+            <span className="sumar-lunar-compact-label">Profit Sami</span>
+            <span className="sumar-lunar-compact-value" style={{ color: 'var(--g-inchis-fix)' }}>{ron(stats.profitSamiOficial)} RON</span>
+          </div>
+          <div className="sumar-lunar-compact-item">
+            <span className="sumar-lunar-compact-label">De facturat către Adi</span>
+            <span className="sumar-lunar-compact-value" style={{ color: 'var(--g-deschis-fix)' }}>{ron(stats.deFacturatCatreAdiOficial)} RON</span>
+          </div>
+          <div className="sumar-lunar-compact-item">
             <span className="sumar-lunar-compact-label">CAA reală</span>
             <span className="sumar-lunar-compact-value">{ron(stats.caaReala)} RON</span>
             <span className={`caa-delta-pill${deltaCaa < 0 ? ' caa-delta-pill--down' : ''}`}>
@@ -73,11 +85,7 @@ export default function SumarLunarCard({ stats, facturareConfig, expanded, onTog
             </span>
           </div>
           <div className="sumar-lunar-compact-item">
-            <span className="sumar-lunar-compact-label">Profit Sami</span>
-            <span className="sumar-lunar-compact-value" style={{ color: stats.profitSamiOficial >= 0 ? 'var(--g700)' : 'var(--r600)' }}>{ron(stats.profitSamiOficial)} RON</span>
-          </div>
-          <div className="sumar-lunar-compact-item">
-            <span className="sumar-lunar-compact-label">De facturat către Adi</span>
+            <span className="sumar-lunar-compact-label">Profit Adi</span>
             <span className="sumar-lunar-compact-value" style={{ color: stats.profitAdiOficial <= 0 ? 'var(--g700)' : 'var(--r600)' }}>{ron(stats.profitAdiOficial)} RON</span>
           </div>
         </div>
@@ -85,6 +93,21 @@ export default function SumarLunarCard({ stats, facturareConfig, expanded, onTog
 
       {luniActive.length > 0 && expanded && (
         <div className="sumar-lunar-cards-row">
+          <div className="sumar-lunar-profit-tile" data-tooltip={explainTextSami}>
+            <span className="sumar-lunar-profit-label">Profit Sami</span>
+            <span className="sumar-lunar-profit-value" style={{ color: 'var(--g-inchis-fix)' }}>
+              {ron(stats.profitSamiOficial)} RON
+            </span>
+            <span className="sumar-lunar-profit-before">din dosare, înainte de Barou/CAA: {ron(stats.profitSamiDinDosare)} RON</span>
+          </div>
+          <div className="sumar-lunar-profit-tile" data-tooltip="Ce ia Sami de la Adi: pe dosarele semnate, Adi facturează clientul integral, iar Sami își recuperează profitul facturându-l lui Adi. De-aici se scade și partea lui Sami din Barou+CAA — un dosar nesemnat nu schimbă cifra.">
+            <span className="sumar-lunar-profit-label">De facturat către Adi</span>
+            <span className="sumar-lunar-profit-value" style={{ color: 'var(--g-deschis-fix)' }}>
+              {ron(stats.deFacturatCatreAdiOficial)} RON
+            </span>
+            <span className="sumar-lunar-profit-before">din dosare, înainte de Barou/CAA: {ron(stats.deFacturatCatreAdi)} RON</span>
+          </div>
+
           <div className="caa-compare">
             <div className="caa-col">
               <span className="caa-label">CAA — sumă per dosare ({Math.round(facturareConfig.caaProcent * 1000) / 10}% fix)</span>
@@ -102,15 +125,8 @@ export default function SumarLunarCard({ stats, facturareConfig, expanded, onTog
             </div>
           </div>
 
-          <div className="sumar-lunar-profit-tile" data-tooltip={explainText}>
-            <span className="sumar-lunar-profit-label">Profit Sami</span>
-            <span className="sumar-lunar-profit-value" style={{ color: stats.profitSamiOficial >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
-              {ron(stats.profitSamiOficial)} RON
-            </span>
-            <span className="sumar-lunar-profit-before">din dosare, înainte de Barou/CAA: {ron(stats.profitSamiDinDosare)} RON</span>
-          </div>
-          <div className="sumar-lunar-profit-tile" data-tooltip={explainText}>
-            <span className="sumar-lunar-profit-label">De facturat către Adi</span>
+          <div className="sumar-lunar-profit-tile" data-tooltip={explainTextAdi}>
+            <span className="sumar-lunar-profit-label">Profit Adi</span>
             <span className="sumar-lunar-profit-value" style={{ color: stats.profitAdiOficial <= 0 ? 'var(--g700)' : 'var(--r600)' }}>
               {ron(stats.profitAdiOficial)} RON
             </span>

@@ -5,6 +5,9 @@ import { toDateSafe } from './dates'
 export interface DosarMonthStats {
   totalDosare: number
   facturate: number
+}
+
+export interface TarifStats {
   tarifClientTotal: number
   tarifClientFacturat: number
 }
@@ -24,7 +27,11 @@ export type DosarFinanciarInput = Pick<Dosar, 'tarifClient' | 'taxeOnrc' | 'cert
  * fisiere_template/Facturare_Sami_Adi.xlsx (coloanele Cuvenit Sami/Adi, CAA,
  * Impozit profit, Profit Sami/Adi), plus regula nouă: split-ul cu Adi se
  * aplică DOAR dacă dosarul are semnătură electronică — altfel tot profitul
- * (minus costurile) rămâne la Sami. CAA aici e mereu 14% fix (formula per
+ * (minus costurile) rămâne la Sami. Pe dosarele semnate, clientul e facturat
+ * integral de ADI, nu de Sami — de-aia Sami nu-și ia banii direct de la
+ * client pe acele dosare, ci de la Adi (vezi deFacturatCatreAdi mai jos,
+ * în computeSumarLunar): profitAdi e cât păstrează Adi pentru el (cota lui),
+ * nu cât îi datorează lui Sami. CAA aici e mereu 14% fix (formula per
  * dosar din excel) — Sumarul lunar recalculează separat CAA reală, cu prag,
  * pe totalul lunii (vezi computeSumarLunar), fără legătură cu acest câmp. */
 export function calculDosarFinanciar(d: DosarFinanciarInput, config: FacturareConfig = DEFAULT_FACTURARE_CONFIG): DosarFinanciar {
@@ -47,7 +54,11 @@ export function calculDosarFinanciar(d: DosarFinanciarInput, config: FacturareCo
 }
 
 const EMPTY_STATS: DosarMonthStats = {
-  totalDosare: 0, facturate: 0, tarifClientTotal: 0, tarifClientFacturat: 0,
+  totalDosare: 0, facturate: 0,
+}
+
+const EMPTY_TARIF_STATS: TarifStats = {
+  tarifClientTotal: 0, tarifClientFacturat: 0,
 }
 
 export type StatsPeriod = 'luna' | 'trimestru' | 'an' | 'total'
@@ -64,21 +75,45 @@ export function trendColor(delta: number, up: boolean): string {
 }
 
 /** Statistici pe un array de dosare deja preluat pentru o singură perioadă —
- * folosite de cele 2 carduri de volum din DosarStatsPanel (Număr dosare,
- * Tarife aplicate clienților). Profitul (Sami/Adi) e raportat exclusiv de
- * Sumarul lunar (vezi computeSumarLunar) — nu se mai duplică aici. */
+ * folosite de cardul „Număr dosare” din DosarStatsPanel (dosarele create în
+ * perioada respectivă). Profitul (Sami/Adi) e raportat exclusiv de Sumarul
+ * lunar (vezi computeSumarLunar); tarifele, de computeTarifStats mai jos —
+ * nu se mai duplică aici. */
 export function computeDosarStats(dosare: Dosar[]): DosarMonthStats {
   if (dosare.length === 0) return EMPTY_STATS
   return dosare.reduce((acc, d) => {
-    const tarifClient = d.tarifClient ?? 0
     acc.totalDosare += 1
-    acc.tarifClientTotal += tarifClient
-    if (d.facturat) {
-      acc.facturate += 1
-      acc.tarifClientFacturat += tarifClient
-    }
+    if (d.facturat) acc.facturate += 1
     return acc
   }, { ...EMPTY_STATS })
+}
+
+/** Luna în care contează un dosar pentru cardul „Tarife aplicate clienților”:
+ *  - facturat, cu dataFacturarii → luna facturării (ca Sumarul lunar — vezi dataEfectivaFacturare).
+ *  - facturat, dar fără dataFacturarii (caz vechi, dinainte de introducerea câmpului) → luna creării, la
+ *    fel ca Sumarul lunar — cele două carduri trebuie să fie de acord pentru același dosar.
+ *  - nefacturat → LUNA CURENTĂ (nu data creării, spre deosebire de cardul „Număr dosare”) — rămâne mereu
+ *    „de facturat acum”, indiferent cât de vechi e (cerință directă a utilizatorului). */
+export function dataEfectivaTarif(d: Pick<Dosar, 'facturat' | 'dataFacturarii' | 'createdAt'>): Date {
+  if (!d.facturat) return new Date()
+  return dataEfectivaFacturare(d) ?? new Date()
+}
+
+/** Suma tarifelor (total + facturat) pentru cardul „Tarife aplicate clienților”, pe baza
+ * dataEfectivaTarif — `dosare` trebuie să fie TOATE dosarele workspace-ului (nu doar cele create în
+ * perioada afișată), fiindcă un dosar nefacturat contează mereu ca „acum”, indiferent de `createdAt`.
+ * `bounds` = `null` pentru „Total” (nicio filtrare, se însumează tot). */
+export function computeTarifStats(dosare: Dosar[], bounds: [Date, Date] | null): TarifStats {
+  const inPeriod = bounds
+    ? dosare.filter(d => { const dt = dataEfectivaTarif(d); return dt >= bounds[0] && dt < bounds[1] })
+    : dosare
+  if (inPeriod.length === 0) return EMPTY_TARIF_STATS
+  return inPeriod.reduce((acc, d) => {
+    const tarifClient = d.tarifClient ?? 0
+    acc.tarifClientTotal += tarifClient
+    if (d.facturat) acc.tarifClientFacturat += tarifClient
+    return acc
+  }, { ...EMPTY_TARIF_STATS })
 }
 
 // ── Sumar lunar — CAA reală (cu prag) + Barou, ca în foaia „Sumar Lunar" ────
@@ -116,6 +151,14 @@ export interface SumarLunarMonth {
   profitAdiDinDosare: number
   profitSamiOficial: number
   profitAdiOficial: number
+  // Ce trebuie să ia SAMI de la ADI (nu invers): pe dosarele cu semnătură electronică, Adi facturează
+  // clientul integral (nu Sami) — Sami își ia profitul lui facturându-l CĂTRE Adi. E partea din Profit
+  // Sami care vine din acele dosare — distinct de profitAdi/profitAdiOficial, care e cota lui ADI din
+  // cuvenit (banii pe care Adi îi păstrează pentru el, nu ce-i datorează lui Sami).
+  // deFacturatCatreAdi = brut, înainte de Barou/CAA (ca profitSamiDinDosare); deFacturatCatreAdiOficial =
+  // după partea proporțională a lui Sami din Barou + CAA reală, ca la Profit Sami/Adi.
+  deFacturatCatreAdi: number
+  deFacturatCatreAdiOficial: number
 }
 
 export interface SumarLunarStats {
@@ -130,13 +173,14 @@ export interface SumarLunarStats {
   profitAdiDinDosare: number
   profitSamiOficial: number
   profitAdiOficial: number
+  deFacturatCatreAdi: number
+  deFacturatCatreAdiOficial: number
 }
 
-/** Luna în care contează un dosar facturat pentru Sumarul lunar — data
- * facturării, nu data creării (spre deosebire de cele 4 carduri de sus, care
- * rămân mereu pe `createdAt`). Un dosar marcat facturat înainte de introduce-
- * rea acestui câmp n-are `dataFacturarii` — cade pe `createdAt`, ca să nu
- * dispară din calcul. */
+/** Luna în care contează un dosar facturat — pentru Sumarul lunar, și (via dataEfectivaTarif de mai sus)
+ * pentru cardul „Tarife aplicate clienților”: data facturării, nu data creării (spre deosebire de cardul
+ * „Număr dosare”, care rămâne pe `createdAt`). Un dosar marcat facturat înainte de introducerea acestui
+ * câmp n-are `dataFacturarii` — cade pe `createdAt`, ca să nu dispară din calcul. */
 export function dataEfectivaFacturare(d: Pick<Dosar, 'dataFacturarii' | 'createdAt'>): Date | null {
   return toDateSafe(d.dataFacturarii) ?? toDateSafe(d.createdAt)
 }
@@ -163,24 +207,48 @@ export function computeSumarLunar(dosare: Dosar[], config: FacturareConfig = DEF
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([luna, ds]) => {
       let totalVenit = 0, cuvenitSami = 0, cuvenitAdi = 0, caaPerDosare = 0, taxeSuplimentare = 0
+      // cuvenitSami/taxeSuplimentare, dar restrânse la dosarele cu semnătură electronică — baza pentru „De
+      // facturat către Adi”, calculată la fel ca profitSamiDinDosare (cuvenit minus taxe, FĂRĂ CAA-ul fix
+      // per dosar), ca partea de CAA să nu se scadă de două ori odată cu CAA reală, mai jos. Și baza pentru
+      // CAA reală — un dosar fără semnătură electronică nu are CAA deloc (nici per dosar, caa=0 mai sus —
+      // vezi calculDosarFinanciar), deci nici CAA reală (cu prag) nu trebuie să-i includă tariful.
+      let cuvenitSamiSemnat = 0, taxeSuplimentareSemnat = 0, venitSemnat = 0
       for (const d of ds) {
         const f = calculDosarFinanciar(d, config)
         totalVenit += d.tarifClient ?? 0
         cuvenitSami += f.cuvenitSami
         cuvenitAdi += f.cuvenitAdi
         caaPerDosare += f.caa
-        taxeSuplimentare += (d.taxeOnrc ?? 0) + (d.certificatConstatator ?? 0)
+        const taxeDosar = (d.taxeOnrc ?? 0) + (d.certificatConstatator ?? 0)
+        taxeSuplimentare += taxeDosar
+        // De facturat către Adi = ce ia Sami DE LA Adi: pe dosarele semnate electronic, clientul e
+        // facturat integral de Adi, nu de Sami — Sami își recuperează profitul facturându-l către Adi.
+        if (d.semnaturaElectronica) {
+          cuvenitSamiSemnat += f.cuvenitSami
+          taxeSuplimentareSemnat += taxeDosar
+          venitSemnat += d.tarifClient ?? 0
+        }
       }
-      const regim = regimCAA(totalVenit, config)
-      const caaReala = totalVenit === 0 ? 0 : Math.max(config.caaMin, Math.min(config.caaProcent * totalVenit, config.caaPlafon))
+      const regim = regimCAA(venitSemnat, config)
+      const caaReala = venitSemnat === 0 ? 0 : Math.max(config.caaMin, Math.min(config.caaProcent * venitSemnat, config.caaPlafon))
       const barou = totalVenit === 0 ? 0 : config.barouFix
       const impozitProfit = config.impozitProfitCota * cuvenitAdi
       const costuriComune = barou + caaReala
       const profitSamiDinDosare = cuvenitSami - taxeSuplimentare
       const profitAdiDinDosare = cuvenitAdi - impozitProfit
-      const profitSamiOficial = totalVenit === 0 ? 0 : profitSamiDinDosare - (costuriComune * cuvenitSami) / totalVenit
-      const profitAdiOficial = totalVenit === 0 ? 0 : profitAdiDinDosare - (costuriComune * cuvenitAdi) / totalVenit
-      return { luna, totalVenit, cuvenitSami, cuvenitAdi, caaPerDosare, caaReala, regim, barou, impozitProfit, taxeSuplimentare, profitSamiDinDosare, profitAdiDinDosare, profitSamiOficial, profitAdiOficial }
+      // Barou+CAA se împart DOAR între partea semnată a lui Sami și Adi (venitSemnat), nu pe tot venitul lunii
+      // — altfel un dosar nesemnat, fără nicio legătură cu Adi, i-ar dilua artificial partea de costuri (mai
+      // mult venit la numitor, dar cuvenitul lui neschimbat) și i-ar umfla profitul. Partea nesemnată a lui
+      // Sami rămâne neatinsă aici — el oricum plătește Barou/CAA integral, indiferent de mix, dar suma aia
+      // vine în întregime din partea semnată a profitului lui (conservarea totalului tot se respectă, doar
+      // mutată: ce nu-i revine lui Adi, cade pe Sami — vezi „Verificare (=0)” din foaia de calcul originală).
+      const adiShareCosturi = venitSemnat === 0 ? 0 : (costuriComune * cuvenitAdi) / venitSemnat
+      const samiShareCosturiSemnat = venitSemnat === 0 ? 0 : (costuriComune * cuvenitSamiSemnat) / venitSemnat
+      const profitSamiOficial = profitSamiDinDosare - (costuriComune - adiShareCosturi)
+      const profitAdiOficial = profitAdiDinDosare - adiShareCosturi
+      const deFacturatCatreAdi = cuvenitSamiSemnat - taxeSuplimentareSemnat
+      const deFacturatCatreAdiOficial = deFacturatCatreAdi - samiShareCosturiSemnat
+      return { luna, totalVenit, cuvenitSami, cuvenitAdi, caaPerDosare, caaReala, regim, barou, impozitProfit, taxeSuplimentare, profitSamiDinDosare, profitAdiDinDosare, profitSamiOficial, profitAdiOficial, deFacturatCatreAdi, deFacturatCatreAdiOficial }
     })
 
   const sum = (f: (m: SumarLunarMonth) => number) => luni.reduce((acc, m) => acc + f(m), 0)
@@ -196,5 +264,7 @@ export function computeSumarLunar(dosare: Dosar[], config: FacturareConfig = DEF
     profitAdiDinDosare: sum(m => m.profitAdiDinDosare),
     profitSamiOficial: sum(m => m.profitSamiOficial),
     profitAdiOficial: sum(m => m.profitAdiOficial),
+    deFacturatCatreAdi: sum(m => m.deFacturatCatreAdi),
+    deFacturatCatreAdiOficial: sum(m => m.deFacturatCatreAdiOficial),
   }
 }

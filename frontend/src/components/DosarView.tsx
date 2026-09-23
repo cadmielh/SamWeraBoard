@@ -286,14 +286,14 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
 
               <div className="cv2-two-col">
                 <div className="cv2-info-row">
-                  <span className="cv2-info-label">Profit Sami</span>
+                  <span className="cv2-info-label" data-tooltip={dosar.semnaturaElectronica ? `Estimare cu CAA ${pct(facturareConfig.caaProcent)} fix, per dosar — CAA reală (cu prag) se calculează în Sumarul lunar, doar din dosarele semnate; poate ieși puțin diferit.` : undefined}>Profit Sami</span>
                   <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitSami >= 0 ? 'var(--g700)' : 'var(--r600)' }}>
                     {formatRon(financiar.profitSami)} RON
                   </span>
                 </div>
                 {dosar.semnaturaElectronica && (
                   <div className="cv2-info-row">
-                    <span className="cv2-info-label">De facturat către Adi</span>
+                    <span className="cv2-info-label" data-tooltip={`Estimare cu CAA ${pct(facturareConfig.caaProcent)} fix, per dosar — CAA reală (cu prag) se calculează în Sumarul lunar, doar din dosarele semnate; poate ieși puțin diferit.`}>Profit Adi</span>
                     <span className="cv2-info-value" style={{ fontWeight: 700, color: financiar.profitAdi <= 0 ? 'var(--g700)' : 'var(--r600)' }}>
                       {formatRon(financiar.profitAdi)} RON
                     </span>

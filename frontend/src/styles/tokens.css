@@ -9,6 +9,11 @@
   /* Verde (succes / PJ) */
   --g50:  #ecfdf5; --g100: #dcfce7; --g200: #bbf7d0; --g300: #86efac;
   --g400: #4ade80; --g500: #10b981; --g600: #059669; --g700: #15803d;
+  /* Verde închis/deschis FIX — spre deosebire de --g500/--g700 de mai sus (care se redefinesc pe temă și își
+     inversează luminozitatea relativă între zi/noapte), astea NU se redefinesc nicăieri — rămân aceleași
+     valori indiferent de temă, ca „Profit Sami” (închis) vs „De facturat către Adi” (deschis) din Sumarul
+     lunar să-și păstreze relația vizuală la comutarea zi/noapte. */
+  --g-inchis-fix: #15803d; --g-deschis-fix: #4ade80;
   /* Roșu (eroare) */
   --r50:  #fef2f2; --r200: #fecaca; --r400: #f87171; --r500: #ef4444; --r600: #dc2626;
   /* Amber (avertisment / notițe) */
@@ -938,8 +943,8 @@ body {
 }
 .regim-chip::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--a500); flex-shrink:0; }
 
-/* ── rândul unic din modul extins — CAA (mai lată) + cele 2 profituri oficiale (mai restrânse), pe același rând ── */
-.sumar-lunar-cards-row { display:grid; grid-template-columns:2fr 1fr 1fr; gap:.875rem; align-items:stretch; }
+/* ── rândul unic din modul extins — Profit Sami, De facturat către Adi, CAA (mai lată, a treia), Profit Adi ── */
+.sumar-lunar-cards-row { display:grid; grid-template-columns:1fr 1fr 2fr 1fr; gap:.875rem; align-items:stretch; }
 
 .caa-compare {
   display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:1rem;

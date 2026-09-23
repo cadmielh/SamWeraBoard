@@ -241,19 +241,6 @@ export async function fetchAllDosare(workspaceId: string): Promise<Dosar[]> {
   return snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar))
 }
 
-/** Toate dosarele facturate — pentru Sumarul lunar (CAA reală, Barou), care
- * grupează pe luna facturării (`dataFacturarii`), nu pe `createdAt` ca restul
- * cardurilor. Firestore nu poate filtra server-side pe intervalul cerut
- * (dosarele vechi, facturate înainte de acest câmp, n-au deloc `dataFacturarii`
- * — un query pe interval le-ar sări), deci se preiau toate și se filtrează pe
- * lună client-side, în DosarStatsPanel — acceptabil la volumul modest al unui
- * cabinet (același compromis ca restul modulului, vezi comentariile de mai sus). */
-export async function fetchDosareFacturate(workspaceId: string): Promise<Dosar[]> {
-  const q = query(dosareCol(workspaceId), where('facturat', '==', true))
-  const snap = await getDocs(q)
-  return snap.docs.map(d => ({ ...d.data(), id: d.id } as Dosar))
-}
-
 /** Toate dosarele legate de un client — folosit de secțiunea "Dosare & Sarcini"
  * din fișa clientului. */
 export async function fetchDosareByClient(workspaceId: string, clientId: string): Promise<Dosar[]> {

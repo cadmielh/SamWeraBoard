@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { fetchDosareByMonth, fetchDosareByRange, fetchAllDosare, fetchDosareFacturate } from '../../lib/dosare'
-import { computeDosarStats, computeSumarLunar, dataEfectivaFacturare, trendColor, type DosarMonthStats, type SumarLunarStats, type StatsPeriod } from '../../lib/dosareStats'
+import { fetchDosareByMonth, fetchDosareByRange, fetchAllDosare } from '../../lib/dosare'
+import { computeDosarStats, computeSumarLunar, computeTarifStats, dataEfectivaFacturare, trendColor, type DosarMonthStats, type SumarLunarStats, type StatsPeriod, type TarifStats } from '../../lib/dosareStats'
 import type { Dosar, FacturareConfig } from '../../types'
 import { DEFAULT_FACTURARE_CONFIG } from '../../types'
 import { formatRon } from '../../lib/format'
@@ -33,7 +33,11 @@ const TREND_SUFFIX: Record<StatsPeriod, string> = {
 }
 
 const EMPTY_STATS: DosarMonthStats = {
-  totalDosare: 0, facturate: 0, tarifClientTotal: 0, tarifClientFacturat: 0,
+  totalDosare: 0, facturate: 0,
+}
+
+const EMPTY_TARIF_STATS: TarifStats = {
+  tarifClientTotal: 0, tarifClientFacturat: 0,
 }
 
 function fetchForPeriod(workspaceId: string, period: StatsPeriod, year: number, month0: number): [Promise<Dosar[]>, Promise<Dosar[]> | null] {
@@ -63,10 +67,9 @@ function fetchForPeriod(workspaceId: string, period: StatsPeriod, year: number, 
   ]
 }
 
-/** Limitele [start, end) ale perioadei curent afișate — folosite să filtrăm
- * client-side dosarele facturate (vezi fetchDosareFacturate) după luna
- * facturării, în loc de `createdAt` ca restul cardurilor. `null` pentru
- * 'total' — nicio limită. */
+/** Limitele [start, end) ale perioadei curent afișate — folosite să filtrăm client-side TOATE dosarele
+ * (vezi fetchAllDosare mai jos) după data facturării (cardul „Tarife aplicate clienților”, Sumarul lunar),
+ * în loc de `createdAt` ca la cardul „Număr dosare”. `null` pentru 'total' — nicio limită. */
 function periodBounds(period: StatsPeriod, year: number, month0: number): [Date, Date] | null {
   if (period === 'total') return null
   if (period === 'an') return [new Date(year, 0, 1), new Date(year + 1, 0, 1)]
@@ -77,10 +80,30 @@ function periodBounds(period: StatsPeriod, year: number, month0: number): [Date,
   return [new Date(year, month0, 1), new Date(year, month0 + 1, 1)]
 }
 
+/** Limitele perioadei ANTERIOARE celei afișate — pentru trendul cardului „Tarife aplicate clienților”
+ * (comparat cu tarifele facturate în perioada dinainte, nu cu cele create atunci). `null` pentru 'total'
+ * (nu are perioadă anterioară), la fel ca `periodBounds`. */
+function previousPeriodBounds(period: StatsPeriod, year: number, month0: number): [Date, Date] | null {
+  if (period === 'total') return null
+  if (period === 'an') return [new Date(year - 1, 0, 1), new Date(year, 0, 1)]
+  if (period === 'trimestru') {
+    const q = Math.floor(month0 / 3)
+    const totalQ = year * 4 + q - 1
+    const py = Math.floor(totalQ / 4)
+    const pq = totalQ - py * 4
+    return [new Date(py, pq * 3, 1), new Date(py, pq * 3 + 3, 1)]
+  }
+  const prevMonth0 = month0 === 0 ? 11 : month0 - 1
+  const prevYear = month0 === 0 ? year - 1 : year
+  return [new Date(prevYear, prevMonth0, 1), new Date(prevYear, prevMonth0 + 1, 1)]
+}
+
 export default function DosarStatsPanel({ workspaceId, period, year, month0, facturareConfig = DEFAULT_FACTURARE_CONFIG, samiAdiEnabled, refreshKey = 0 }: Props) {
   const [loading, setLoading] = useState(true)
   const [current, setCurrent] = useState<DosarMonthStats | null>(null)
   const [previous, setPrevious] = useState<DosarMonthStats | null>(null)
+  const [tarifCur, setTarifCur] = useState<TarifStats | null>(null)
+  const [tarifPrev, setTarifPrev] = useState<TarifStats | null>(null)
   const [sumarLunar, setSumarLunar] = useState<SumarLunarStats | null>(null)
   const [sumarExpanded, setSumarExpanded] = useState(false)
 
@@ -93,24 +116,31 @@ export default function DosarStatsPanel({ workspaceId, period, year, month0, fac
     // spinner mic în colț) până vine răspunsul, risc de citire greșită a unei
     // cifre financiare.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCurrent(null); setPrevious(null); setSumarLunar(null)
+    setCurrent(null); setPrevious(null); setTarifCur(null); setTarifPrev(null); setSumarLunar(null)
 
     const [currentFetch, previousFetch] = fetchForPeriod(workspaceId, period, year, month0)
     const bounds = periodBounds(period, year, month0)
+    const prevBounds = previousPeriodBounds(period, year, month0)
 
     Promise.all([
       currentFetch,
       previousFetch ?? Promise.resolve(null),
-      samiAdiEnabled ? fetchDosareFacturate(workspaceId) : Promise.resolve([]),
-    ]).then(([curDosare, prevDosare, facturate]) => {
+      // Toate dosarele workspace-ului — nu doar cele din perioada afișată (ca restul cardurilor): tarifele
+      // se calculează pe data facturării (sau „acum”, dacă nu s-a facturat încă — vezi computeTarifStats),
+      // nu pe createdAt, deci un dosar vechi, nefacturat, trebuie luat în calcul indiferent când a fost creat.
+      fetchAllDosare(workspaceId),
+    ]).then(([curDosare, prevDosare, allDosare]) => {
       if (cancelled) return
       setCurrent(computeDosarStats(curDosare))
       setPrevious(prevDosare ? computeDosarStats(prevDosare) : null)
+      setTarifCur(computeTarifStats(allDosare, bounds))
+      setTarifPrev(period === 'total' ? null : computeTarifStats(allDosare, prevBounds))
       if (samiAdiEnabled) {
         // Sumarul lunar (CAA reală, Barou) se raportează la luna FACTURĂRII, nu
         // la `createdAt` ca restul cardurilor — un dosar deschis în august dar
         // facturat în octombrie contează pentru octombrie aici (vezi
         // dataEfectivaFacturare).
+        const facturate = allDosare.filter(d => d.facturat)
         const facturateInPerioada = bounds
           ? facturate.filter(d => {
             const dt = dataEfectivaFacturare(d)
@@ -126,11 +156,12 @@ export default function DosarStatsPanel({ workspaceId, period, year, month0, fac
   }, [workspaceId, period, year, month0, facturareConfig, samiAdiEnabled, refreshKey])
 
   const cur = current ?? EMPTY_STATS
+  const tarif = tarifCur ?? EMPTY_TARIF_STATS
   const ron = formatRon
 
-  const renderTrend = (delta: number, up: boolean) => (
-    <div className="stat-tile-trend" style={{ color: previous ? trendColor(delta, up) : 'transparent' }}>
-      {previous
+  const renderTrend = (delta: number, up: boolean, hasPrevious: boolean) => (
+    <div className="stat-tile-trend" style={{ color: hasPrevious ? trendColor(delta, up) : 'transparent' }}>
+      {hasPrevious
         ? <>{delta === 0 ? '—' : delta > 0 ? `▲ +${ron(delta)}` : `▼ ${ron(delta)}`}<span style={{ color: 'var(--s400)', fontWeight: 400 }}> {TREND_SUFFIX[period]}</span></>
         : ' '}
     </div>
@@ -151,14 +182,14 @@ export default function DosarStatsPanel({ workspaceId, period, year, month0, fac
             {ron(cur.facturate)} <span className="stat-tile-value-total">/ {ron(cur.totalDosare)}</span>
           </div>
           <div className="stat-tile-secondary">facturate / total</div>
-          {renderTrend(cur.facturate - (previous?.facturate ?? 0), true)}
+          {renderTrend(cur.facturate - (previous?.facturate ?? 0), true, previous !== null)}
         </div>
 
         <div className="stat-tile">
           <div className="stat-tile-label">Tarife aplicate clienților</div>
-          <div className="stat-tile-value">{ron(cur.tarifClientFacturat)} RON <span className="stat-tile-tag">facturat</span></div>
-          <div className="stat-tile-secondary">Dintr-un total de {ron(cur.tarifClientTotal)} RON</div>
-          {renderTrend(cur.tarifClientFacturat - (previous?.tarifClientFacturat ?? 0), true)}
+          <div className="stat-tile-value">{ron(tarif.tarifClientFacturat)} RON <span className="stat-tile-tag">facturat</span></div>
+          <div className="stat-tile-secondary">Dintr-un total de {ron(tarif.tarifClientTotal)} RON</div>
+          {renderTrend(tarif.tarifClientFacturat - (tarifPrev?.tarifClientFacturat ?? 0), true, tarifPrev !== null)}
         </div>
 
         {sumarLunar && (

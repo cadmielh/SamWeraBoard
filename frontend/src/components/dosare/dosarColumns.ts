@@ -27,7 +27,7 @@ export const COLUMNS: ColDef[] = [
   { key: 'facturat',           label: 'Facturat',           width: 100, sortable: true,  filterable: true  },
   { key: 'dataFacturarii',     label: 'Data facturării',    width: 130, sortable: true,  filterable: true  },
   { key: 'profitSami',         label: 'Profit Sami',        width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
-  { key: 'profitAdi',          label: 'De facturat către Adi',         width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
+  { key: 'profitAdi',          label: 'Profit Adi',         width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
   /* câmpuri suplimentare — ascunse implicit */
   { key: 'dataAdmiterii',      label: 'Data admiterii',     width: 130, sortable: true,  filterable: true  },
   { key: 'dataPlanificare',    label: 'Data planificare',   width: 140, sortable: true,  filterable: true  },
