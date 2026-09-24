@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { analyzeBlanks, applyBlanks, type BlankAnalysis, type BlankGroup, type BlankSuggestion } from '../lib/api'
 import { choiceFromSuggestion, choicesToTags, summarize, tagForChoice, type BlankChoice } from '../lib/blanks'
+import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import type { ToastItem } from '../types'
 import Modal from './Modal'
 
@@ -49,7 +50,7 @@ function Row({ s, analysis, choice, onChange }: { s: BlankSuggestion; analysis: 
               <option value="ASOCIAT">Asociat</option><option value="ADMINISTRATOR">Administrator</option>
             </select>
             <input className="field-input" type="number" min={1} max={9} style={{ width: 64 }} value={choice.n} aria-label="Numărul persoanei"
-              onChange={e => onChange({ ...choice, n: Number(e.target.value) })} />
+              onChange={e => onChange({ ...choice, n: Number(e.target.value) })} onWheel={blurNumberInputOnWheel} />
             <select className="field-input" style={{ width: 'auto', maxWidth: 240 }} value={choice.field} aria-label="Câmpul persoanei"
               onChange={e => onChange({ ...choice, field: e.target.value })}>
               {Object.entries(analysis.personFields).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

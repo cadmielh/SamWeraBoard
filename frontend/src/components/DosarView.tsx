@@ -5,6 +5,7 @@ import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR } from '../types'
 import { isoDateToRo, toDateSafe, formatDateRo } from '../lib/dates'
 import { formatRon } from '../lib/format'
 import { useDosarFinanciar } from '../lib/useDosarFinanciar'
+import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import { CLAUSE_FIELD_SPECS } from '../lib/clauseFieldSpecs'
 import { useClienti, EMPTY_CLIENT } from '../lib/clienti'
 import { useApp } from '../AppContext'
@@ -63,6 +64,7 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
           ) : (
             <input ref={inputRef} className="field-input" type={type} value={val}
               onChange={e => setVal(e.target.value)}
+              onWheel={type === 'number' ? blurNumberInputOnWheel : undefined}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit() } else if (e.key === 'Escape') cancel() }} />
           )}
           <button className="btn btn-ghost btn-xs" onClick={cancel} disabled={saving} title="Anulează">✕</button>
@@ -164,8 +166,8 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
           <div className="cv2-section" style={{ background: 'var(--s100)', flexDirection: 'row', alignItems: 'center', gap: '.75rem' }}>
             <span style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>
               {dosar.facturat
-                ? '📥 Documentele au fost predate — dosarul e arhivat (vizibil în „Arhivă dosare", restaurabil oricând).'
-                : '📥 Documentele au fost predate — dosarul se arhivează automat după ce e marcat „Facturat".'}
+                ? '📥 Documentele au fost predate — dosarul a trecut în fila „Dosare încheiate" (poate fi redeschis oricând schimbând stadiul).'
+                : '📥 Documentele au fost predate — dosarul trece automat în „Dosare încheiate" după ce e marcat „Facturat".'}
             </span>
           </div>
         )}

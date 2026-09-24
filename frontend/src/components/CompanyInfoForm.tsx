@@ -4,6 +4,7 @@ import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet, type AdresaStructurata } from '../lib/adresa'
+import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import CAENCombobox from './CAENCombobox'
 import Modal from './Modal'
 import IconTrash from './IconTrash'
@@ -277,7 +278,8 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
         <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
           value={value.capitalSocial ?? ''}
-          onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))} />
+          onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))}
+          onWheel={blurNumberInputOnWheel} />
       </div>
       <div className="field">
         <label className="field-label">Părți sociale</label>

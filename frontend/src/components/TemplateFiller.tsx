@@ -2,10 +2,14 @@ import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import type { IDFields, DriveTarget } from '../lib/api'
-import type { BuiltinTemplate, ClauseMeta, Client, DocTemplate, ScannedPerson, ToastItem } from '../types'
+import type { BuiltinTemplate, ClauseMeta, Client, DocTemplate, Persoana, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
-import { buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel } from '../lib/placeholders'
+import {
+  buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel,
+  detectCustomPersonRoles, customPersonReplacements,
+} from '../lib/placeholders'
+import CustomPersonField from './CustomPersonField'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
@@ -158,7 +162,22 @@ export default function TemplateFiller({
   const asociatiCount = repeatGroups.ASOCIATI?.length ?? 0
   // Câmpuri completate manual la generare ({{CAMP_…}}): valori per șablon, peste cele calculate din client.
   const [manualValues, setManualValues] = useState<Record<string, Record<string, string>>>({})
-  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}) })
+  // Persoane pentru roluri „noi", în afara Asociat/Administrator (comodant, reprezentant legal…) — alese
+  // dintre asociații/administratorii firmei curente sau introduse manual (vezi CustomPersonField); per
+  // șablon, apoi per „ROL_N" (poziția). Nu se salvează la fișa clientului — doar pentru acest document.
+  const [customPersonPicks, setCustomPersonPicks] = useState<Record<string, Record<string, Persoana>>>({})
+  const existingPersonsForCustomRoles = [...(client?.asociati ?? []), ...(client?.administratori ?? [])]
+  const customPersonReplacementsFor = (id: string): Record<string, string> => {
+    const picks = customPersonPicks[id]
+    if (!picks) return {}
+    const out: Record<string, string> = {}
+    for (const [key, p] of Object.entries(picks)) {
+      const m = key.match(/^(.+)_(\d+)$/)
+      if (m) Object.assign(out, customPersonReplacements(m[1], Number(m[2]), p))
+    }
+    return out
+  }
+  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...customPersonReplacementsFor(id) })
 
   // Variantele „a/b” din document (sex, număr, categorie) le alege serverul; aici pregătim contextul din valorile finale.
   const variantsFor = (finalReplacements: Record<string, string>) =>
@@ -685,6 +704,10 @@ export default function TemplateFiller({
     const grouped = missing.length > 0 ? groupMissingFields(missing) : {}
     // {{CAMP_NR_HOTARARE}} etc.: câmpuri care nu vin din client, ci se scriu aici la generare
     const manualFields = tpl.placeholders.filter(isManualPlaceholder)
+    // Roluri de persoană „noi" (comodant, reprezentant legal…) — nu se completează automat din client ca
+    // Asociat/Administrator, dar utilizatorul poate alege una dintre persoanele deja cunoscute la firmă sau
+    // adăuga una nouă (vezi CustomPersonField).
+    const customRoles = detectCustomPersonRoles(tpl.placeholders)
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
@@ -700,6 +723,22 @@ export default function TemplateFiller({
                 />
               </div>
             ))}
+          </div>
+        )}
+        {customRoles.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
+            <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane</div>
+            {customRoles.flatMap(({ role, positions }) => positions.map(position => (
+              <CustomPersonField
+                key={`${role}_${position}`}
+                role={role} position={position}
+                existing={existingPersonsForCustomRoles}
+                value={customPersonPicks[tpl.id]?.[`${role}_${position}`] ?? null}
+                onChange={p => setCustomPersonPicks(prev => ({
+                  ...prev, [tpl.id]: { ...prev[tpl.id], [`${role}_${position}`]: p },
+                }))}
+              />
+            )))}
           </div>
         )}
         {/* Progress bar row */}

@@ -41,9 +41,11 @@ def test_recunoaste_campurile_din_context():
     found = blanks.analyze(make_doc())
     tags = by_tag(found)
     assert "{{SOCIETATE_DENUMIRE}}" in tags[:1]                      # denumirea firmei, singură sub titlu
-    assert "{{ASOCIAT_1_NUME}} {{ASOCIAT_1_PRENUME}}" in tags         # persoana definită (nume urmat de date de identitate)
+    # persoana definită (nume urmat de date de identitate) — calitatea ei explicită ("in calitate de COMODANT",
+    # la finalul clauzei) are prioritate pe implicitul "ASOCIAT" (vezi _role_for_hint/_role_override)
+    assert "{{COMODANT_1_NUME}} {{COMODANT_1_PRENUME}}" in tags
     for f in ("ADRESA", "JUDET", "SERIE_ACT", "NR_ACT", "EMISA_DE", "VALABILA_DE_LA", "CNP"):
-        assert f"{{{{ASOCIAT_1_{f}}}}}" in tags, f
+        assert f"{{{{COMODANT_1_{f}}}}}" in tags, f
     # sediul e defalcat în document ("cu sediul in ……, jud. ……"): SOCIETATE_SEDIU_FARA_JUDET, nu SOCIETATE_SEDIU
     # (altfel județul ar apărea de două ori — o dată din adresă, o dată din locul liber separat)
     for t in ("{{SOCIETATE_SEDIU_FARA_JUDET}}", "{{SOCIETATE_JUDET}}", "{{SOCIETATE_CIF}}", "{{ADMINISTRATOR_1_NUME}} {{ADMINISTRATOR_1_PRENUME}}",
@@ -84,7 +86,7 @@ def test_aplicarea_inlocuieste_doar_ce_e_ales_si_pastreaza_restul():
     cnp = next(f for f in found if f["field"] == "CNP")
     out = blanks.apply(raw, {cnp["id"]: cnp["tag"]})
     text = "\n".join(p.text for p in Document(io.BytesIO(out)).paragraphs)
-    assert "CNP {{ASOCIAT_1_CNP}}," in text
+    assert "CNP {{COMODANT_1_CNP}}," in text
     assert text.count("……") == sum(f["end"] - f["start"] > 0 for f in found) - 1     # restul rămâne neatins
 
 
@@ -102,9 +104,9 @@ def test_flux_complet_locuri_libere_apoi_completare_cu_datele_clientului():
     values = {
         "{{SOCIETATE_DENUMIRE}}": "EXEMPLU SRL", "{{SOCIETATE_SEDIU_FARA_JUDET}}": "Timișoara, Str. Exemplu nr. 1", "{{SOCIETATE_JUDET}}": "Timiș",
         "{{SOCIETATE_CIF}}": "12345678", "{{CAPITAL_SOCIAL_TOTAL}}": "200", "{{PARTI_SOCIALE_TOTALE}}": "20", "{{DATA_AZI}}": "01.01.2026",
-        "{{ASOCIAT_1_NUME}}": "Ionescu", "{{ASOCIAT_1_PRENUME}}": "Maria", "{{ASOCIAT_1_ADRESA}}": "Cluj, str. Test 2", "{{ASOCIAT_1_JUDET}}": "Cluj",
-        "{{ASOCIAT_1_SERIE_ACT}}": "CJ", "{{ASOCIAT_1_NR_ACT}}": "123456", "{{ASOCIAT_1_EMISA_DE}}": "SPCLEP Cluj", "{{ASOCIAT_1_VALABILA_DE_LA}}": "01.02.2020",
-        "{{ASOCIAT_1_CNP}}": "2900101123456", "{{ADMINISTRATOR_1_NUME}}": "Popescu", "{{ADMINISTRATOR_1_PRENUME}}": "Ion",
+        "{{COMODANT_1_NUME}}": "Ionescu", "{{COMODANT_1_PRENUME}}": "Maria", "{{COMODANT_1_ADRESA}}": "Cluj, str. Test 2", "{{COMODANT_1_JUDET}}": "Cluj",
+        "{{COMODANT_1_SERIE_ACT}}": "CJ", "{{COMODANT_1_NR_ACT}}": "123456", "{{COMODANT_1_EMISA_DE}}": "SPCLEP Cluj", "{{COMODANT_1_VALABILA_DE_LA}}": "01.02.2020",
+        "{{COMODANT_1_CNP}}": "2900101123456", "{{ADMINISTRATOR_1_NUME}}": "Popescu", "{{ADMINISTRATOR_1_PRENUME}}": "Ion",
         "{{CAMP_INCEPAND_CU}}": "10.11.2025",
     }
     manual = next(f["tag"] for f in found if f["scope"] == "manual")

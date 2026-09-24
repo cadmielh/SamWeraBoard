@@ -8,6 +8,7 @@ import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
 import { useApp } from '../AppContext'
 import { formatDateRo } from '../lib/dates'
 import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet } from '../lib/adresa'
+import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
 import Modal from './Modal'
@@ -743,7 +744,8 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
                     <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
                     <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
                       value={form.capitalSocial ?? ''}
-                      onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))} />
+                      onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))}
+                      onWheel={blurNumberInputOnWheel} />
                   </div>
                   <div className="field">
                     <label className="field-label">Părți sociale</label>

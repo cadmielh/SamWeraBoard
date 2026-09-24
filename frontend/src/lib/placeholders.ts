@@ -116,6 +116,38 @@ export function resolvePersons(
   return scanned.length > 0 ? scanned.map(scannedToPersoana) : clientList
 }
 
+const KNOWN_AUTO_ROLES = new Set(['ASOCIAT', 'ADMINISTRATOR', 'MEMBRU_IF'])
+const PERSOANA_FIELD_NAMES = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'SERIE_ACT', 'NR_ACT', 'SERIE'])
+
+/**
+ * Roluri de persoană „noi”, în afara Asociat/Administrator/Membru IF (care au deja completare automată din
+ * client) — ex. {{COMODANT_1_NUME}}, {{REPREZENTANT_LEGAL_1_CNP}} — detectate generic, direct din etichetele
+ * șablonului (orice {{ROL_N_CÂMP}} a cărei CÂMP e un câmp de persoană cunoscut), nu dintr-o listă fixă de
+ * roluri: un contract de comodat, o împuternicire etc. pot avea orice calitate, imposibil de anticipat
+ * dinainte (vezi blanks.py: _ROLE_KEYWORDS — aceeași filozofie, pe partea de recunoaștere a șablonului).
+ */
+export function detectCustomPersonRoles(placeholders: string[]): { role: string; positions: number[] }[] {
+  const byRole = new Map<string, Set<number>>()
+  for (const ph of placeholders) {
+    const inner = ph.replace(/^\{\{|\}\}$/g, '')
+    const m = inner.match(/^([A-Z][A-Z_]*)_(\d+)_([A-Z_]+)$/)
+    if (!m) continue
+    const [, role, posStr, field] = m
+    if (KNOWN_AUTO_ROLES.has(role) || !PERSOANA_FIELD_NAMES.has(field)) continue
+    if (!byRole.has(role)) byRole.set(role, new Set())
+    byRole.get(role)!.add(Number(posStr))
+  }
+  return [...byRole.entries()]
+    .map(([role, positions]) => ({ role, positions: [...positions].sort((a, b) => a - b) }))
+    .sort((a, b) => a.role.localeCompare(b.role))
+}
+
+/** Etichetele {{ROL_N_CÂMP}} pentru o persoană aleasă/introdusă pentru un rol nou de persoană (vezi
+ * detectCustomPersonRoles) — aceeași mapare ca la Asociat/Administrator (persoanaToMap). */
+export function customPersonReplacements(role: string, position: number, p: Persoana): Record<string, string> {
+  return persoanaToMap(p, `${role}_${position}`)
+}
+
 export function buildReplacements({ idFields, client, scannedPersons }: BuildOptions): Record<string, string> {
   const out: Record<string, string> = {}
 
@@ -335,6 +367,13 @@ const FRIENDLY_FIELD: Record<string, string> = {
   CONTRACT_PUNCT_LUCRU_DATA: 'Data contract punct de lucru',
 }
 
+/** „REPREZENTANT_LEGAL” → „Reprezentant legal”, „COMODANT” → „Comodant” — etichetă prietenoasă pentru un rol
+ * de persoană nou, necunoscut dinainte (vezi detectCustomPersonRoles mai jos). */
+export function roleLabel(role: string): string {
+  const words = role.toLowerCase().replace(/_/g, ' ')
+  return words ? words[0].toUpperCase() + words.slice(1) : role
+}
+
 export function parsePlaceholder(ph: string): { group: string; field: string } {
   const inner = ph.replace(/^\{\{|\}\}$/g, '')
 
@@ -365,6 +404,11 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
 
   const soc = inner.match(/^SOCIETATE_(.+)$/)
   if (soc) return { group: 'Societate', field: FRIENDLY_FIELD[soc[1]] ?? soc[1] }
+
+  // Rol de persoană nou, necunoscut dinainte (comodant, reprezentant legal…) — vezi detectCustomPersonRoles;
+  // verificat DUPĂ Asociat/Administrator/Membru IF de mai sus, care au fiecare eticheta lor specifică.
+  const custom = inner.match(/^([A-Z][A-Z_]*)_(\d+)_(.+)$/)
+  if (custom) return { group: `${roleLabel(custom[1])} ${custom[2]}`, field: FRIENDLY_FIELD[custom[3]] ?? custom[3] }
 
   return { group: 'Persoană', field: FRIENDLY_FIELD[inner] ?? inner }
 }

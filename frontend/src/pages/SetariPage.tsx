@@ -6,6 +6,7 @@ import { useApp } from '../AppContext'
 import AuditLogCard from '../components/AuditLogCard'
 import { resolveFacturareConfig } from '../types'
 import type { FacturareConfig } from '../types'
+import { blurNumberInputOnWheel } from '../lib/inputEvents'
 
 const THEME_OPTIONS: { key: Theme; label: string; desc: string }[] = [
   { key: 'light', label: 'Deschis', desc: 'Fundal alb, potrivit pentru lucru ziua' },
@@ -52,6 +53,7 @@ function PercentField({ label, hint, value, onChange }: { label: string; hint: s
         step={0.1}
         value={Math.round(value * 1000) / 10}
         onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value) / 100)}
+        onWheel={blurNumberInputOnWheel}
       />
       <div className="card-sub" style={{ marginTop: '.25rem' }}>{hint}</div>
     </div>
@@ -69,6 +71,7 @@ function RonField({ label, hint, value, onChange }: { label: string; hint: strin
         step={1}
         value={value}
         onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+        onWheel={blurNumberInputOnWheel}
       />
       <div className="card-sub" style={{ marginTop: '.25rem' }}>{hint}</div>
     </div>

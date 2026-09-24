@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useReducer, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { Dosar, DosarInput } from '../types'
 import { obiecteCereriiText, resolveFacturareConfig } from '../types'
-import { useDosare, isDosarArhivat } from '../lib/dosare'
+import { useDosare, useArchivedDosare, isDosarArhivat } from '../lib/dosare'
 import { useSarcini } from '../lib/sarcini'
 import { buildSarcinaForDosar } from '../lib/dosarSarcini'
 import { useApp } from '../AppContext'
@@ -11,12 +11,17 @@ import DosarView from '../components/DosarView'
 import DosarTable, { DosarColumnsPanel } from '../components/dosare/DosarTable'
 import { applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, getVisibleColumns } from '../components/dosare/dosarColumns'
 import DosarStatsPanel from '../components/dosare/DosarStatsPanel'
-import ArchivedDosareSection from '../components/dosare/ArchivedDosareSection'
 import { LUNI, type StatsPeriod } from '../lib/dosareStats'
 import Modal from '../components/Modal'
 
 type ModalState = 'add' | Dosar | null
-type Tab = 'lista' | string
+/* Fila „active" = dosare în lucru (tot ce nu e arhivat), fila „incheiate" =
+   fosta arhivă (stadiu documente_predate_client + facturat === true) — vezi
+   isDosarArhivat/useArchivedDosare din lib/dosare.ts. Orice alt string = id
+   de dosar deschis ca tab, ca la Clienți. */
+type ListTab = 'active' | 'incheiate'
+type Tab = ListTab | string
+const isListTab = (t: Tab): t is ListTab => t === 'active' || t === 'incheiate'
 
 const STATS_PERIOD_OPTIONS: { key: StatsPeriod; label: string }[] = [
   { key: 'luna', label: 'Lună' },
@@ -41,7 +46,11 @@ export default function DosarePage() {
   const { dosare, loading, hasMore, loadingMore, loadMore, add, update, remove } = useDosare(workspaceId)
   const sarciniCtx = useSarcini(workspaceId)
 
-  const [tab, setTab] = useState<Tab>('lista')
+  const [tab, setTab] = useState<Tab>('active')
+  // Fila listă la care se revine la închiderea unui dosar deschis (Escape,
+  // ×, ștergere) — reținută la deschidere, ca un dosar deschis din „Dosare
+  // încheiate" să nu te arunce înapoi în „Dosare în lucru".
+  const [returnTab, setReturnTab] = useState<ListTab>('active')
   const [searchQuery, setSearchQuery] = useState('')
   const [modal, setModal] = useState<ModalState>(null)
   const [deleteConf, setDeleteConf] = useState<Dosar | null>(null)
@@ -49,14 +58,16 @@ export default function DosarePage() {
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set())
   const [prefillClient, setPrefillClient] = useState<{ id: string; denumire: string } | undefined>(undefined)
 
-  // Incrementat după o arhivare/restaurare reușită — ArchivedDosareSection
-  // folosește un hook one-shot, nu live, deci fără asta noul item ar apărea
-  // doar la reload de pagină.
-  const [archiveRefreshKey, setArchiveRefreshKey] = useState(0)
+  // Incrementat după o editare care poate schimba componența filei „Dosare
+  // încheiate" (stadiu/facturat) — useArchivedDosare e one-shot, nu live,
+  // deci fără asta un dosar proaspăt încheiat/redeschis n-ar apărea/dispărea
+  // din filă decât la reload de pagină.
+  const [incheiateRefreshKey, setIncheiateRefreshKey] = useState(0)
+  const { dosare: dosareIncheiate, loading: loadingIncheiate, hasMore: hasMoreIncheiate, loadingMore: loadingMoreIncheiate, loadMore: loadMoreIncheiate } = useArchivedDosare(workspaceId, incheiateRefreshKey)
   // Cardurile din DosarStatsPanel fac propriile citiri Firestore (pe
   // perioadă), separate de `dosare` — nu se actualizează singure la o
   // adăugare/editare/ștergere. Incrementat la orice mutație, forțează
-  // panoul să refacă citirea, ca la archiveRefreshKey mai jos.
+  // panoul să refacă citirea, ca la incheiateRefreshKey mai jos.
   const [statsRefreshKey, setStatsRefreshKey] = useState(0)
 
   /* Perioadă + lună navigate pentru statisticile din header — selectorul e
@@ -87,50 +98,46 @@ export default function DosarePage() {
         : `${LUNI[month0]} ${year}`
 
   /* Tab-uri per dosar deschis — mai multe dosare pot fi deschise simultan,
-     ca la Clienți; „lista" rămâne tab-ul static implicit. */
+     ca la Clienți; „active"/„incheiate" rămân filele-listă statice. */
   const [openDosarIds, setOpenDosarIds] = useState<string[]>([])
-  // Dosare deschise ca tab dar absente din pagina curentă de `dosare` (ex.
-  // unul arhivat, deschis direct din ArchivedDosareSection — care are propria
-  // interogare, separată de paginarea listei principale). Fallback la
-  // openDosare de mai jos; patch-uite manual în onSaveField mai jos, ca update()
-  // din useDosare (care scrie doar în `dosare`) să nu le lase desincronizate.
+  // Dosare deschise ca tab dar absente din pagina curentă a listei din care
+  // au fost deschise (ex. unul din „Dosare încheiate", care are propria
+  // interogare/paginare, separată de cea a listei „active"). Fallback la
+  // openDosare de mai jos; patch-uit manual în onSaveField mai jos, ca
+  // update() din useDosare (care scrie doar în `dosare`) să nu-l lase
+  // desincronizat.
   const [extraDosare, setExtraDosare] = useState<Record<string, Dosar>>({})
 
   const openDosare = useMemo(
     () => openDosarIds
-      .map(id => dosare.find(d => d.id === id) ?? extraDosare[id])
+      .map(id => dosare.find(d => d.id === id) ?? extraDosare[id] ?? dosareIncheiate.find(d => d.id === id))
       .filter(d => d && !pendingDeleteIds.has(d.id)) as Dosar[],
-    [openDosarIds, dosare, extraDosare, pendingDeleteIds]
+    [openDosarIds, dosare, extraDosare, dosareIncheiate, pendingDeleteIds]
   )
 
   const openTab = useCallback((d: Dosar) => {
+    setReturnTab(prev => (isListTab(tab) ? (tab as ListTab) : prev))
+    setExtraDosare(prev => ({ ...prev, [d.id]: d }))
     setOpenDosarIds(prev => prev.includes(d.id) ? prev : [...prev, d.id])
     setTab(d.id)
-  }, [])
-
-  // Deschide un dosar din arhivă — reține obiectul complet în extraDosare,
-  // fiindcă useArchivedDosare nu partajează pagina cu useDosare.
-  const openArchivedTab = useCallback((d: Dosar) => {
-    setExtraDosare(prev => ({ ...prev, [d.id]: d }))
-    openTab(d)
-  }, [openTab])
+  }, [tab])
 
   const closeTab = useCallback((id: string) => {
     setOpenDosarIds(prev => prev.filter(x => x !== id))
-    setTab(prev => prev === id ? 'lista' : prev)
+    setTab(prev => prev === id ? returnTab : prev)
     setExtraDosare(prev => {
       if (!(id in prev)) return prev
       const next = { ...prev }; delete next[id]; return next
     })
-  }, [])
+  }, [returnTab])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && tab !== 'lista') setTab('lista')
+      if (e.key === 'Escape' && !isListTab(tab)) setTab(returnTab)
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [tab])
+  }, [tab, returnTab])
 
   // Deep-link din ClientView: ?open=<dosarId> deschide direct fișa acelui
   // dosar (ca tab nou); ?newForClient=<id>&denumire=<nume> deschide
@@ -153,8 +160,14 @@ export default function DosarePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Stare de sortare/filtrare — separată pe fiecare filă-listă, ca filtrele
+  // aplicate în „Dosare în lucru" să nu se scurgă în „Dosare încheiate" și
+  // invers. Coloanele vizibile (hiddenCols) rămân comune — e o preferință
+  // vizuală, nu una legată de conținutul filei.
   const [sortState, dispatchSort] = useReducer(sortReducer, { col: null, dir: 'asc' })
   const [colFilters, setColFilters] = useState<Record<string, string[]>>({})
+  const [sortStateInch, dispatchSortInch] = useReducer(sortReducer, { col: null, dir: 'asc' })
+  const [colFiltersInch, setColFiltersInch] = useState<Record<string, string[]>>({})
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('samwera-dosare-hidden-cols')
@@ -188,14 +201,31 @@ export default function DosarePage() {
     )
   }, [dosare, searchQuery, pendingDeleteIds])
 
+  const displayedIncheiate = useMemo(() => {
+    const active = dosareIncheiate.filter(d => !pendingDeleteIds.has(d.id))
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return active
+    return active.filter(d =>
+      (d.clientDenumire || d.clientDenumireLibera || '').toLowerCase().includes(q) ||
+      obiecteCereriiText(d.obiecteCererii).toLowerCase().includes(q) ||
+      d.nrInregistrareDosar.toLowerCase().includes(q)
+    )
+  }, [dosareIncheiate, searchQuery, pendingDeleteIds])
+
   const processedDosare = useMemo(() => {
     const filtered = applyFilters(displayed, colFilters, facturareConfig)
     return applySort(filtered, sortState.col, sortState.dir, facturareConfig)
   }, [displayed, colFilters, sortState, facturareConfig])
 
-  const hasActiveFiltersOrSort = Object.values(colFilters).some(v => v.length > 0) || sortState.col !== null
+  const processedDosareIncheiate = useMemo(() => {
+    const filtered = applyFilters(displayedIncheiate, colFiltersInch, facturareConfig)
+    return applySort(filtered, sortStateInch.col, sortStateInch.dir, facturareConfig)
+  }, [displayedIncheiate, colFiltersInch, sortStateInch, facturareConfig])
 
-  const viewing = tab !== 'lista'
+  const hasActiveFiltersOrSort = Object.values(colFilters).some(v => v.length > 0) || sortState.col !== null
+  const hasActiveFiltersOrSortInch = Object.values(colFiltersInch).some(v => v.length > 0) || sortStateInch.col !== null
+
+  const viewing = !isListTab(tab)
     ? openDosare.find(d => d.id === tab) ?? null
     : null
 
@@ -245,25 +275,38 @@ export default function DosarePage() {
     dispatchSort({ type: 'RESET' })
   }, [])
 
-  // Restaurare rapidă din arhivă — direct în „În lucru", fără a deschide
-  // dosarul. Trece prin update() din useDosare (nu o scriere Firestore
-  // directă), ca lista principală să se actualizeze imediat, la fel ca orice
-  // altă editare de stadiu.
-  const handleQuickRestore = useCallback(async (d: Dosar) => {
-    if (!workspaceId) return
-    await update(workspaceId, d.id, { stadiu: 'in_lucru' }, d)
-    setExtraDosare(prev => prev[d.id] ? { ...prev, [d.id]: { ...prev[d.id], stadiu: 'in_lucru' } } : prev)
-    setArchiveRefreshKey(k => k + 1)
-    setStatsRefreshKey(k => k + 1)
-    toast('Dosar restaurat — În lucru', 'ok')
-  }, [workspaceId, update, toast])
+  const handleFilterToggleInch = useCallback((key: string, val: string) => {
+    setColFiltersInch(prev => {
+      const curr = prev[key] ?? []
+      const next = curr.includes(val) ? curr.filter(v => v !== val) : [...curr, val]
+      return { ...prev, [key]: next }
+    })
+  }, [])
+
+  const handleSelectAllFilterInch = useCallback((key: string) => {
+    const all = getUniqueValues(displayedIncheiate, key, facturareConfig)
+    setColFiltersInch(prev => {
+      const curr = prev[key] ?? []
+      const allSelected = all.length > 0 && all.every(v => curr.includes(v))
+      return { ...prev, [key]: allSelected ? [] : all }
+    })
+  }, [displayedIncheiate, facturareConfig])
+
+  const handleClearFilterInch = useCallback((key: string) => {
+    setColFiltersInch(prev => ({ ...prev, [key]: [] }))
+  }, [])
+
+  const resetAllInch = useCallback(() => {
+    setColFiltersInch({})
+    dispatchSortInch({ type: 'RESET' })
+  }, [])
 
   const handleSave = useCallback(async (data: DosarInput, creeazaSarcina: boolean) => {
     if (!workspaceId || !user) return
     if (modal && typeof modal === 'object') {
       await update(workspaceId, modal.id, data, modal)
       toast('Dosar actualizat', 'ok')
-      setArchiveRefreshKey(k => k + 1)
+      setIncheiateRefreshKey(k => k + 1)
       setStatsRefreshKey(k => k + 1)
       return
     }
@@ -279,15 +322,15 @@ export default function DosarePage() {
   }, [modal, workspaceId, user, add, update, sarciniCtx, toast])
 
   // Ștergere amânată — dosarul dispare imediat din UI (pendingDeleteIds,
-  // filtrat în displayed/openDosare), dar scrierea reală în Firestore se
-  // întâmplă abia când expiră toast-ul; "Anulează" doar scoate id-ul din
-  // pendingDeleteIds — nimic n-a fost șters vreodată.
+  // filtrat în displayed/displayedIncheiate/openDosare), dar scrierea reală
+  // în Firestore se întâmplă abia când expiră toast-ul; "Anulează" doar
+  // scoate id-ul din pendingDeleteIds — nimic n-a fost șters vreodată.
   const handleDelete = useCallback(() => {
     if (!deleteConf || !workspaceId) return
     const id = deleteConf.id
     const label = deleteConf.clientDenumire || deleteConf.clientDenumireLibera || 'dosarul'
     setPendingDeleteIds(prev => new Set(prev).add(id))
-    if (tab === id) setTab('lista')
+    if (tab === id) setTab(returnTab)
     setDeleteConf(null)
     toast(`Dosarul „${label}" a fost șters`, 'ok', {
       onExpire: async () => {
@@ -305,7 +348,7 @@ export default function DosarePage() {
         onClick: () => setPendingDeleteIds(prev => { const next = new Set(prev); next.delete(id); return next }),
       },
     })
-  }, [deleteConf, workspaceId, remove, toast, tab])
+  }, [deleteConf, workspaceId, remove, toast, tab, returnTab])
 
   if (!workspaceId) {
     return (
@@ -373,7 +416,14 @@ export default function DosarePage() {
         </div>
 
         <div className="page-tabs page-tabs--lg">
-          <button className={`page-tab${tab === 'lista' ? ' page-tab--active' : ''}`} onClick={() => setTab('lista')}>Listă</button>
+          <button className={`page-tab${tab === 'active' ? ' page-tab--active' : ''}`} onClick={() => setTab('active')}>Dosare în lucru</button>
+          <button
+            className={`page-tab${tab === 'incheiate' ? ' page-tab--active' : ''}`}
+            onClick={() => setTab('incheiate')}
+            data-tooltip='Ajung aici automat dosarele cu stadiul „Documente predate client" ȘI marcate „Facturat". Le lipsește oricare din cele două → rămân în „Dosare în lucru".'
+          >
+            Dosare încheiate
+          </button>
           {openDosare.map(d => (
             <button
               key={d.id}
@@ -386,11 +436,8 @@ export default function DosarePage() {
           ))}
         </div>
 
-        {/* overflow:auto (nu :hidden, ca implicit .page-body) — necesar ca
-            secțiunea de arhivă de mai jos să rămână accesibilă prin scroll
-            odată extinsă, fără să comprime tabelul de sus. */}
         <div className="page-body" style={{ overflow: 'auto' }}>
-          {tab === 'lista' && (
+          {isListTab(tab) && (
             <>
               <div className="toolbar" style={{ flexShrink: 0 }}>
                 <div className="search-box">
@@ -405,16 +452,26 @@ export default function DosarePage() {
               </div>
 
               <div className="table-controls" style={{ flexShrink: 0 }}>
-                <span>
-                  {loading
-                    ? 'Se încarcă...'
-                    : `${processedDosare.length}${processedDosare.length !== displayed.length ? ` / ${displayed.length}` : ''} dosar${displayed.length !== 1 ? 'e' : ''}`}
-                  {searchQuery && ` · rezultate pentru „${searchQuery}"`}
-                  {!searchQuery && hasMore && !loading && ' (nu toate sunt încărcate încă)'}
-                </span>
+                {tab === 'active' ? (
+                  <span>
+                    {loading
+                      ? 'Se încarcă...'
+                      : `${processedDosare.length}${processedDosare.length !== displayed.length ? ` / ${displayed.length}` : ''} dosar${displayed.length !== 1 ? 'e' : ''}`}
+                    {searchQuery && ` · rezultate pentru „${searchQuery}"`}
+                    {!searchQuery && hasMore && !loading && ' (nu toate sunt încărcate încă)'}
+                  </span>
+                ) : (
+                  <span>
+                    {loadingIncheiate
+                      ? 'Se încarcă...'
+                      : `${processedDosareIncheiate.length}${processedDosareIncheiate.length !== displayedIncheiate.length ? ` / ${displayedIncheiate.length}` : ''} dosar${displayedIncheiate.length !== 1 ? 'e' : ''}`}
+                    {searchQuery && ` · rezultate pentru „${searchQuery}"`}
+                    {!searchQuery && hasMoreIncheiate && !loadingIncheiate && ' (nu toate sunt încărcate încă)'}
+                  </span>
+                )}
                 <div style={{ flex: 1 }} />
-                {hasActiveFiltersOrSort && (
-                  <button className="btn btn-ghost btn-sm" onClick={resetAll}>× Resetează filtre</button>
+                {(tab === 'active' ? hasActiveFiltersOrSort : hasActiveFiltersOrSortInch) && (
+                  <button className="btn btn-ghost btn-sm" onClick={tab === 'active' ? resetAll : resetAllInch}>× Resetează filtre</button>
                 )}
                 <div style={{ position: 'relative' }}>
                   <button
@@ -442,7 +499,7 @@ export default function DosarePage() {
               <DosarView
                 dosar={viewing}
                 embedded
-                onClose={() => setTab('lista')}
+                onClose={() => setTab(returnTab)}
                 onEdit={() => setModal(viewing)}
                 onDelete={() => setDeleteConf(viewing)}
                 onSaveField={async patch => {
@@ -453,22 +510,21 @@ export default function DosarePage() {
                     return
                   }
                   // update() scrie optimist doar în `dosare` — un dosar deschis
-                  // din arhivă (extraDosare) trebuie ținut la zi separat.
+                  // din „Dosare încheiate" trebuie ținut la zi separat.
                   setExtraDosare(prev => prev[viewing.id]
                     ? { ...prev, [viewing.id]: { ...prev[viewing.id], ...patch } as Dosar }
                     : prev)
                   toast('Dosar actualizat', 'ok')
-                  // Arhivarea depinde de stadiu ȘI facturat — dacă oricare
-                  // s-a schimbat, semnalăm secțiunii de arhivă să se reîncarce.
-                  if (patch.stadiu !== undefined || patch.facturat !== undefined) {
-                    setArchiveRefreshKey(k => k + 1)
-                  }
-                  // Orice câmp editat inline poate afecta cardurile financiare
-                  // (tarif, taxe, facturat, split Adi) — reîncărcăm întotdeauna.
+                  // Orice câmp editat inline poate schimba ce apare în „Dosare
+                  // încheiate" (nu doar stadiu/facturat, ci și restul
+                  // coloanelor vizibile acolo) — reîncărcăm întotdeauna.
+                  setIncheiateRefreshKey(k => k + 1)
+                  // La fel și cardurile financiare (tarif, taxe, facturat,
+                  // split Adi) — reîncărcăm întotdeauna.
                   setStatsRefreshKey(k => k + 1)
                 }}
               />
-            ) : (
+            ) : tab === 'active' ? (
               <>
                 {loading && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
@@ -515,9 +571,52 @@ export default function DosarePage() {
                   </div>
                 )}
               </>
+            ) : (
+              <>
+                {loadingIncheiate && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
+                    <span className="spin spin-dark" style={{ width: 24, height: 24 }} />
+                  </div>
+                )}
+                {!loadingIncheiate && processedDosareIncheiate.length === 0 && (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">✅</div>
+                    <div className="empty-state-text">
+                      {searchQuery || hasActiveFiltersOrSortInch ? 'Niciun dosar nu corespunde filtrelor active.' : 'Nu există dosare încheiate.'}
+                    </div>
+                    {hasActiveFiltersOrSortInch && (
+                      <button className="btn btn-ghost btn-sm" onClick={resetAllInch}>Resetează filtrele</button>
+                    )}
+                  </div>
+                )}
+                {!loadingIncheiate && processedDosareIncheiate.length > 0 && (
+                  <DosarTable
+                    columns={columns}
+                    dosare={processedDosareIncheiate}
+                    rawDosare={displayedIncheiate}
+                    sortState={sortStateInch}
+                    colFilters={colFiltersInch}
+                    hiddenCols={hiddenCols}
+                    facturareConfig={facturareConfig}
+                    onColSort={col => dispatchSortInch({ type: 'TOGGLE', col })}
+                    onFilterToggle={handleFilterToggleInch}
+                    onSelectAllFilter={handleSelectAllFilterInch}
+                    onClearFilter={handleClearFilterInch}
+                    onView={openTab}
+                    onEdit={d => setModal(d)}
+                    onDelete={d => setDeleteConf(d)}
+                  />
+                )}
+                {!loadingIncheiate && !searchQuery && hasMoreIncheiate && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '.75rem', borderTop: '1px solid var(--s100)' }}>
+                    <button className="btn btn-ghost btn-sm" disabled={loadingMoreIncheiate} onClick={() => loadMoreIncheiate(workspaceId)}>
+                      {loadingMoreIncheiate ? 'Se încarcă...' : 'Încarcă mai multe dosare'}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
-          {tab === 'lista' && <ArchivedDosareSection workspaceId={workspaceId} refreshKey={archiveRefreshKey} onOpenDosar={openArchivedTab} onRestore={handleQuickRestore} />}
         </div>
       </div>
 

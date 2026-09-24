@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from docx import Document
+from docx.enum.text import WD_TAB_LEADER
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -228,10 +229,12 @@ def test_administratori_mentionati_devin_administratori_lista_nu_asociati_lista(
 
 def test_o_singura_mentiune_ramane_individuala_nu_devine_lista():
     """O mențiune singură poate desemna o persoană anume (ex. administratorul nou numit) — nu se presupune
-    că înseamnă „toți”, doar pentru că nu are date de identitate lângă ea."""
+    că înseamnă „toți”, doar pentru că nu are date de identitate lângă ea. Rolul e REPREZENTANT_LEGAL, nu
+    ASOCIAT — subiectul propoziției („Reprezentantul legal ... va fi”, vezi _role_subject), nu cuvântul mai
+    apropiat de locul liber („asociatul”, care descrie doar CINE ocupă acel rol, nu o declarație de rol)."""
     raw = make_doc(["Reprezentantul legal al societății va fi asociatul …… . Reprezentarea este generală."])
     found = blanks.analyze(raw)
-    assert len(found) == 1 and found[0]["field"] == "NUME_COMPLET" and found[0]["tag"] == "{{ASOCIAT_1_NUME}} {{ASOCIAT_1_PRENUME}}"
+    assert len(found) == 1 and found[0]["field"] == "NUME_COMPLET" and found[0]["tag"] == "{{REPREZENTANT_LEGAL_1_NUME}} {{REPREZENTANT_LEGAL_1_PRENUME}}"
 
 
 def test_lista_scalabila_functioneaza_la_1_2_si_3_persoane():
@@ -332,9 +335,16 @@ def test_domeniul_si_activitatea_principala_needitate_devin_caen_domeniu_si_caen
     tpl = blanks.apply(raw, {f["id"]: f["tag"] for f in found})
     out = fill_docx(tpl, {"{{CAEN_DOMENIU}}": "953 - Repararea și întreținerea autovehiculelor",
                           "{{CAEN_1}}": "9531 - Repararea și întreținerea autovehiculelor"})
-    texts = [p.text for p in Document(io.BytesIO(out)).paragraphs]
+    paragraphs = Document(io.BytesIO(out)).paragraphs
+    texts = [p.text for p in paragraphs]
     assert texts[0] == "Art.7.- Domeniul principal de activitate este: 953 - Repararea și întreținerea autovehiculelor ; -"
-    assert texts[1] == "Activitatea principală este: 9531 - Repararea și întreținerea autovehiculelor  ---------"
+    # Liniuțele de umplere ("---------", fixe ca număr în șablon) sunt înlocuite
+    # la completare de un tab-stop dreapta cu leader de liniuțe (vezi
+    # doc_filler._fix_dash_fill_tails) — Word desenează liniuța până la
+    # margine oricare ar fi lungimea finală a textului, nu doar un număr fix.
+    assert texts[1] == "Activitatea principală este: 9531 - Repararea și întreținerea autovehiculelor  \t"
+    tab_stops = list(paragraphs[1].paragraph_format.tab_stops)
+    assert len(tab_stops) == 1 and tab_stops[0].leader == WD_TAB_LEADER.DASHES
 
 
 def test_lista_activitati_secundare_needitata_devine_grup_repetitiv_caen():

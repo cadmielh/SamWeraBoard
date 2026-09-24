@@ -4,12 +4,14 @@ import copy
 import io
 import re
 from docx import Document
+from docx.enum.text import WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
 import variants
 
 
-def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
+def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> bool:
     """Replace placeholders in a paragraph, preserving each run's own formatting
     (bold/italic/etc.) — a placeholder typed in bold in the template comes out
     bold in the generated document, while surrounding plain text stays plain.
@@ -18,19 +20,29 @@ def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
     case). As a fallback, placeholders that Word split across multiple runs are
     resolved by merging just those runs, so unrelated text elsewhere in the
     paragraph is left untouched.
+
+    Returns True if at least one placeholder from `replacements` was actually
+    found (and replaced) in this paragraph — used by fill_docx to scope the
+    dash-fill-tail fix (see _fix_dash_fill_tails) to paragraphs whose text
+    could actually have changed length; a pure boilerplate/heading paragraph
+    with no placeholder in it is left with its original literal dashes
+    untouched (already correctly sized by the template's author, since that
+    text never changes).
     """
     runs = paragraph.runs
     if not runs:
-        return
+        return False
 
+    changed = False
     for run in runs:
         for placeholder, value in replacements.items():
             if placeholder in run.text:
                 run.text = run.text.replace(placeholder, value)
+                changed = True
 
     full_text = "".join(run.text for run in runs)
     if not any(placeholder in full_text for placeholder in replacements):
-        return
+        return changed
 
     run_bounds = []
     pos = 0
@@ -45,6 +57,7 @@ def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
         idxs = [i for i, (rs, re_) in enumerate(run_bounds) if rs < end and re_ > start]
         if not idxs:
             continue
+        changed = True
         first_i, last_i = idxs[0], idxs[-1]
         rs = run_bounds[first_i][0]
         ls = run_bounds[last_i][0]
@@ -55,6 +68,16 @@ def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
             runs[last_i].text = suffix
             for mid_i in idxs[1:-1]:
                 runs[mid_i].text = ""
+    return changed
+
+
+def _replace_and_mark(paragraphs, replacements: dict[str, str]) -> None:
+    """_replace_in_paragraph pe fiecare paragraf din `paragraphs`, marcând (vezi _CHANGED_ATTR) cele în care
+    chiar s-a înlocuit ceva — pasul comun tuturor zonelor unui document (corp, celule de tabel,
+    antete/subsoluri) în fill_docx."""
+    for paragraph in paragraphs:
+        if _replace_in_paragraph(paragraph, replacements):
+            paragraph._p.set(_CHANGED_ATTR, "1")  # vezi _fix_dash_fill_tails
 
 
 def _para_text(paragraph) -> str:
@@ -90,6 +113,17 @@ def _iter_all_tables(container, _seen: set | None = None):
 
 def _cell_text(cell) -> str:
     return "".join("".join(r.text for r in p.runs) for p in cell.paragraphs).strip()
+
+
+def _header_footer_parts(doc: Document):
+    """Yield every header/footer part that actually exists (default + first-page + even-page, for every
+    section) — skips any that aren't defined for a given section. Shared by every pass that needs to reach
+    header/footer paragraphs (_all_paragraphs, _fix_dash_fill_tails, _resolve_variants, fill_docx's replace pass)."""
+    for section in doc.sections:
+        for part in (section.header, section.first_page_header, section.even_page_header,
+                     section.footer, section.first_page_footer, section.even_page_footer):
+            if part is not None:
+                yield part
 
 
 def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]],
@@ -376,6 +410,9 @@ def _capacity_note_left_visible(prefix: str, position: int) -> str:
 #  un proxy Python nou pentru același nod XML la fiecare apel, deci id(paragraph._p) diferă de la o etapă la
 #  alta) — un atribut scris direct pe nodul XML rămâne vizibil oricărui proxy care îl citește ulterior.
 _PROTECT_ATTR = "swbProtected"
+# Același motiv ca mai sus — marcaj pentru un paragraf în care s-a înlocuit efectiv ceva
+# (etichetă sau variantă a/b), verificat de _fix_dash_fill_tails; vezi acolo de ce contează.
+_CHANGED_ATTR = "swbFillChanged"
 
 
 def _protected_numbered_paragraphs(all_paragraphs, max_idx: dict[str, int]) -> dict[str, str]:
@@ -406,6 +443,12 @@ def _strip_protect_markers(all_paragraphs) -> None:
             del p._p.attrib[_PROTECT_ATTR]
 
 
+def _strip_changed_markers(all_paragraphs) -> None:
+    for p in all_paragraphs:
+        if p._p.get(_CHANGED_ATTR) is not None:
+            del p._p.attrib[_CHANGED_ATTR]
+
+
 def _all_paragraphs(doc: Document) -> list:
     """Corp + tabele (inclusiv imbricate) + antete/subsoluri — același univers peste care rulează completarea."""
     out = list(doc.paragraphs)
@@ -413,11 +456,8 @@ def _all_paragraphs(doc: Document) -> list:
         for row in table.rows:
             for cell in row.cells:
                 out.extend(cell.paragraphs)
-    for section in doc.sections:
-        for part in (section.header, section.first_page_header, section.even_page_header,
-                     section.footer, section.first_page_footer, section.even_page_footer):
-            if part is not None:
-                out.extend(part.paragraphs)
+    for part in _header_footer_parts(doc):
+        out.extend(part.paragraphs)
     return out
 
 
@@ -486,13 +526,108 @@ def _clean_unresolved_numbered_positions(
                     for run in paragraph.runs:
                         run.text = ""
 
-    for section in doc.sections:
-        for header in [section.header, section.first_page_header, section.even_page_header]:
-            if header is not None:
-                handle_deletable(header.paragraphs)
-        for footer in [section.footer, section.first_page_footer, section.even_page_footer]:
-            if footer is not None:
-                handle_deletable(footer.paragraphs)
+    for part in _header_footer_parts(doc):
+        handle_deletable(part.paragraphs)
+
+
+_DASH_FILL_TAIL_RE = re.compile(r"-{4,}\s*\Z")
+
+
+def _dash_leader_tab_pos(doc: Document, paragraph):
+    """Distanța de la marginea stângă a paragrafului (după indent, dacă are)
+    până la marginea dreaptă utilă a paginii — poziția tab-stopului care va
+    „trage" liniuța de leader până la capătul rândului. None dacă documentul
+    n-are nicio secțiune (n-ar trebui să se-ntâmple, dar ne apărăm oricum)."""
+    if not doc.sections:
+        return None
+    section = doc.sections[0]
+    usable = section.page_width - section.left_margin - section.right_margin
+    left_indent = paragraph.paragraph_format.left_indent or 0
+    right_indent = paragraph.paragraph_format.right_indent or 0
+    return usable - left_indent - right_indent
+
+
+def _strip_run_range(runs: list, start: int) -> None:
+    """Golește textul din `runs` începând de la offset-ul de caracter `start`
+    (raportat la textul concatenat al paragrafului) până la final — run-ul
+    care „încalecă" tăietura își păstrează doar partea dinainte de `start`."""
+    pos = 0
+    for run in runs:
+        run_len = len(run.text)
+        run_end = pos + run_len
+        if run_end <= start:
+            pass
+        elif pos >= start:
+            run.text = ""
+        else:
+            run.text = run.text[: start - pos]
+        pos = run_end
+
+
+def _append_dash_leader_tab(paragraph, tab_pos) -> None:
+    """Adaugă un tab-stop dreapta cu leader de liniuțe la `tab_pos` și un
+    caracter tab la finalul paragrafului — Word desenează singur liniuța până
+    la tab-stop, oricare ar fi lungimea textului dinaintea lui, fără niciun
+    calcul de lățime de text pe partea noastră (spre deosebire de liniuțele
+    scrise literal în șablon, care rămân fixe ca număr)."""
+    paragraph.paragraph_format.tab_stops.add_tab_stop(tab_pos, WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DASHES)
+    run = paragraph.add_run("\t")
+    # Moștenește formatarea (font/mărime) ultimului run cu text rămas în
+    # paragraf, ca tab-ul (și deci liniuța de leader) să arate la fel ca
+    # restul textului, nu cu formatarea implicită a paragrafului.
+    template_run = next((r for r in reversed(paragraph.runs[:-1]) if r.text), None)
+    if template_run is not None:
+        rpr = template_run._r.find(qn('w:rPr'))
+        if rpr is not None:
+            run._r.insert(0, copy.deepcopy(rpr))
+
+
+def _fix_dash_fill_tails(doc: Document) -> None:
+    """Șabloanele „stil notarial" (Act Constitutiv, Declarații) umplu manual
+    restul rândului cu liniuțe literale („...text.------------------"), ca la
+    actele oficiale — un număr de liniuțe potrivit doar pentru textul de
+    exemplu/locurile libere ("……") din șablon. După completare cu date reale
+    (mai lungi sau mai scurte), numărul fix de liniuțe nu mai ajunge exact la
+    margine.
+
+    Rezolvarea: liniuțele literale de la finalul paragrafului se șterg și se
+    înlocuiesc cu un tab-stop dreapta cu leader de liniuțe (vezi
+    _append_dash_leader_tab) — Word recalculează singur, la afișare/tipărire,
+    câte liniuțe încap până la margine, indiferent de lungimea textului final.
+
+    Doar paragrafele marcate cu _CHANGED_ATTR — cele în care
+    `_replace_in_paragraph`/`_resolve_variants` au înlocuit efectiv ceva (vezi
+    fill_docx). Un paragraf pur structural/boilerplate (titlu de capitol,
+    propoziție fixă fără niciun loc liber) nu-și schimbă niciodată lungimea,
+    deci liniuțele scrise de autorul șablonului sunt deja corecte pentru el —
+    îl lăsăm complet neatins, ca să nu riscăm să stricăm ceva ce era deja bine
+    (inclusiv liniuțe/blocuri din mijlocul altor paragrafe, folosite ca
+    separator vizual între mai multe fraze înghesuite într-un singur paragraf
+    — nu sunt „coadă de rând" și nu trebuie atinse oricum).
+
+    Doar corpul documentului + antete/subsoluri — într-un tabel „marginea
+    utilă a paginii" nu mai e lățimea corectă (ar trebui lățimea celulei), iar
+    șabloanele cu acest stil (acte constitutive, declarații) nu au liniuțe de
+    umplere în tabele oricum.
+    """
+    paragraph_groups = [doc.paragraphs] + [part.paragraphs for part in _header_footer_parts(doc)]
+
+    for paragraphs in paragraph_groups:
+        for paragraph in list(paragraphs):
+            if paragraph._p.get(_CHANGED_ATTR) is None:
+                continue
+            runs = paragraph.runs
+            if not runs:
+                continue
+            full_text = "".join(r.text for r in runs)
+            m = _DASH_FILL_TAIL_RE.search(full_text)
+            if not m:
+                continue
+            tab_pos = _dash_leader_tab_pos(doc, paragraph)
+            if tab_pos is None or tab_pos <= 0:
+                continue
+            _strip_run_range(runs, m.start())
+            _append_dash_leader_tab(paragraph, tab_pos)
 
 
 def fill_docx(
@@ -563,8 +698,7 @@ def fill_docx(
         _resolve_variants(doc, ctx, replacements, variant_warnings)
 
     # Replace in main body paragraphs
-    for paragraph in doc.paragraphs:
-        _replace_in_paragraph(paragraph, replacements)
+    _replace_and_mark(doc.paragraphs, replacements)
 
     # Replace in tables, including tables nested inside a cell (e.g. the
     # per-section CAEN/sedii tables in the ONRC "Declarație activitate"
@@ -572,23 +706,21 @@ def fill_docx(
     for table in _iter_all_tables(doc):
         for row in table.rows:
             for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    _replace_in_paragraph(paragraph, replacements)
+                _replace_and_mark(cell.paragraphs, replacements)
 
     # Replace in headers and footers
-    for section in doc.sections:
-        for header in [section.header, section.first_page_header, section.even_page_header]:
-            if header is not None:
-                for paragraph in header.paragraphs:
-                    _replace_in_paragraph(paragraph, replacements)
-        for footer in [section.footer, section.first_page_footer, section.even_page_footer]:
-            if footer is not None:
-                for paragraph in footer.paragraphs:
-                    _replace_in_paragraph(paragraph, replacements)
+    for part in _header_footer_parts(doc):
+        _replace_and_mark(part.paragraphs, replacements)
 
     _clean_unresolved_numbered_positions(doc, replacements, protected_paragraphs, capacity_warnings)
+
+    # După ce toate etichetele/locurile libere au fost completate (deci
+    # lungimea finală a textului e cunoscută) — vezi _fix_dash_fill_tails.
+    _fix_dash_fill_tails(doc)
+
     if protected_paragraphs:
-        _strip_protect_markers(_all_paragraphs(doc))  # marcaj intern, nu trebuie să ajungă în fișierul salvat
+        _strip_protect_markers(_all_paragraphs(doc))  # marcaje interne, nu trebuie să ajungă în fișierul salvat
+    _strip_changed_markers(_all_paragraphs(doc))
 
     out = io.BytesIO()
     doc.save(out)
@@ -601,17 +733,18 @@ def _resolve_variants(doc: Document, ctx: dict, replacements: dict[str, str], wa
             ch = variants.resolve_paragraph(p, ctx, replacements)
             if warnings is not None:
                 warnings.update(variants.unresolved_persons(ch))
+            # O variantă „a/b” rezolvată (ex. „asociatul/asociații" → „asociatul") schimbă
+            # lungimea paragrafului la fel ca o etichetă înlocuită — vezi _fix_dash_fill_tails.
+            if any(c.text is not None for c in ch):
+                p._p.set(_CHANGED_ATTR, "1")
 
     run(doc.paragraphs)
     for table in _iter_all_tables(doc):
         for row in table.rows:
             for cell in row.cells:
                 run(cell.paragraphs)
-    for section in doc.sections:
-        for part in (section.header, section.first_page_header, section.even_page_header,
-                     section.footer, section.first_page_footer, section.even_page_footer):
-            if part is not None:
-                run(part.paragraphs)
+    for part in _header_footer_parts(doc):
+        run(part.paragraphs)
 
 
 def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:

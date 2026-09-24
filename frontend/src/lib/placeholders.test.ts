@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { buildReplacements, buildRepeatGroups, checkReadiness, joinNames, isManualPlaceholder, manualLabel } from './placeholders'
+import {
+  buildReplacements, buildRepeatGroups, checkReadiness, joinNames, isManualPlaceholder, manualLabel,
+  detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
+} from './placeholders'
 import type { Client, Persoana } from '../types'
 
 const client = (over: Partial<Client>): Partial<Client> => ({
@@ -152,5 +155,56 @@ describe('checkReadiness recunoaște {{SERIE_ACT}}/{{NR_ACT}} ca fiind câmpuri 
     })
     const { missing } = checkReadiness(['{{SERIE_ACT}}', '{{NR_ACT}}'], {}, cu_una_goala)
     expect(missing).toEqual(['{{SERIE_ACT}}', '{{NR_ACT}}'])
+  })
+})
+
+describe('roluri de persoană „noi” (comodant, reprezentant legal…) — în afara Asociat/Administrator/Membru IF', () => {
+  it('detectCustomPersonRoles găsește rolul și pozițiile, ignoră Asociat/Administrator/Membru IF (deja completate din client)', () => {
+    const roles = detectCustomPersonRoles([
+      '{{COMODANT_1_NUME}}', '{{COMODANT_1_CNP}}', '{{COMODANT_2_NUME}}',
+      '{{REPREZENTANT_LEGAL_1_NUME}}',
+      '{{ASOCIAT_1_NUME}}', '{{ADMINISTRATOR_1_CNP}}', '{{MEMBRU_IF_1_NUME}}',
+      '{{SOCIETATE_DENUMIRE}}', '{{CAMP_NR_HOTARARE}}',
+    ])
+    expect(roles).toEqual([
+      { role: 'COMODANT', positions: [1, 2] },
+      { role: 'REPREZENTANT_LEGAL', positions: [1] },
+    ])
+  })
+
+  it('roleLabel produce o etichetă prietenoasă', () => {
+    expect(roleLabel('COMODANT')).toBe('Comodant')
+    expect(roleLabel('REPREZENTANT_LEGAL')).toBe('Reprezentant legal')
+  })
+
+  it('customPersonReplacements mapează persoana pe etichetele {{ROL_N_CÂMP}}, ca la Asociat/Administrator', () => {
+    const p: Persoana = {
+      calitate: 'Comodant', cotaParticipare: '', cnp: '1234567890123', nume: 'Ionescu', prenume: 'Ana',
+      serie_numar: 'CJ 111111', data_nasterii: '', locul_nasterii: '', cetatenia: 'română',
+      adresa: 'Cluj, str. Test 1', judet: 'Cluj', emisa_de: '', valabila_de_la: '', valabila_pana_la: '',
+    }
+    const r = customPersonReplacements('COMODANT', 1, p)
+    expect(r['{{COMODANT_1_NUME}}']).toBe('Ionescu')
+    expect(r['{{COMODANT_1_PRENUME}}']).toBe('Ana')
+    expect(r['{{COMODANT_1_CNP}}']).toBe('1234567890123')
+    expect(r['{{COMODANT_1_ADRESA}}']).toBe('Cluj, str. Test 1')
+    expect(r['{{COMODANT_1_SERIE_ACT}}']).toBe('CJ')
+    expect(r['{{COMODANT_1_NR_ACT}}']).toBe('111111')
+  })
+
+  it('checkReadiness + groupMissingFields le recunosc: gol → grupate sub „Comodant 1”; completat → nu mai lipsesc', () => {
+    const placeholders = ['{{COMODANT_1_NUME}}', '{{COMODANT_1_CNP}}']
+    const { missing } = checkReadiness(placeholders, {}, undefined)
+    expect(missing).toEqual(placeholders)
+    expect(groupMissingFields(missing)).toEqual({ 'Comodant 1': ['Nume', 'CNP'] })
+
+    const p: Persoana = {
+      calitate: 'Comodant', cotaParticipare: '', cnp: '1234567890123', nume: 'Ionescu', prenume: 'Ana',
+      serie_numar: '', data_nasterii: '', locul_nasterii: '', cetatenia: '', adresa: '', judet: '',
+      emisa_de: '', valabila_de_la: '', valabila_pana_la: '',
+    }
+    const { filled, missing: stillMissing } = checkReadiness(placeholders, customPersonReplacements('COMODANT', 1, p), undefined)
+    expect(filled).toEqual(placeholders)
+    expect(stillMissing).toEqual([])
   })
 })

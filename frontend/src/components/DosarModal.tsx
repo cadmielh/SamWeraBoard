@@ -6,6 +6,7 @@ import { toDateSafe, formatDateRo } from '../lib/dates'
 import { formatRon } from '../lib/format'
 import { useApp } from '../AppContext'
 import { useDosarFinanciar } from '../lib/useDosarFinanciar'
+import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import ClientLinkPicker from './ClientLinkPicker'
 import ObiectCereriiTags from './ObiectCereriiTags'
 import ResponsabilCombobox from './ResponsabilCombobox'
@@ -187,7 +188,7 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
 
               <div className="field">
                 <label className="field-label">Tarif client (RON)</label>
-                <input className="field-input" type="number" min={0} value={form.tarifClient ?? ''} onChange={e => set('tarifClient', e.target.value === '' ? null : Number(e.target.value))} />
+                <input className="field-input" type="number" min={0} value={form.tarifClient ?? ''} onChange={e => set('tarifClient', e.target.value === '' ? null : Number(e.target.value))} onWheel={blurNumberInputOnWheel} />
               </div>
               <div className="field">
                 <label className="field-label" style={{ visibility: 'hidden' }}>Facturat</label>
@@ -216,13 +217,13 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                 <>
                   <div className="field">
                     <label className="field-label">Taxe ONRC (RON)</label>
-                    <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} />
+                    <input className="field-input" type="number" min={0} value={form.taxeOnrc ?? ''} onChange={e => set('taxeOnrc', e.target.value === '' ? null : Number(e.target.value))} onWheel={blurNumberInputOnWheel} />
                   </div>
                   <div className="field" aria-hidden="true" />
 
                   <div className="field">
                     <label className="field-label">Taxe Certificat Constatator (RON)</label>
-                    <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} />
+                    <input className="field-input" type="number" min={0} value={form.certificatConstatator ?? ''} onChange={e => set('certificatConstatator', e.target.value === '' ? null : Number(e.target.value))} onWheel={blurNumberInputOnWheel} />
                   </div>
                   <div className="field">
                     <label className="field-checkbox-row">
