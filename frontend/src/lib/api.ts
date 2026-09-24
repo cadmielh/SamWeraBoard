@@ -243,18 +243,27 @@ export async function detectPlaceholders(
   return { placeholders: data.placeholders as string[], clauses: (data.clauses ?? []) as ClauseMeta[] };
 }
 
-/** Un loc liber („……”) dintr-un document fără etichete, cu contextul și propunerea serverului. */
+/** Un loc liber („……”) dintr-un document fără etichete, cu contextul și propunerea serverului.
+ * `role`, pentru scope „person”: nu doar ASOCIAT/ADMINISTRATOR — orice calitate juridică găsită din
+ * context (COMODANT, REPREZENTANT_LEGAL, CHIRIAS…, vezi blanks.py — motorul e generic, nu limitat la o
+ * listă fixă). `source: "ai"` — sugestie venită de la /template/blanks/ai-suggest, nu de la motorul
+ * determinist (vezi BlankImportModal — rămâne mereu „de verificat”, confidence „medium”, niciodată „high”). */
 export interface BlankSuggestion {
   id: number;
   scope: "company" | "person" | "manual";
   field: string | null;
-  role?: "ASOCIAT" | "ADMINISTRATOR";
+  role?: string;
   person?: number;
   confidence: "high" | "medium" | "low";
   before: string;
   after: string;
+  /** Context mult mai larg (până la câteva paragrafe vecine), arătat doar la cerere („arată mai mult”) —
+   * absent pentru unele tipuri de câmpuri (ex. CAEN needitat), unde `before`/`after` sunt deja tot ce există. */
+  before_wide?: string;
+  after_wide?: string;
   label: string;
   tag: string;
+  source?: "ai";
 }
 
 /** Grup candidat de bloc repetitiv: mai multe persoane cu aceeași structură, în aceeași frază („X … si Y …” —
@@ -265,7 +274,7 @@ export interface BlankSuggestion {
 export interface BlankGroup {
   id: number;
   kind: "inline" | "paragraph";
-  role: "ASOCIAT" | "ADMINISTRATOR" | "CAEN";
+  role: string;
   count: number;
   blank_ids: number[];
   template_blank_ids: number[];
@@ -304,6 +313,21 @@ export async function applyBlanks(
     throw new Error(apiErrorMessage(data as { error?: string }, res, "Crearea șablonului a eșuat"));
   }
   return new File([await res.blob()], templateFile.name, { type: DOCX_MIME });
+}
+
+/** Sugestii AI (opțional — apelat DOAR la cererea explicită a utilizatorului, niciodată automat) pentru
+ * locurile libere pe care motorul determinist nu le recunoaște cu încredere (confidence != „high”). Nu
+ * modifică nimic — sugestiile se afișează în același ecran de confirmare ca cele ale motorului determinist. */
+/** `blankIds`, dacă e dat, cere sugestii DOAR pentru acele locuri (per câmp) — mai puțini tokeni trimiși
+ * decât pentru toate cele needeslușite deodată; lipsă = toate, ca înainte. */
+export async function suggestBlanksAI(templateFile: File, blankIds?: number[]): Promise<BlankSuggestion[]> {
+  const fd = new FormData();
+  fd.append("template", templateFile);
+  if (blankIds && blankIds.length > 0) fd.append("_blank_ids", JSON.stringify(blankIds));
+  const res = await fetch(`${BASE}/template/blanks/ai-suggest`, { method: "POST", headers: await authHeaders(), body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(apiErrorMessage(data as { error?: string }, res, "Sugestiile AI au eșuat"));
+  return (data.suggestions ?? []) as BlankSuggestion[];
 }
 
 /** Șablon .docx aflat în Drive: se descarcă în browser (cu confirmarea accesului prin Picker, dacă e nevoie),

@@ -141,6 +141,48 @@ def test_grup_paragraph_ales_repeat_pastreaza_numerotarea_index():
                      for i in (1, 2, 3)]
 
 
+def test_grup_paragraph_repeta_prefixul_de_rol_si_liniuta_de_umplere_la_fiecare_persoana():
+    """Bug raportat de utilizator: „Asociatului …… îi revin …… părți sociale ……----” (fiecare rând, scris ca
+    exemplu, o clauză pe paragraf) — „Asociatului” apărea o singură dată, ca titlu fals deasupra întregii
+    liste (tratat greșit ca prefix fix al paragrafului), iar liniuța de umplere de la finalul rândului
+    dispărea din rândurile generate (rămânea o singură dată, ca separator, la finalul blocului). Ambele
+    trebuie să apară la FIECARE persoană generată — vezi _split_group_paragraph(repeat_prefix=True) și
+    _extend_clause_end(include_dash_fill=True) în blanks.py."""
+    raw = make_doc([
+        "Asociatului …… ii revin …… parti sociale a 10 (zece) lei fiecare parte.----------------------",
+        "Asociatului …… ii revin …… parti sociale a 10 (zece) lei fiecare parte.----------------------",
+    ])
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 1 and groups[0]["kind"] == "paragraph"
+    gid = groups[0]["id"]
+    tpl = blanks.apply(raw, {}, {gid: "repeat"})
+    tpl_texts = [p.text for p in Document(io.BytesIO(tpl)).paragraphs]
+    assert tpl_texts == [
+        "{{#ASOCIATI}}",
+        "Asociatului {{NUME}} {{PRENUME}} ii revin {{PARTI_SOCIALE}} parti sociale a 10 (zece) lei fiecare "
+        "parte.----------------------",
+        "{{/ASOCIATI}}",
+    ]
+
+    def person(nume, prenume, n):
+        return {"NUME": nume, "PRENUME": prenume, "PARTI_SOCIALE": str(n)}
+
+    out = fill_docx(tpl, {}, groups={"ASOCIATI": [person("Ana", "Popescu", 200), person("Ion", "Ionescu", 150)]})
+    paragraphs = Document(io.BytesIO(out)).paragraphs
+    texts = [p.text for p in paragraphs]
+    # liniuța literală (fixă ca număr în șablon) devine tab-stop cu leader de liniuțe la FIECARE rând —
+    # Word desenează liniuța până la margine oricare ar fi lungimea numelui, nu doar numărul din exemplu
+    # (vezi doc_filler._fix_dash_fill_tails) — de-asta rândurile de mai jos se termină cu „\t”, nu cu „-”.
+    assert texts == [
+        "Asociatului Ana Popescu ii revin 200 parti sociale a 10 (zece) lei fiecare parte.\t",
+        "Asociatului Ion Ionescu ii revin 150 parti sociale a 10 (zece) lei fiecare parte.\t",
+    ]
+    for p in paragraphs:
+        tab_stops = list(p.paragraph_format.tab_stops)
+        assert len(tab_stops) == 1 and tab_stops[0].leader == WD_TAB_LEADER.DASHES
+
+
 def test_grup_ales_fixed_pastreaza_pozitiile_numerotate_de_dinainte():
     raw = make_doc([two_person_sentence()])
     found = blanks.analyze(raw)
@@ -320,6 +362,38 @@ def test_paragrafele_generate_pastreaza_fontul_sablonului_nu_cad_pe_cel_implicit
 
 
 # ── CAEN (obiectul de activitate), needitat de la firma-exemplu ───────────────
+def test_grup_paragraph_pastreaza_formatarea_proprie_a_locului_liber():
+    """Cerință utilizator: dacă locul liber are propria formatare (ex. bold), diferită de restul frazei,
+    completarea trebuie să păstreze ACEA formatare, nu doar fontul dominant al paragrafului (deja acoperit de
+    test_paragrafele_generate_pastreaza_fontul...) — vezi _rpr_at/_local_replacements(rpr_for)."""
+    d = Document()
+    for _ in range(2):
+        p = d.add_paragraph()
+        p.add_run("Asociatul ")
+        bold_run = p.add_run("……")
+        bold_run.bold = True
+        p.add_run(" contribuie cu un aport de …… lei.")
+    b = io.BytesIO(); d.save(b)
+    raw = b.getvalue()
+
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 1
+    tpl = blanks.apply(raw, {}, {groups[0]["id"]: "repeat"})
+
+    def make_person(nume, prenume, n):
+        return {"NUME": nume, "PRENUME": prenume, "CAPITAL_SOCIAL": str(n)}
+
+    out = fill_docx(tpl, {}, groups={"ASOCIATI": [make_person("Ana", "Popescu", 2000)]})
+    paragraphs = [p for p in Document(io.BytesIO(out)).paragraphs if p.text.strip()]
+    assert len(paragraphs) == 1
+    p = paragraphs[0]
+    assert p.text == "Asociatul Ana Popescu contribuie cu un aport de 2000 lei."
+    bold_text = "".join(r.text for r in p.runs if r.bold)
+    plain_text = "".join(r.text for r in p.runs if not r.bold)
+    assert bold_text.strip() == "Ana Popescu" and plain_text == "Asociatul  contribuie cu un aport de 2000 lei."
+
+
 def test_domeniul_si_activitatea_principala_needitate_devin_caen_domeniu_si_caen_1():
     """„Domeniul principal de activitate este: 953 Repararea ...” / „Activitatea principală este: 9531
     Repararea ...” — needitate de la firma-exemplu (fără „……”) — devin {{CAEN_DOMENIU}} (grupa, 3 cifre) și

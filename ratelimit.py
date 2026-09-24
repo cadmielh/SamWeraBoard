@@ -31,6 +31,10 @@ LIMITS: dict[str, list[tuple[str, int, int]]] = {
     "pii": [("user", 120, 60)],
     # generare de documente cu date personale
     "fill": [("user", 60, 60)],
+    # sugestii AI (Gemini) pentru locurile libere needeslușite — costă bani (vezi ai_suggest.py); limita e
+    # simultan un plafon de cost, nu doar de trafic — apăsată explicit de utilizator, o dată per șablon, nu
+    # per document generat.
+    "ai_suggest": [("user", 10, 3600), ("workspace", 50, 86400)],
 }
 
 _RETRIES = 6          # reîncercări externe la concurență

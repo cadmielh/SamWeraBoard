@@ -3,7 +3,7 @@ flask-cors==6.0.2
 flask-limiter==4.1.1
 firebase-admin==7.4.0
 firebase-functions==0.5.0
-google-auth==2.53.0
+google-auth==2.58.0
 python-docx==1.2.0
 pillow==12.2.0
 pymupdf==1.27.2.3
@@ -16,3 +16,6 @@ easyocr==1.7.2
 gunicorn==23.0.0
 cryptography==50.0.1
 google-cloud-kms==3.17.0
+# Sugestii AI opționale pentru locurile libere needeslușite (vezi ai_suggest.py) — Gemini prin Vertex AI, pe
+# același proiect GCP deja folosit pentru Firestore/Auth (fără cheie nouă).
+google-genai==2.25.0

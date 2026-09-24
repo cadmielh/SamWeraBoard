@@ -64,6 +64,23 @@ def test_forme_genitiv_si_ordine_inversa():
     assert resolve("hotărârea domnului/doamnei {{ASOCIAT_1_NUME}}", {"sex": {"ASOCIAT_1": "M"}})[0] == "hotărârea domnului {{ASOCIAT_1_NUME}}"
 
 
+def test_asociat_si_administrator_forme_de_sex_la_genitiv():
+    """„Asociatului”/„Administratorului” (genitiv-dativ, ex. „Asociatului X îi revin părți sociale”) au nevoie
+    de o pereche explicită în _SEX_PAIRS — schimbă rădăcina cuvântului (administrator- → administratoar-),
+    nu doar un sufix regulat ca la născut/născută. „Asociatul/Asociata” exista deja; „Administratorul/
+    Administratoarea” lipsea complet (raportat de utilizator, bug real — fără pereche, alternativa rămânea
+    neschimbată în document, ca „domnul/doamna” necunoscut)."""
+    assert resolve("Asociatului/Asociatei {{ASOCIAT_1_NUME}} îi revin părți sociale.", M)[0] == \
+        "Asociatului {{ASOCIAT_1_NUME}} îi revin părți sociale."
+    assert resolve("Asociatului/Asociatei {{ASOCIAT_1_NUME}} îi revin părți sociale.", F)[0] == \
+        "Asociatei {{ASOCIAT_1_NUME}} îi revin părți sociale."
+    t = "Administratorului/Administratoarei {{ADMINISTRATOR_1_NUME}} i se conferă puteri depline."
+    assert resolve(t, {"sex": {"ADMINISTRATOR_1": "M"}})[0] == \
+        "Administratorului {{ADMINISTRATOR_1_NUME}} i se conferă puteri depline."
+    assert resolve(t, {"sex": {"ADMINISTRATOR_1": "F"}})[0] == \
+        "Administratoarei {{ADMINISTRATOR_1_NUME}} i se conferă puteri depline."
+
+
 def test_forme_cu_paranteza_din_declaratie_dar_nu_cele_despre_document():
     t = "Subsemnatul(a), {{DECLARANT_NUME}}, domiciliat(ă) în {{DECLARANT_LOCALITATE}}, născut(ă) în X, emis(ă) de {{DECLARANT_ACT_EMIS_DE}}"
     out, _ = resolve(t, {"sex": {"DECLARANT": "F"}})
@@ -122,6 +139,30 @@ def test_perechi_de_numar_cu_pluralul_primul():
     t = "În calitate de asociat unic/asociați {{ASOCIATI_LISTA}} au/are drepturile."
     assert resolve(t, {"asociati": 1})[0] == "În calitate de asociat unic {{ASOCIATI_LISTA}} are drepturile."
     assert resolve(t, {"asociati": 3})[0] == "În calitate de asociați {{ASOCIATI_LISTA}} au drepturile."
+
+
+def test_asociatul_administratorul_singular_plural_fara_bara():
+    """Cerință utilizator: „Asociatul”/„Administratorul” (fără „/asociații” alături) trebuie ajustate automat
+    după numărul REAL — nu doar verbele/substantivele deja scrise cu „/” (vezi _STANDALONE_ROLE_NUMBER).
+    Deliberat DOAR substantivele de rol — verbele (este/sunt, va/vor…) rămân „/”-only, mult prea generice
+    pentru detectare fără alternativă scrisă (ar rescrie propoziții fără nicio legătură cu asociații)."""
+    assert resolve("Asociatul prezent a hotărât.", {"asociati": 1})[0] == "Asociatul prezent a hotărât."
+    assert resolve("Asociatul prezent a hotărât.", {"asociati": 3})[0] == "Asociații prezent a hotărât."
+    assert resolve("Asociații prezenți au hotărât.", {"asociati": 1})[0] == "Asociatul prezenți au hotărât."
+    assert resolve("Administratorul numit are puteri depline.", {"administratori": 2})[0] == \
+        "Administratorii numit are puteri depline."
+    # verbul „este” rămâne neschimbat — prea generic pentru corectare fără „/” scris explicit
+    assert resolve("Sediul social este în București.", {"asociati": 3})[0] == "Sediul social este în București."
+    # necunoscut — nimic nu se schimbă
+    assert resolve("Asociatul prezent a hotărât.", {})[0] == "Asociatul prezent a hotărât."
+
+
+def test_numar_nu_blocheaza_sexul_pe_aceeasi_pozitie():
+    """Cele două mecanisme noi (sex, număr) nu trebuie să se blocheze reciproc pe același cuvânt: dacă numărul
+    e deja corect (nimic de schimbat), sexul tot trebuie să aibă șansa să se aplice pe aceeași poziție."""
+    t = "Asociatul {{ASOCIAT_1_NUME}} îi revin părți sociale."
+    ctx = {"sex": {"ASOCIAT_1": "F"}, "asociati": 1}
+    assert resolve(t, ctx)[0] == "Asociata {{ASOCIAT_1_NUME}} îi revin părți sociale."
 
 
 # ── categorie ────────────────────────────────────────────────────────────────

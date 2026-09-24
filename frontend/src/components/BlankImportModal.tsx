@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { analyzeBlanks, applyBlanks, type BlankAnalysis, type BlankGroup, type BlankSuggestion } from '../lib/api'
+import { analyzeBlanks, applyBlanks, suggestBlanksAI, type BlankAnalysis, type BlankGroup, type BlankSuggestion } from '../lib/api'
 import { choiceFromSuggestion, choicesToTags, summarize, tagForChoice, type BlankChoice } from '../lib/blanks'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import type { ToastItem } from '../types'
@@ -17,6 +17,19 @@ const KIND_LABEL: Record<BlankChoice['kind'], string> = {
   company: 'Societate', person: 'Persoană', manual: 'Câmp manual', keep: 'Las neschimbat',
 }
 
+// Calități uzuale, ca autocompletare — dar câmpul e liber (orice text), fiindcă motorul din blanks.py
+// recunoaște orice calitate scrisă clar în șablon, nu doar din listă (vezi blanks.py: _ROLE_KEYWORDS).
+const ROLE_OPTIONS = [
+  'ASOCIAT', 'ADMINISTRATOR', 'COMODANT', 'COMODATAR', 'REPREZENTANT_LEGAL', 'IMPUTERNICIT', 'MANDATAR',
+  'CHIRIAS', 'LOCATOR', 'LOCATAR', 'VANZATOR', 'CUMPARATOR', 'IMPRUMUTATOR', 'IMPRUMUTAT', 'CENZOR',
+  'ACTIONAR', 'FONDATOR', 'BENEFICIAR', 'GARANT', 'DEBITOR', 'CREDITOR',
+]
+const ROLE_DATALIST_ID = 'blank-role-options'
+
+/** „comodant judiciar” → „COMODANT_JUDICIAR” — la fel ca pe server (blanks.py/ai_suggest.py), ca eticheta
+ * scrisă manual să producă exact același tag ca una propusă din context sau de AI. */
+const normalizeRole = (raw: string): string => raw.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+
 function initialFor(kind: BlankChoice['kind'], analysis: BlankAnalysis, prev: BlankChoice): BlankChoice {
   if (kind === 'keep') return { kind: 'keep' }
   if (kind === 'company') return { kind: 'company', field: Object.keys(analysis.companyFields)[0] }
@@ -24,13 +37,39 @@ function initialFor(kind: BlankChoice['kind'], analysis: BlankAnalysis, prev: Bl
   return { kind: 'manual', label: '' }
 }
 
-function Row({ s, analysis, choice, onChange }: { s: BlankSuggestion; analysis: BlankAnalysis; choice: BlankChoice; onChange: (c: BlankChoice) => void }) {
+function Row({ s, analysis, choice, onChange, onAskAi, aiPending, aiAsked }: {
+  s: BlankSuggestion; analysis: BlankAnalysis; choice: BlankChoice; onChange: (c: BlankChoice) => void
+  onAskAi?: (id: number) => void; aiPending?: boolean; aiAsked?: boolean
+}) {
   const tag = tagForChoice(choice)
+  const [wide, setWide] = useState(false)
+  const hasWider = (s.before_wide && s.before_wide !== s.before) || (s.after_wide && s.after_wide !== s.after)
+  const shownBefore = wide && s.before_wide ? s.before_wide : s.before
+  const shownAfter = wide && s.after_wide ? s.after_wide : s.after
   return (
     <div style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem',
       background: s.confidence === 'low' ? 'var(--y50)' : 'var(--surface)' }}>
-      <div style={{ fontSize: '.8125rem', color: 'var(--s500)', overflowWrap: 'anywhere' }}>
-        …{s.before.trimStart()}<mark style={{ background: 'var(--p100)', color: 'var(--p700)', padding: '0 .25rem', borderRadius: 3, fontWeight: 700 }}>……</mark>{s.after}…
+      <div style={{ fontSize: '.8125rem', color: 'var(--s500)', overflowWrap: 'anywhere', display: 'flex', alignItems: 'flex-start', gap: '.4rem' }}>
+        <span style={{ flex: 1 }}>
+          {s.source === 'ai' && (
+            <span className="chip chip-muted" style={{ marginRight: '.4rem', fontSize: '.65rem', verticalAlign: 'middle' }} title="Propus de AI — verifică înainte de a accepta">
+              ✨ AI
+            </span>
+          )}
+          …{shownBefore.trimStart()}<mark style={{ background: 'var(--p100)', color: 'var(--p700)', padding: '0 .25rem', borderRadius: 3, fontWeight: 700 }}>……</mark>{shownAfter}…
+        </span>
+        {hasWider && (
+          <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '.7rem', padding: '.15rem .45rem' }}
+            onClick={() => setWide(v => !v)} title="Arată mai mult text din jurul locului liber">
+            {wide ? '▾ mai puțin' : '▸ mai mult context'}
+          </button>
+        )}
+        {onAskAi && !aiAsked && (
+          <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '.7rem', padding: '.15rem .45rem' }}
+            disabled={aiPending} onClick={() => onAskAi(s.id)} title="Cere sugestie AI doar pentru acest loc">
+            {aiPending ? <span className="spin" /> : '✨'}
+          </button>
+        )}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', alignItems: 'center' }}>
         <select className="field-input" style={{ width: 'auto' }} value={choice.kind} aria-label="Ce se completează aici"
@@ -45,10 +84,8 @@ function Row({ s, analysis, choice, onChange }: { s: BlankSuggestion; analysis: 
         )}
         {choice.kind === 'person' && (
           <>
-            <select className="field-input" style={{ width: 'auto' }} value={choice.role} aria-label="Rolul persoanei"
-              onChange={e => onChange({ ...choice, role: e.target.value as 'ASOCIAT' | 'ADMINISTRATOR' })}>
-              <option value="ASOCIAT">Asociat</option><option value="ADMINISTRATOR">Administrator</option>
-            </select>
+            <input className="field-input" style={{ width: 150 }} list={ROLE_DATALIST_ID} value={choice.role} aria-label="Rolul persoanei"
+              placeholder="ASOCIAT" onChange={e => onChange({ ...choice, role: normalizeRole(e.target.value) })} />
             <input className="field-input" type="number" min={1} max={9} style={{ width: 64 }} value={choice.n} aria-label="Numărul persoanei"
               onChange={e => onChange({ ...choice, n: Number(e.target.value) })} onWheel={blurNumberInputOnWheel} />
             <select className="field-input" style={{ width: 'auto', maxWidth: 240 }} value={choice.field} aria-label="Câmpul persoanei"
@@ -102,6 +139,16 @@ export default function BlankImportModal({ file, onDone, onClose, onToast }: Pro
   const [error, setError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [creating, setCreating] = useState(false)
+  // Locurile pe care utilizatorul le-a modificat manual — o sugestie AI nu le mai suprascrie (vezi
+  // applyAiSuggestions mai jos), ca o corectare deja făcută să nu dispară dintr-o cerere de sugestii AI.
+  const [touchedIds, setTouchedIds] = useState<Set<number>>(new Set())
+  const [aiError, setAiError] = useState<string | null>(null)
+  // Cereri AI per câmp, nu doar pentru toate cele needeslușite deodată — mai puțini tokeni trimiși când
+  // doar unul-două locuri chiar au nevoie de ajutor (cerere utilizator). `aiPendingIds` — cererea (cererile)
+  // în curs chiar acum; `aiAskedIds` — deja cerute cu succes, butonul lor dispare (nu invită la apăsări
+  // repetate, fiecare fiind un apel plătit) — la eroare NU intră în `aiAskedIds`, ca să se poată reîncerca.
+  const [aiPendingIds, setAiPendingIds] = useState<Set<number>>(new Set())
+  const [aiAskedIds, setAiAskedIds] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -141,15 +188,49 @@ export default function BlankImportModal({ file, onDone, onClose, onToast }: Pro
     }
   }
 
+  // Apelat DOAR la cererea explicită a utilizatorului (butonul „per câmp” din fiecare rând, sau cel de mai
+  // jos pentru toate cele needeslușite deodată) — niciodată automat. `ids` lipsă = toate cele needeslușite
+  // ȘI încă necerute (nu se reîntreabă ce a fost deja cerut). Sugestiile se combină cu ce e deja afișat,
+  // fără să atingă locurile deja corectate manual (vezi touchedIds); nimic nu se scrie în șablon aici — trec
+  // prin ACELAȘI ecran de confirmare ca restul, până la „Creează șablonul”.
+  const requestAiSuggestions = async (ids?: number[]) => {
+    const targetIds = ids ?? toCheck.filter(b => !aiAskedIds.has(b.id)).map(b => b.id)
+    if (targetIds.length === 0) return
+    setAiPendingIds(prev => new Set([...prev, ...targetIds]))
+    setAiError(null)
+    try {
+      const suggestions = await suggestBlanksAI(file, targetIds)
+      const byId = new Map(suggestions.map(s => [s.id, s]))
+      setAnalysis(prev => prev && { ...prev, blanks: prev.blanks.map(b => (byId.has(b.id) && !touchedIds.has(b.id)) ? byId.get(b.id)! : b) })
+      setChoices(prev => {
+        const next = { ...prev }
+        for (const s of suggestions) if (!touchedIds.has(s.id)) next[s.id] = choiceFromSuggestion(s)
+        return next
+      })
+      setAiAskedIds(prev => new Set([...prev, ...targetIds]))
+      if (suggestions.length === 0) onToast('AI-ul n-a găsit nimic în plus de propus', 'ok')
+    } catch (e) {
+      setAiError((e as Error).message ?? 'Sugestiile AI au eșuat')
+    } finally {
+      setAiPendingIds(prev => { const next = new Set(prev); for (const id of targetIds) next.delete(id); return next })
+    }
+  }
+
   const renderRow = (s: BlankSuggestion) => analysis && (
     <Row key={s.id} s={s} analysis={analysis} choice={choices[s.id] ?? choiceFromSuggestion(s)}
-      onChange={c => setChoices(prev => ({ ...prev, [s.id]: c }))} />
+      onChange={c => {
+        setTouchedIds(prev => prev.has(s.id) ? prev : new Set(prev).add(s.id))
+        setChoices(prev => ({ ...prev, [s.id]: c }))
+      }}
+      onAskAi={s.confidence !== 'high' ? (id => requestAiSuggestions([id])) : undefined}
+      aiPending={aiPendingIds.has(s.id)} aiAsked={aiAskedIds.has(s.id)} />
   )
 
   return (
     <Modal onClose={onClose} ariaLabel="Locuri libere din document"
       backdropStyle={{ background: 'var(--backdrop)', zIndex: 420 }}
       boxStyle={{ maxWidth: 760, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <datalist id={ROLE_DATALIST_ID}>{ROLE_OPTIONS.map(r => <option key={r} value={r} />)}</datalist>
       <div style={{ padding: '1.125rem 1.25rem', borderBottom: '1px solid var(--s200)' }}>
         <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>Locuri libere din „{file.name}”</div>
         <div style={{ fontSize: '.8125rem', color: 'var(--s500)', marginTop: '.25rem' }}>
@@ -181,12 +262,25 @@ export default function BlankImportModal({ file, onDone, onClose, onToast }: Pro
             <div style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>
               <strong>{summary.total}</strong> locuri libere de verificat individual · <strong>{summary.recognized}</strong> recunoscute sigur · <strong style={{ color: 'var(--y700)' }}>{summary.toCheck}</strong> de verificat
             </div>
-            {toCheck.length > 0 && (
-              <>
-                <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De verificat</div>
-                {toCheck.map(renderRow)}
-              </>
-            )}
+            {toCheck.length > 0 && (() => {
+              const unasked = toCheck.filter(b => !aiAskedIds.has(b.id))
+              const bulkPending = unasked.some(b => aiPendingIds.has(b.id))
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De verificat</div>
+                    {unasked.length > 0 && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => requestAiSuggestions()} disabled={bulkPending}
+                        title="Trimite locurile needeslușite către AI (Gemini) — opțional; alegerile deja făcute manual nu sunt atinse. Poți cere și separat, per câmp, cu ✨ de lângă fiecare rând.">
+                        {bulkPending ? <><span className="spin" />&nbsp;Se cer sugestii…</> : `✨ Cere sugestii AI pentru cele ${unasked.length} needeslușite`}
+                      </button>
+                    )}
+                  </div>
+                  {aiError && <div style={{ fontSize: '.8125rem', color: 'var(--r600)' }}>{aiError}</div>}
+                  {toCheck.map(renderRow)}
+                </>
+              )
+            })()}
             {recognized.length > 0 && (
               <>
                 <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setShowAll(v => !v)}>

@@ -60,6 +60,28 @@ def test_ce_nu_se_recunoaste_devine_camp_manual_cu_eticheta_din_text():
     assert manual[0]["confidence"] == "low"
 
 
+def test_loc_liber_singur_pe_rand_arata_paragrafele_vecine_ca_context():
+    """Cerință utilizator: un loc liber (aproape) singur în paragraful lui (ex. denumirea firmei, sub titlu)
+    nu are niciun cuvânt real de context DIN PROPRIUL paragraf — completat cu finalul paragrafului dinainte/
+    începutul celui de după (separate prin „ ¶ ”), ca omul să aibă un reper vizual (vezi _display_context)."""
+    alone = blanks.analyze(make_doc())[0]     # „……” de pe linia 1, singur, sub titlul „CONTRACT DE COMODAT”
+    assert "CONTRACT DE COMODAT" in alone["before"]
+    assert "Art. 1" in alone["after"]
+
+
+def test_loc_liber_singur_sare_peste_mai_multe_paragrafe_goale_consecutive():
+    """Raportat de utilizator: dacă și paragraful vecin imediat e tot gol (frecvent — spații vizuale între
+    secțiuni, mai multe la rând), contextul afișat rămâne „... ... ...”, fără niciun cuvânt real — fallback-ul
+    trebuie să sară peste TOATE paragrafele goale, nu doar unul (vezi _nearby_paragraph_texts)."""
+    raw = make_doc(["ACTUL CONSTITUTIV", "", "", "……", "", "", "CAP.I. IDENTIFICARE"])
+    alone = next(f for f in blanks.analyze(raw) if f["field"] == "SOCIETATE_DENUMIRE")
+    assert "ACTUL CONSTITUTIV" in alone["before"]
+    assert "CAP.I" in alone["after"]
+    # contextul „larg” (buton „arată mai mult”) include și mai multe paragrafe vecine
+    assert "ACTUL CONSTITUTIV" in alone["before_wide"]
+    assert "CAP.I" in alone["after_wide"]
+
+
 def test_liniile_de_semnatura_nu_sunt_locuri_de_completat():
     found = blanks.analyze(make_doc())
     assert all("________" not in (f["before"] + f["after"]) or f["scope"] != "manual" for f in found)

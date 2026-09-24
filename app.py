@@ -43,6 +43,7 @@ import local_extractor
 import azure_extractor
 from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx
 import blanks
+import ai_suggest
 from pdf_filler import fill_pdf, list_pdf_fields
 
 # Pre-load EasyOCR models at container startup so requests don't time out waiting
@@ -515,6 +516,47 @@ def template_blanks_apply():
         return _server_error("Aplicarea a eșuat", e)
     return send_file(io.BytesIO(out), as_attachment=True, download_name="sablon.docx",
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.route("/template/blanks/ai-suggest", methods=["POST"])
+def template_blanks_ai_suggest():
+    """Sugestii AI (Gemini) pentru locurile libere pe care blanks.analyze() nu le recunoaște cu încredere —
+    apel opțional, declanșat explicit din interfață (butonul „Cere sugestii AI”, per câmp sau pentru toate
+    cele needeslușite deodată), niciodată automat. Re-analizează șablonul pe server (nu are încredere în ce
+    ar trimite clientul ca listă de blank-uri — vezi ai_suggest.eligible_blanks) și întoarce sugestii în
+    ACEEAȘI formă ca /template/blanks, cu confidence="medium" (rămân „de verificat” în interfață) și
+    source="ai". `_blank_ids` (opțional, JSON — listă de id-uri) restrânge cererea la anumite locuri, ca
+    utilizatorul să poată cere sugestii doar pentru câmpurile care chiar au nevoie, nu pentru toate — mai
+    puțini tokeni trimiși, mai ieftin; lipsă = toate cele needeslușite, ca înainte."""
+    try:
+        uid = _verify(limit="ai_suggest")
+    except PermissionError as e:
+        return _auth_error(e)
+    data = _read_docx_upload()
+    if data is None:
+        return jsonify({"error": "invalid_template"}), 400
+    ids_raw = request.form.get("_blank_ids")
+    try:
+        blank_ids = {int(i) for i in json.loads(ids_raw)} if ids_raw else None
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid_blank_ids"}), 400
+    try:
+        found = blanks.analyze(data)
+        suggestions = ai_suggest.suggest(found, ids=blank_ids)
+    except ai_suggest.AiSuggestUnavailable as e:
+        # Mesajul din `e` e deja generic (scris de noi, în ai_suggest.py) — nu conține date de client, doar
+        # config/eroare de apel. Cauza reală (excepția Google, via `from e` din ai_suggest.suggest) altfel nu
+        # ajungea NICIODATĂ în loguri — spre deosebire de _server_error mai jos, ramura asta nu logga nimic.
+        cause = e.__cause__
+        if cause is not None:
+            print(f"[ai_suggest] {e} — {type(cause).__name__}: {cause}")
+        else:
+            print(f"[ai_suggest] {e}")
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return _server_error("Sugestiile AI au eșuat", e)
+    _audit(uid, "template.ai_suggest", {"blanksTotal": len(found), "suggested": len(suggestions)})
+    return jsonify({"suggestions": suggestions})
 
 
 _ANAF_URL        = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"

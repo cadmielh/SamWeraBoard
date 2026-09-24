@@ -163,11 +163,22 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
                     clone = copy.deepcopy(bp._p)
                     anchor.addprevious(clone)
                     clone_par = Paragraph(clone, bp._parent)
+                    changed = False
                     if variant_ctx is not None:
                         choices = variants.resolve_paragraph(clone_par, variant_ctx, {}, fixed)
                         if variant_warnings is not None:
                             variant_warnings |= variants.unresolved_persons(choices)
-                    _replace_in_paragraph(clone_par, item_replacements)
+                        changed = any(c.text is not None for c in choices)
+                    if _replace_in_paragraph(clone_par, item_replacements):
+                        changed = True
+                    # Vezi _replace_and_mark/_resolve_variants — fără marcaj, _fix_dash_fill_tails (care rulează
+                    # DUPĂ expandare, mai jos în fill_docx) ar sări peste FIECARE rând generat dintr-un bloc
+                    # {{#ROL}}, chiar dacă textul lui chiar s-a schimbat: substituția de mai sus nu trecea
+                    # niciodată prin _replace_and_mark (doar prin _replace_in_paragraph, direct) — liniuța de
+                    # umplere din șablon rămânea cu numărul fix de caractere din exemplu, nu se mai întindea
+                    # până la margine pentru un nume mai lung/scurt (bug real, găsit pe un document real).
+                    if changed:
+                        clone.set(_CHANGED_ATTR, "1")
 
             # Remove the original template block + both markers
             for bp in block_paragraphs:

@@ -441,14 +441,59 @@ def _label_before(before: str) -> str:
     return " ".join(words[-4:]) if words else "valoare"
 
 
+_MIN_DISPLAY_CONTEXT = 15   # caractere reale (fără spații) sub care se apelează la paragraful vecin, vezi mai jos
+_NEARBY_PARAGRAPHS_LIMIT = 3   # câte paragrafe vecine NEVIDE se string, de fiecare parte, pentru contextul „larg”
+
+
+def _nearby_paragraph_texts(all_texts: list[str], pi: int, direction: int, limit: int = _NEARBY_PARAGRAPHS_LIMIT) -> list[str]:
+    """Textele (nevide) a până la `limit` paragrafe vecine lui `pi`, în direcția `direction` (+1 = după,
+    -1 = înainte), SĂRIND paragrafele complet goale (spații vizuale între secțiuni, frecvente în actele
+    reale) — cel mai apropiat paragraf nevid primul. Fără asta, un fallback care se uită doar la UN singur
+    paragraf vecin rămâne fără niciun cuvânt de context dacă tocmai acela e gol (mai multe paragrafe goale
+    la rând, ex. înainte de un titlu de secțiune — raportat de utilizator)."""
+    out: list[str] = []
+    j = pi + direction
+    while 0 <= j < len(all_texts) and len(out) < limit:
+        t = all_texts[j].strip()
+        if t:
+            out.append(t)
+        j += direction
+    return out
+
+
+def _display_context(before: str, after: str, prev_pars: list[str], next_pars: list[str]) -> tuple[str, str, str, str]:
+    """(before, after, before_larg, after_larg) — primele două, de AFIȘAT implicit în interfață: dacă locul
+    liber e (aproape) singur în paragraful lui („……” pe propriul rând, sub un titlu, ex. denumirea firmei),
+    textul din ACEST paragraf nu ajunge ca reper vizual pentru om („... ... ...”, fără niciun cuvânt real) —
+    se completează cu cel mai apropiat paragraf vecin NEVID (poate sări peste unul sau mai multe goale — vezi
+    _nearby_paragraph_texts), separat printr-un „ ¶ ” (ruptura de paragraf). Ultimele două — context mult mai
+    larg (până la _NEARBY_PARAGRAPHS_LIMIT paragrafe de fiecare parte), arătat DOAR la cerere (buton „arată
+    mai mult”, vezi frontend), pentru orice loc liber, nu doar cele cu context sărac — cerere utilizator.
+    Niciuna din ele nu intră la POTRIVIREA regulilor (asta rămâne pe fereastra strict din acest paragraf —
+    vezi analyze())."""
+    db = before
+    if len(before.strip()) < _MIN_DISPLAY_CONTEXT and prev_pars:
+        db = prev_pars[0][-90:].strip() + " ¶ " + before
+    da = after
+    if len(after.strip()) < _MIN_DISPLAY_CONTEXT and next_pars:
+        da = after + " ¶ " + next_pars[0][:90].strip()
+    wide_before = (" ¶ ".join(reversed(prev_pars)) + " ¶ " + before) if prev_pars else before
+    wide_after = (after + " ¶ " + " ¶ ".join(next_pars)) if next_pars else after
+    return db, da, wide_before[-500:], wide_after[:500]
+
+
 def _finalize_blank(out: list[dict], s: dict, pi: int, start: int, end: int, before: str, after: str,
-                    manual_label: str | None = None) -> None:
+                    manual_label: str | None = None, prev_pars: list[str] | None = None,
+                    next_pars: list[str] | None = None) -> None:
     """Completează poziția + eticheta + eticheta finală (tag) unui loc liber găsit și îl adaugă la `out` —
     pasul comun celor două ramuri din analyze() (cu și fără indiciu în paranteză, care doar pregătesc `s` diferit
     până aici). `manual_label`, dat doar de ramura cu indiciu, e eticheta explicită scrisă de autor
     („(Nume Asociat)” → „Nume Asociat”); fără el, un câmp manual ia eticheta deja propusă de suggest() sau,
-    în lipsă, ultimele cuvinte dinaintea locului liber (vezi _label_before)."""
-    s.update({"id": len(out), "paragraph": pi, "start": start, "end": end, "before": before[-70:], "after": after[:40]})
+    în lipsă, ultimele cuvinte dinaintea locului liber (vezi _label_before). `prev_pars`/`next_pars` (paragrafele
+    vecine) intră DOAR în ce se afișează (vezi _display_context), niciodată în potrivirea regulilor de mai sus."""
+    db, da, wb, wa = _display_context(before, after, prev_pars or [], next_pars or [])
+    s.update({"id": len(out), "paragraph": pi, "start": start, "end": end,
+              "before": db, "after": da, "before_wide": wb, "after_wide": wa})
     if s["scope"] == "manual":
         s["label"] = manual_label if manual_label is not None else (s.get("label") or _label_before(before))
         s["tag"] = manual_tag(s["label"])
@@ -554,11 +599,17 @@ def analyze(docx_bytes: bytes) -> list[dict]:
     """Lista locurilor libere, în ordinea documentului, cu context și propunere."""
     doc = Document(io.BytesIO(docx_bytes))
     pars = _paragraphs(doc)
+    all_par_texts = [_par_text(p) for p in pars]   # o singură trecere — reutilizat mai jos pentru context (vezi _nearby_paragraph_texts)
     out: list[dict] = []
     sig_counts: dict[str, int] = {}    # poziția (ASOCIAT_N/ADMINISTRATOR_N) următoarei linii de semnătură, per rol
     active_sig_role: str | None = None  # rolul secțiunii de semnătură „curente” — vezi _signature_role_for_heading
     for pi, par in enumerate(pars):
-        text = _par_text(par)
+        text = all_par_texts[pi]
+        # Doar pentru afișare (vezi _display_context) — un loc liber (aproape) singur în paragraful lui
+        # (ex. denumirea firmei, sub titlu) altfel n-ar avea niciun cuvânt real de context în interfață. Poate
+        # sări peste mai multe paragrafe goale consecutive (vezi _nearby_paragraph_texts), nu doar unul.
+        prev_pars = _nearby_paragraph_texts(all_par_texts, pi, -1)
+        next_pars = _nearby_paragraph_texts(all_par_texts, pi, 1)
 
         # Titlu de secțiune de semnătură („SEMNĂTURA ASOCIAT/ASOCIAȚI”, „SEMNATURILE,”) sau doar eticheta unui
         # rol, singură pe rând („Administrator”) — activează/schimbă rolul curent pentru liniile de semnătură
@@ -628,8 +679,11 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             if k in consumed_hint_blanks:
                 continue
             blank_end = _extend_past_artifact_dots(text, m.end())    # vezi _extend_past_artifact_dots
-            before = text[max(0, m.start() - 110):m.start()]
-            after = text[blank_end:blank_end + 60]
+            # Fereastră largă (mult peste ce citește suggest() pentru potrivire, care își taie singur cât are
+            # nevoie mai jos) — asta e și ce vede utilizatorul ca „before”/„after” la un câmp needeslușit; prea
+            # îngustă, arăta adesea doar alte locuri libere vecine („…… ……”), fără niciun cuvânt real de context.
+            before = text[max(0, m.start() - 200):m.start()]
+            after = text[blank_end:blank_end + 110]
 
             # indiciu explicit lipit de locul liber, ex. „…(CAEN PRINCIPAL)……” — prioritate maximă, înaintea
             # oricărei ghiciri din context (vezi _resolve_hint); dacă mai urmează imediat un al doilea loc
@@ -665,8 +719,9 @@ def analyze(docx_bytes: bytes) -> list[dict]:
                          "person": sig_counts[active_sig_role], "confidence": "high", "is_signature_line": True}
                 else:
                     s = {"scope": "manual", "field": None, "confidence": "high", "_hint_label": hint_m.group(1).strip()}
-                _finalize_blank(out, s, pi, m.start(), end, before, text[end:end + 40],
-                                manual_label=(s.pop("_hint_label") if s["scope"] == "manual" else None))
+                _finalize_blank(out, s, pi, m.start(), end, before, text[end:end + 110],
+                                manual_label=(s.pop("_hint_label") if s["scope"] == "manual" else None),
+                                prev_pars=prev_pars, next_pars=next_pars)
                 list_entry, list_role = None, None
                 continue
 
@@ -708,13 +763,13 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             if is_mention and list_entry is not None and list_role == s["role"] and list_role in _LIST_FIELD \
                     and _CONNECTOR_RE.match(text[list_entry["end"]:m.start()]):
                 list_entry["end"] = blank_end
-                list_entry["after"] = after[:40]
+                list_entry["after"] = after
                 if list_entry["scope"] != "company":
                     field = _LIST_FIELD[list_role]
                     list_entry.update(scope="company", field=field, role=None, person=None,
                                       label=COMPANY_FIELDS[field], tag="{{" + field + "}}")
                 continue
-            _finalize_blank(out, s, pi, m.start(), blank_end, before, after)
+            _finalize_blank(out, s, pi, m.start(), blank_end, before, after, prev_pars=prev_pars, next_pars=next_pars)
             list_entry, list_role = (s, s["role"]) if is_mention else (None, None)
     return out
 
@@ -724,11 +779,17 @@ def analyze(docx_bytes: bytes) -> list[dict]:
 _ROLE_PLURAL = {"ASOCIAT": "ASOCIATI", "ADMINISTRATOR": "ADMINISTRATORI", "CAEN": "CAEN_SECUNDARE"}
 _ORDINAL_RE = re.compile(r"^(\s*)(\d+)(\.\s*)")
 
-# „asociatul/asociații”, „administratorul/administratorii” (cu variații: verb schimbat — „este asociatul/sunt
-# asociații” —, sau typo real „adminstratorul”) — autorul spune explicit că poate fi una sau mai multe
-# persoane, chiar dacă a scris o singură persoană ca exemplu. Tolerant la forma exactă a cuvântului al doilea
-# (`adm\w*strat\w*` prinde și typo-ul „adminstrator”, căruia îi lipsește un „i”).
-_PLURAL_MARKER_RE = re.compile(r"(asociat\w*|adm\w*strat\w*)\s*/\s*(?:\w+\s+)?(asociat\w*|adm\w*strat\w*)")
+# „asociatul/asociații”, „administratorul/administratorii”, dar la fel de bine „comodantul/comodatarul”,
+# „locatorul/locatarul” — ORICE cuvânt din _ROLE_KEYWORDS, nu doar cele două roluri din actul constitutiv (cu
+# variații: verb schimbat — „este asociatul/sunt asociații” —, sau typo real „adminstratorul”). Construit din
+# _ROLE_KEYWORDS (ca _ROLE_LABEL_RE mai sus), cu o singură excepție: ADMINISTRATOR păstrează fragmentul mai
+# tolerant `adm\w*strat\w*` (prinde și typo-ul „adminstrator”, căruia îi lipsește un „i” — găsit într-un
+# document real; `administr\w*` din _ROLE_KEYWORDS nu-l prinde, fiindcă typo-ul rupe exact acel prefix).
+_PLURAL_MARKER_ALT = "|".join(
+    (r"adm\w*strat\w*" if role == "ADMINISTRATOR" else kw.replace(" ", r"\s+") + r"\w*")
+    for kw, role in _ROLE_KEYWORDS
+)
+_PLURAL_MARKER_RE = re.compile(rf"({_PLURAL_MARKER_ALT})\s*/\s*(?:\w+\s+)?({_PLURAL_MARKER_ALT})")
 
 
 def _has_plural_marker(text: str) -> bool:
@@ -922,57 +983,111 @@ def _dominant_rpr(paragraph: Paragraph):
     return copy.deepcopy(rpr) if rpr is not None else None
 
 
-def _insert_paragraph_before(anchor: Paragraph, text: str, rpr=None) -> Paragraph:
-    """Paragraf nou, gol, inserat imediat înaintea lui `anchor`, cu aceeași aliniere/indentare (pPr) și, dacă e
-    dat `rpr` (vezi _dominant_rpr), cu același font — altfel Word afișează fugile noi cu fontul implicit
-    (adesea Times New Roman), diferit de restul șablonului (ex. Arial)."""
+def _rpr_at(paragraph: Paragraph, pos: int):
+    """rPr al fugii care acoperă poziția `pos` din textul concatenat al paragrafului — formatarea PROPRIE a
+    unui loc anume (ex. „……” scris cu sublinire, diferit de restul frazei), nu formatarea dominantă a
+    întregului paragraf (vezi _dominant_rpr). None dacă poziția cade în afara textului sau fuga n-are rPr."""
+    cursor = 0
+    for r in paragraph.runs:
+        end = cursor + len(r.text)
+        if cursor <= pos < end:
+            rpr = r._r.find(qn("w:rPr"))
+            return copy.deepcopy(rpr) if rpr is not None else None
+        cursor = end
+    return None
+
+
+def _insert_paragraph_before(anchor: Paragraph, content, rpr=None) -> Paragraph:
+    """Paragraf nou, gol, inserat imediat înaintea lui `anchor`, cu aceeași aliniere/indentare (pPr). `content`
+    e fie un șir simplu (o singură fugă, cu formatarea `rpr` — vezi _dominant_rpr), fie o listă de segmente
+    (text, rPr_propriu_sau_None) — vezi _local_replacements: fiecare segment devine propria lui fugă, cu
+    formatarea EI dacă are una (ex. locul liber era subliniat), altfel cea dominantă (`rpr`) — altfel Word
+    afișează fugile noi cu fontul implicit (adesea Times New Roman), diferit de restul șablonului (ex. Arial)."""
     new_p = OxmlElement("w:p")
     if anchor._p.pPr is not None:
         new_p.append(copy.deepcopy(anchor._p.pPr))
     anchor._p.addprevious(new_p)
     new_par = Paragraph(new_p, anchor._parent)
-    if text:
+    segments = content if isinstance(content, list) else ([(content, None)] if content else [])
+    for text, seg_rpr in segments:
+        if not text:
+            continue
         run = new_par.add_run(text)
-        if rpr is not None:
-            run._r.insert(0, copy.deepcopy(rpr))
+        chosen_rpr = seg_rpr if seg_rpr is not None else rpr
+        if chosen_rpr is not None:
+            run._r.insert(0, copy.deepcopy(chosen_rpr))
     return new_par
 
 
-def _local_replacements(text: str, blanks: list[dict], offset: int, tag_for) -> str:
+def _local_replacements(text: str, blanks: list[dict], offset: int, tag_for, rpr_for=None) -> list[tuple[str, object]]:
     """Aplică `tag_for(blank)` (poate întoarce None = neschimbat) pe `text`, pentru blank-urile din `blanks`
-    (coordonate absolute, decalate cu -offset), în ordine inversă, ca pozițiile nefolosite încă să rămână valide."""
+    (coordonate absolute, decalate cu -offset). Întoarce segmente (text, rPr_sau_None) pentru
+    _insert_paragraph_before, nu un singur șir: porțiunea înlocuită (eticheta care va deveni, la generare,
+    numele/suma reală) moștenește formatarea PROPRIE a locului liber înlocuit (via `rpr_for`, de obicei
+    _rpr_at pe paragraful original) — un „……” scris cu sublinire tot cu sublinire trebuie să iasă, chiar dacă
+    restul frazei nu e; textul literal din jur rămâne pe formatarea dominantă a paragrafului (rpr_for=None)."""
+    segments: list[tuple[str, object]] = []
+    pos = len(text)
     for b in sorted(blanks, key=lambda x: x["start"], reverse=True):
         tag = tag_for(b)
-        if tag:
-            s, e = b["start"] - offset, b["end"] - offset
-            text = text[:s] + tag + text[e:]
-    return text
+        if not tag:
+            continue
+        s, e = b["start"] - offset, b["end"] - offset
+        if e < pos:
+            segments.append((text[e:pos], None))
+        segments.append((tag, rpr_for(b) if rpr_for else None))
+        pos = s
+    if pos > 0:
+        segments.append((text[:pos], None))
+    segments.reverse()
+    return segments
 
 
 _CLAUSE_END_RE = re.compile(r"[.;]|-{4,}|,")
+_DASH_FILL_AFTER_RE = re.compile(r"\s*-{4,}")    # liniuță de umplere imediat după punctul de final de propoziție
 
 
-def _extend_clause_end(whole_text: str, end: int, limit: int) -> int:
+def _extend_clause_end(whole_text: str, end: int, limit: int, include_dash_fill: bool = False) -> int:
     """Extinde sfârșitul unei clauze (`end` = imediat după ultimul loc liber completat) până la o punctuație
-    de final de propoziție („.”/„;”, inclusă), un bloc de liniuțe de umplere (vezi
-    doc_filler._fix_dash_fill_tails; exclus — se tratează separat, la generare) sau o virgulă (exclusă) —
-    oricare apare prima. Fără asta, restul propoziției pentru care CHIAR ACEA persoană e subiectul
+    de final de propoziție („.”/„;”, inclusă), un bloc de liniuțe de umplere (vezi doc_filler._fix_dash_fill_tails
+    — inclus DOAR dacă `include_dash_fill`, altfel exclus, tratat separat, la generare) sau o virgulă (exclusă)
+    — oricare apare prima. Fără asta, restul propoziției pentru care CHIAR ACEA persoană e subiectul
     („ lei.”, „, cu puteri depline și cu o durată a mandatului până la …… ani.”) ar rămâne scris o singură
     dată, nu repetat pentru fiecare persoană (vezi _apply_inline_group/_apply_paragraph_group). Virgula
     oprește înadins — o virgulă imediat după ultimul câmp înseamnă de obicei o continuare colectivă, despre
     TOATE persoanele de-odată, nu despre cea curentă („……, CNP ……, aceștia fiind de acord.” — „aceștia” la
     plural se referă la toată lista, nu doar la ultima persoană din ea; rămâne sufix fix, o singură dată).
+
+    `include_dash_fill=True` — folosit DOAR de _apply_paragraph_group, unde fiecare clauză e deja propriul ei
+    paragraf (nu există risc de a înghiți clauza URMĂTOARE, `limit` fiind finalul ACELUIAȘI paragraf): un bloc
+    de liniuțe de la finalul rândului aparține acelei persoane — „HOLHOS CADMIEL contribuie cu 2.000 lei.----”
+    trebuie repetat identic pentru fiecare asociat, nu păstrat o singură dată ca separator de-o singură dată
+    (asta rămâne comportamentul implicit la _apply_inline_group, unde mai multe clauze chiar pot împărți
+    același paragraf, iar o liniuță găsită între ele chiar E un separator colectiv, nu al ultimei persoane).
+    Cazul obișnuit e liniuța DUPĂ punct („…lei.----”): prima potrivire găsită e punctul, nu liniuța (apare
+    mai devreme în text) — după ce punctul e inclus, se caută ȘI o liniuță imediat următoare (cu spații albe
+    opționale între), ca amândouă să intre în clauza repetată, nu doar punctul.
     Nu trece de `limit` (începutul clauzei URMĂTOARE, sau finalul paragrafului) — altfel ar înghiți din
     clauza de după, când nu există nicio punctuație/liniuță/virgulă între ele."""
     m = _CLAUSE_END_RE.search(whole_text, end, limit)
     if not m:
         return limit
-    return m.end() if whole_text[m.start()] in ".;" else m.start()
+    if whole_text[m.start()] in ".;":
+        pos = m.end()
+        if include_dash_fill:
+            dm = _DASH_FILL_AFTER_RE.match(whole_text, pos, limit)
+            if dm:
+                pos = dm.end()
+        return pos
+    if include_dash_fill and whole_text[m.start()] == "-":
+        return m.end()
+    return m.start()
 
 
 def _split_group_paragraph(anchor: Paragraph, whole_text: str, template_span: tuple[int, int], group_end: int,
                            other_blanks: list[dict], template_blanks: list[dict], role: str,
-                           choices: dict[int, str | None], prefix_end: int | None = None) -> None:
+                           choices: dict[int, str | None], prefix_end: int | None = None,
+                           repeat_prefix: bool = False) -> None:
     """Un paragraf → prefix (text fix) / {{#ROL}} / clauza-șablon (etichete generice) / {{/ROL}} / sufix (text fix),
     fiecare ca paragraf separat, cu aceeași aliniere și font ca paragraful original (vezi _insert_paragraph_before
     și _dominant_rpr). Textul dintre sfârșitul clauzei-șablon și `group_end` (clauzele 2..N ale grupului,
@@ -983,7 +1098,15 @@ def _split_group_paragraph(anchor: Paragraph, whole_text: str, template_span: tu
     `prefix_end` e limita prefixului (începutul primei clauze, în ordinea din text) — de obicei coincide cu
     începutul clauzei-șablon, dar nu întotdeauna: clauza-șablon poate fi alta decât prima (cea mai completă
     structural, ex. singura cu ADRESA), caz în care prefixul tot trebuie să se oprească înainte de PRIMA
-    clauză, nu înainte de clauza-șablon — altfel clauza (clauzele) dinaintea ei ar rămâne text fix, needitat."""
+    clauză, nu înainte de clauza-șablon — altfel clauza (clauzele) dinaintea ei ar rămâne text fix, needitat.
+
+    `repeat_prefix=True` (folosit DOAR de _apply_paragraph_group, unde fiecare clauză e deja propriul ei
+    paragraf — nu există concept de „prefix comun mai multor clauze” ca la _apply_inline_group): textul
+    dinaintea primului câmp, dacă NU e doar un număr de ordine (vezi `prepend_index` mai jos), nu devine un
+    paragraf fix de-o singură dată — se lipește la începutul FIECĂREI clauze repetate. „Asociatului …… îi
+    revin …… părți sociale” trebuie să înceapă cu „Asociatului” la fiecare persoană generată, nu doar la
+    prima — altfel „Asociatului” apărea o singură dată, ca titlu fals, deasupra întregii liste (bug real,
+    găsit pe un document real)."""
     clause_start, clause_end = template_span
     if prefix_end is None:
         prefix_end = clause_start
@@ -1008,18 +1131,28 @@ def _split_group_paragraph(anchor: Paragraph, whole_text: str, template_span: tu
     # fontul implicit din stilul „Normal” al documentului, diferit de restul șablonului.
     rpr = _dominant_rpr(anchor)
 
-    if prefix_raw.strip():
-        text = _local_replacements(prefix_raw, prefix_blanks, 0, lambda b: choices.get(b["id"]))
-        _insert_paragraph_before(anchor, text, rpr)
+    # Formatarea PROPRIE a fiecărui loc liber (ex. „……” subliniat) — nu doar cea dominantă a paragrafului —
+    # vezi _local_replacements/_rpr_at; poziția e cea din `anchor`, ÎNCĂ neatins la acest punct.
+    rpr_for = lambda b: _rpr_at(anchor, b["start"])   # noqa: E731
+
+    repeat_this_prefix = repeat_prefix and not prepend_index and bool(prefix_raw.strip())
+    if prefix_raw.strip() and not repeat_this_prefix:
+        segs = _local_replacements(prefix_raw, prefix_blanks, 0, lambda b: choices.get(b["id"]), rpr_for)
+        _insert_paragraph_before(anchor, segs, rpr)
     _insert_paragraph_before(anchor, f"{{{{#{role_plural}}}}}", rpr)
-    clause_text = _local_replacements(clause_raw, template_blanks, clause_start, lambda b: generic_person_tag(b["field"]))
+    clause_segs = _local_replacements(clause_raw, template_blanks, clause_start, lambda b: generic_person_tag(b["field"]), rpr_for)
     if prepend_index:
-        clause_text = "{{INDEX}}. " + clause_text.lstrip()
-    _insert_paragraph_before(anchor, clause_text, rpr)
+        if clause_segs:
+            clause_segs[0] = (clause_segs[0][0].lstrip(), clause_segs[0][1])
+        clause_segs.insert(0, ("{{INDEX}}. ", None))
+    elif repeat_this_prefix:
+        prefix_segs = _local_replacements(prefix_raw, prefix_blanks, 0, lambda b: choices.get(b["id"]), rpr_for)
+        clause_segs = prefix_segs + clause_segs
+    _insert_paragraph_before(anchor, clause_segs, rpr)
     _insert_paragraph_before(anchor, f"{{{{/{role_plural}}}}}", rpr)
     if suffix_raw.strip():
-        text = _local_replacements(suffix_raw, suffix_blanks, group_end, lambda b: choices.get(b["id"]))
-        _insert_paragraph_before(anchor, text, rpr)
+        segs = _local_replacements(suffix_raw, suffix_blanks, group_end, lambda b: choices.get(b["id"]), rpr_for)
+        _insert_paragraph_before(anchor, segs, rpr)
     anchor._p.getparent().remove(anchor._p)
 
 
@@ -1053,11 +1186,18 @@ def _apply_paragraph_group(pars: list[Paragraph], group: dict, blanks_by_id: dic
     # mărginit aici doar de finalul paragrafului (fiecare clauză e deja propriul ei paragraf). Excepție:
     # activitățile CAEN secundare (role="CAEN") sunt DOAR câte un cod pe rând, fără propoziție proprie —
     # punctuația de final aparține frazei introductive de dinaintea listei ("...activități:"), nu fiecărui
-    # cod în parte; extinderea ar repeta-o greșit după fiecare cod.
-    clause_end = template_blanks[-1]["end"] if group["role"] == "CAEN" else _extend_clause_end(text, template_blanks[-1]["end"], len(text))
+    # cod în parte; extinderea ar repeta-o greșit după fiecare cod. Pentru restul rolurilor, `include_dash_fill`
+    # e pornit: liniuța de umplere de la finalul rândului (vezi _extend_clause_end) aparține clauzei ei —
+    # trebuie să apară la fiecare persoană generată, nu doar o dată, ca separator fals după toată lista.
+    is_caen = group["role"] == "CAEN"
+    clause_end = template_blanks[-1]["end"] if is_caen else \
+        _extend_clause_end(text, template_blanks[-1]["end"], len(text), include_dash_fill=True)
     template_span = (template_blanks[0]["start"], clause_end)
     other_blanks = [b for b in blanks_by_id.values() if b["paragraph"] == first_pi and b["id"] not in group["blank_ids"]]
-    _split_group_paragraph(first_par, text, template_span, template_span[1], other_blanks, template_blanks, group["role"], choices)
+    # repeat_prefix=True: fiecare paragraf al grupului E o clauză întreagă — orice text dinaintea primului
+    # câmp (ex. „Asociatului”) aparține clauzei, nu e un titlu comun de-o singură dată (vezi mai sus).
+    _split_group_paragraph(first_par, text, template_span, template_span[1], other_blanks, template_blanks,
+                           group["role"], choices, repeat_prefix=True)
     for pi in group["paragraphs"][1:]:
         p = pars[pi]
         p._p.getparent().remove(p._p)

@@ -38,8 +38,29 @@ _NOT_ABOUT_PERSON = {"emis", "eliberat", "valabil", "expirat", "intocmit", "reda
 _SEX_PAIRS = {  # formă masculină → formă feminină (comparație fără diacritice, minuscule)
     "domnul": "doamna", "domnului": "doamnei", "dumnealui": "dumneaei", "el": "ea", "dansul": "dansa",
     "asociatului": "asociatei", "asociatul": "asociata",
+    # „administrator” nu urmează sufixul regulat de mai jos (născut/născută) — schimbă chiar rădăcina
+    # cuvântului (administrator- → administratoar-), deci are nevoie de o pereche explicită, la fel ca asociat.
+    "administratorul": "administratoarea", "administratorului": "administratoarei",
 }
 _HONORIFICS = {"domnul", "doamna", "domnului", "doamnei", "dumnealui", "dumneaei", "subsemnatul", "subsemnata"}
+
+# Substantive de rol (asociat/administrator) scrise O SINGURĂ DATĂ în șablon, la masculin, FĂRĂ alternativa
+# „/” alături (spre deosebire de „Domnul/Doamna”, aproape mereu scrisă cu ambele forme) — mai ales în
+# paragrafele generate dintr-un bloc repetitiv (vezi blanks.py, _split_group_paragraph: „Asociatului ……
+# îi revin ……”, fără nicio variantă scrisă). Când sexul persoanei e CONFIRMAT (fișă sau CNP — același
+# mecanism sigur ca la perechile „a/b” de mai jos, nu o ghicire nouă), cuvântul se corectează automat.
+# Deliberat un subset ÎNGUST din _SEX_PAIRS — nu „domnul”/„el”/„dansul”: acelea sunt cuvinte foarte comune,
+# care ar putea apărea în text fără legătură cu persoana urmărită; „asociatul”/„administratorul” sunt
+# substantive de rol fără ambiguitate.
+_STANDALONE_ROLE_WORDS = {
+    "asociatul": "asociata", "asociatului": "asociatei",
+    "administratorul": "administratoarea", "administratorului": "administratoarei",
+}
+_STANDALONE_ROLE_WORDS_REV = {fem: masc for masc, fem in _STANDALONE_ROLE_WORDS.items()}
+_SEX_WORD_RE = re.compile(
+    rf"(?<!\w)({'|'.join(sorted({*_STANDALONE_ROLE_WORDS, *_STANDALONE_ROLE_WORDS_REV}, key=len, reverse=True))})(?!\w)",
+    re.IGNORECASE,
+)
 
 _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("va", "vor"): "asociati", ("poate", "pot"): "asociati",
@@ -48,6 +69,23 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("administratorului", "administratorilor"): "administratori",
     ("are", "au"): "asociati", ("este", "sunt"): "asociati", ("acesta", "acestia"): "asociati",
 }
+
+# Substantive de rol (asociat/administrator) la singular/plural, scrise O SINGURĂ formă, FĂRĂ „/” alături —
+# ajustate după numărul REAL de asociați/administratori ai clientului (același mecanism ca _STANDALONE_ROLE_WORDS
+# mai sus, dar pentru număr, nu sex). Deliberat DOAR substantivele, NU verbele din _NUMBER_TOKENS (este/sunt,
+# va/vor, poate/pot, are/au…) — acelea sunt cuvinte mult prea generice pentru detectare fără „/”: ar rescrie
+# propoziții fără nicio legătură cu asociații („Sediul social ESTE în București”, „Actul ESTE valabil”…).
+# Cheile sunt fără diacritice (comparate prin _norm); valorile au diacriticele corecte, ca text de pus în document.
+_STANDALONE_ROLE_NUMBER = {
+    "asociatul": ("asociații", "asociati"), "asociatului": ("asociaților", "asociati"),
+    "administratorul": ("administratorii", "administratori"), "administratorului": ("administratorilor", "administratori"),
+}
+_STANDALONE_ROLE_NUMBER_REV = {   # plural (fără diacritice) → (formă de singular, domeniu) — `_norm` nu e încă
+    # definit la acest punct din fișier, de-asta cheile sunt scrise direct fără diacritice, ca peste tot mai sus.
+    "asociatii": ("asociatul", "asociati"), "asociatilor": ("asociatului", "asociati"),
+    "administratorii": ("administratorul", "administratori"), "administratorilor": ("administratorului", "administratori"),
+}
+_NUMBER_WORD_RE = re.compile(rf"(?<!\w)({_WORD})(?!\w)")
 
 # „asociat unic/asociați”, „asociatului unic/ asociaților”, „asociatul/ asociații”, „ASOCIAT UNIC/ASOCIAȚI”
 _ASOCIAT_PHRASE = re.compile(
@@ -224,6 +262,51 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
             add(Choice(m.start(), m.end(), _match_case(m.group(0), masc if sx == "M" else fem), "sex", person))
         else:
             add(Choice(m.start(), m.end(), None, "sex", person))
+
+    # 4) substantive de rol la singular/plural, fără „/” alături (vezi _STANDALONE_ROLE_NUMBER) — ajustate după
+    # numărul REAL de asociați/administratori ai clientului. DOAR în afara unui bloc {{#ROL}} (`fixed is None`)
+    # — o clauză dintr-un bloc repetitiv (vezi doc_filler._expand_repeat_blocks) e mereu despre O SINGURĂ
+    # persoană, chiar dacă firma are mai mulți asociați în total: „Asociatului {{NUME}}” nu devine niciodată
+    # „Asociaților {{NUME}}” doar fiindcă mai există și alți asociați în alte clauze ale aceluiași bloc.
+    # ÎNAINTEA pasului de sex de mai jos, dinadins: un cuvânt cu NUMĂRUL cunoscut (dar sexul necunoscut) tot
+    # trebuie corectat — dacă sexul ar „ocupa” poziția primul (chiar nerezolvat, ca avertisment), numărul n-ar
+    # mai apuca să încerce deloc aceeași poziție (vezi `free`/`taken` mai jos).
+    if fixed is None:
+        for m in _NUMBER_WORD_RE.finditer(text):
+            if not free(m.start(), m.end()):
+                continue
+            word = m.group(1)
+            nw = _norm(word)
+            if nw in _STANDALONE_ROLE_NUMBER:
+                other, domain = _STANDALONE_ROLE_NUMBER[nw]
+                is_singular_written = True
+            elif nw in _STANDALONE_ROLE_NUMBER_REV:
+                other, domain = _STANDALONE_ROLE_NUMBER_REV[nw]
+                is_singular_written = False
+            else:
+                continue
+            i = by_count(ctx.get(domain))
+            if i is None or (i == 0) == is_singular_written:
+                continue      # număr necunoscut, sau deja forma corectă — nimic de schimbat/semnalat
+            add(Choice(m.start(), m.end(), _match_case(word, other), "number"))
+
+    # 5) substantive de rol scrise O SINGURĂ dată, fără „/” alături (vezi _STANDALONE_ROLE_WORDS) — corectate
+    # după sexul CONFIRMAT al persoanei, chiar dacă șablonul nu a scris explicit ambele forme. Poziția deja
+    # „ocupată” de pasul 4 de mai sus (ex. cuvântul a devenit plural) e sărită automat, via `free`.
+    for m in _SEX_WORD_RE.finditer(text):
+        if not free(m.start(), m.end()):
+            continue
+        word = m.group(1)
+        nw = _norm(word)
+        masc = _STANDALONE_ROLE_WORDS_REV.get(nw, nw)
+        fem = _STANDALONE_ROLE_WORDS.get(nw, nw)
+        sx, person = _decide_sex(m.start(), word, tags, sex_map, fixed)
+        if sx in ("M", "F"):
+            chosen = masc if sx == "M" else fem
+            if chosen != nw:      # deja forma corectă — nimic de schimbat
+                add(Choice(m.start(), m.end(), _match_case(word, chosen), "sex", person))
+        else:
+            add(Choice(m.start(), m.end(), None, "sex", person))
     return out
 
 
@@ -253,7 +336,12 @@ def resolve_paragraph(paragraph: Paragraph, ctx: dict, replacements: dict[str, s
     if not paragraph.runs:
         return []
     text = "".join(r.text for r in paragraph.runs)
-    if "/" not in text and "(" not in text:
+    # „/” și „(” acoperă pașii 1-3 (perechi, paranteze) — pașii 4-5 (substantiv de rol singur, fără alternativă
+    # scrisă) n-au niciunul din cele două, de-asta verificarea de mai jos le caută separat. `_norm`, nu doar
+    # `.lower()`: „Asociații”/„Asociaților” (plural, cu ț) nu conțin literal substring-ul „asociat” (cu t simplu)
+    # — fără normalizare, poarta bloca exact cazul „e deja plural, trebuie adus la singular”.
+    normalized = _norm(text)
+    if "/" not in text and "(" not in text and "asociat" not in normalized and "administr" not in normalized:
         return []
     choices = find_choices(text, ctx, replacements, fixed)
     for c in sorted((c for c in choices if c.text is not None), key=lambda c: c.start, reverse=True):

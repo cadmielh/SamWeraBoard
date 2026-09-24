@@ -1,10 +1,12 @@
 import type { BlankSuggestion } from './api'
 
-/** Alegerea utilizatorului pentru un loc liber dintr-un document fără etichete. Oglinda logicii din blanks.py (person_tag, manual_tag). */
+/** Alegerea utilizatorului pentru un loc liber dintr-un document fără etichete. Oglinda logicii din blanks.py
+ * (person_tag, manual_tag). `role`: nu doar ASOCIAT/ADMINISTRATOR — orice calitate juridică găsită din
+ * context sau propusă de AI (COMODANT, REPREZENTANT_LEGAL…), vezi BlankSuggestion din lib/api.ts. */
 export type BlankChoice =
   | { kind: 'keep' }
   | { kind: 'company'; field: string }
-  | { kind: 'person'; role: 'ASOCIAT' | 'ADMINISTRATOR'; n: number; field: string }
+  | { kind: 'person'; role: string; n: number; field: string }
   | { kind: 'manual'; label: string }
 
 /** Textul din etichetă → parte de etichetă {{CAMP_…}}: litere mari fără diacritice, separate prin „_”. */
@@ -13,7 +15,7 @@ export function manualTag(label: string): string {
   return `{{CAMP_${(w || 'VALOARE').slice(0, 40)}}}`
 }
 
-export function personTag(role: 'ASOCIAT' | 'ADMINISTRATOR', n: number, field: string): string {
+export function personTag(role: string, n: number, field: string): string {
   if (field === 'NUME_COMPLET') return `{{${role}_${n}_NUME}} {{${role}_${n}_PRENUME}}`
   if (field === 'CAPITAL_SOCIAL') return `{{CAPITAL_SOCIAL_ASOCIAT_${n}}}`
   if (field === 'PARTI_SOCIALE') return `{{PARTI_SOCIALE_ASOCIAT_${n}}}`
