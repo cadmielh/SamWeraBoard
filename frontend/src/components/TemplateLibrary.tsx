@@ -109,6 +109,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   const [docxOutput, setDocxOutput] = useState('')
   const [docxPlaceholders, setDocxPlaceholders] = useState<string[]>([])
   const [docxClauses, setDocxClauses] = useState<ClauseMeta[]>([])
+  const [docxRepeatGroups, setDocxRepeatGroups] = useState<string[]>([])
   const [docxTip, setDocxTip] = useState<TipTemplate>('universal')
   const [detecting, setDetecting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -131,13 +132,15 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     setDocxOutput(prev => prev || `${f.name.replace(/\.[^.]+$/, '')}_completat.docx`)
     setDetecting(true)
     try {
-      const { placeholders, clauses } = await detectPlaceholders(f)
+      const { placeholders, clauses, repeatGroups } = await detectPlaceholders(f)
       setDocxPlaceholders(placeholders)
       setDocxClauses(clauses)
+      setDocxRepeatGroups(repeatGroups)
       if (placeholders.length === 0 && offerBlanks) setBlankFile(f)
     } catch {
       setDocxPlaceholders([])
       setDocxClauses([])
+      setDocxRepeatGroups([])
     } finally {
       setDetecting(false)
     }
@@ -165,6 +168,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
         fileName: docxFile.name,
         placeholders: docxPlaceholders,
         clauses: docxClauses,
+        repeatGroups: docxRepeatGroups,
         tipTemplate: docxTip,
         outputNameTemplate: docxOutput.trim() || `${docxName.trim()}_completat.docx`,
       })
@@ -256,7 +260,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
     URL.revokeObjectURL(url)
   }
 
-  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxTip('universal'); setJustImported(false) }
+  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxRepeatGroups([]); setDocxTip('universal'); setJustImported(false) }
   const resetGdocForm = () => {
     setGdocPickedName(''); setGdocName(''); setGdocDocId(''); setGdocDesc(''); setGdocOutput(''); setGdocTip('universal') }
 
@@ -278,6 +282,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
         fileName: b.filename,
         placeholders: b.placeholders,
         clauses: b.clauses,
+        repeatGroups: b.repeatGroups,
         tipTemplate: b.tipTemplate,
         outputNameTemplate: b.outputNameTemplate,
         sourceKey: b.key,

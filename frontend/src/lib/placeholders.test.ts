@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, joinNames, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
+  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole,
 } from './placeholders'
 import type { Client, Persoana } from '../types'
 
@@ -206,5 +207,52 @@ describe('roluri de persoană „noi” (comodant, reprezentant legal…) — î
     const { filled, missing: stillMissing } = checkReadiness(placeholders, customPersonReplacements('COMODANT', 1, p), undefined)
     expect(filled).toEqual(placeholders)
     expect(stillMissing).toEqual([])
+  })
+
+  it('detectCustomPersonGroups găsește rolurile scrise ca bloc repetitiv, ignoră Asociat/Administrator/Membru IF/CAEN', () => {
+    const groups = detectCustomPersonGroups(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF', 'CAEN_SECUNDARE', 'COMODANTI', 'COMODATARI'])
+    expect(groups).toEqual([
+      { role: 'COMODANT', repeatTag: 'COMODANTI' },
+      { role: 'COMODATAR', repeatTag: 'COMODATARI' },
+    ])
+  })
+
+  it('detectCustomPersonGroups combină sub ACELAȘI rol tag-ul repetitiv (semnătură) și cel „_LISTA” (mențiune îmbinată din identitate, placeholder simplu)', () => {
+    // bug real, raportat de utilizator: fără gruparea pe rol, cele două tag-uri ale ACELUIAȘI reprezentant
+    // (mențiunea din identitate, placeholder simplu „…LISTA” + linia „Prin administrator”, bloc repetitiv)
+    // ar arăta ca DOUĂ liste separate, cerând aceiași oameni de două ori — vezi blanks.py: _role_list_field.
+    const groups = detectCustomPersonGroups(
+      ['REPREZENTANT_COMODATARI'],
+      ['{{REPREZENTANT_COMODATARI_LISTA}}', '{{SOCIETATE_DENUMIRE}}', '{{ASOCIATI_LISTA}}'],
+    )
+    expect(groups).toEqual([
+      { role: 'REPREZENTANT_COMODATAR', repeatTag: 'REPREZENTANT_COMODATARI', listTag: 'REPREZENTANT_COMODATARI_LISTA' },
+    ])
+  })
+
+  it('detectCustomPersonGroups ignoră ASOCIATI_LISTA/ADMINISTRATORI_LISTA (completate automat din client, nu roluri custom)', () => {
+    const groups = detectCustomPersonGroups([], ['{{ASOCIATI_LISTA}}', '{{ADMINISTRATORI_LISTA}}'])
+    expect(groups).toEqual([])
+  })
+
+  it('persoanaToSingularMap produce câmpurile FĂRĂ prefix, forma cerută de un element dintr-un bloc {{#ROL}}', () => {
+    const p: Persoana = {
+      calitate: 'Comodant', cotaParticipare: '', cnp: '1234567890123', nume: 'Ionescu', prenume: 'Ana',
+      serie_numar: 'CJ 111111', data_nasterii: '', locul_nasterii: '', cetatenia: 'română',
+      adresa: 'Cluj, str. Test 1', judet: 'Cluj', emisa_de: '', valabila_de_la: '', valabila_pana_la: '',
+    }
+    const r = persoanaToSingularMap(p)
+    expect(r.NUME).toBe('Ionescu')
+    expect(r.PRENUME).toBe('Ana')
+    expect(r.CNP).toBe('1234567890123')
+    expect(r.SERIE_ACT).toBe('CJ')
+    expect(r.NR_ACT).toBe('111111')
+  })
+
+  it('isReprezentantRole recunoaște un rol „REPREZENTANT_X” construit de blanks.py sau REPREZENTANT_LEGAL existent', () => {
+    expect(isReprezentantRole('REPREZENTANT_COMODATAR')).toBe(true)
+    expect(isReprezentantRole('REPREZENTANT_LEGAL')).toBe(true)
+    expect(isReprezentantRole('COMODANT')).toBe(false)
+    expect(isReprezentantRole('ASOCIAT')).toBe(false)
   })
 })

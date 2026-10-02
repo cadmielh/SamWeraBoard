@@ -40,6 +40,9 @@ export interface DocTemplate {
   // Prezent doar pe șabloanele "bibliotecă de clauze" (ex. Decizia Asociatului
   // Unic, Hotărâre AGA) — un articol per element, în ordinea din document.
   clauses?: ClauseMeta[]
+  // Tag-urile {{#TAG}} de bloc repetitiv găsite în șablon (ex. ASOCIATI, sau un rol custom ca COMODANTI —
+  // vezi detectCustomPersonGroups din lib/placeholders.ts).
+  repeatGroups?: string[]
   docId?: string
   outputNameTemplate: string
   tipTemplate?: 'PF' | 'PJ' | 'universal'
@@ -65,6 +68,7 @@ export interface BuiltinTemplate {
   type: 'docx' | 'pdf'
   placeholders: string[]
   clauses: ClauseMeta[]
+  repeatGroups: string[]
   // Prezent doar pentru type === 'pdf' — numele tuturor câmpurilor AcroForm
   // din PDF, în ordinea din document.
   pdfFields: string[]

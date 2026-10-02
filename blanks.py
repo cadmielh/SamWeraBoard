@@ -498,7 +498,10 @@ def _finalize_blank(out: list[dict], s: dict, pi: int, start: int, end: int, bef
         s["label"] = manual_label if manual_label is not None else (s.get("label") or _label_before(before))
         s["tag"] = manual_tag(s["label"])
     elif s["scope"] == "company":
-        s["label"] = COMPANY_FIELDS[s["field"]]
+        # COMPANY_FIELDS acoperă câmpurile fixe, cunoscute dinainte (denumire, sediu…) — un câmp „…LISTA”
+        # construit dinamic pentru un rol CUSTOM (vezi _role_list_field) nu e acolo; eticheta lui a fost deja
+        # pregătită înainte de apel (s.get("label")), păstrată aici ca plasă de siguranță.
+        s["label"] = COMPANY_FIELDS.get(s["field"]) or s.get("label") or s["field"]
         s["tag"] = "{{" + s["field"] + "}}"
     else:
         s["label"] = f'{PERSON_FIELDS[s["field"]]} ({"administrator" if s["role"] == "ADMINISTRATOR" else "asociat"} {s["person"]})'
@@ -508,6 +511,21 @@ def _finalize_blank(out: list[dict], s: dict, pi: int, start: int, end: int, bef
 
 _LIST_FIELD = {"ASOCIAT": "ASOCIATI_LISTA", "ADMINISTRATOR": "ADMINISTRATORI_LISTA"}
 _CONNECTOR_RE = re.compile(r"^[\s,]*(?:si|și)?[\s,]*$", re.IGNORECASE)
+
+# Rolurile cu listă scalabilă DEDICATĂ per client (asociați/administratori/membri IF — din fișa clientului),
+# spre deosebire de un rol CUSTOM (comodant, reprezentant legal…), fără echivalent în datele clientului — vezi
+# detect_groups() (sig_lines) și analyze() (start_list, mai jos). Derivat din _LIST_FIELD (ASOCIAT/ADMINISTRATOR)
+# + MEMBRU_IF, ca cele două locuri unde contează distincția să rămână sincronizate automat, nu copiate separat.
+_BUILTIN_SCALABLE_ROLES = set(_LIST_FIELD) | {"MEMBRU_IF"}
+
+
+def _role_list_field(role: str) -> str:
+    """Eticheta „…LISTA” a unui rol — dedicată pentru Asociat/Administrator (_LIST_FIELD, cu etichetă UI
+    proprie, vezi COMPANY_FIELDS), generică pentru orice alt rol („<PLURAL>_LISTA” — vezi _ROLE_PLURAL, definit
+    mai jos în fișier, dar numele globale se rezolvă la apel, nu la definirea funcției, deci ordinea nu
+    contează). Numele TUTUROR persoanelor cu acel rol, îmbinate pe-o linie („X, Y și Z” — vezi joinNames în
+    frontend), nu poziții numerotate separate — potrivit pentru o simplă MENȚIONARE în text continuu."""
+    return _LIST_FIELD.get(role) or (_ROLE_PLURAL.get(role, role + "I") + "_LISTA")
 
 
 # ── Obiectul de activitate (CAEN): uneori rămâne needitat la pregătirea documentului — nu are „……”, ci
@@ -603,6 +621,7 @@ def analyze(docx_bytes: bytes) -> list[dict]:
     out: list[dict] = []
     sig_counts: dict[str, int] = {}    # poziția (ASOCIAT_N/ADMINISTRATOR_N) următoarei linii de semnătură, per rol
     active_sig_role: str | None = None  # rolul secțiunii de semnătură „curente” — vezi _signature_role_for_heading
+    entity_roles: set[str] = set()     # roluri stabilite ca ENTITATE (societate), nu persoană directă — vezi mai jos
     for pi, par in enumerate(pars):
         text = all_par_texts[pi]
         # Doar pentru afișare (vezi _display_context) — un loc liber (aproape) singur în paragraful lui
@@ -653,8 +672,12 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             ca = _norm(text[cm.end():cm.end() + 50])[:50]
             # „identificat/domiciliat/…” DUPĂ locul liber înseamnă „e un nume” doar dacă ÎNAINTE de el nu e
             # deja text — altfel orice câmp urmat mai departe de „identificată cu CI seria…” (ex. județul,
-            # în „jud. ……, identificată cu CI…”) ar fi luat greșit drept începutul unei clauze noi.
-            starts_by_identity = not cb.strip(" ,") and bool(
+            # în „jud. ……, identificată cu CI…”) ar fi luat greșit drept începutul unei clauze noi. `strip(" ,")`
+            # nu ajunge — un tab de indentare la începutul paragrafului (frecvent din formatarea Word a
+            # documentelor reale) supraviețuiește și lasă `cb` „nevid”, deci clauza nu mai era recunoscută
+            # deloc (bug real, găsit pe un document real: comodantul cădea pe implicitul ASOCIAT, în loc de
+            # COMODANT — „în calitate de COMODANT”, scrisă la finalul clauzei, nu mai apuca să se aplice).
+            starts_by_identity = not cb.strip(" \t\n\r,") and bool(
                 re.match(r"^\s*,\s*(?:cetatean|cetatenia|domiciliat|nascut|identificat)", ca))
             if starts_by_identity or _MENTION_TRIGGER_RE.search(cb):
                 clause_starts.append(cm.start())
@@ -670,6 +693,13 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             clauză n-are nicio calitate declarată explicit."""
             current = max((cs for cs in clause_starts if cs <= pos), default=None)
             return clause_role.get(current) if current is not None else None
+
+        # Calitatea explicită a ÎNTREGULUI paragraf (nu doar a unei clauze anume) — câmpurile de societate
+        # (denumire/sediu/CIF) n-au un marcaj propriu de „început de clauză” ca la persoane (nimic de genul
+        # „domiciliat”/„identificat” înaintea lor), deci `_role_override` de mai sus nu le acoperă niciodată;
+        # aici se ia direct orice calitate explicită găsită oriunde în paragraf — suficient pentru
+        # entity_roles mai jos (vezi mai jos, la scope="company").
+        paragraph_role = _explicit_role(text)
 
         state = _State()
         list_entry: dict | None = None     # entry-ul „ASOCIATI_LISTA”/„ADMINISTRATORI_LISTA” aflat în curs de extindere
@@ -727,15 +757,34 @@ def analyze(docx_bytes: bytes) -> list[dict]:
 
             alone_here = text.strip(" -\t") == text[m.start():blank_end]
             s = suggest(before, after, text[:m.start()], state, pi, alone=alone_here)
-            if s.get("scope") == "person" and _role_for_hint(text[:m.start()]) is None:
+            if s.get("scope") == "person":
                 # Calitatea scrisă oriunde în clauza persoanei (vezi clause_role mai sus) — suggest()/_role_for
-                # văd doar ce e ÎNAINTE de locul liber, dar actele reale scriu des calitatea la finalul
-                # clauzei; suprascriem DOAR când textul dinainte n-avea deja un semnal real (vezi _role_for_hint
-                # — un semnal găsit înainte, ex. „administrator”, nu trebuie suprascris de o calitate care,
-                # mai departe, descrie de fapt PARTEA/firma, nu persoana).
+                # văd doar ce e ÎNAINTE de locul liber, dar actele reale scriu des calitatea la finalul clauzei.
+                before_role = _role_for_hint(text[:m.start()])
                 override = _role_override(m.start())
-                if override:
-                    s["role"] = override
+                if before_role is None:
+                    if override:
+                        s["role"] = override
+                elif override and override != before_role:
+                    # Semnal real ÎNAINTE (ex. „administrator”) + o calitate DIFERITĂ declarată explicit mai
+                    # departe în clauză (ex. „reprezentată de administrator ……, în calitate de COMODATAR”) —
+                    # persoana nu e generic „administrator” (al firmei clientului, completat automat din
+                    # administratorii ei), ci REPREZINTĂ partea explicit numită — rol distinct, construit generic
+                    # pentru orice pereche „administrator ↔ parte reprezentată” (nu doar comodant/comodatar), ca
+                    # la generare să fie cerută explicit o persoană (selector), nu presupusă automat greșit din
+                    # administratorii firmei clientului (vezi _ROLE_KEYWORDS — niciun „REPREZENTANT_X” nu există
+                    # dinainte acolo, se construiește aici, la nevoie, pentru orice X).
+                    s["role"] = f"REPREZENTANT_{override}"
+                # altfel (override == before_role, ex. „asociatul ……, în calitate de ASOCIAT”): redundant,
+                # rolul găsit înainte rămâne neschimbat.
+            elif s.get("scope") == "company" and paragraph_role:
+                # Un câmp de societate (denumire/sediu/CIF) într-un paragraf cu o calitate explicită („……, cu
+                # sediul in ……, in calitate de COMODATAR”) înseamnă că ROLUL respectiv (COMODATAR) e o
+                # ENTITATE (societate), nu o persoană directă — reținut aici (entity_roles, la nivel de
+                # document), consultat mai jos la liniile de semnătură (vezi sig_role): semnătura acelei părți
+                # nu mai e o persoană nouă, e reprezentantul ei — ACEEAȘI persoană ca la mențiunea din clauza
+                # de identitate, nu una cerută separat a doua oară (bug real, raportat de utilizator).
+                entity_roles.add(paragraph_role)
             is_mention = s["scope"] == "person" and s["field"] == "NUME_COMPLET" and s["confidence"] == "medium"
             # Linie de semnătură — fie tiparul vechi (nume urmat de „_____” pe același rând), fie locul liber
             # singur pe rând, lângă titlul unei secțiuni de semnătură (vezi _signature_role_for_heading).
@@ -744,31 +793,83 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             sig_role = None
             if is_mention and re.match(r"^\s*_{5,}", after) and not before.strip():
                 sig_role = active_sig_role if active_sig_role is not None else s["role"]
-            elif active_sig_role is not None and alone_here:
+            elif active_sig_role is not None and alone_here and active_sig_role not in entity_roles:
+                # Locul liber SINGUR, chiar sub titlul secțiunii — e semnătura rolului însuși. EXCEPȚIE: dacă
+                # rolul e o ENTITATE (societate, nu persoană — vezi entity_roles), acest rând NU e tratat aici
+                # (rămâne mai jos, identitatea societății, nu o persoană) — reprezentantul ei EFECTIV se cere
+                # separat, pe rândul lui („Prin administrator ……”, vezi mai jos).
                 sig_role = active_sig_role
-            if sig_role is not None:
+            elif (is_mention and active_sig_role is not None and active_sig_role in entity_roles
+                    and s["role"] != active_sig_role):
+                # „Prin administrator ……”/„Prin reprezentant legal ……” — convenția notarială uzuală pentru
+                # semnătura unei ENTITĂȚI: cine semnează EFECTIV, în numele ei. Rolul mențiunii (ADMINISTRATOR,
+                # găsit din cuvântul „administrator”) diferă de rolul entității (`active_sig_role`, ex.
+                # COMODATAR) — același tipar „administrator ↔ parte reprezentată” ca la identitatea completă
+                # (vezi REPREZENTANT_{override} mai sus), dar fără clauza de identitate, doar titlul secțiunii
+                # de semnătură + acest rând scurt. Devine ACEEAȘI etichetă ca reprezentantul deja stabilit la
+                # identitate (dacă există) — nu o persoană nouă, nelegată de acolo (bug real, raportat de
+                # utilizator: rândul „Prin administrator” cerea alt administrator, independent, posibil diferit
+                # de cel ales mai sus ca reprezentant al entității).
+                sig_role = active_sig_role
+            if active_sig_role is not None and active_sig_role in entity_roles and alone_here and not is_mention:
+                # Locul liber SINGUR, chiar sub titlul unei ENTITĂȚI — e identitatea SOCIETĂȚII care semnează
+                # (denumirea ei), nu o persoană nouă; persoana care semnează EFECTIV „în numele” ei se cere
+                # separat (vezi ramura de mai sus, „Prin <calitate> ……”) — cerință directă a utilizatorului: la
+                # o entitate, locul de sub titlu nu trebuie să ceară un nume de persoană (bug real, raportat:
+                # punea numele administratorului ȘI sub titlul entității, ȘI pe rândul „Prin administrator”).
+                s["scope"], s["field"], s["role"] = "company", "SOCIETATE_DENUMIRE", None
+                s["confidence"] = "high"
+                s.pop("person", None)
+            elif sig_role is not None:
+                if sig_role in entity_roles:
+                    # Semnătura unei părți deja stabilite ca ENTITATE (vezi entity_roles mai sus) — nu e o
+                    # persoană nouă, e reprezentantul ei, ca la mențiunea din clauza de identitate (aceeași
+                    # etichetă „REPREZENTANT_X”, ca la generare să fie ACEEAȘI persoană, nu cerută de două ori).
+                    sig_role = f"REPREZENTANT_{sig_role}"
                 sig_counts[sig_role] = sig_counts.get(sig_role, 0) + 1   # câte o poziție per rol, nu una globală
                 s["scope"], s["field"], s["role"], s["person"] = "person", "NUME_COMPLET", sig_role, sig_counts[sig_role]
                 s["confidence"] = "high" if active_sig_role is not None else "medium"
                 s["is_signature_line"] = True
                 is_mention = False                         # rămân individuale (câte o linie de semnat per persoană)
-            # A doua (sau a N-a) mențiune consecutivă a aceluiași rol, „…… și ……”: în loc de poziții fixe
-            # (ASOCIAT_1, ASOCIAT_2 — nu au loc pentru o a treia persoană dacă apare), entry-ul anterior devine un
-            # singur câmp scalabil (ASOCIATI_LISTA), care merge la orice număr — vezi lib/placeholders.ts (joinNames).
-            # O mențiune SINGURĂ (fără alta lângă ea) rămâne individuală, ca înainte — ar putea desemna o persoană
-            # anume (ex. „administratorul ……” dintr-o singură mențiune), nu neapărat lista completă.
-            # `list_role in _LIST_FIELD` — doar Asociat/Administrator au azi un câmp „…LISTA” dedicat, cu
-            # sprijin în frontend (joinNames); un rol nou (comodant, reprezentant legal…) rămâne cu mențiuni
-            # individuale, numerotate, mai degrabă decât să inventăm o etichetă „…LISTA” pe care nimic n-o completează.
-            if is_mention and list_entry is not None and list_role == s["role"] and list_role in _LIST_FIELD \
-                    and _CONNECTOR_RE.match(text[list_entry["end"]:m.start()]):
-                list_entry["end"] = blank_end
-                list_entry["after"] = after
-                if list_entry["scope"] != "company":
-                    field = _LIST_FIELD[list_role]
-                    list_entry.update(scope="company", field=field, role=None, person=None,
-                                      label=COMPANY_FIELDS[field], tag="{{" + field + "}}")
-                continue
+            # A doua (sau a N-a) mențiune consecutivă a aceluiași rol, „…… și ……” — pentru ORICE rol, nu doar
+            # Asociat/Administrator (vezi _role_list_field) —, SAU, DOAR pentru un rol CUSTOM (nu Asociat/
+            # Administrator — vezi mai jos de ce), o mențiune UNICĂ cu marcaj explicit de plural alături
+            # („administratorul/administratorii ……”, vezi _paragraph_has_plural_marker) — în loc de poziții
+            # fixe (ASOCIAT_1, ASOCIAT_2 — nu au loc pentru o a treia persoană dacă apare), devine un singur
+            # câmp scalabil („…LISTA”), care merge la orice număr — vezi lib/placeholders.ts (joinNames).
+            # Bug real, raportat de utilizator: o mențiune GOALĂ de reprezentant („administratorul/
+            # administratorii ……”, fără CNP/domiciliu propriu atașat aici) nu avea NICIUN mecanism care s-o
+            # scaleze corect — nici clauză completă (vezi detect_groups, care cere cel puțin un câmp atașat),
+            # nici rol cunoscut dinainte (_LIST_FIELD, limitat la Asociat/Administrator).
+            #
+            # Pornirea de la o SINGURĂ mențiune (start_list) e restrânsă la roluri CUSTOM: Asociat/Administrator
+            # au deja un mecanism robust pentru o mențiune individuală (legată de persoana „curentă” urmărită în
+            # document, vezi state.last_person_n) — iar marcajul „asociatul/asociații” apare des, repetat, ca o
+            # simplă convenție gramaticală în acte reale (câte o dată per articol, fără legătură între ele), nu
+            # ca o cerere explicită de listă de fiecare dată (regresie reală, găsită la verificare pe actul
+            # constitutiv real: 4 mențiuni separate, în articole diferite, ar fi devenit greșit 4 liste
+            # separate, în loc de mențiuni individuale obișnuite, legate corect de asociatul urmărit).
+            if is_mention:
+                extend = list_entry is not None and list_role == s["role"] \
+                    and _CONNECTOR_RE.match(text[list_entry["end"]:m.start()])
+                start_list = not extend and s["role"] not in _LIST_FIELD \
+                    and _paragraph_has_plural_marker(pars, pi, m.start())
+                if extend or start_list:
+                    target = list_entry if extend else s
+                    target["end"] = blank_end
+                    target["after"] = after
+                    if target["scope"] != "company":
+                        role_for_field = list_role if extend else s["role"]
+                        field = _role_list_field(role_for_field)
+                        target.update(scope="company", field=field, role=None, person=None,
+                                      label=COMPANY_FIELDS.get(field) or
+                                            f'Toți cei cu calitatea „{role_for_field.replace("_", " ").lower()}”, pe o linie',
+                                      tag="{{" + field + "}}")
+                    if start_list:
+                        _finalize_blank(out, target, pi, m.start(), blank_end, before, after,
+                                        prev_pars=prev_pars, next_pars=next_pars)
+                        list_entry, list_role = target, role_for_field
+                    continue
             _finalize_blank(out, s, pi, m.start(), blank_end, before, after, prev_pars=prev_pars, next_pars=next_pars)
             list_entry, list_role = (s, s["role"]) if is_mention else (None, None)
     return out
@@ -908,32 +1009,16 @@ def detect_groups(blanks: list[dict], docx_bytes: bytes | None = None) -> list[d
         })
         i = j + 1
 
-    # kind='paragraph' — liniile de semnătură (vezi analyze(): sig_counts/_signature_role_for_heading),
-    # grupate pe rol — NU pe adiacența paragrafelor ca la „solo” mai sus: între liniile de semnat există des
-    # paragrafe goale (spațiu vizual pentru semnătura olografă), care ar rupe o cerință de „paragraf imediat
-    # următor”. Fără gruparea asta, șablonul are loc doar pentru câte linii de semnătură a scris autorul (ex.
-    # 2), indiferent câți asociați/administratori are efectiv clientul (ex. 3) — al treilea n-ar avea unde
-    # semna. Chiar și o singură linie găsită merită bloc repetitiv (ca la CAEN mai sus), pentru același motiv.
-    sig_lines = sorted((b for items in by_par.values() for b in items if b.get("is_signature_line")),
-                       key=lambda b: (b["role"], b["paragraph"]))
-    for role, role_lines in itertools.groupby(sig_lines, key=lambda b: b["role"]):
-        cluster = list(role_lines)
-        if role == "ADMINISTRATOR":
-            role_word = "administratori"
-        elif role == "ASOCIAT":
-            role_word = "asociați"
-        else:
-            role_word = role.replace("_", " ").lower()
-        groups.append({
-            "id": len(groups), "kind": "paragraph", "paragraphs": [b["paragraph"] for b in cluster], "role": role,
-            "count": len(cluster), "blank_ids": [b["id"] for b in cluster], "template_blank_ids": [cluster[0]["id"]],
-            "label": f'{role_word} — {len(cluster)} {"linie" if len(cluster) == 1 else "linii"} de semnătură',
-        })
-
     # kind='inline', o SINGURĂ clauză — „asociatul/asociații ……, cetățean…” sau „asociatul/asociații ……
     # contribuie cu un aport de …… lei” — marcaj explicit de plural, chiar dacă e scrisă o singură persoană
     # ca exemplu (vezi _paragraph_has_plural_marker mai sus). Se oferă exact ca la 2+ clauze: „repeat”
-    # scalează la orice număr, „fixed” rămâne o singură poziție.
+    # scalează la orice număr, „fixed” rămâne o singură poziție. Doar clauze cu cel puțin UN câmp atașat
+    # (CNP, domiciliu…) — o mențiune GOALĂ (doar numele) cu marcaj de plural e tratată separat, direct în
+    # analyze() (vezi _role_list_field/„…LISTA”): acolo persoanele sunt doar NUMITE în text continuu, scrise
+    # pe-un singur rând cu virgulă+„și” (cerință utilizator), nu au nevoie de un paragraf separat per persoană
+    # ca o clauză completă. TREBUIE să ruleze ÎNAINTE de liniile de semnătură de mai jos — altfel
+    # grouped_identity_roles (de-acolo) nu ar ști încă despre acest grup, iar semnătura rolului ar fi greșit
+    # suprimată ca „identitate fixă” (bug real, găsit la verificare).
     if docx_bytes is not None:
         pars = _paragraphs(Document(io.BytesIO(docx_bytes)))
         already_grouped = {g["paragraph"] for g in groups if g["kind"] == "inline"} | \
@@ -949,13 +1034,55 @@ def detect_groups(blanks: list[dict], docx_bytes: bytes | None = None) -> list[d
             if not _paragraph_has_plural_marker(pars, pi, clause[0]["start"]):
                 continue
             role = clause[0]["role"]
+            if role == "ADMINISTRATOR":
+                role_word = "administratorul/administratorii"
+            elif role == "ASOCIAT":
+                role_word = "asociatul/asociații"
+            else:
+                role_word = role.replace("_", " ").lower() + "ul/" + role.replace("_", " ").lower() + "ii"
             groups.append({
                 "id": len(groups), "kind": "inline", "paragraph": pi, "role": role, "count": 1,
                 "blank_ids": [b["id"] for b in clause], "template_blank_ids": [b["id"] for b in clause],
-                "label": f'{"administrator" if role == "ADMINISTRATOR" else "asociat"} — marcat cu '
-                         f'„{"administratorul/administratorii" if role == "ADMINISTRATOR" else "asociatul/asociații"}”, '
-                         f'o singură persoană scrisă ca exemplu',
+                "label": f'{"administrator" if role == "ADMINISTRATOR" else role.replace("_", " ").lower()} — '
+                         f'marcat cu „{role_word}”, o singură persoană scrisă ca exemplu',
             })
+
+    # kind='paragraph' — liniile de semnătură (vezi analyze(): sig_counts/_signature_role_for_heading),
+    # grupate pe rol — NU pe adiacența paragrafelor ca la „solo” mai sus: între liniile de semnat există des
+    # paragrafe goale (spațiu vizual pentru semnătura olografă), care ar rupe o cerință de „paragraf imediat
+    # următor”. Fără gruparea asta, șablonul are loc doar pentru câte linii de semnătură a scris autorul (ex.
+    # 2), indiferent câți asociați/administratori are efectiv clientul (ex. 3) — al treilea n-ar avea unde
+    # semna. Chiar și o singură linie găsită merită bloc repetitiv (ca la CAEN mai sus), pentru același motiv.
+    #
+    # EXCEPȚIE: un rol CUSTOM (nu Asociat/Administrator/Membru IF — acelea au mereu listă dedicată per client,
+    # vezi _BUILTIN_SCALABLE_ROLES) cu O SINGURĂ identitate deja fixă, NEgrupată (ex. comodant, reprezentant
+    # comodatar) — semnătura lui a fost deja legată de ACEEAȘI poziție fixă, cu ACEEAȘI etichetă (vezi
+    # analyze(): entity_roles/merge-ul rolului) — nu are nevoie de bloc repetitiv propriu, separat, care ar
+    # cere din nou aceeași persoană la generare (bug real, raportat de utilizator: „Comodant — listă” ȘI
+    # „Comodant 1”, redundant). Dacă rolul e DEJA oferit ca listă pentru identitatea lui (solo/inline mai sus
+    # — ex. 2+ comodanți scriși ca exemplu), semnătura rămâne la fel de scalabilă, independent.
+    grouped_identity_roles = {g["role"] for g in groups}
+    already_fixed_persons = {
+        (b["role"], b["person"]) for items in by_par.values() for b in items
+        if b["scope"] == "person" and b["field"] == "NUME_COMPLET" and not b.get("is_signature_line")
+        and b["role"] not in _BUILTIN_SCALABLE_ROLES and b["role"] not in grouped_identity_roles
+    }
+    sig_lines = sorted((b for items in by_par.values() for b in items
+                        if b.get("is_signature_line") and (b["role"], b["person"]) not in already_fixed_persons),
+                       key=lambda b: (b["role"], b["paragraph"]))
+    for role, role_lines in itertools.groupby(sig_lines, key=lambda b: b["role"]):
+        cluster = list(role_lines)
+        if role == "ADMINISTRATOR":
+            role_word = "administratori"
+        elif role == "ASOCIAT":
+            role_word = "asociați"
+        else:
+            role_word = role.replace("_", " ").lower()
+        groups.append({
+            "id": len(groups), "kind": "paragraph", "paragraphs": [b["paragraph"] for b in cluster], "role": role,
+            "count": len(cluster), "blank_ids": [b["id"] for b in cluster], "template_blank_ids": [cluster[0]["id"]],
+            "label": f'{role_word} — {len(cluster)} {"linie" if len(cluster) == 1 else "linii"} de semnătură',
+        })
     return groups
 
 

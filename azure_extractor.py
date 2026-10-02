@@ -162,14 +162,22 @@ def _delete_result(operation_location: str, api_key: str) -> None:
 
 # ── Mapare câmpuri Azure → schema aplicației ───────────────────────────────────
 
+def _clean_field_text(text: str) -> str:
+    """Textul brut citit de Azure poate păstra rupturile de linie originale de PE ACT (ex. adresa, scrisă pe
+    2 rânduri fizice pe buletin) — un „\\n” literal în valoare, nu doar spațiu între cuvinte. Normalizat la
+    un singur spațiu: altfel ruptura ajunge LITERALĂ în documentul generat (Word chiar desenează un rând nou
+    acolo, diferit de cum era în șablon) — bug real, găsit pe un document real (adresa comodantului)."""
+    return re.sub(r"\s*[\r\n]+\s*", " ", text).strip()
+
+
 def _field_value(field: dict | None) -> str:
     """Extrage valoarea dintr-un obiect câmp Azure (cheia variază după `type`)."""
     if not field:
         return ""
     for key in ("valueString", "valueCountryRegion", "valueDate", "valuePhoneNumber"):
         if key in field and field[key] not in (None, ""):
-            return str(field[key])
-    return (field.get("content") or "").strip()
+            return _clean_field_text(str(field[key]))
+    return _clean_field_text(field.get("content") or "")
 
 
 def _field_name_value(field: dict | None) -> str:
@@ -181,7 +189,7 @@ def _field_name_value(field: dict | None) -> str:
     problemă de mapare; corecție posibilă doar manual, din UI."""
     if not field:
         return ""
-    content = (field.get("content") or "").strip()
+    content = _clean_field_text(field.get("content") or "")
     return content or _field_value(field)
 
 

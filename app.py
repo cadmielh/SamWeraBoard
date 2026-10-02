@@ -41,7 +41,7 @@ import authz
 import ratelimit
 import local_extractor
 import azure_extractor
-from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx
+from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx, list_repeat_groups_in_docx
 import blanks
 import ai_suggest
 from pdf_filler import fill_pdf, list_pdf_fields
@@ -288,6 +288,7 @@ def _load_builtin_templates() -> dict[str, dict]:
                 "bytes": file_bytes,
                 "placeholders": list_placeholders_in_docx(file_bytes),
                 "clauses": list_clauses_in_docx(file_bytes),
+                "repeatGroups": list_repeat_groups_in_docx(file_bytes),
             }
     return result
 
@@ -455,6 +456,7 @@ def get_placeholders():
     return jsonify({
         "placeholders": list_placeholders_in_docx(file_bytes),
         "clauses": list_clauses_in_docx(file_bytes),
+        "repeatGroups": list_repeat_groups_in_docx(file_bytes),
     })
 
 

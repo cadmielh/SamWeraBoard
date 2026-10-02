@@ -230,7 +230,7 @@ export async function fetchAnafCompany(cif: string): Promise<AnafResult> {
 
 export async function detectPlaceholders(
   templateFile: File,
-): Promise<{ placeholders: string[]; clauses: ClauseMeta[] }> {
+): Promise<{ placeholders: string[]; clauses: ClauseMeta[]; repeatGroups: string[] }> {
   const fd = new FormData();
   fd.append("template", templateFile);
   const res = await fetch(`${BASE}/template/placeholders`, {
@@ -240,7 +240,10 @@ export async function detectPlaceholders(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(apiErrorMessage(data, res, "Placeholder detection failed"));
-  return { placeholders: data.placeholders as string[], clauses: (data.clauses ?? []) as ClauseMeta[] };
+  return {
+    placeholders: data.placeholders as string[], clauses: (data.clauses ?? []) as ClauseMeta[],
+    repeatGroups: (data.repeatGroups ?? []) as string[],
+  };
 }
 
 /** Un loc liber („……”) dintr-un document fără etichete, cu contextul și propunerea serverului.
@@ -264,6 +267,10 @@ export interface BlankSuggestion {
   label: string;
   tag: string;
   source?: "ai";
+  /** O linie de semnătură (nume + linie de subliniere, sau lângă titlul unei secțiuni de semnătură) — reia
+   * DELIBERAT rolul+numărul unei persoane deja menționate (aceeași persoană semnează), niciodată o coliziune
+   * reală (vezi BlankImportModal: duplicatePersonPositions, care exclude aceste linii de la numărătoare). */
+  is_signature_line?: boolean;
 }
 
 /** Grup candidat de bloc repetitiv: mai multe persoane cu aceeași structură, în aceeași frază („X … si Y …” —

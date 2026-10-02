@@ -109,6 +109,121 @@ def test_administratori_si_asociati_sunt_grupuri_separate():
     assert "ASOCIAT" in roles
 
 
+def test_rol_custom_cu_identitate_fixa_nu_mai_are_grup_de_semnatura_redundant():
+    """Bug real, raportat de utilizator (șablon CONTRACT DE COMODAT): la import apăreau DOUĂ pickere pentru
+    aceeași persoană — „Comodant 1” (poziția fixă din clauza de identitate) ȘI „Comodant — listă” (grupul
+    scalabil format din linia de semnătură) — deși analyze() leagă deja semnătura de ACEEAȘI poziție fixă
+    (aceeași etichetă). Pentru un rol CUSTOM (nu Asociat/Administrator/Membru IF) cu o singură identitate deja
+    fixă, linia de semnătură nu mai trebuie să formeze un grup separat, scalabil — ar cere din nou aceeași
+    persoană la generare, redundant."""
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc([
+        f"Prezentul contract se încheie între comodant {a}.",
+        "SEMNATURA COMODANT",
+        "……",
+    ])
+    found = blanks.analyze(raw)
+    by_id = {b["id"]: b for b in found}
+    identity = next(b for b in found if b["field"] == "NUME_COMPLET" and not b.get("is_signature_line"))
+    signature = next(b for b in found if b.get("is_signature_line"))
+    assert identity["role"] == signature["role"] == "COMODANT" and identity["person"] == signature["person"]
+    assert blanks.detect_groups(found) == []
+
+
+def test_asociat_semnatura_tot_scaleaza_independent_chiar_cu_identitate_fixa():
+    """Gardă de regresie pentru corecția de mai sus: Asociat/Administrator/Membru IF (roluri built-in) au mereu
+    listă scalabilă dedicată per client, indiferent câți asociați are clauza de identitate din șablon — spre
+    deosebire de un rol custom (vezi testul de mai sus), semnătura lor NU trebuie suprimată."""
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc([
+        f"Prezentul act constitutiv se încheie de asociatul {a}.",
+        "SEMNATURA ASOCIAT",
+        "……",
+    ])
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found)
+    assert len(groups) == 1
+    g = groups[0]
+    assert g["role"] == "ASOCIAT" and g["count"] == 1 and g["kind"] == "paragraph"
+
+
+def test_rol_custom_marcat_cu_plural_scaleaza_si_identitatea_si_semnatura():
+    """Bug real, găsit la verificarea corecției de mai sus: un rol CUSTOM scris cu o singură persoană-exemplu,
+    dar cu marcajul explicit de plural („administratorul/administratorii ……”, vezi
+    test_o_singura_clauza_cu_marcaj_asociatul_asociatii_devine_grup_scalabil), devenea corect listă scalabilă
+    la identitate — dar linia de semnătură rămânea greșit suprimată ca poziție fixă unică (detectarea
+    marcajului de plural rula DUPĂ clusterizarea semnăturilor, care încă nu știa despre acest grup). Rezultat
+    posibil: identitatea scalează la N persoane, dar documentul are un singur loc de semnat — asimetric.
+    Corecție: detectarea marcajului de plural rulează acum ÎNAINTE de clusterizarea semnăturilor."""
+    a = IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")
+    raw = make_doc([
+        "…… cu sediul in ……, jud. ……, C.U.I.:……, reprezentata de administratorul/administratorii "
+        f"{a}, in calitate de COMODATAR",
+        "COMODATAR",
+        "Prin administrator ______",
+    ])
+    found = blanks.analyze(raw)
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 2
+    kinds = {g["kind"] for g in groups}
+    assert kinds == {"inline", "paragraph"}
+    assert all(g["role"] == "REPREZENTANT_COMODATAR" for g in groups)
+
+
+def test_mentiune_goala_marcata_cu_plural_devine_camp_simplu_listat():
+    """Bug real, raportat de utilizator pe documentul lui real (contract de comodat): clauza reprezentantului
+    unei ENTITĂȚI e adesea doar o MENȚIUNE GOALĂ („reprezentată de administratorul/administratorii ……, în
+    calitate de COMODATAR”) — fără niciun câmp propriu atașat (CNP/domiciliu). Marcajul de plural era ignorat
+    (cerința de „cel puțin un câmp atașat” din detect_groups, gândită pentru 2+ clauze complete, bloca exact
+    acest caz cel mai comun la un rol-reprezentant). Corecție (vezi blanks.py: analyze()/_role_list_field):
+    o mențiune GOALĂ cu marcaj de plural devine direct un câmp SIMPLU „…LISTA” (ca ASOCIATI_LISTA, generalizat
+    la orice rol) — numele îmbinate pe-o SINGURĂ linie, cu virgulă+„și”, nu un bloc repetitiv cu paragraf nou
+    per persoană (asta ar fi stricat formatarea/fraza — încercare anterioară, respinsă). Linia de SEMNĂTURĂ
+    („Prin administrator ___”) rămâne complet separată — bloc repetitiv obișnuit, câte un rând per persoană,
+    ca fiecare administrator să aibă unde semna olograf."""
+    raw = make_doc([
+        "…… cu sediul in ……, jud. ……, C.U.I.:……, reprezentata de administratorul/administratorii ……, "
+        "in calitate de COMODATAR",
+        "COMODATAR",
+        "Prin administrator ______",
+    ])
+    found = blanks.analyze(raw)
+    mention = next(b for b in found if b["paragraph"] == 0 and b["field"] == "REPREZENTANT_COMODATARI_LISTA")
+    assert mention["scope"] == "company" and mention["tag"] == "{{REPREZENTANT_COMODATARI_LISTA}}"
+
+    # Semnătura rămâne un grup REPETITIV separat (nu „…LISTA”) — un rând per persoană.
+    groups = blanks.detect_groups(found, raw)
+    assert len(groups) == 1
+    sig_group = groups[0]
+    assert sig_group["kind"] == "paragraph" and sig_group["role"] == "REPREZENTANT_COMODATAR"
+
+    choices = {b["id"]: b["tag"] for b in found if b.get("tag")}
+    tpl = blanks.apply(raw, choices, {sig_group["id"]: "repeat"})
+    tpl_text = "\n".join(p.text for p in Document(io.BytesIO(tpl)).paragraphs)
+    # Mențiunea rămâne INLINE, în aceeași frază — nu un bloc repetitiv cu paragraf propriu.
+    assert "{{REPREZENTANT_COMODATARI_LISTA}}" in tpl_text and "{{#REPREZENTANT_COMODATARI_LISTA}}" not in tpl_text
+    assert "reprezentata de administratorul/administratorii {{REPREZENTANT_COMODATARI_LISTA}}, in calitate de COMODATAR" in tpl_text
+    assert "{{#REPREZENTANT_COMODATARI}}" in tpl_text    # semnătura, bloc repetitiv separat
+
+    def admin(i):
+        return {"NUME": f"Admin{i}", "PRENUME": f"P{i}"}
+
+    for n in (1, 2, 3):
+        persons = [admin(i) for i in range(1, n + 1)]
+        names = [f"Admin{i} P{i}" for i in range(1, n + 1)]
+        joined = names[0] if n == 1 else f'{", ".join(names[:-1])} și {names[-1]}'
+        # Exact ce face frontend-ul: joinNames() pentru câmpul „…LISTA” (replacements), lista reală pentru
+        # semnătură (groups) — vezi TemplateFiller.tsx: customListReplacementsFor/customGroupsFor.
+        company = {"{{SOCIETATE_DENUMIRE}}": "ACME SRL", "{{SOCIETATE_SEDIU_FARA_JUDET}}": "Str. Y",
+                   "{{SOCIETATE_JUDET}}": "Arad", "{{SOCIETATE_CIF}}": "RO1",
+                   "{{REPREZENTANT_COMODATARI_LISTA}}": joined}
+        out = fill_docx(tpl, company, groups={"REPREZENTANT_COMODATARI": persons})
+        text = "\n".join(p.text for p in Document(io.BytesIO(out)).paragraphs)
+        assert "{{" not in text and "……" not in text
+        assert joined in text                              # identitatea: numele îmbinate pe-un rând
+        assert text.count("Prin administrator") == n        # câte o linie de semnat per administrator
+
+
 # ── aplicare + scalare reală (1, 3+ persoane) ──────────────────────────────────
 def test_grup_inline_ales_repeat_scaleaza_la_orice_numar():
     raw = make_doc([two_person_sentence()])

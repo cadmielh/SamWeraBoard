@@ -758,6 +758,38 @@ def _resolve_variants(doc: Document, ctx: dict, replacements: dict[str, str], wa
         run(part.paragraphs)
 
 
+_REPEAT_GROUP_START_RE = re.compile(r"^\{\{#([A-Z][A-Z0-9_]*)\}\}$")
+
+
+def list_repeat_groups_in_docx(template_bytes: bytes) -> list[str]:
+    """Return the unique {{#TAG}} repeat-block tags found in the template (e.g. ASOCIATI, ADMINISTRATORI, or
+    any CUSTOM role a document-without-tags import turned into a scalable list — vezi blanks.py:
+    _split_group_paragraph/_ROLE_PLURAL, ex. COMODANTI, COMODATARI). Excludes {{#CLAUZE}} — a different,
+    unrelated structural marker (the optional-clause library), not a person-repeat group.
+
+    The frontend uses this to tell apart built-in roles (ASOCIATI/ADMINISTRATORI/MEMBRU_IF/CAEN_SECUNDARE —
+    already filled automatically from client data) from custom ones, which need a person picker (vezi
+    TemplateFiller.tsx: detectCustomPersonGroups) — list_placeholders_in_docx alone can't see these, since
+    it deliberately excludes {{#TAG}}/{{/TAG}} markers as purely structural.
+    """
+    doc = Document(io.BytesIO(template_bytes))
+    found: set[str] = set()
+
+    def scan(paragraphs):
+        for p in paragraphs:
+            text = "".join(r.text for r in p.runs).strip()
+            m = _REPEAT_GROUP_START_RE.match(text)
+            if m and m.group(1) != "CLAUZE":
+                found.add(m.group(1))
+
+    scan(doc.paragraphs)
+    for table in _iter_all_tables(doc):
+        for row in table.rows:
+            for cell in row.cells:
+                scan(cell.paragraphs)
+    return sorted(found)
+
+
 def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
     """Return all unique {{PLACEHOLDER}} markers found in the template.
 

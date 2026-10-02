@@ -250,6 +250,23 @@ def test_list_placeholders_in_docx_finds_placeholders_in_nested_table():
     assert df.list_placeholders_in_docx(template) == ["{{NUME_FIRMA}}"]
 
 
+def test_list_repeat_groups_in_docx_gaseste_taguri_custom_nu_si_clauze():
+    """Cerință utilizator: un rol custom scris ca bloc repetitiv (ex. „COMODANTI”, din import fără etichete —
+    vezi blanks.py: _split_group_paragraph/_ROLE_PLURAL) trebuie să poată fi detectat separat de rolurile
+    built-in (ASOCIATI/ADMINISTRATORI), ca ecranul de generare să știe să ceară persoane pentru el. {{#CLAUZE}}
+    (biblioteca de clauze opționale, un mecanism diferit) nu trebuie să apară în listă."""
+    template = _build_docx([
+        "{{#ASOCIATI}}", "{{NUME}} {{PRENUME}}", "{{/ASOCIATI}}",
+        "{{#COMODANTI}}", "{{NUME}} {{PRENUME}}", "{{/COMODANTI}}",
+        "{{#CLAUZE}}", "Denumire: X", "text", "{{/CLAUZE}}",
+    ])
+    assert df.list_repeat_groups_in_docx(template) == ["ASOCIATI", "COMODANTI"]
+
+
+def test_list_repeat_groups_in_docx_fara_blocuri_repetitive():
+    assert df.list_repeat_groups_in_docx(_build_docx(["Text simplu, fără niciun bloc {{#TAG}}."])) == []
+
+
 def test_fill_docx_nested_repeat_group_inside_a_clause():
     """Un bloc {{#TAG}} imbricat în interiorul unei clauze (ex. structura
     rezultată după cesiune) e expandat corect înainte de filtrarea clauzelor."""

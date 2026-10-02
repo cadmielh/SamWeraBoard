@@ -142,6 +142,74 @@ export function detectCustomPersonRoles(placeholders: string[]): { role: string;
     .sort((a, b) => a.role.localeCompare(b.role))
 }
 
+// Formă de plural a tag-urilor de bloc repetitiv deja completate automat din client (vezi buildRepeatGroups
+// mai jos) — restul găsite de list_repeat_groups_in_docx (backend) sunt roluri CUSTOM (ex. COMODANTI).
+const KNOWN_AUTO_GROUP_TAGS = new Set(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF', 'CAEN_SECUNDARE'])
+
+/** „REPREZENTANT_COMODATAR” → true — un rol construit generic de blanks.py (vezi _role_override/entity_roles)
+ * pentru cine REPREZINTĂ o parte care e o entitate (societate), nu o persoană directă — legal, reprezentantul
+ * unei societăți e administratorul ei, de-asta lista de persoane oferite la alegere se restrânge la
+ * administratorii firmei (vezi TemplateFiller.tsx), nu toată lista de persoane cunoscute (asociați incluși),
+ * care n-au de regulă calitatea de a reprezenta. */
+export const isReprezentantRole = (role: string): boolean => role.startsWith('REPREZENTANT_')
+
+/** „COMODANTI” → „COMODANT”, „REPREZENTANT_COMODATARI_LISTA” → „REPREZENTANT_COMODATAR” — inversul
+ * pluralizării generice din blanks.py (_ROLE_PLURAL.get(role, role+"I")), plus convenția „_LISTA” (vezi
+ * blanks.py: _role_list_field — un câmp SIMPLU, {{ROL_LISTA}}, cu toate numele îmbinate pe-o linie, cu
+ * virgulă+„și” — ex. „Prin administratorii X, Y și Z” la o mențiune de nume, spre deosebire de un bloc
+ * REPETITIV ({{#ROL}}…{{/ROL}}, o linie nouă per persoană — necesar la o linie de SEMNĂTURĂ olografă, unde
+ * fiecare om are nevoie de rândul ei). Sufixul „_LISTA” se elimină ÎNAINTE de-al inversa „I”-ul de plural —
+ * altfel „..._LISTA” (se termină în „A”) ar rămâne neschimbat, iar cele două tag-uri ale ACELUIAȘI rol (unul
+ * repetitiv, unul „_LISTA”) n-ar mai ajunge la același singular. */
+const singularOfCustomGroup = (tag: string): string => {
+  const base = tag.endsWith('_LISTA') ? tag.slice(0, -'_LISTA'.length) : tag
+  return base.endsWith('I') ? base.slice(0, -1) : base
+}
+
+// „…LISTA” deja completate automat din client (vezi buildReplacements) — un rol CUSTOM cu același sufix
+// (ex. REPREZENTANT_COMODATARI_LISTA) nu trebuie confundat cu acestea.
+const KNOWN_LIST_FIELDS = new Set(['ASOCIATI_LISTA', 'ADMINISTRATORI_LISTA'])
+
+export interface CustomPersonGroup {
+  role: string
+  /** Tag-ul blocului REPETITIV (ex. „COMODANTI”), dacă există — o linie NOUĂ per persoană (necesar, de ex.,
+   * la o linie de semnătură olografă — vezi blanks.py: _split_group_paragraph). */
+  repeatTag?: string
+  /** Tag-ul SIMPLU „…LISTA” (ex. „REPREZENTANT_COMODATARI_LISTA”), dacă există — toate numele îmbinate pe-o
+   * singură linie, cu virgulă+„și” (vezi blanks.py: _role_list_field, joinNames mai jos). */
+  listTag?: string
+}
+
+/**
+ * Roluri de persoană „noi”, scrise fie ca bloc REPETITIV ({{#COMODANTI}}…{{/COMODANTI}}, scalabil la orice
+ * număr de persoane — vezi blanks.py: _split_group_paragraph/_ROLE_PLURAL), fie ca un simplu câmp „…LISTA”
+ * (numele îmbinate pe-o linie — vezi blanks.py: _role_list_field) — spre deosebire de detectCustomPersonRoles
+ * mai sus (poziții FIXE, {{ROL_N_CÂMP}}). `repeatGroups` vine din backend (list_repeat_groups_in_docx —
+ * list_placeholders_in_docx nu poate vedea tag-urile structurale {{#ROL}}, excluse deliberat de-acolo);
+ * câmpurile „…LISTA” sunt placeholder-e SIMPLE, deci apar deja în `placeholders`.
+ *
+ * Grupat pe ROL, nu pe tag: ACELAȘI rol poate avea DOUĂ tag-uri în șablon — unul repetitiv (ex. linia de
+ * semnătură) și unul „_LISTA” (mențiunea din clauza de identitate) — vezi blanks.py: analyze()/detect_groups.
+ * Fără gruparea asta, utilizatorul ar vedea DOUĂ liste separate pentru aceiași oameni și ar trebui să-i aleagă
+ * de două ori (exact bug-ul redundant „listă dublă” corectat mai devreme pentru pozițiile fixe — aici e
+ * varianta lui pentru blocuri repetitive/câmpuri „…LISTA”).
+ */
+export function detectCustomPersonGroups(repeatGroups: string[], placeholders: string[] = []): CustomPersonGroup[] {
+  const byRole = new Map<string, CustomPersonGroup>()
+  for (const tag of repeatGroups) {
+    if (KNOWN_AUTO_GROUP_TAGS.has(tag)) continue
+    const role = singularOfCustomGroup(tag)
+    byRole.set(role, { ...(byRole.get(role) ?? { role }), repeatTag: tag })
+  }
+  for (const ph of placeholders) {
+    const tag = ph.replace(/^\{\{|\}\}$/g, '')
+    if (!tag.endsWith('_LISTA') || KNOWN_LIST_FIELDS.has(tag)) continue
+    const role = singularOfCustomGroup(tag)
+    byRole.set(role, { ...(byRole.get(role) ?? { role }), listTag: tag })
+  }
+  return [...byRole.values()].sort((a, b) => a.role.localeCompare(b.role))
+}
+
 /** Etichetele {{ROL_N_CÂMP}} pentru o persoană aleasă/introdusă pentru un rol nou de persoană (vezi
  * detectCustomPersonRoles) — aceeași mapare ca la Asociat/Administrator (persoanaToMap). */
 export function customPersonReplacements(role: string, position: number, p: Persoana): Record<string, string> {
@@ -241,7 +309,10 @@ export function joinNames(persons: Persoana[]): string {
   return `${names.slice(0, -1).join(', ')} și ${names[names.length - 1]}`
 }
 
-function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number | null; includeCota?: boolean } = {}): Record<string, string> {
+/** Câmpurile unei persoane (NUME, PRENUME, CNP…), fără prefix de rol/poziție — forma pe care o așteaptă un
+ * element dintr-un bloc repetitiv {{#ROL}} (vezi blanks.py: generic_person_tag) la completare, per element
+ * din listă (vezi buildRepeatGroups mai jos și detectCustomPersonGroups, pentru roluri custom repetitive). */
+export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number | null; includeCota?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {
     // COTA_PARTICIPARE nu se aplică administratorilor — dacă e inclus mereu,

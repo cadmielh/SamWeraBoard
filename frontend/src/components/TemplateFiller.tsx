@@ -7,9 +7,12 @@ import { inferTipClient } from '../types'
 import type { User } from 'firebase/auth'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel,
-  detectCustomPersonRoles, customPersonReplacements,
+  detectCustomPersonRoles, customPersonReplacements, detectCustomPersonGroups, persoanaToSingularMap,
+  isReprezentantRole, joinNames,
 } from '../lib/placeholders'
+import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
+import CustomPersonGroupField from './CustomPersonGroupField'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
@@ -167,6 +170,11 @@ export default function TemplateFiller({
   // șablon, apoi per „ROL_N" (poziția). Nu se salvează la fișa clientului — doar pentru acest document.
   const [customPersonPicks, setCustomPersonPicks] = useState<Record<string, Record<string, Persoana>>>({})
   const existingPersonsForCustomRoles = [...(client?.asociati ?? []), ...(client?.administratori ?? [])]
+  // Un rol „REPREZENTANT_X” (vezi isReprezentantRole) e cine reprezintă o entitate — legal, administratorul
+  // firmei — lista de ales se restrânge la administratori, nu toată lista de persoane cunoscute (cerință
+  // utilizator: „ar trebui să fie picker între administrator”, nu orice persoană/asociat al firmei).
+  const existingForCustomRole = (role: string): Persoana[] =>
+    isReprezentantRole(role) ? (client?.administratori ?? []) : existingPersonsForCustomRoles
   const customPersonReplacementsFor = (id: string): Record<string, string> => {
     const picks = customPersonPicks[id]
     if (!picks) return {}
@@ -174,6 +182,44 @@ export default function TemplateFiller({
     for (const [key, p] of Object.entries(picks)) {
       const m = key.match(/^(.+)_(\d+)$/)
       if (m) Object.assign(out, customPersonReplacements(m[1], Number(m[2]), p))
+    }
+    return out
+  }
+  // Persoane pentru roluri „noi" scrise fie ca bloc REPETITIV în șablon ({{#COMODANTI}}…), fie ca simplu câmp
+  // „…LISTA" (nume îmbinate pe-o linie) — câte vrea utilizatorul, nu o singură poziție fixă ca mai sus (vezi
+  // CustomPersonGroupField/detectCustomPersonGroups). Per șablon, apoi per ROL (nu per tag — același rol poate
+  // avea un tag repetitiv ȘI unul „…LISTA”, dar o SINGURĂ listă de persoane aleasă, pentru amândouă). Nu se
+  // salvează la fișa clientului — doar pentru acest document.
+  const [customGroupPicks, setCustomGroupPicks] = useState<Record<string, Record<string, Persoana[]>>>({})
+  type TplWithRoles = { id: string; repeatGroups?: string[]; placeholders?: string[] }
+  // Un BuiltinTemplate n-are `id` (identificat prin `key`, vezi builtinKey) — formă minimă pentru
+  // customGroupsFor/customListReplacementsFor/readinessPct, reconstruită altfel la fiecare apel.
+  const builtinTplRef = (b: BuiltinTemplate): TplWithRoles =>
+    ({ id: builtinKey(b), repeatGroups: b.repeatGroups, placeholders: b.placeholders })
+  // SEX/SEX_REF — la fel ca ASOCIATI/ADMINISTRATORI (buildRepeatGroups), pentru variantele „numit/ă" etc. din
+  // clauza fiecărei persoane (vezi variants.py) — SEX_REF diferă per element, ca fiecare persoană din listă
+  // să-și primească propriul sex, nu pe-al primeia din listă.
+  const customGroupsFor = (tpl: TplWithRoles): Record<string, Record<string, string>[]> => {
+    const picks = customGroupPicks[tpl.id]
+    if (!picks) return {}
+    const out: Record<string, Record<string, string>[]> = {}
+    for (const { role, repeatTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])) {
+      const persons = picks[role]
+      if (!repeatTag || !persons) continue
+      out[repeatTag] = persons.map((p, i) => ({ ...persoanaToSingularMap(p), SEX: personSex(p) ?? '', SEX_REF: `${role}_${i + 1}` }))
+    }
+    return out
+  }
+  // Partea „…LISTA" — un placeholder SIMPLU (nu bloc repetitiv), completat direct cu numele îmbinate
+  // (joinNames), la fel ca ASOCIATI_LISTA/ADMINISTRATORI_LISTA deja completate automat din client.
+  const customListReplacementsFor = (tpl: TplWithRoles): Record<string, string> => {
+    const picks = customGroupPicks[tpl.id]
+    if (!picks) return {}
+    const out: Record<string, string> = {}
+    for (const { role, listTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])) {
+      const persons = picks[role]
+      if (!listTag || !persons) continue
+      out[`{{${listTag}}}`] = joinNames(persons)
     }
     return out
   }
@@ -284,8 +330,8 @@ export default function TemplateFiller({
     try {
       const outputName = resolveOutputName(tpl)
       const cs = clauseState[tpl.id]
-      let mergedReplacements = { ...repl(tpl.id), ...(cs?.extraReplacements ?? {}) }
-      const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
+      let mergedReplacements = { ...repl(tpl.id), ...customListReplacementsFor(tpl), ...(cs?.extraReplacements ?? {}) }
+      const mergedGroups = { ...repeatGroups, ...customGroupsFor(tpl), ...(cs?.extraGroups ?? {}) }
       let rowGroups: Record<string, Record<string, string>[]> | undefined
       if (decl) {
         rowGroups = decl.rowGroups
@@ -340,8 +386,8 @@ export default function TemplateFiller({
       const cs = clauseState[key]
       // Copie proprie, mereu — "replacements" e obiectul partajat de toate
       // șabloanele randate în același pas, nu trebuie mutat direct.
-      const mergedReplacements = { ...repl(key), ...(cs?.extraReplacements ?? {}) }
-      const mergedGroups = cs && Object.keys(cs.extraGroups).length ? { ...repeatGroups, ...cs.extraGroups } : repeatGroups
+      const mergedReplacements = { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)), ...(cs?.extraReplacements ?? {}) }
+      const mergedGroups = { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)), ...(cs?.extraGroups ?? {}) }
 
       if (b.key === 'act_constitutiv') {
         // Placeholder gol ar fi eliminat de backend (nu se trimit câmpuri
@@ -503,7 +549,7 @@ export default function TemplateFiller({
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
     if (tpl.clauses?.length || (tpl.type === 'docx' && isDeclaratieTemplate(tpl))) { handleGenerateDocx(tpl); return }
 
-    const { missing } = checkReadiness(tpl.placeholders ?? [], repl(tpl.id), repeatGroups)
+    const { missing } = checkReadiness(tpl.placeholders ?? [], { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) })
     if (missing.length > 0) {
       setPendingGenerate({ tpl, missing })
     } else {
@@ -517,7 +563,8 @@ export default function TemplateFiller({
   // panoul de detaliu (blocat dur de ClauseSelector.isComplete).
   const tryGenerateBuiltinSingle = (b: BuiltinTemplate) => {
     if (b.clauses.length > 0) { handleGenerateBuiltinDocx(b); return }
-    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), repl(builtinKey(b)), repeatGroups)
+    const key = builtinKey(b)
+    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)) }, { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)) })
     if (missing.length > 0) {
       setPendingGenerate({ tpl: b, missing, isBuiltin: true })
     } else {
@@ -527,7 +574,7 @@ export default function TemplateFiller({
 
   const tryBatchGenerate = () => {
     const targets = selectedTemplates
-    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], repl(t.id), repeatGroups).missing)
+    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], { ...repl(t.id), ...customListReplacementsFor(t) }, { ...repeatGroups, ...customGroupsFor(t) }).missing)
     const uniqueMissing = [...new Set(allMissing)]
     if (uniqueMissing.length > 0) {
       // Show confirmation using the first template as representative (batch flag)
@@ -601,10 +648,15 @@ export default function TemplateFiller({
     })
 
   // Procentul de completare pentru afișarea pe rândul compact din listă —
-  // aceeași sursă de adevăr ca renderReadiness, doar rezumată la un număr.
-  const readinessPct = (placeholders?: string[], id?: string): number | null => {
+  // aceeași sursă de adevăr ca renderReadiness, doar rezumată la un număr. `tpl` (opțional) aduce
+  // repeatGroups/placeholders proprii, pentru rolurile „noi" alese ca listă (vezi customGroupsFor/
+  // customListReplacementsFor) — fără el, procentul rămâne sub 100% chiar și cu totul completat (bug real,
+  // raportat de utilizator: un rol „listă" complet ales tot apărea ca „necompletat").
+  const readinessPct = (placeholders?: string[], id?: string, tpl?: TplWithRoles): number | null => {
     if (!placeholders || placeholders.length === 0) return null
-    const { filled } = checkReadiness(placeholders, id ? repl(id) : replacements, repeatGroups)
+    const extraRepl = tpl ? customListReplacementsFor(tpl) : {}
+    const extraGroups = tpl ? customGroupsFor(tpl) : {}
+    const { filled } = checkReadiness(placeholders, { ...(id ? repl(id) : replacements), ...extraRepl }, { ...repeatGroups, ...extraGroups })
     return Math.round((filled.length / placeholders.length) * 100)
   }
 
@@ -695,9 +747,11 @@ export default function TemplateFiller({
 
   // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
   // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
-  const renderReadiness = (tpl: { id: string; placeholders?: string[] }) => {
+  const renderReadiness = (tpl: { id: string; placeholders?: string[]; repeatGroups?: string[] }) => {
     if (!tpl.placeholders || tpl.placeholders.length === 0) return null
-    const { filled, missing } = checkReadiness(tpl.placeholders, repl(tpl.id), repeatGroups)
+    const mergedGroupsForReadiness = { ...repeatGroups, ...customGroupsFor(tpl) }
+    const mergedReplForReadiness = { ...repl(tpl.id), ...customListReplacementsFor(tpl) }
+    const { filled, missing } = checkReadiness(tpl.placeholders, mergedReplForReadiness, mergedGroupsForReadiness)
     const total = tpl.placeholders.length
     const pct = Math.round((filled.length / total) * 100)
     const isExpanded = expandedReadiness.has(tpl.id)
@@ -706,8 +760,11 @@ export default function TemplateFiller({
     const manualFields = tpl.placeholders.filter(isManualPlaceholder)
     // Roluri de persoană „noi" (comodant, reprezentant legal…) — nu se completează automat din client ca
     // Asociat/Administrator, dar utilizatorul poate alege una dintre persoanele deja cunoscute la firmă sau
-    // adăuga una nouă (vezi CustomPersonField).
+    // adăuga una nouă (vezi CustomPersonField) — poziții FIXE ({{ROL_N_CÂMP}}).
     const customRoles = detectCustomPersonRoles(tpl.placeholders)
+    // Aceleași roluri noi, dar scrise fie ca bloc REPETITIV ({{#COMODANTI}}…), fie ca simplu câmp „…LISTA" —
+    // câte persoane e nevoie, nu o singură poziție (vezi CustomPersonGroupField/detectCustomPersonGroups).
+    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
@@ -732,13 +789,28 @@ export default function TemplateFiller({
               <CustomPersonField
                 key={`${role}_${position}`}
                 role={role} position={position}
-                existing={existingPersonsForCustomRoles}
+                existing={existingForCustomRole(role)}
                 value={customPersonPicks[tpl.id]?.[`${role}_${position}`] ?? null}
                 onChange={p => setCustomPersonPicks(prev => ({
                   ...prev, [tpl.id]: { ...prev[tpl.id], [`${role}_${position}`]: p },
                 }))}
               />
             )))}
+          </div>
+        )}
+        {customGroups.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
+            <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane (listă)</div>
+            {customGroups.map(({ role }) => (
+              <CustomPersonGroupField
+                key={role} tag={role} role={role}
+                existing={existingForCustomRole(role)}
+                value={customGroupPicks[tpl.id]?.[role] ?? []}
+                onChange={persons => setCustomGroupPicks(prev => ({
+                  ...prev, [tpl.id]: { ...prev[tpl.id], [role]: persons },
+                }))}
+              />
+            ))}
           </div>
         )}
         {/* Progress bar row */}
@@ -813,7 +885,7 @@ export default function TemplateFiller({
     const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
     const mismatch = isDeclaratie ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = isDeclaratie ? declPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b), key)
+    const pct = isDeclaratie ? declPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
     return (
       <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}${mismatch ? ' tf-row--na' : ''}`}>
         <button
@@ -848,7 +920,7 @@ export default function TemplateFiller({
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
     const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
-    const pct = isDecl ? declPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders, tpl.id)
+    const pct = isDecl ? declPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders, tpl.id, tpl)
     return (
       <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}${asociatiMismatch ? ' tf-row--na' : ''}`}>
         {!hasClauses && !isDecl && (

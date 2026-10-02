@@ -48,9 +48,50 @@ def test_recunoaste_campurile_din_context():
         assert f"{{{{COMODANT_1_{f}}}}}" in tags, f
     # sediul e defalcat în document ("cu sediul in ……, jud. ……"): SOCIETATE_SEDIU_FARA_JUDET, nu SOCIETATE_SEDIU
     # (altfel județul ar apărea de două ori — o dată din adresă, o dată din locul liber separat)
-    for t in ("{{SOCIETATE_SEDIU_FARA_JUDET}}", "{{SOCIETATE_JUDET}}", "{{SOCIETATE_CIF}}", "{{ADMINISTRATOR_1_NUME}} {{ADMINISTRATOR_1_PRENUME}}",
+    for t in ("{{SOCIETATE_SEDIU_FARA_JUDET}}", "{{SOCIETATE_JUDET}}", "{{SOCIETATE_CIF}}",
               "{{CAPITAL_SOCIAL_TOTAL}}", "{{PARTI_SOCIALE_TOTALE}}", "{{DATA_AZI}}"):
         assert t in tags, t
+    # „reprezentată de administrator ……, în calitate de COMODATAR” — semnal real ÎNAINTE („administrator”) +
+    # o calitate DIFERITĂ declarată explicit mai departe („COMODATAR”, partea, nu persoana) — persoana nu e
+    # generic „administrator” (completat automat din administratorii firmei CLIENTULUI, posibil greșit — nu
+    # firma clientului e neapărat comodatarul), ci reprezentant al părții explicit numite — rol distinct,
+    # cerut explicit la generare (selector de persoană), nu presupus automat (cerință utilizator, bug real).
+    assert "{{REPREZENTANT_COMODATAR_1_NUME}} {{REPREZENTANT_COMODATAR_1_PRENUME}}" in tags
+
+
+def test_clauza_cu_tab_de_indentare_la_inceput_tot_gaseste_calitatea_explicita():
+    """Bug real, găsit pe un document real: un tab de indentare înaintea primului loc liber al clauzei
+    (frecvent din formatarea Word) făcea ca „în calitate de COMODANT”, scrisă la finalul clauzei, să nu mai
+    fie recunoscută deloc — persoana cădea pe implicitul ASOCIAT, deși clauza chiar spunea „COMODANT”."""
+    raw = make_doc(["\t……, domiciliată în ……, jud. ……, identificată cu CI seria …… nr. …… eliberată de …… "
+                     "la ……, CNP ……, in calitate de COMODANT si"])
+    found = blanks.analyze(raw)
+    name = next(f for f in found if f["field"] == "NUME_COMPLET")
+    assert name["role"] == "COMODANT"
+
+
+def test_semnatura_unei_entitati_devine_reprezentant_nu_persoana_noua():
+    """Cerință utilizator: la o ENTITATE (societate, cu denumire/sediu/CIF într-o clauză „…, in calitate de
+    COMODATAR”), locul liber SINGUR chiar sub titlul ei nu trebuie să ceară un nume de PERSOANĂ — o entitate nu
+    are „nume și prenume”, acolo trebuie să apară identitatea societății. Reprezentantul ei EFECTIV (cine
+    semnează „în numele” ei) se cere separat, pe rândul lui — convenția notarială uzuală „Prin <calitate>
+    ……” — și trebuie să fie ACEEAȘI persoană (reprezentantul) menționată deja în clauza de identitate, nu un
+    administrator nou, independent, cerut a doua oară la generare (vezi entity_roles). Bug real, raportat de
+    utilizator: înainte de această corecție, ambele rânduri cereau câte un nume de persoană — posibil
+    DIFERITE — în loc ca primul să fie societatea, iar al doilea reprezentantul ei."""
+    raw = make_doc([
+        "……, cu sediul in ……, jud. ……, C.U.I.:……, reprezentată de administrator ……, in calitate de COMODATAR",
+        "COMODATAR",
+        "……",
+        "Prin administrator ______",
+    ])
+    found = blanks.analyze(raw)
+    entitate = next(f for f in found if f["paragraph"] == 2)
+    assert entitate["scope"] == "company" and entitate["field"] == "SOCIETATE_DENUMIRE"
+    reprezentant = [f for f in found if f.get("role") == "REPREZENTANT_COMODATAR"]
+    assert len(reprezentant) == 2
+    assert reprezentant[0]["tag"] == reprezentant[1]["tag"] == "{{REPREZENTANT_COMODATAR_1_NUME}} {{REPREZENTANT_COMODATAR_1_PRENUME}}"
+    assert not any(f.get("role") == "COMODATAR" for f in found)
 
 
 def test_ce_nu_se_recunoaste_devine_camp_manual_cu_eticheta_din_text():
@@ -128,7 +169,7 @@ def test_flux_complet_locuri_libere_apoi_completare_cu_datele_clientului():
         "{{SOCIETATE_CIF}}": "12345678", "{{CAPITAL_SOCIAL_TOTAL}}": "200", "{{PARTI_SOCIALE_TOTALE}}": "20", "{{DATA_AZI}}": "01.01.2026",
         "{{COMODANT_1_NUME}}": "Ionescu", "{{COMODANT_1_PRENUME}}": "Maria", "{{COMODANT_1_ADRESA}}": "Cluj, str. Test 2", "{{COMODANT_1_JUDET}}": "Cluj",
         "{{COMODANT_1_SERIE_ACT}}": "CJ", "{{COMODANT_1_NR_ACT}}": "123456", "{{COMODANT_1_EMISA_DE}}": "SPCLEP Cluj", "{{COMODANT_1_VALABILA_DE_LA}}": "01.02.2020",
-        "{{COMODANT_1_CNP}}": "2900101123456", "{{ADMINISTRATOR_1_NUME}}": "Popescu", "{{ADMINISTRATOR_1_PRENUME}}": "Ion",
+        "{{COMODANT_1_CNP}}": "2900101123456", "{{REPREZENTANT_COMODATAR_1_NUME}}": "Popescu", "{{REPREZENTANT_COMODATAR_1_PRENUME}}": "Ion",
         "{{CAMP_INCEPAND_CU}}": "10.11.2025",
     }
     manual = next(f["tag"] for f in found if f["scope"] == "manual")

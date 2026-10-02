@@ -37,12 +37,21 @@ function initialFor(kind: BlankChoice['kind'], analysis: BlankAnalysis, prev: Bl
   return { kind: 'manual', label: '' }
 }
 
-function Row({ s, analysis, choice, onChange, onAskAi, aiPending, aiAsked }: {
+function Row({ s, analysis, choice, onChange, onAskAi, aiPending, aiAsked, duplicatePositions }: {
   s: BlankSuggestion; analysis: BlankAnalysis; choice: BlankChoice; onChange: (c: BlankChoice) => void
-  onAskAi?: (id: number) => void; aiPending?: boolean; aiAsked?: boolean
+  onAskAi?: (id: number) => void; aiPending?: boolean; aiAsked?: boolean; duplicatePositions?: Set<string>
 }) {
   const tag = tagForChoice(choice)
   const [wide, setWide] = useState(false)
+  // „title” (tooltip nativ) apare doar la hover, nu la click — pe un buton „ⓘ” utilizatorii se așteaptă să
+  // apese, nu să stea cu mouse-ul deasupra (raportat de utilizator: „la click nu îmi arată nimic”).
+  const [showPositionInfo, setShowPositionInfo] = useState(false)
+  // Browserul filtrează sugestiile unui <input list> (datalist) după ce e DEJA scris în câmp — la click, cu
+  // un rol deja completat, arată doar variantele care conțin acel text, nu toată lista, spre deosebire de un
+  // <select> obișnuit (raportat de utilizator). Golim afișarea la focus (fără să atingem alegerea reală,
+  // `choice.role`, decât dacă utilizatorul chiar tastează ceva) — browserul arată atunci toată lista, ca la
+  // primul câmp (Persoană/Societate/…); la blur fără nimic tastat, revine la valoarea dinainte.
+  const [roleDraft, setRoleDraft] = useState<string | null>(null)
   const hasWider = (s.before_wide && s.before_wide !== s.before) || (s.after_wide && s.after_wide !== s.after)
   const shownBefore = wide && s.before_wide ? s.before_wide : s.before
   const shownAfter = wide && s.after_wide ? s.after_wide : s.after
@@ -84,10 +93,44 @@ function Row({ s, analysis, choice, onChange, onAskAi, aiPending, aiAsked }: {
         )}
         {choice.kind === 'person' && (
           <>
-            <input className="field-input" style={{ width: 150 }} list={ROLE_DATALIST_ID} value={choice.role} aria-label="Rolul persoanei"
-              placeholder="ASOCIAT" onChange={e => onChange({ ...choice, role: normalizeRole(e.target.value) })} />
-            <input className="field-input" type="number" min={1} max={9} style={{ width: 64 }} value={choice.n} aria-label="Numărul persoanei"
-              onChange={e => onChange({ ...choice, n: Number(e.target.value) })} onWheel={blurNumberInputOnWheel} />
+            <input className="field-input" style={{ flex: '1 1 220px', minWidth: 220 }} list={ROLE_DATALIST_ID} value={roleDraft ?? choice.role} aria-label="Rolul persoanei"
+              placeholder="ASOCIAT" onFocus={() => setRoleDraft('')} onBlur={() => setRoleDraft(null)}
+              onChange={e => { setRoleDraft(e.target.value); onChange({ ...choice, role: normalizeRole(e.target.value) }) }} />
+            {/* Poziția (1, 2, …) distinge mai multe persoane cu ACELAȘI rol — fără rost c-un rol care apare
+                o singură dată (ex. „Reprezentant comodatar”), rămâne mereu 1 oricum; arătat doar când chiar
+                mai există un alt loc cu același rol în document (cerință utilizator). Fără niciun reper,
+                utilizatorul n-are de unde să știe ce număr să aleagă — de-asta, când DOUĂ locuri ajung cu
+                exact același rol+număr (coliziune reală, nu doar teoretică), marcăm direct aici, vizual. */}
+            {(() => {
+              const samePersons = analysis.blanks.filter(b => b.scope === 'person' && b.role === choice.role)
+              if (samePersons.length <= 1) return null
+              const collides = !!tag && !s.is_signature_line && duplicatePositions?.has(tag)
+              const info = `Poziția din ȘABLON, nu o persoană reală — la generare se completează cu al ${choice.n}-lea `
+                + `${choice.role.toLowerCase()} al oricărui client, indiferent care e el. Schimb-o doar dacă acest loc și alte `
+                + `locuri cu rolul „${choice.role}” descriu persoane DIFERITE, nu aceeași persoană menționată de mai multe ori.`
+              const fullInfo = collides
+                ? `Coliziune: alt loc din document ar primi exact aceeași etichetă (${tag}) — dă-i alt număr uneia din ele. ${info}` : info
+              return (
+                <>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.25rem' }}>
+                    <input className="field-input" type="number" min={1} max={samePersons.length} style={{ width: 64, borderColor: collides ? 'var(--r500)' : undefined }}
+                      value={choice.n} aria-label="Numărul persoanei"
+                      onChange={e => onChange({ ...choice, n: Number(e.target.value) })} onWheel={blurNumberInputOnWheel} />
+                    <button type="button" onClick={() => setShowPositionInfo(v => !v)} aria-label="Ce înseamnă acest număr"
+                      aria-expanded={showPositionInfo}
+                      style={{ cursor: 'pointer', color: collides ? 'var(--r500)' : 'var(--s400)', fontSize: '.9rem', background: 'none', border: 'none', padding: '0 .2rem' }}>
+                      ⓘ
+                    </button>
+                  </span>
+                  {showPositionInfo && (
+                    <div style={{ flexBasis: '100%', fontSize: '.75rem', lineHeight: 1.4, color: collides ? 'var(--r600)' : 'var(--s500)',
+                      background: collides ? 'var(--r50)' : 'var(--s100)', borderRadius: 'var(--r-sm)', padding: '.4rem .55rem' }}>
+                      {fullInfo}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
             <select className="field-input" style={{ width: 'auto', maxWidth: 240 }} value={choice.field} aria-label="Câmpul persoanei"
               onChange={e => onChange({ ...choice, field: e.target.value })}>
               {Object.entries(analysis.personFields).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -163,6 +206,31 @@ export default function BlankImportModal({ file, onDone, onClose, onToast }: Pro
     return () => { cancelled = true }
   }, [file])
 
+  // Cerință utilizator: numărul (poziția) de la un câmp „Persoană” e altfel ambiguu — fără niciun reper,
+  // utilizatorul nu are de unde să știe dacă „1” e corect sau se ciocnește cu alt loc. O coliziune REALĂ
+  // înseamnă că DOUĂ locuri diferite din document ar ajunge cu ACEEAȘI ETICHETĂ finală ({{COMODANT_1_NUME}}
+  // etc.) — nu doar același rol+număr: o singură persoană are normal 8 câmpuri diferite (nume, CNP, adresă…),
+  // toate cu același rol+număr, dar cu ETICHETE diferite — asta e corect, nu o coliziune (bug găsit: verificam
+  // doar rol+număr, fără câmp, și marca fals-pozitiv fiecare câmp al aceleiași persoane). Comparăm direct
+  // eticheta calculată (tagForChoice) — aceeași funcție care produce eticheta finală din șablon.
+  //
+  // Liniile de semnătură (`is_signature_line`) NU intră la numărătoare — ele reiau DELIBERAT eticheta
+  // persoanei care semnează (aceeași persoană, nu una nouă); fără excluderea asta, un reprezentant menționat
+  // în clauza de identitate ȘI la semnătură (aceeași persoană, aceeași etichetă, construit așa înadins — vezi
+  // blanks.py: entity_roles) ar ieși mereu fals-marcat ca „coliziune”, deși nu e nimic de rezolvat acolo.
+  const duplicatePersonPositions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const b of analysis?.blanks ?? []) {
+      if (b.is_signature_line) continue
+      const c = choices[b.id] ?? choiceFromSuggestion(b)
+      if (c.kind === 'person') {
+        const t = tagForChoice(c)
+        if (t) counts.set(t, (counts.get(t) ?? 0) + 1)
+      }
+    }
+    return new Set([...counts.entries()].filter(([, n]) => n > 1).map(([k]) => k))
+  }, [analysis, choices])
+
   // Locurile din grupurile acceptate ca „se repetă” sunt tratate integral de bloc, nu unul câte unul.
   const groupedIds = useMemo(() => {
     const ids = new Set<number>()
@@ -223,7 +291,8 @@ export default function BlankImportModal({ file, onDone, onClose, onToast }: Pro
         setChoices(prev => ({ ...prev, [s.id]: c }))
       }}
       onAskAi={s.confidence !== 'high' ? (id => requestAiSuggestions([id])) : undefined}
-      aiPending={aiPendingIds.has(s.id)} aiAsked={aiAskedIds.has(s.id)} />
+      aiPending={aiPendingIds.has(s.id)} aiAsked={aiAskedIds.has(s.id)}
+      duplicatePositions={duplicatePersonPositions} />
   )
 
   return (
