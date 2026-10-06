@@ -160,18 +160,32 @@ def _merge_leading_terminal_punctuation(last_par: Paragraph, next_par: Paragraph
 def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]],
                           variant_ctx: dict | None = None, variant_warnings: set | None = None) -> None:
     """
-    Expand {{#TAG}} ... {{/TAG}} paragraph ranges (top-level body paragraphs) into
-    one copy of the enclosed paragraphs per item in groups[TAG], substituting
-    singular placeholders (e.g. {{NUME}}, {{CNP}}, {{INDEX}}) from that item.
-    The original marker paragraphs and the template block are removed afterwards.
-    Tags with no matching group, or malformed (missing end tag), are left as-is.
+    Expand {{#TAG}} ... {{/TAG}} paragraph ranges into one copy of the enclosed
+    paragraphs per item in groups[TAG], substituting singular placeholders (e.g.
+    {{NUME}}, {{CNP}}, {{INDEX}}) from that item. Runs once over the document's
+    own top-level paragraphs, then once per table cell (e.g. a signature block
+    placed beside a fixed column in a layout table — the marker, its template
+    paragraph(s) and the end marker must all sit in the SAME cell; a block can't
+    span across cells). The original marker paragraphs and the template block
+    are removed afterwards. Tags with no matching group, or malformed (missing
+    end tag), are left as-is.
     """
+    _expand_repeat_blocks_in(doc, groups, variant_ctx, variant_warnings)
+    for table in _iter_all_tables(doc):
+        for row in table.rows:
+            for cell in row.cells:
+                _expand_repeat_blocks_in(cell, groups, variant_ctx, variant_warnings)
+
+
+def _expand_repeat_blocks_in(container, groups: dict[str, list[dict[str, str]]],
+                             variant_ctx: dict | None = None, variant_warnings: set | None = None) -> None:
+    """Core of _expand_repeat_blocks, over any object exposing `.paragraphs` (a Document or a table cell)."""
     for tag, items in groups.items():
         start_marker = f"{{{{#{tag}}}}}"
         end_marker = f"{{{{/{tag}}}}}"
 
         while True:
-            paragraphs = doc.paragraphs
+            paragraphs = container.paragraphs
             start_idx = next((i for i, p in enumerate(paragraphs) if _para_text(p) == start_marker), None)
             if start_idx is None:
                 break
@@ -302,8 +316,8 @@ def _expand_repeat_table_rows(doc: Document, row_groups: dict[str, list[dict[str
                 end_tr.getparent().remove(end_tr)
 
 
-_NUMBERED_TAG_RE = re.compile(r"\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_[A-Z_]+\}\}")
-_NUMBERED_KEY_RE = re.compile(r"^\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF)_(\d+)_")
+_NUMBERED_TAG_RE = re.compile(r"\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF|COMODANT)_(\d+)_[A-Z_]+\}\}")
+_NUMBERED_KEY_RE = re.compile(r"^\{\{(ASOCIAT|ADMINISTRATOR|MEMBRU_IF|COMODANT)_(\d+)_")
 
 _CLAUZE_START = "{{#CLAUZE}}"
 _CLAUZE_END = "{{/CLAUZE}}"
@@ -425,7 +439,8 @@ def _has_unresolved_numbered_tag(text: str, max_idx: dict[str, int]) -> bool:
     return False
 
 
-_PLURAL_RO = {"ASOCIAT": "asociați", "ADMINISTRATOR": "administratori", "MEMBRU_IF": "membri de familie"}
+_PLURAL_RO = {"ASOCIAT": "asociați", "ADMINISTRATOR": "administratori", "MEMBRU_IF": "membri de familie",
+              "COMODANT": "comodanți"}
 
 
 def _numbered_positions_in(paragraphs) -> dict[str, set[int]]:

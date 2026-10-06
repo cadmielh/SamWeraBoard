@@ -290,5 +290,6 @@ def test_declaratia_reala_social_profesional_si_forme_de_sex():
 
 def test_ctx_din_client_este_validat():
     ctx = variants.sanitize_ctx({"sex": {"ASOCIAT_1": "x", "bad key!": "M", "OK": "F"}, "asociati": "3", "administratori": 2, "tip": "??"})
-    assert ctx == {"sex": {"ASOCIAT_1": None, "OK": "F"}, "asociati": None, "administratori": 2, "tip": None}
+    assert ctx == {"sex": {"ASOCIAT_1": None, "OK": "F"}, "asociati": None, "administratori": 2,
+                   "comodanti": None, "tip": None}
     assert variants.sanitize_ctx("nu e dict") == {}

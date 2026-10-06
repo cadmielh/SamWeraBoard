@@ -302,6 +302,39 @@ export function manualLabel(ph: string): string {
   return words ? words[0].toUpperCase() + words.slice(1) : 'Valoare'
 }
 
+/** Un câmp „de completat manual” (CAMP_…) sau ad-hoc de clauză (CONTRACT_SEDIU_DATA…) arată ca o dată, după
+ * eticheta lui prietenoasă („Data contract comodat”, „Valabilă până la”…) — regulă generală, ca orice câmp
+ * nou cu „dată”/„valabil” în nume (fie dintr-un șablon de bază, fie dintr-unul al utilizatorului, trecut prin
+ * detectarea de goluri — vezi blanks.py: manual_tag, care ia eticheta chiar din textul din jurul locului
+ * liber) să capete automat un picker de calendar, nu doar text liber. Un tag fără niciun cuvânt recognoscibil
+ * (ex. un nume ales la întâmplare de utilizator, într-un șablon propriu, pre-etichetat) rămâne câmp text
+ * simplu — degradare acceptabilă, nu o eroare. */
+export function isDateLabel(label: string): boolean {
+  return /dat[aă]|valabil/i.test(label)
+}
+
+/** Perechi „Număr X” + „Dată X” printre câmpurile manuale ({{CAMP_NUMAR_X}} / {{CAMP_DATA_X}}, același
+ * sufix X — ex. CAMP_NUMAR_CONTRACT_COMODAT / CAMP_DATA_CONTRACT_COMODAT) — se afișează alăturate, pe un
+ * singur rând (numărul primul, cu o coloană mai îngustă), nu fiecare pe rândul lui ca restul câmpurilor
+ * manuale. Regulă generică, după nume — se aplică oricărui șablon (de bază sau al utilizatorului) ale cărui
+ * câmpuri manuale urmează convenția NUMAR_X/DATA_X, nu doar contractului de comodat. */
+export function pairManualDateFields(manualFields: string[]): { pairs: [string, string][]; rest: string[] } {
+  const byX = new Map<string, { nr?: string; data?: string }>()
+  for (const ph of manualFields) {
+    const inner = ph.replace(/^\{\{CAMP_|\}\}$/g, '')
+    const nr = inner.match(/^NUMAR_(.+)$/)
+    if (nr) { byX.set(nr[1], { ...(byX.get(nr[1]) ?? {}), nr: ph }); continue }
+    const data = inner.match(/^DATA_(.+)$/)
+    if (data) byX.set(data[1], { ...(byX.get(data[1]) ?? {}), data: ph })
+  }
+  const pairs: [string, string][] = []
+  const used = new Set<string>()
+  for (const { nr, data } of byX.values()) {
+    if (nr && data) { pairs.push([nr, data]); used.add(nr); used.add(data) }
+  }
+  return { pairs, rest: manualFields.filter(ph => !used.has(ph)) }
+}
+
 /** „Ion Popescu”, „Ion Popescu și Ana Ionescu”, „A, B și C” (numele complete ale persoanelor, fără cele goale). */
 export function joinNames(persons: Persoana[]): string {
   const names = persons.map(p => `${p.nume ?? ''} ${p.prenume ?? ''}`.trim()).filter(Boolean)

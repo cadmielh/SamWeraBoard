@@ -69,6 +69,14 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("administratorul", "administratorii"): "administratori", ("administrator", "administratori"): "administratori",
     ("administratorului", "administratorilor"): "administratori",
     ("are", "au"): "asociati", ("este", "sunt"): "asociati", ("acesta", "acestia"): "asociati",
+    # Domeniul „comodanti” — numărul comodanților (proprietarii imobilului dat în comodat), independent de
+    # numărul asociaților firmei (vezi contractul de comodat pentru sediul social). Perechile de mai jos sunt
+    # vocabular specific, fără risc de coincidență cu alt domeniu existent — spre deosebire de „are/au” (deja
+    # legat de „asociati” mai sus) sau „al/ai” (prea generic), care au nevoie de o ancoră dedicată (vezi
+    # _PROPRIETAR_AL_RE/_COMODANT_VERB_RE mai jos, procesate înaintea perechilor generice din `_PAIR`).
+    ("subsemnatul", "subsemnatii"): "comodanti", ("comodant", "comodanti"): "comodanti",
+    ("imprumutator", "imprumutatori"): "comodanti", ("asigur", "asiguram"): "comodanti",
+    ("dau", "dam"): "comodanti",
 }
 
 # Substantive de rol (asociat/administrator) la singular/plural, scrise O SINGURĂ formă, FĂRĂ „/” alături —
@@ -127,6 +135,19 @@ _AGA_PHRASE = re.compile(
     r"(?<!\w)(A\.?G\.?A\.?)\s*/\s*(Asociatului\s+Unic)(?!\w)"
     r"|(?<!\w)(Asociatului\s+Unic)\s*/\s*(A\.?G\.?A\.?)(?!\w)",
     re.IGNORECASE)
+# „proprietar/proprietari al/ai” — fraza completă (substantiv + articol genitival), ca la _BENEFICIAR_REAL_RE:
+# „al/ai” e prea generică o pereche ca s-o legăm singură, global, de domeniul „comodanti” (ar coincide cu orice
+# alt „al/ai” din alte documente, fără nicio legătură cu comodantul) — ancorată aici de perechea
+# „proprietar/proprietari” imediat înainte, procesată separat, înaintea perechilor generice din `_PAIR`.
+_PROPRIETAR_AL_RE = re.compile(
+    r"(?<!\w)(proprietar)\s*/\s*(proprietari)\s+(al)\s*/\s*(ai)(?!\w)", re.IGNORECASE)
+
+# „Comodantul/Comodanții are/au” — „are/au” e deja legat de domeniul „asociati” în _NUMBER_TOKENS (pentru alte
+# formulări) — aici ancorat de perechea „Comodantul/Comodanții” imediat înainte, ca să nu se rezolve greșit
+# după numărul asociaților firmei în loc de numărul comodanților.
+_COMODANT_VERB_RE = re.compile(
+    r"(?<!\w)(Comodantul)\s*/\s*(Comodanții)\s+(are)\s*/\s*(au)(?!\w)", re.IGNORECASE)
+
 _PAIR = re.compile(rf"(?<![\w/])({_WORD})\s*/\s*({_WORD})(?![\w]|\s*/)")
 _PAREN = re.compile(rf"(?<!\w)({_WORD})\((ă|a)\)")
 
@@ -250,6 +271,25 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
             continue
         plural, singular = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
         chosen = _match_case(m.group(0), singular if i == 0 else plural)
+        add(Choice(m.start(), m.end(), chosen, "number"))
+
+    # 1c) fraze ancorate ale contractului de comodat (vezi _PROPRIETAR_AL_RE/_COMODANT_VERB_RE) — înaintea
+    # perechilor generice din `_PAIR`, ca „al/ai” și „are/au” (prea generice ca perechi izolate) să fie deja
+    # „ocupate” (taken) când `_PAIR` ajunge la ele, nu rezolvate greșit după alt domeniu.
+    for m in _PROPRIETAR_AL_RE.finditer(text):
+        if not free(m.start(), m.end()):
+            continue
+        i = by_count(ctx.get("comodanti"))
+        chosen = None if i is None else _match_case(
+            m.group(0), f"{m.group(1)} {m.group(3)}" if i == 0 else f"{m.group(2)} {m.group(4)}")
+        add(Choice(m.start(), m.end(), chosen, "number"))
+
+    for m in _COMODANT_VERB_RE.finditer(text):
+        if not free(m.start(), m.end()):
+            continue
+        i = by_count(ctx.get("comodanti"))
+        chosen = None if i is None else _match_case(
+            m.group(0), f"{m.group(1)} {m.group(3)}" if i == 0 else f"{m.group(2)} {m.group(4)}")
         add(Choice(m.start(), m.end(), chosen, "number"))
 
     # 2) perechi „a/b”
@@ -455,4 +495,4 @@ def sanitize_ctx(raw) -> dict:
         return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 1000 else None
     tip = raw.get("tip")
     return {"sex": sex, "asociati": cnt(raw.get("asociati")), "administratori": cnt(raw.get("administratori")),
-            "tip": tip if tip in ("PJ", "PF") else None}
+            "comodanti": cnt(raw.get("comodanti")), "tip": tip if tip in ("PJ", "PF") else None}

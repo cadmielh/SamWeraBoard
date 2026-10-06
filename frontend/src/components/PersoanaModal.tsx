@@ -48,6 +48,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
   const cnpTrimmed = p.cnp.trim()
   const cnpError = cnpTrimmed && !isValidCNP(cnpTrimmed) ? 'CNP invalid (cifră de control sau dată incorectă)' : ''
   const canSave = !!(p.nume.trim() || cnpTrimmed) && !cnpError
+  const autoSex = sexFromCnp(p.cnp)
 
   const title = initial
     ? `Editează ${calitateDefault}`
@@ -95,18 +96,6 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               {cnpError && <span className="field-error">{cnpError}</span>}
             </div>
             <div className="field">
-              <label className="field-label">Sex (pentru „numit/ă”, „Domnul/Doamna” din documente)</label>
-              <select
-                className="field-input"
-                value={p.sex ?? ''}
-                onChange={e => setP(prev => ({ ...prev, sex: e.target.value === 'M' || e.target.value === 'F' ? e.target.value : undefined }))}
-              >
-                <option value="">{`Automat (din CNP${sexFromCnp(p.cnp) ? `: ${sexFromCnp(p.cnp) === 'M' ? 'masculin' : 'feminin'}` : ', necunoscut deocamdată'})`}</option>
-                <option value="M">Masculin</option>
-                <option value="F">Feminin</option>
-              </select>
-            </div>
-            <div className="field">
               <label className="field-label">Serie / Număr buletin</label>
               <input className="field-input" placeholder="ex: MX 123456" value={p.serie_numar} onChange={e => set('serie_numar', e.target.value)} />
             </div>
@@ -137,6 +126,25 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               <label className="field-label">Cetățenia</label>
               <Combobox value={p.cetatenia} options={CETATENII} onChange={val => set('cetatenia', val)} placeholder="Cetățenia" />
             </div>
+            {/* Vizibil doar când CNP-ul nu poate stabili sexul (lipsă/invalid/străin — vezi sexFromCnp) sau
+                când există deja o alegere explicită — altfel rămâne ascuns, nu mai adaugă zgomot vizual
+                pentru cazul uzual (CNP românesc valid, sexul se ia automat de-acolo). */}
+            {autoSex === null || p.sex === 'M' || p.sex === 'F' ? (
+              <div className="field">
+                <label className="field-label" title="Folosit la generare pentru formele „numit/ă”, „Domnul/Doamna” etc. — altfel luat automat din CNP.">
+                  Sex
+                </label>
+                <select
+                  className="field-input"
+                  value={p.sex ?? ''}
+                  onChange={e => setP(prev => ({ ...prev, sex: e.target.value === 'M' || e.target.value === 'F' ? e.target.value : undefined }))}
+                >
+                  <option value="">{`Automat (din CNP${autoSex ? `: ${autoSex === 'M' ? 'masculin' : 'feminin'}` : ', necunoscut deocamdată'})`}</option>
+                  <option value="M">Masculin</option>
+                  <option value="F">Feminin</option>
+                </select>
+              </div>
+            ) : null}
             <div className="field">
               <label className="field-label">Județ / Sector</label>
               <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județ / Sector" />

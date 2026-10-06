@@ -8,11 +8,12 @@ import type { User } from 'firebase/auth'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, detectCustomPersonGroups, persoanaToSingularMap,
-  isReprezentantRole, joinNames,
+  isReprezentantRole, joinNames, isDateLabel, pairManualDateFields,
 } from '../lib/placeholders'
 import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
 import CustomPersonGroupField from './CustomPersonGroupField'
+import DateFieldInput from './DateFieldInput'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
@@ -226,8 +227,10 @@ export default function TemplateFiller({
   const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...customPersonReplacementsFor(id) })
 
   // Variantele „a/b” din document (sex, număr, categorie) le alege serverul; aici pregătim contextul din valorile finale.
-  const variantsFor = (finalReplacements: Record<string, string>) =>
-    buildVariantContext({ client, scannedPersons, idFields: fields, replacements: finalReplacements })
+  // `customGroups` (persoanele alese pentru un rol custom, ex. COMODANT) e opțional — doar șabloanele cu
+  // asemenea roluri au nevoie de el (vezi VariantContext/buildVariantContext).
+  const variantsFor = (finalReplacements: Record<string, string>, customGroups?: Record<string, Persoana[]>) =>
+    buildVariantContext({ client, scannedPersons, idFields: fields, replacements: finalReplacements, customGroups })
   // Avertismentul rămâne pe ecran până e închis (nu dispare ca o notificare): documentul conține variante nealese.
   const [variantNotices, setVariantNotices] = useState<string[]>([])
   const notifyVariants = (warnings: string[] | undefined, labels: Record<string, string>) => {
@@ -340,7 +343,7 @@ export default function TemplateFiller({
         mergedReplacements = withOptionalFieldMarks(tpl.placeholders ?? [], mergedReplacements, mergedGroups)
       }
       let result: { blob?: Blob; name?: string; link?: string; warnings?: string[] }
-      const { ctx: variantCtx, labels: variantLabels } = variantsFor(mergedReplacements)
+      const { ctx: variantCtx, labels: variantLabels } = variantsFor(mergedReplacements, customGroupPicks[tpl.id])
 
       if (tpl.driveFileId) {
         result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, rowGroups, variantCtx)
@@ -399,7 +402,7 @@ export default function TemplateFiller({
       }
 
       const marked = withOptionalFieldMarks(b.placeholders ?? [], mergedReplacements, mergedGroups)
-      const { ctx: variantCtx, labels: variantLabels } = variantsFor(marked)
+      const { ctx: variantCtx, labels: variantLabels } = variantsFor(marked, customGroupPicks[key])
       const result = await fillDocxFromBuiltinTemplate(b.key, marked, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, undefined, variantCtx)
       notifyVariants(result.warnings, variantLabels)
 
@@ -771,15 +774,34 @@ export default function TemplateFiller({
         {manualFields.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
             <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De completat manual</div>
-            {manualFields.map(ph => (
-              <div className="field" key={ph}>
-                <label className="field-label" htmlFor={`manual-${tpl.id}-${ph}`}>{manualLabel(ph)}</label>
-                <input
-                  id={`manual-${tpl.id}-${ph}`} className="field-input" value={manualValues[tpl.id]?.[ph] ?? ''}
-                  onChange={e => setManualValues(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [ph]: e.target.value } }))}
-                />
-              </div>
-            ))}
+            {(() => {
+              const renderManualField = (ph: string, style?: CSSProperties) => {
+                const label = manualLabel(ph)
+                const value = manualValues[tpl.id]?.[ph] ?? ''
+                const setValue = (v: string) => setManualValues(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [ph]: v } }))
+                const inputId = `manual-${tpl.id}-${ph}`
+                return isDateLabel(label) ? (
+                  <DateFieldInput key={ph} id={inputId} label={label} value={value} onChange={setValue} style={style} />
+                ) : (
+                  <div className="field" key={ph} style={style}>
+                    <label className="field-label" htmlFor={inputId}>{label}</label>
+                    <input id={inputId} className="field-input" value={value} onChange={e => setValue(e.target.value)} />
+                  </div>
+                )
+              }
+              const { pairs, rest } = pairManualDateFields(manualFields)
+              return (
+                <>
+                  {pairs.map(([nr, data]) => (
+                    <div key={nr} style={{ display: 'flex', gap: '.5rem' }}>
+                      {renderManualField(nr, { flex: '0 0 13rem' })}
+                      {renderManualField(data, { flex: 1 })}
+                    </div>
+                  ))}
+                  {rest.map(ph => renderManualField(ph))}
+                </>
+              )
+            })()}
           </div>
         )}
         {customRoles.length > 0 && (

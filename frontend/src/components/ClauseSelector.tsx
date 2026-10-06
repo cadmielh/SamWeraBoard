@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { Client, ClauseMeta } from '../types'
 import { CLAUSE_FIELD_SPECS, specMatchesClause, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
-import { parsePlaceholder } from '../lib/placeholders'
+import { parsePlaceholder, isDateLabel } from '../lib/placeholders'
 import { parseAdresa } from '../lib/adresa'
+import DateFieldInput from './DateFieldInput'
 import CesiuneFields from './clauses/CesiuneFields'
 import AdaugareCaenFields from './clauses/AdaugareCaenFields'
 import SchimbareCaenPrincipalFields from './clauses/SchimbareCaenPrincipalFields'
@@ -227,12 +228,15 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     const key = ph.replace(/^\{\{|\}\}$/g, '')
                     const auto = baseReplacements[ph]
                     const { field: label } = parsePlaceholder(ph)
-                    return (
+                    const value = fieldsByClause[c.tag]?.[key] ?? auto ?? ''
+                    return isDateLabel(label) ? (
+                      <DateFieldInput key={ph} label={label} value={value} onChange={v => setField(c.tag, key, v)} />
+                    ) : (
                       <div key={ph} className="field">
                         <label className="field-label">{label}</label>
                         <input
                           className="field-input"
-                          value={fieldsByClause[c.tag]?.[key] ?? auto ?? ''}
+                          value={value}
                           onChange={e => setField(c.tag, key, e.target.value)}
                         />
                       </div>

@@ -11,6 +11,12 @@ export interface VariantContext {
   asociati: number
   administratori: number
   tip: 'PJ' | 'PF' | null
+  /** Numărul persoanelor alese pentru un rol custom (ex. „comodanti” pentru rolul COMODANT — vezi
+   * customGroupPicks în TemplateFiller) — cheia e pluralul rolului, normalizat (fără diacritice, literă mică),
+   * ca domeniul „numărului” corespunzător din variants.py (ex. „Subsemnatul/Subsemnații”, „comodant/comodanți”
+   * pentru domeniul „comodanti”). Doar rolurile cu vocabular propriu, cablat în variants.py, beneficiază de
+   * alegerea automată — un rol custom nou, fără domeniu acolo, rămâne cu ambele variante scrise, ca până acum. */
+  [domain: string]: Record<string, Sex | null> | number | 'PJ' | 'PF' | null
 }
 
 const normName = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -21,9 +27,12 @@ interface Options {
   idFields?: IDFields | null
   /** Valorile finale ale etichetelor ({{CAMP}} → text), inclusiv cele din clauze/declarație. */
   replacements: Record<string, string>
+  /** Persoanele alese pentru rolurile custom ale șablonului curent (comodant, reprezentant legal…), per rol
+   * (vezi customGroupPicks în TemplateFiller) — folosite doar ca să le numărăm (vezi VariantContext). */
+  customGroups?: Record<string, Persoana[]>
 }
 
-export function buildVariantContext({ client, scannedPersons, idFields, replacements }: Options): { ctx: VariantContext; labels: Record<string, string> } {
+export function buildVariantContext({ client, scannedPersons, idFields, replacements, customGroups }: Options): { ctx: VariantContext; labels: Record<string, string> } {
   const sex: Record<string, Sex | null> = {}
   const labels: Record<string, string> = {}
   const nameIndex = new Map<string, Sex | null>()
@@ -65,7 +74,11 @@ export function buildVariantContext({ client, scannedPersons, idFields, replacem
   }
 
   const tip = client?.tipClient === 'PF' ? 'PF' : client?.tipClient === 'PJ' ? 'PJ' : null
-  return { ctx: { sex, asociati: asociati.length, administratori: administratori.length, tip }, labels }
+  const ctx: VariantContext = { sex, asociati: asociati.length, administratori: administratori.length, tip }
+  for (const [role, persons] of Object.entries(customGroups ?? {})) {
+    ctx[role.toLowerCase() + 'i'] = persons.length
+  }
+  return { ctx, labels }
 }
 
 /** Mesajul afișat după generare, dacă serverul n-a putut stabili sexul unor persoane (alternativele au rămas în document). */
