@@ -1293,15 +1293,33 @@ def _apply_inline_group(pars: list[Paragraph], group: dict, blanks_by_id: dict[i
     # la finalul propoziției ei („ lei.”), nu doar până la ultimul loc liber, altfel acel rest ar rămâne
     # dublat: o dată (greșit) ca literă fixă de sufix, o dată prin extinderea clauzei-șablon de mai jos.
     group_end = _extend_clause_end(text, all_group_blanks[-1]["end"], len(text))
+    # Punctuația de final REALĂ a enumerării („.”/„;”) — _extend_clause_end o include în `group_end` (se oprește
+    # DUPĂ ea), dar aici `group_end` delimitează și sufixul (vezi apelul de mai jos): dacă sufixul ar începe
+    # chiar la `group_end`, punctuația ar cădea în zona „dintre clauze” (eliminată odată cu clauzele 2..N),
+    # deci ar dispărea complet din document — bug real, raportat de utilizator („…CNP ……\n Modalitatea de
+    # control…”, fără punct). Comma/liniuță de umplere nu au nevoie de acest tratament — _extend_clause_end
+    # le exclude deja (le oprește ÎNAINTE), `group_end` fiind deja poziția lor de start în acele cazuri.
+    m = _CLAUSE_END_RE.search(text, all_group_blanks[-1]["end"], len(text))
+    suffix_start = m.start() if m and text[m.start()] in ".;" else group_end
     # Restul propoziției clauzei-șablon, DUPĂ ultimul ei loc liber completat („ lei.”, „, cu puteri depline…”)
     # — până la clauza URMĂTOARE (dacă templateul nu e ultima), nu doar până la ultimul câmp (vezi
     # _extend_clause_end) — altfel acel rest ar rămâne scris o singură dată (ca sufix al grupului), nu
     # repetat pentru fiecare persoană.
     template_last_idx = all_group_blanks.index(template_blanks[-1])
     next_clause_start = all_group_blanks[template_last_idx + 1]["start"] if template_last_idx + 1 < len(all_group_blanks) else group_end
-    template_span = (template_blanks[0]["start"], _extend_clause_end(text, template_blanks[-1]["end"], next_clause_start))
+    between_clauses = text[template_blanks[-1]["end"]:next_clause_start]
+    if template_last_idx + 1 < len(all_group_blanks) and _CONNECTOR_RE.match(between_clauses):
+        # Clauza-șablon nu e ultima, iar tot ce stă până la clauza următoare e DOAR conectorul „si”/„și” dintre
+        # persoane (fără nicio punctuație reală a ei, ex. „, cu puteri depline.”) — acel conector aparține
+        # structurii listei, nu clauzei în sine, și NU trebuie să intre în textul repetat (altfel „și” ar
+        # apărea după FIECARE persoană generată, inclusiv ultima — bug real, raportat de utilizator: „CNP ……
+        # și” repetat de 3 ori, fără punct final înainte de propoziția următoare din document).
+        template_end = template_blanks[-1]["end"]
+    else:
+        template_end = _extend_clause_end(text, template_blanks[-1]["end"], next_clause_start)
+    template_span = (template_blanks[0]["start"], template_end)
     other_blanks = [b for b in blanks_by_id.values() if b["paragraph"] == group["paragraph"] and b["id"] not in group["blank_ids"]]
-    _split_group_paragraph(par, text, template_span, group_end, other_blanks, template_blanks, group["role"], choices, prefix_end)
+    _split_group_paragraph(par, text, template_span, suffix_start, other_blanks, template_blanks, group["role"], choices, prefix_end)
 
 
 def _apply_paragraph_group(pars: list[Paragraph], group: dict, blanks_by_id: dict[int, dict], choices: dict[int, str | None]) -> None:

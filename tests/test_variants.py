@@ -144,8 +144,9 @@ def test_perechi_de_numar_cu_pluralul_primul():
 def test_asociatul_administratorul_singular_plural_fara_bara():
     """Cerință utilizator: „Asociatul”/„Administratorul” (fără „/asociații” alături) trebuie ajustate automat
     după numărul REAL — nu doar verbele/substantivele deja scrise cu „/” (vezi _STANDALONE_ROLE_NUMBER).
-    Deliberat DOAR substantivele de rol — verbele (este/sunt, va/vor…) rămân „/”-only, mult prea generice
-    pentru detectare fără alternativă scrisă (ar rescrie propoziții fără nicio legătură cu asociații)."""
+    Deliberat DOAR substantivele de rol — verbele (va/vor…) rămân „/”-only, mult prea generice pentru detectare
+    fără alternativă scrisă (ar rescrie propoziții fără nicio legătură cu asociații); excepția e „este/sunt”
+    chiar ÎNAINTEA rolului (vezi _VERB_ROLE_RE și test_verb_inaintea_rolului_fara_bara), unde ancora e sigură."""
     assert resolve("Asociatul prezent a hotărât.", {"asociati": 1})[0] == "Asociatul prezent a hotărât."
     assert resolve("Asociatul prezent a hotărât.", {"asociati": 3})[0] == "Asociații prezent a hotărât."
     assert resolve("Asociații prezenți au hotărât.", {"asociati": 1})[0] == "Asociatul prezenți au hotărât."
@@ -155,6 +156,42 @@ def test_asociatul_administratorul_singular_plural_fara_bara():
     assert resolve("Sediul social este în București.", {"asociati": 3})[0] == "Sediul social este în București."
     # necunoscut — nimic nu se schimbă
     assert resolve("Asociatul prezent a hotărât.", {})[0] == "Asociatul prezent a hotărât."
+
+
+def test_aga_sau_asociat_unic():
+    t = "conform Hotărârii A.G.A./Asociatului Unic nr. 1/2024, societatea..."
+    assert resolve(t, {"asociati": 1})[0] == "conform Hotărârii Asociatului Unic nr. 1/2024, societatea..."
+    assert resolve(t, {"asociati": 2})[0] == "conform Hotărârii A.G.A. nr. 1/2024, societatea..."
+    assert resolve(t, {})[0] == t
+
+
+def test_aga_sau_asociat_unic_ordine_inversa():
+    t = "Hotărârea Asociatului Unic/A.G.A. nr. 1"
+    assert resolve(t, {"asociati": 1})[0] == "Hotărârea Asociatului Unic nr. 1"
+    assert resolve(t, {"asociati": 3})[0] == "Hotărârea A.G.A. nr. 1"
+
+
+def test_beneficiarul_real_fara_bara():
+    """Cerință utilizator: documentul scrie o singură formă („beneficiarii reali ai societății ... sunt
+    asociații”), fără „/” alături — trebuie corectată automat după numărul REAL de asociați, inclusiv
+    articolul „ai/al” care urmează (vezi _BENEFICIAR_REAL_RE) și verbul „sunt/este” (vezi _VERB_ROLE_RE —
+    ancorat de „asociat” care urmează imediat)."""
+    t = "că beneficiarii reali ai societății sunt asociații ……"
+    assert resolve(t, {"asociati": 1})[0] == "că beneficiarul real al societății este asociatul ……"
+    assert resolve(t, {"asociati": 2})[0] == t
+    assert resolve(t, {})[0] == t
+    # fără articol alături — se schimbă doar substantivul+adjectivul
+    assert resolve("beneficiarul real, cetățean...", {"asociati": 3})[0] == "beneficiarii reali, cetățean..."
+
+
+def test_verb_inaintea_rolului_fara_bara():
+    """„este/sunt” se corectează DOAR când e urmat imediat de „asociat”/„administrator” — un „este”/„sunt”
+    oarecare, fără rol alături, rămâne neatins (prea generic, vezi _STANDALONE_ROLE_NUMBER)."""
+    assert resolve("sunt asociații societății.", {"asociati": 1})[0] == "este asociatul societății."
+    assert resolve("este asociatul societății.", {"asociati": 3})[0] == "sunt asociații societății."
+    assert resolve("sunt administratorii numiți.", {"administratori": 1})[0] == "este administratorul numiți."
+    assert resolve("Sediul social este în București.", {"asociati": 3})[0] == "Sediul social este în București."
+    assert resolve("sunt asociații societății.", {})[0] == "sunt asociații societății."
 
 
 def test_numar_nu_blocheaza_sexul_pe_aceeasi_pozitie():

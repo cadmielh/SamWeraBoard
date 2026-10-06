@@ -241,6 +241,26 @@ def test_grup_inline_ales_repeat_scaleaza_la_orice_numar():
         assert all(f"P{i}" in text for i in range(1, n + 1))
 
 
+def test_grup_inline_nu_repeta_conectorul_si_pastreaza_punctuatia_finala():
+    """Bug raportat de utilizator: clauza-șablon aleasă pentru un grup 'inline' înghițea conectorul „si”/„și”
+    dintre persoane (nicio punctuație reală între ultimul câmp al unei clauze și numele persoanei următoare,
+    doar conectorul) — la scalare, „și” apărea după FIECARE persoană generată, inclusiv ultima, iar punctul
+    de final al enumerării (înghițit odată cu clauzele 2..N, eliminate la expandare) dispărea complet din
+    document. Vezi _apply_inline_group (verificarea cu _CONNECTOR_RE și `suffix_start`)."""
+    raw = make_doc([two_person_sentence().rstrip(".") + ". Alte prevederi urmeaza."])
+    found = blanks.analyze(raw)
+    gid = blanks.detect_groups(found)[0]["id"]
+    tpl = blanks.apply(raw, {}, {gid: "repeat"})
+
+    for n in (2, 3):
+        out = fill_docx(tpl, {}, groups={"ASOCIATI": [person(f"P{i}") for i in range(1, n + 1)]})
+        texts = [p.text for p in Document(io.BytesIO(out)).paragraphs if p.text.strip()]
+        clause_lines, suffix_lines = texts[1:1 + n], texts[1 + n:]
+        assert all(not line.rstrip().endswith(("si", "și")) for line in clause_lines), clause_lines
+        # punctul de final al enumerării nu a dispărut (rămâne, chiar dacă la începutul paragrafului de sufix)
+        assert "".join(suffix_lines).lstrip(". ").startswith("Alte prevederi urmeaza."), suffix_lines
+
+
 def test_grup_paragraph_ales_repeat_pastreaza_numerotarea_index():
     raw = make_doc(["1. " + IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……"),
                     "2. " + IDENTITY.format(name="……", d="……", loc="……", jud="……", ser="……", nr="……", em="……", la="……", cnp="……")])
@@ -627,7 +647,9 @@ def test_indiciu_caen_secundare_singur_devine_grup_repetitiv_de_1():
     tpl = blanks.apply(raw, {}, {groups[0]["id"]: "repeat"})
     out = fill_docx(tpl, {}, groups={"CAEN_SECUNDARE": [{"CAEN": f"C{i}"} for i in range(1, 4)]})
     texts = [p.text for p in Document(io.BytesIO(out)).paragraphs if p.text.strip()]
-    assert texts[1:] == ["C1", "C2", "C3", "."]     # punctul final al frazei rămâne text fix, o singură dată, după listă
+    # punctul final al frazei rămâne text fix, o singură dată — lipit de ULTIMUL cod generat (nu orfan, pe
+    # rândul lui propriu, vezi doc_filler._merge_leading_terminal_punctuation).
+    assert texts[1:] == ["C1", "C2", "C3."]
 
 
 def test_indiciu_necunoscut_devine_camp_manual_etichetat_din_indiciu():

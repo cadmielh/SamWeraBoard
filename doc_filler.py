@@ -126,6 +126,37 @@ def _header_footer_parts(doc: Document):
                 yield part
 
 
+_LEADING_TERMINAL_RE = re.compile(r"^([.;])\s*")
+
+
+def _merge_leading_terminal_punctuation(last_par: Paragraph, next_par: Paragraph) -> None:
+    """Un paragraf care, imediat după {{/TAG}}, începe DOAR cu un „.”/„;” de final (fără alt text înainte) —
+    restul propoziției din șablonul original (ex. „…CNP ……. Modalitatea de control…”), care aparținea de fapt
+    ULTIMEI persoane din enumerare, nu unui paragraf nou (vezi blanks._apply_inline_group: `suffix_start`
+    păstrează punctuația, ca să nu dispară din document, dar nu avea cum să știe ATUNCI care va fi „ultima”
+    persoană generată — asta se decide abia aici, la expandare, când numărul real de persoane e cunoscut).
+    Mutăm semnul direct la finalul ultimului paragraf generat, cu formatarea textului de-acolo (nu a
+    paragrafului de sufix, care poate avea alt font) — raportat de utilizator: punctul apărea „orfan”, singur
+    la începutul rândului următor, în loc de lipit de ultima persoană, cum e scris în șablon."""
+    if not next_par.runs:
+        return
+    first_run = next_par.runs[0]
+    m = _LEADING_TERMINAL_RE.match(first_run.text)
+    if not m:
+        return
+    punct, rest = m.group(1), first_run.text[m.end():]
+    if rest:
+        first_run.text = rest
+    else:
+        first_run._r.getparent().remove(first_run._r)
+    run = last_par.add_run(punct)
+    template_run = next((r for r in reversed(last_par.runs[:-1]) if r.text), None)
+    if template_run is not None:
+        rpr = template_run._r.find(qn('w:rPr'))
+        if rpr is not None:
+            run._r.insert(0, copy.deepcopy(rpr))
+
+
 def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]],
                           variant_ctx: dict | None = None, variant_warnings: set | None = None) -> None:
     """
@@ -153,7 +184,9 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
 
             block_paragraphs = paragraphs[start_idx + 1:end_idx]
             anchor = paragraphs[end_idx]._p
+            suffix_par = paragraphs[end_idx + 1] if end_idx + 1 < len(paragraphs) else None
 
+            last_clone_par: Paragraph | None = None
             for i, item in enumerate(items, start=1):
                 person = {**item, "INDEX": str(i)}
                 item_replacements = {"{{" + k + "}}": v for k, v in person.items()}
@@ -163,6 +196,7 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
                     clone = copy.deepcopy(bp._p)
                     anchor.addprevious(clone)
                     clone_par = Paragraph(clone, bp._parent)
+                    last_clone_par = clone_par
                     changed = False
                     if variant_ctx is not None:
                         choices = variants.resolve_paragraph(clone_par, variant_ctx, {}, fixed)
@@ -179,6 +213,9 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
                     # până la margine pentru un nume mai lung/scurt (bug real, găsit pe un document real).
                     if changed:
                         clone.set(_CHANGED_ATTR, "1")
+
+            if last_clone_par is not None and suffix_par is not None:
+                _merge_leading_terminal_punctuation(last_clone_par, suffix_par)
 
             # Remove the original template block + both markers
             for bp in block_paragraphs:

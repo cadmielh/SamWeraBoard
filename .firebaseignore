@@ -27,6 +27,7 @@ lf_test.html
 .emulator-data/
 .emulator-data-google/
 .emulator-data*/
+firebase-export-*/
 tests/
 docs/
 scripts/

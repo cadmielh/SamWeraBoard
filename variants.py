@@ -5,7 +5,8 @@
 (deci funcționează și pentru șabloanele proprii ale utilizatorilor, dacă folosesc formulările uzuale):
 
   * după sex      — numit/ă, născut/ă, Domnul/Doamna, Subsemnatul(a), doamnei/domnului, el/ea …
-  * după număr    — asociat unic/asociați, Administratorul/Administratorii, va/vor, poate/pot, nemulțumit/nemulțumiți …
+  * după număr    — asociat unic/asociați, A.G.A./Asociatului Unic, Administratorul/Administratorii, va/vor,
+                    poate/pot, nemulțumit/nemulțumiți, beneficiarul real/beneficiarii reali (și fără „/” alături) …
   * după categorie — social/profesional (PJ / PFA, II, IF), județ/sector (București), CNP/NIF
 
 Reguli de siguranță (documente juridice): nu se ghicește niciodată. Dacă sexul persoanei sau numărul nu se cunosc,
@@ -87,9 +88,45 @@ _STANDALONE_ROLE_NUMBER_REV = {   # plural (fără diacritice) → (formă de si
 }
 _NUMBER_WORD_RE = re.compile(rf"(?<!\w)({_WORD})(?!\w)")
 
+# „beneficiarul real (al)”/„beneficiarii reali (ai)” — folosit în declarațiile pe proprie răspundere privind
+# beneficiarul real, unde subiectul întreg („beneficiarii reali ai societății ... sunt asociații ……”) trebuie
+# să fie la același număr ca asociații înșiși (același domeniu „asociati”). Fraza întreagă (substantiv +
+# adjectiv + articolul genitival care urmează adesea, „al/ai societății”), nu doar substantivul — „reali/real”
+# și „ai/al” nu au o formă de rol proprie în _STANDALONE_ROLE_NUMBER, iar tratate separat, fără ancora
+# „beneficiarul/beneficiarii” alături, ar fi mult prea generice (vezi explicația de la _STANDALONE_ROLE_NUMBER
+# despre verbe — „al”/„ai” sunt la fel de comune, apar peste tot în text fără nicio legătură cu asociații).
+# Articolul e opțional la potrivire (grupurile 3/6) — unele formulări nu-l au alături („beneficiarul real,
+# cetățean...”) — dar, când apare, se schimbă ÎMPREUNĂ cu substantivul+adjectivul, ca o singură unitate.
+_BENEFICIAR_REAL_RE = re.compile(
+    r"(?<!\w)(beneficiarul)\s+(real)(?:\s+(al))?(?!\w)"
+    r"|(?<!\w)(beneficiarii)\s+(reali)(?:\s+(ai))?(?!\w)", re.IGNORECASE)
+
+# „este/sunt” imediat ÎNAINTEA substantivului de rol („sunt asociații ……”, „este asociatul ……”) — spre
+# deosebire de un „este/sunt” oarecare (vezi avertismentul de la _STANDALONE_ROLE_NUMBER despre verbe prea
+# generice), aici ancora e chiar cuvântul care urmează imediat: „este/sunt” + „asociat.../administrator...”
+# nu poate fi despre altceva din document decât despre numărul lor. De-asta e sigur, spre deosebire de un
+# „sunt”/„este” izolat oriunde în text (ex. „Sediul social ESTE în București”, neavând „asociat”/„administrator”
+# alături). Separat de _STANDALONE_ROLE_NUMBER (acolo cuvântul corectat e substantivul însuși, aici e verbul
+# dinaintea lui — pot coexista pe aceeași frază, pe poziții diferite, fără să se blocheze reciproc). Rădăcina
+# „asocia” din lookahead acoperă AMBELE forme ale substantivului («asociaT-ul/ului», cu „t”, și «asociaȚ-ii/
+# ilor», cu „ț/ţ») — spre deosebire de _ASOCIAT_PHRASE, nu avem nevoie să distingem care anume, numărul vine
+# oricum din `ctx`, nu din cuvântul scris.
+_VERB_ROLE_RE = re.compile(r"(?<!\w)(este|sunt)(?=\s+(asocia(?:t|[țţ])\w*|administrator\w*)(?!\w))", re.IGNORECASE)
+
 # „asociat unic/asociați”, „asociatului unic/ asociaților”, „asociatul/ asociații”, „ASOCIAT UNIC/ASOCIAȚI”
 _ASOCIAT_PHRASE = re.compile(
     rf"(?<!\w)(asociat(?:ul|ului)?(?:\s+unic)?)\s*/\s*(asocia[țţ](?:i|ii|ilor))(?!\w)", re.IGNORECASE)
+
+# „Hotărârea/Hotărârii A.G.A./Asociatului Unic nr. …” — actul care a stat la baza modificării, din declarații
+# sau referiri încrucișate la hotărârea asociaților. Nu încape în _ASOCIAT_PHRASE (acolo ambele forme sunt un
+# singur cuvânt din aceeași rădăcină „asociat”) și nici în _PAIR de mai jos (_WORD = un singur cuvânt, fără
+# puncte sau spații — „A.G.A.” are puncte, „Asociatului Unic” are un spațiu) — de-aceea o frază dedicată, ca
+# _ASOCIAT_PHRASE. Grupul 1 e mereu forma de PLURAL (A.G.A. — Adunarea Generală a Asociaților), grupul 2 mereu
+# forma de SINGULAR (Asociatului Unic), indiferent de ordinea scrisă în șablon.
+_AGA_PHRASE = re.compile(
+    r"(?<!\w)(A\.?G\.?A\.?)\s*/\s*(Asociatului\s+Unic)(?!\w)"
+    r"|(?<!\w)(Asociatului\s+Unic)\s*/\s*(A\.?G\.?A\.?)(?!\w)",
+    re.IGNORECASE)
 _PAIR = re.compile(rf"(?<![\w/])({_WORD})\s*/\s*({_WORD})(?![\w]|\s*/)")
 _PAREN = re.compile(rf"(?<!\w)({_WORD})\((ă|a)\)")
 
@@ -201,6 +238,20 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
         chosen = None if i is None else _match_case(m.group(0), m.group(1 + i))
         add(Choice(m.start(), m.end(), chosen, "number"))
 
+    # 1b) „Hotărârea/Hotărârii A.G.A./Asociatului Unic nr. …” — actul invocat într-o declarație sau altă
+    # referire încrucișată. Grupurile 1/3 = forma de plural (A.G.A.), 2/4 = forma de singular (Asociatului
+    # Unic), indiferent de ordinea scrisă (vezi _AGA_PHRASE).
+    for m in _AGA_PHRASE.finditer(text):
+        if not free(m.start(), m.end()):
+            continue
+        i = by_count(ctx.get("asociati"))
+        if i is None:
+            add(Choice(m.start(), m.end(), None, "number"))
+            continue
+        plural, singular = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+        chosen = _match_case(m.group(0), singular if i == 0 else plural)
+        add(Choice(m.start(), m.end(), chosen, "number"))
+
     # 2) perechi „a/b”
     for m in _PAIR.finditer(text):
         if not free(m.start(), m.end()):
@@ -290,6 +341,38 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
                 continue      # număr necunoscut, sau deja forma corectă — nimic de schimbat/semnalat
             add(Choice(m.start(), m.end(), _match_case(word, other), "number"))
 
+    # 4b) „beneficiarul real (al)/beneficiarii reali (ai)”, fără „/” alături — aceeași idee ca pasul 4, dar
+    # pentru fraza (+ articol opțional) din declarațiile privind beneficiarul real (vezi _BENEFICIAR_REAL_RE).
+    if fixed is None:
+        for m in _BENEFICIAR_REAL_RE.finditer(text):
+            if not free(m.start(), m.end()):
+                continue
+            is_singular_written = m.group(1) is not None
+            has_article = (m.group(3) if is_singular_written else m.group(6)) is not None
+            i = by_count(ctx.get("asociati"))
+            if i is None or (i == 0) == is_singular_written:
+                continue      # număr necunoscut, sau deja forma corectă — nimic de schimbat
+            if i == 0:
+                chosen = "beneficiarul real" + (" al" if has_article else "")
+            else:
+                chosen = "beneficiarii reali" + (" ai" if has_article else "")
+            add(Choice(m.start(), m.end(), _match_case(m.group(0), chosen), "number"))
+
+    # 4c) „este/sunt” înaintea substantivului de rol (vezi _VERB_ROLE_RE) — domeniul e dat de rolul care
+    # urmează imediat, nu de numărul scris efectiv în șablon (acela se corectează separat, la pasul 4/4b).
+    if fixed is None:
+        for m in _VERB_ROLE_RE.finditer(text):
+            if not free(m.start(), m.end()):
+                continue
+            domain = "asociati" if _norm(m.group(2)).startswith("asocia") else "administratori"
+            i = by_count(ctx.get(domain))
+            if i is None:
+                continue
+            chosen = "este" if i == 0 else "sunt"
+            if _norm(m.group(1)) == chosen:
+                continue      # deja forma corectă — nimic de schimbat
+            add(Choice(m.start(), m.end(), _match_case(m.group(1), chosen), "number"))
+
     # 5) substantive de rol scrise O SINGURĂ dată, fără „/” alături (vezi _STANDALONE_ROLE_WORDS) — corectate
     # după sexul CONFIRMAT al persoanei, chiar dacă șablonul nu a scris explicit ambele forme. Poziția deja
     # „ocupată” de pasul 4 de mai sus (ex. cuvântul a devenit plural) e sărită automat, via `free`.
@@ -339,9 +422,13 @@ def resolve_paragraph(paragraph: Paragraph, ctx: dict, replacements: dict[str, s
     # „/” și „(” acoperă pașii 1-3 (perechi, paranteze) — pașii 4-5 (substantiv de rol singur, fără alternativă
     # scrisă) n-au niciunul din cele două, de-asta verificarea de mai jos le caută separat. `_norm`, nu doar
     # `.lower()`: „Asociații”/„Asociaților” (plural, cu ț) nu conțin literal substring-ul „asociat” (cu t simplu)
-    # — fără normalizare, poarta bloca exact cazul „e deja plural, trebuie adus la singular”.
+    # — fără normalizare, poarta bloca exact cazul „e deja plural, trebuie adus la singular”. „beneficiar” —
+    # pentru _BENEFICIAR_REAL_RE (4b): „beneficiarul real”/„beneficiarii reali” poate apărea FĂRĂ „asociat”/
+    # „administr” alăturat în același paragraf (ex. „beneficiarul real, cetățean...”), deci poarta trebuie să-l
+    # recunoască separat, altfel scapă neschimbat.
     normalized = _norm(text)
-    if "/" not in text and "(" not in text and "asociat" not in normalized and "administr" not in normalized:
+    if ("/" not in text and "(" not in text and "asociat" not in normalized
+            and "administr" not in normalized and "beneficiar" not in normalized):
         return []
     choices = find_choices(text, ctx, replacements, fixed)
     for c in sorted((c for c in choices if c.text is not None), key=lambda c: c.start, reverse=True):

@@ -111,6 +111,7 @@ preview.html
 # Date locale ale emulatoarelor (conțin date de test)
 .emulator-data/
 .emulator-data-google/
+firebase-export-*/
 
 # legătură simbolică folosită de Firebase CLI (către .venv)
 venv
