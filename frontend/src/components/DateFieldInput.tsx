@@ -31,10 +31,12 @@ export default function DateFieldInput({ id, label, value, onChange, style }: Pr
 
   const openPicker = () => {
     const el = pickerRef.current
-    if (el && "showPicker" in el) {
-      try { (el as HTMLInputElement & { showPicker: () => void }).showPicker() } catch { el.focus() }
+    if (!el) return
+    const withPicker = el as HTMLInputElement & { showPicker?: () => void }
+    if (typeof withPicker.showPicker === "function") {
+      try { withPicker.showPicker() } catch { el.focus() }
     } else {
-      el?.focus()
+      el.focus()
     }
   }
 
