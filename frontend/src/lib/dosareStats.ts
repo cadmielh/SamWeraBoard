@@ -1,6 +1,7 @@
 import type { Dosar, FacturareConfig } from '../types'
 import { DEFAULT_FACTURARE_CONFIG } from '../types'
 import { toDateSafe } from './dates'
+import type { SummarySection } from './xlsxExport'
 
 export interface DosarMonthStats {
   totalDosare: number
@@ -267,4 +268,48 @@ export function computeSumarLunar(dosare: Dosar[], config: FacturareConfig = DEF
     deFacturatCatreAdi: sum(m => m.deFacturatCatreAdi),
     deFacturatCatreAdiOficial: sum(m => m.deFacturatCatreAdiOficial),
   }
+}
+
+/** Traduce statisticile deja calculate (pe setul de dosare efectiv exportat, după
+ * filtre + interval de date) în secțiunile foii „Sumar” a exportului .xlsx — aceleași
+ * cifre ca în DosarStatsPanel/SumarLunarCard, nu un calcul nou. */
+export function buildDosarSummarySections(
+  dosarStats: DosarMonthStats,
+  tarifStats: TarifStats,
+  sumarLunar: SumarLunarStats | null,
+): SummarySection[] {
+  const sections: SummarySection[] = [
+    {
+      title: 'Număr dosare',
+      rows: [
+        { label: 'Total dosare', value: dosarStats.totalDosare },
+        { label: 'Facturate', value: dosarStats.facturate },
+      ],
+    },
+    {
+      title: 'Tarife aplicate clienților',
+      rows: [
+        { label: 'Tarif total', value: tarifStats.tarifClientTotal },
+        { label: 'Tarif facturat', value: tarifStats.tarifClientFacturat },
+      ],
+    },
+  ]
+
+  if (sumarLunar) {
+    sections.push({
+      title: 'Sumar lunar — profit Sami/Adi',
+      rows: [
+        { label: 'Total venit', value: sumarLunar.totalVenit },
+        { label: 'Profit Sami (oficial)', value: sumarLunar.profitSamiOficial },
+        { label: 'De facturat către Adi (oficial)', value: sumarLunar.deFacturatCatreAdiOficial },
+        { label: 'Profit Adi (oficial)', value: sumarLunar.profitAdiOficial },
+        { label: 'CAA reală', value: sumarLunar.caaReala },
+        { label: 'Barou', value: sumarLunar.barou },
+        { label: 'Impozit profit', value: sumarLunar.impozitProfit },
+        { label: 'Taxe suplimentare (ONRC + Certificat Constatator)', value: sumarLunar.taxeSuplimentare },
+      ],
+    })
+  }
+
+  return sections
 }

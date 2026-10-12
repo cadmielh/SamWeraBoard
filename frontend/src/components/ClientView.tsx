@@ -4,7 +4,7 @@ import type { Client, Persoana } from '../types'
 import { fetchPii, type PiiMap } from '../lib/pii'
 import { inferTipClient } from '../types'
 import { findCaenDescriere } from '../data/caen'
-import { formatDateRo } from '../lib/dates'
+import { formatDateRo, toDateSafe } from '../lib/dates'
 import { getInitials, getAvatarColor } from '../lib/avatar'
 import { formatAdresa } from '../lib/adresa'
 import { missingCompanyFields } from '../lib/clienti'
@@ -256,6 +256,8 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
         {client.formaJuridica || 'PJ'}
       </span>
 
+  const createdAtDate = toDateSafe(client.createdAt)
+
   return (
     <div className={embedded ? 'cv2-embed' : 'cv2-panel'}>
 
@@ -265,6 +267,9 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
           <div className="cv2-header-title">
             {headerBadge}
             <span className="cv2-company-name" title={client.denumire}>{client.denumire}</span>
+            {createdAtDate && (
+              <span className="cv2-anaf-note" style={{ whiteSpace: 'nowrap' }}>Client din {formatDateRo(createdAtDate)}</span>
+            )}
           </div>
           <div className="cv2-header-actions">
             {missingCompany.length > 0 && (

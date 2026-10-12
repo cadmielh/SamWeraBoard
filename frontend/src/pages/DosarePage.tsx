@@ -2,16 +2,22 @@ import { useState, useMemo, useCallback, useReducer, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { Dosar, DosarInput } from '../types'
 import { obiecteCereriiText, resolveFacturareConfig } from '../types'
-import { useDosare, useArchivedDosare, isDosarArhivat } from '../lib/dosare'
+import { useDosare, useArchivedDosare, isDosarArhivat, fetchAllDosare } from '../lib/dosare'
 import { useSarcini } from '../lib/sarcini'
 import { buildSarcinaForDosar } from '../lib/dosarSarcini'
 import { useApp } from '../AppContext'
 import DosarModal from '../components/DosarModal'
 import DosarView from '../components/DosarView'
 import DosarTable, { DosarColumnsPanel } from '../components/dosare/DosarTable'
-import { applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, getVisibleColumns } from '../components/dosare/dosarColumns'
+import {
+  applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, getVisibleColumns,
+  DATE_FIELD_OPTIONS, getDosarDateValue, getExportValue,
+} from '../components/dosare/dosarColumns'
 import DosarStatsPanel from '../components/dosare/DosarStatsPanel'
-import { LUNI, type StatsPeriod } from '../lib/dosareStats'
+import IconExport from '../components/IconExport'
+import { LUNI, type StatsPeriod, computeDosarStats, computeTarifStats, computeSumarLunar, buildDosarSummarySections } from '../lib/dosareStats'
+import { exportRowsToXlsx, type ExportColumnSpec } from '../lib/xlsxExport'
+import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import Modal from '../components/Modal'
 
 type ModalState = 'add' | Dosar | null
@@ -189,6 +195,8 @@ export default function DosarePage() {
     return new Set(EXTRA_COL_KEYS)
   })
   const [showColsPanel, setShowColsPanel] = useState(false)
+  const [showExportDialog, setShowExportDialog] = useState<ListTab | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const displayed = useMemo(() => {
     const active = dosare.filter(d => !isDosarArhivat(d) && !pendingDeleteIds.has(d.id))
@@ -301,6 +309,59 @@ export default function DosarePage() {
     dispatchSortInch({ type: 'RESET' })
   }, [])
 
+  const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  /** Exportă .xlsx cu toate coloanele existente pentru workspace (inclusiv ascunse —
+   * doar cele samiAdiOnly sunt omise dacă feature-ul nu e activ), peste TOATE dosarele
+   * workspace-ului (vezi fetchAllDosare), filtrate exact ca tab-ul curent (filtre pe
+   * coloană + opțional căutarea text), restricționate la intervalul ales pe câmpul de
+   * dată ales. Foaia „Sumar" se calculează pe acel set exact (bounds=null — intervalul
+   * a fost deja aplicat mai sus). */
+  const handleExportDosare = useCallback(async (tabKind: ListTab, { dateField, start, end, respectSearch }: ExportRangeResult) => {
+    if (!workspaceId) return
+    setExporting(true)
+    try {
+      const all = await fetchAllDosare(workspaceId)
+      const tabFiltered = tabKind === 'active' ? all.filter(d => !isDosarArhivat(d)) : all.filter(isDosarArhivat)
+      const filters = tabKind === 'active' ? colFilters : colFiltersInch
+      const colFilteredDosare = applyFilters(tabFiltered, filters, facturareConfig)
+
+      const q = searchQuery.trim().toLowerCase()
+      const searchFiltered = respectSearch && q
+        ? colFilteredDosare.filter(d =>
+          (d.clientDenumire || d.clientDenumireLibera || '').toLowerCase().includes(q) ||
+          obiecteCereriiText(d.obiecteCererii).toLowerCase().includes(q) ||
+          d.nrInregistrareDosar.toLowerCase().includes(q))
+        : colFilteredDosare
+
+      const ranged = searchFiltered.filter(d => {
+        const dt = getDosarDateValue(d, dateField)
+        return dt !== null && dt >= start && dt < end
+      })
+
+      const dosarStats = computeDosarStats(ranged)
+      const tarifStats = computeTarifStats(ranged, null)
+      const sumarLunar = samiAdiEnabled ? computeSumarLunar(ranged.filter(d => d.facturat), facturareConfig) : null
+
+      const exportColumns: ExportColumnSpec<Dosar>[] = columns.map(col => ({
+        key: col.key, label: col.label, width: col.width, type: col.exportType,
+        getValue: (d: Dosar) => getExportValue(d, col.key, facturareConfig),
+      }))
+
+      const tabLabel = tabKind === 'active' ? 'in-lucru' : 'incheiate'
+      await exportRowsToXlsx({
+        filename: `dosare_${tabLabel}_${isoLocal(start)}_${isoLocal(new Date(end.getTime() - 86400000))}.xlsx`,
+        sheetName: 'Dosare',
+        columns: exportColumns,
+        rows: ranged,
+        summary: { sheetName: 'Sumar', sections: buildDosarSummarySections(dosarStats, tarifStats, sumarLunar) },
+      })
+      setShowExportDialog(null)
+    } finally {
+      setExporting(false)
+    }
+  }, [workspaceId, colFilters, colFiltersInch, facturareConfig, searchQuery, samiAdiEnabled, columns])
+
   const handleSave = useCallback(async (data: DosarInput, creeazaSarcina: boolean) => {
     if (!workspaceId || !user) return
     if (modal && typeof modal === 'object') {
@@ -408,6 +469,9 @@ export default function DosarePage() {
               </div>
             </div>
             <div className="page-actions" style={{ justifySelf: 'end' }}>
+              <button className="btn btn-ghost" onClick={() => setShowExportDialog(isListTab(tab) ? tab : returnTab)}>
+                <IconExport /> Exportă
+              </button>
               <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }}>+ Dosar nou</button>
             </div>
           </div>
@@ -493,6 +557,16 @@ export default function DosarePage() {
                 </div>
               </div>
             </>
+          )}
+          {showExportDialog && (
+            <ExportRangeDialog
+              title={`Exportă dosare — ${showExportDialog === 'active' ? 'în lucru' : 'încheiate'}`}
+              dateFieldOptions={DATE_FIELD_OPTIONS}
+              showSearchToggle={searchQuery.trim().length > 0}
+              busy={exporting}
+              onConfirm={result => handleExportDosare(showExportDialog, result)}
+              onClose={() => setShowExportDialog(null)}
+            />
           )}
           <div className="table-card" style={{ flex: '1 0 420px' }}>
             {viewing ? (

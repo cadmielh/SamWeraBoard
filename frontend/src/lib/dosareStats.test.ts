@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeSumarLunar, computeTarifStats, dataEfectivaFacturare, dataEfectivaTarif } from './dosareStats'
+import { computeSumarLunar, computeTarifStats, computeDosarStats, dataEfectivaFacturare, dataEfectivaTarif, buildDosarSummarySections } from './dosareStats'
 import type { Dosar } from '../types'
 
 const dosar = (over: Partial<Dosar>): Dosar => ({
@@ -207,5 +207,27 @@ describe('computeSumarLunar — „Verificare (=0)” din foaia de calcul origin
       const verificare = m.profitSamiOficial + m.profitAdiOficial + m.barou + m.caaReala + m.taxeSuplimentare + m.impozitProfit
       expect(verificare).toBeCloseTo(m.totalVenit, 6)
     }
+  })
+})
+
+describe('buildDosarSummarySections — foaia „Sumar” a exportului .xlsx', () => {
+  it('fără Sumar lunar (feature dezactivat), întoarce doar secțiunile Număr dosare + Tarife', () => {
+    const dosarStats = computeDosarStats([dosar({ facturat: true }), dosar({ facturat: false })])
+    const tarifStats = computeTarifStats([dosar({ facturat: true, tarifClient: 1000 })], null)
+    const sections = buildDosarSummarySections(dosarStats, tarifStats, null)
+    expect(sections.map(s => s.title)).toEqual(['Număr dosare', 'Tarife aplicate clienților'])
+    expect(sections[0].rows).toEqual([{ label: 'Total dosare', value: 2 }, { label: 'Facturate', value: 1 }])
+    expect(sections[1].rows).toEqual([{ label: 'Tarif total', value: 1000 }, { label: 'Tarif facturat', value: 1000 }])
+  })
+
+  it('cu Sumar lunar (feature activ), adaugă a treia secțiune cu profitul Sami/Adi oficial', () => {
+    const facturat = dosar({ facturat: true, dataFacturarii: '2026-09-10T00:00:00.000Z', tarifClient: 1000, semnaturaElectronica: true, taxeOnrc: 50 })
+    const sumarLunar = computeSumarLunar([facturat])
+    const sections = buildDosarSummarySections(computeDosarStats([facturat]), computeTarifStats([facturat], null), sumarLunar)
+    expect(sections.map(s => s.title)).toEqual(['Număr dosare', 'Tarife aplicate clienților', 'Sumar lunar — profit Sami/Adi'])
+    const sumarRows = Object.fromEntries(sections[2].rows.map(r => [r.label, r.value]))
+    expect(sumarRows['Profit Sami (oficial)']).toBeCloseTo(sumarLunar.profitSamiOficial, 6)
+    expect(sumarRows['Profit Adi (oficial)']).toBeCloseTo(sumarLunar.profitAdiOficial, 6)
+    expect(sumarRows['Total venit']).toBe(1000)
   })
 })

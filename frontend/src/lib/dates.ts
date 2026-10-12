@@ -25,6 +25,19 @@ export function formatDateRo(date: Date): string {
   return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`
 }
 
+/** Parsează un string ISO simplu `yyyy-mm-dd` (fără oră — dataAdmiterii/dataPlanificare,
+ * introduse manual din picker, nu din Firestore Timestamp) ca dată LOCALĂ, nu UTC.
+ * `new Date('2026-01-15')` (fără oră) e interpretat de JS ca UTC midnight — comparat cu
+ * limite construite local (`new Date(y,m,d)`, ca în periodBounds), poate cădea în ziua
+ * greșită lângă frontiere, în funcție de fusul orar al browserului. */
+export function parseIsoDateLocal(iso: string | null | undefined): Date | null {
+  if (!iso) return null
+  const m = ISO_DATE_RE.exec(iso.trim())
+  if (!m) return null
+  const [, y, mo, d] = m
+  return new Date(Number(y), Number(mo) - 1, Number(d))
+}
+
 /**
  * Câmpurile "createdAt"/"completedAt" sunt tipate `string | null` dar, la
  * runtime, conțin un Firestore `Timestamp` (obiect cu `.toDate()`/`.seconds`)

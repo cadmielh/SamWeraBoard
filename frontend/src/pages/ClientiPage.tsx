@@ -3,9 +3,12 @@ import { FixedSizeList } from 'react-window'
 import type { Client } from '../types'
 import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
-import { useClienti } from '../lib/clienti'
+import { useClienti, fetchAllClienti } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 import { formatAdresa } from '../lib/adresa'
+import { toDateSafe, formatDateRo } from '../lib/dates'
+import { exportRowsToXlsx, type ExportColumnSpec, type ExportCellType } from '../lib/xlsxExport'
+import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import { useApp } from '../AppContext'
 import ClientModal from '../components/ClientModalGate'
 import ClientView from '../components/ClientView'
@@ -13,6 +16,7 @@ import Modal from '../components/Modal'
 import IconTrash from '../components/IconTrash'
 import IconPencil from '../components/IconPencil'
 import IconEye from '../components/IconEye'
+import IconExport from '../components/IconExport'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -22,6 +26,8 @@ interface ColDef {
   fixed?: boolean
   sortable?: boolean
   filterable?: boolean
+  /** Tipul celulei pentru exportul .xlsx — implicit 'string' dacă absent. */
+  exportType?: ExportCellType
 }
 
 const COLUMNS: ColDef[] = [
@@ -39,9 +45,10 @@ const COLUMNS: ColDef[] = [
   { key: 'sediuSocial',   label: 'Sediu social',  width: 250, sortable: false, filterable: false },
   { key: 'notite',        label: 'Notițe',        width: 200, sortable: false, filterable: false },
   { key: 'admin',         label: 'Admin.',        width: 70,  sortable: true,  filterable: true  },
+  { key: 'createdAt',     label: 'Data creării',  width: 120, sortable: true,  filterable: false, exportType: 'date' },
 ]
 
-const EXTRA_COL_KEYS = new Set(['email', 'nrRegistrul', 'telefon', 'sediuSocial', 'notite', 'admin'])
+const EXTRA_COL_KEYS = new Set(['email', 'nrRegistrul', 'telefon', 'sediuSocial', 'notite', 'admin', 'createdAt'])
 
 const ROW_H = 48
 const ACTION_W = 126
@@ -95,6 +102,10 @@ function getColValue(c: Client, key: string): string {
     case 'admin':
       if (isPF) return ''
       return c.administratori.length > 0 ? String(c.administratori.length) : ''
+    case 'createdAt': {
+      const dt = toDateSafe(c.createdAt)
+      return dt ? formatDateRo(dt) : ''
+    }
     default: {
       const val = (c as unknown as Record<string, unknown>)[key]
       if (val === null || val === undefined) return ''
@@ -183,6 +194,16 @@ function applyFilters(clients: Client[], filters: Record<string, string[]>): Cli
 
 function applySort(clients: Client[], col: string | null, dir: 'asc' | 'desc'): Client[] {
   if (!col) return clients
+  // 'createdAt' se sortează cronologic (timestamp), nu lexicografic pe textul
+  // "zz.ll.aaaa" — altfel ordinea ar fi greșită (sortarea pe text ar pune
+  // "01.12.2025" înaintea lui "15.01.2026").
+  if (col === 'createdAt') {
+    return [...clients].sort((a, b) => {
+      const at = toDateSafe(a.createdAt)?.getTime() ?? Number.NEGATIVE_INFINITY
+      const bt = toDateSafe(b.createdAt)?.getTime() ?? Number.NEGATIVE_INFINITY
+      return dir === 'asc' ? at - bt : bt - at
+    })
+  }
   return [...clients].sort((a, b) => {
     const av = getColValue(a, col)
     const bv = getColValue(b, col)
@@ -312,6 +333,8 @@ export default function ClientiPage() {
   })
 
   const [showColsPanel, setShowColsPanel] = useState(false)
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   /* Tabs */
   const [openClientIds, setOpenClientIds] = useState<string[]>([])
@@ -440,6 +463,44 @@ export default function ClientiPage() {
     dispatchSort({ type: 'RESET' })
   }, [])
 
+  const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  /** Exportă .xlsx cu toate coloanele (inclusiv ascunse), peste TOȚI clienții workspace-ului
+   * (nu doar pagina curentă — vezi fetchAllClienti), cu aceleași filtre aplicate ca în tabel
+   * (tip PF/PJ, filtre pe coloană, opțional căutarea text), restricționat la intervalul ales. */
+  const handleExport = useCallback(async ({ start, end, respectSearch }: ExportRangeResult) => {
+    if (!workspaceId) return
+    setExporting(true)
+    try {
+      const all = await fetchAllClienti(workspaceId)
+      const q = debouncedQ.trim().toLowerCase()
+      const searchFiltered = respectSearch && q.length >= 2
+        ? all.filter(c => c.denumireLower.startsWith(q))
+        : all
+      const typeFiltered = typeFilter === 'all' ? searchFiltered : searchFiltered.filter(c => inferTipClient(c) === typeFilter)
+      const colFiltered = applyFilters(typeFiltered, colFilters)
+      const ranged = colFiltered.filter(c => {
+        const dt = toDateSafe(c.createdAt)
+        return dt !== null && dt >= start && dt < end
+      })
+
+      const exportColumns: ExportColumnSpec<Client>[] = COLUMNS.map(col => ({
+        key: col.key, label: col.label, width: col.width, type: col.exportType,
+        getValue: (c: Client) => col.key === 'createdAt' ? toDateSafe(c.createdAt) : getColValue(c, col.key),
+      }))
+
+      await exportRowsToXlsx({
+        filename: `clienti_${isoLocal(start)}_${isoLocal(new Date(end.getTime() - 86400000))}.xlsx`,
+        sheetName: 'Clienți',
+        columns: exportColumns,
+        rows: ranged,
+      })
+      setShowExportDialog(false)
+    } finally {
+      setExporting(false)
+    }
+  }, [workspaceId, debouncedQ, typeFilter, colFilters])
+
   const activeClient = activeTab !== 'list'
     ? openClients.find(c => c.id === activeTab) ?? null
     : null
@@ -464,6 +525,9 @@ export default function ClientiPage() {
               <div className="page-subtitle">Gestionare portofoliu clienți</div>
             </div>
             <div className="page-actions">
+              <button className="btn btn-ghost" onClick={() => setShowExportDialog(true)}>
+                <IconExport /> Exportă
+              </button>
               <button className="btn btn-primary" onClick={() => setModal('add')}>
                 + Adaugă client
               </button>
@@ -575,6 +639,16 @@ export default function ClientiPage() {
                 </div>
               </div>
             </>
+          )}
+          {showExportDialog && (
+            <ExportRangeDialog
+              title="Exportă clienți"
+              dateFieldOptions={[{ key: 'createdAt', label: 'Data creării' }]}
+              showSearchToggle={searchQuery.trim().length >= 2}
+              busy={exporting}
+              onConfirm={handleExport}
+              onClose={() => setShowExportDialog(false)}
+            />
           )}
           <div className="table-card">
             {activeTab !== 'list' && activeClient ? (

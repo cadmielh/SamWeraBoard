@@ -1,7 +1,8 @@
 import type { Dosar, FacturareConfig } from '../../types'
 import { STADIU_DOSAR_LABELS, obiecteCereriiText, DEFAULT_FACTURARE_CONFIG } from '../../types'
 import { calculDosarFinanciar } from '../../lib/dosareStats'
-import { toDateSafe, formatDateRo } from '../../lib/dates'
+import { toDateSafe, formatDateRo, parseIsoDateLocal } from '../../lib/dates'
+import type { ExportCellType } from '../../lib/xlsxExport'
 
 /* ── Column definitions — același tipar ca ClientiPage.tsx, pentru consistență ── */
 export interface ColDef {
@@ -14,30 +15,76 @@ export interface ColDef {
   /** Vizibilă/selectabilă doar când feature-ul 'facturareSamiAdi' e activ pe
    * workspace — vezi getVisibleColumns() și lib/features.ts. */
   samiAdiOnly?: boolean
+  /** Tipul celulei pentru exportul .xlsx (vezi getExportValue/exportRowsToXlsx) —
+   * implicit 'string' dacă absent. */
+  exportType?: ExportCellType
 }
 
 export const COLUMNS: ColDef[] = [
   { key: 'clientDenumire',     label: 'Client',            width: 200, fixed: true, sortable: true,  filterable: true  },
-  { key: 'createdAt',          label: 'Data creării',      width: 120, sortable: true,  filterable: true  },
+  { key: 'createdAt',          label: 'Data creării',      width: 120, sortable: true,  filterable: true, exportType: 'date' },
   { key: 'clientCui',          label: 'CUI',                width: 120, sortable: true,  filterable: true  },
   { key: 'nrInregistrareDosar', label: 'Nr. dosar',         width: 160, sortable: true,  filterable: true  },
   { key: 'obiecteCererii',     label: 'Obiectul cererii',   width: 240, sortable: true,  filterable: true  },
   { key: 'stadiu',             label: 'Stadiu',             width: 170, sortable: true,  filterable: true  },
   { key: 'responsabilNume',    label: 'Responsabil',        width: 140, sortable: true,  filterable: true  },
-  { key: 'facturat',           label: 'Facturat',           width: 100, sortable: true,  filterable: true  },
-  { key: 'dataFacturarii',     label: 'Data facturării',    width: 130, sortable: true,  filterable: true  },
-  { key: 'profitSami',         label: 'Profit Sami',        width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
-  { key: 'profitAdi',          label: 'Profit Adi',         width: 130, sortable: true,  filterable: false, samiAdiOnly: true },
+  { key: 'facturat',           label: 'Facturat',           width: 100, sortable: true,  filterable: true, exportType: 'boolean' },
+  { key: 'dataFacturarii',     label: 'Data facturării',    width: 130, sortable: true,  filterable: true, exportType: 'date' },
+  { key: 'profitSami',         label: 'Profit Sami',        width: 130, sortable: true,  filterable: false, samiAdiOnly: true, exportType: 'number' },
+  { key: 'profitAdi',          label: 'Profit Adi',         width: 130, sortable: true,  filterable: false, samiAdiOnly: true, exportType: 'number' },
   /* câmpuri suplimentare — ascunse implicit */
-  { key: 'dataAdmiterii',      label: 'Data admiterii',     width: 130, sortable: true,  filterable: true  },
-  { key: 'dataPlanificare',    label: 'Data planificare',   width: 140, sortable: true,  filterable: true  },
-  { key: 'taxeOnrc',           label: 'Taxe ONRC',          width: 120, sortable: true,  filterable: false, samiAdiOnly: true },
-  { key: 'certificatConstatator', label: 'Taxe Certificat Constatator', width: 150, sortable: true, filterable: false, samiAdiOnly: true },
-  { key: 'tarifClient',        label: 'Tarif client',       width: 120, sortable: true,  filterable: false },
-  { key: 'esteClientAdi',      label: 'Client Adi',         width: 110, sortable: true,  filterable: true, samiAdiOnly: true },
-  { key: 'semnaturaElectronica', label: 'Semnătură electronică', width: 140, sortable: true, filterable: true, samiAdiOnly: true },
+  { key: 'dataAdmiterii',      label: 'Data admiterii',     width: 130, sortable: true,  filterable: true, exportType: 'date' },
+  { key: 'dataPlanificare',    label: 'Data planificare',   width: 140, sortable: true,  filterable: true, exportType: 'date' },
+  { key: 'taxeOnrc',           label: 'Taxe ONRC',          width: 120, sortable: true,  filterable: false, samiAdiOnly: true, exportType: 'number' },
+  { key: 'certificatConstatator', label: 'Taxe Certificat Constatator', width: 150, sortable: true, filterable: false, samiAdiOnly: true, exportType: 'number' },
+  { key: 'tarifClient',        label: 'Tarif client',       width: 120, sortable: true,  filterable: false, exportType: 'number' },
+  { key: 'esteClientAdi',      label: 'Client Adi',         width: 110, sortable: true,  filterable: true, samiAdiOnly: true, exportType: 'boolean' },
+  { key: 'semnaturaElectronica', label: 'Semnătură electronică', width: 140, sortable: true, filterable: true, samiAdiOnly: true, exportType: 'boolean' },
   { key: 'observatii',         label: 'Observații',         width: 220, sortable: false, filterable: true  },
 ]
+
+/** Câmpurile de dată pe care se poate restricționa exportul (interval start-final) —
+ * vezi getDosarDateValue() mai jos și ExportRangeDialog. */
+export const DATE_FIELD_OPTIONS: { key: string; label: string }[] = [
+  { key: 'createdAt', label: 'Data creării' },
+  { key: 'dataAdmiterii', label: 'Data admiterii' },
+  { key: 'dataPlanificare', label: 'Data planificare' },
+  { key: 'dataFacturarii', label: 'Data facturării' },
+]
+
+/** Valoarea ca Date a unui câmp de dată ales pentru intervalul de export — createdAt/
+ * dataFacturarii sunt Firestore Timestamp la runtime (toDateSafe), dataAdmiterii/
+ * dataPlanificare sunt string ISO simplu yyyy-mm-dd introdus manual (parseIsoDateLocal,
+ * ca să nu pice o zi lângă frontiere din cauza UTC). */
+export function getDosarDateValue(d: Dosar, field: string): Date | null {
+  switch (field) {
+    case 'createdAt': return toDateSafe(d.createdAt)
+    case 'dataFacturarii': return toDateSafe(d.dataFacturarii)
+    case 'dataAdmiterii': return parseIsoDateLocal(d.dataAdmiterii)
+    case 'dataPlanificare': return parseIsoDateLocal(d.dataPlanificare)
+    default: return null
+  }
+}
+
+/** Versiune tipată a lui getColValue(), pentru exportul .xlsx — întoarce numere/date/
+ * booleane reale (sortabile/sumabile în Excel), nu text deja formatat. */
+export function getExportValue(d: Dosar, key: string, facturareConfig: FacturareConfig = DEFAULT_FACTURARE_CONFIG): unknown {
+  switch (key) {
+    case 'facturat': return d.facturat
+    case 'esteClientAdi': return d.esteClientAdi
+    case 'semnaturaElectronica': return d.semnaturaElectronica
+    case 'profitSami': return calculDosarFinanciar(d, facturareConfig).profitSami
+    case 'profitAdi': return calculDosarFinanciar(d, facturareConfig).profitAdi
+    case 'taxeOnrc': return d.taxeOnrc
+    case 'certificatConstatator': return d.certificatConstatator
+    case 'tarifClient': return d.tarifClient
+    case 'createdAt': return toDateSafe(d.createdAt)
+    case 'dataFacturarii': return toDateSafe(d.dataFacturarii)
+    case 'dataAdmiterii': return parseIsoDateLocal(d.dataAdmiterii)
+    case 'dataPlanificare': return parseIsoDateLocal(d.dataPlanificare)
+    default: return getColValue(d, key, facturareConfig)
+  }
+}
 
 /** Coloanele afișate/selectabile pentru workspace-ul curent — filtrează pe
  * `samiAdiOnly` în funcție de feature-ul 'facturareSamiAdi'. */

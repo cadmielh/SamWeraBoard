@@ -249,6 +249,15 @@ export function useClienti(workspaceId: string | null) {
   return { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove, legacyRawById }
 }
 
+/** Toți clienții workspace-ului, într-un singur `getDocs` fără `where` — folosit de
+ * exportul .xlsx, care trebuie să filtreze pe interval de date și pe filtrele active
+ * ale tabelului peste setul complet, nu doar peste pagina curent încărcată de
+ * `useClienti` (limit(100) + loadMore). Mirror al `fetchAllDosare` din lib/dosare.ts. */
+export async function fetchAllClienti(workspaceId: string): Promise<Client[]> {
+  const snap = await getDocs(clientiCol(workspaceId))
+  return snap.docs.map(d => clientFromDoc(d).client)
+}
+
 export const EMPTY_PERSOANA: Persoana = {
   calitate: '', cotaParticipare: '',
   cnp: '', nume: '', prenume: '', serie_numar: '',
