@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   collection, doc, setDoc, updateDoc,
   query, where, orderBy, limit, startAfter, getDocs,
@@ -13,6 +13,7 @@ import { sanitizeForSave, savePii, deleteClientOnServer } from './pii'
 export type ClientInput = Omit<Client, 'id' | 'denumireLower' | 'createdAt' | 'createdBy'>
 
 const PAGE_SIZE = 100
+const SEARCH_LIMIT = 50
 
 /** Câmpurile de societate obligatorii pentru generarea documentelor — folosit
  * atât de ClientModal (creare/editare client), cât și de MultiPersonPreview
@@ -66,6 +67,129 @@ export async function denumireExists(workspaceId: string, denumire: string, excl
   const q = query(clientiCol(workspaceId), where('denumireLower', '==', lower), limit(5))
   const snap = await getDocs(q)
   return snap.docs.some(d => d.id !== excludeId)
+}
+
+/** Căutare pe server a clienților, independentă de pagina încărcată în
+ * `useClienti` — prefix pe `denumireLower` (ca în pagina Clienți) plus, când
+ * textul arată ca un CIF, prefix pe `codFiscal` (cu și fără „RO", pentru că
+ * valoarea stocată poate avea oricare din cele două forme). Minim 2 caractere:
+ * mai puțin ar aduce aproape toată colecția la fiecare tastă.
+ *
+ * Întoarce rândurile brute (client + sediul social nemigrat) ca `useClienti`
+ * să poată actualiza `legacyRawById`; apelanții care nu au nevoie de el
+ * folosesc `searchClienti`. */
+async function searchClientiDocs(
+  workspaceId: string, searchQuery: string
+): Promise<{ client: Client; legacyRaw: string | null }[]> {
+  const q2 = searchQuery.trim().toLowerCase()
+  if (q2.length < 2) return []
+
+  const queries = [
+    query(
+      clientiCol(workspaceId),
+      where('denumireLower', '>=', q2),
+      where('denumireLower', '<=', q2 + '\uf8ff'),
+      limit(SEARCH_LIMIT)
+    ),
+  ]
+  const cifDigits = q2.replace(/^ro/, '')
+  if (/^\d{2,10}$/.test(cifDigits)) {
+    for (const prefix of [cifDigits, `RO${cifDigits}`]) {
+      queries.push(query(
+        clientiCol(workspaceId),
+        where('codFiscal', '>=', prefix),
+        where('codFiscal', '<=', prefix + '\uf8ff'),
+        limit(SEARCH_LIMIT)
+      ))
+    }
+  }
+
+  const snaps = await Promise.all(queries.map(q => getDocs(q)))
+  const seen = new Set<string>()
+  const rows: { client: Client; legacyRaw: string | null }[] = []
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      if (seen.has(d.id)) continue
+      seen.add(d.id)
+      rows.push(clientFromDoc(d))
+    }
+  }
+  return rows
+}
+
+/** Vezi searchClientiDocs — varianta publică, fără rândurile brute. */
+export async function searchClienti(workspaceId: string, searchQuery: string): Promise<Client[]> {
+  const rows = await searchClientiDocs(workspaceId, searchQuery)
+  return rows.map(r => r.client)
+}
+
+/** Potrivire locală (substring, nu doar prefix) peste clienții deja încărcați.
+ * Tolerantă la câmpuri lipsă: documentele vechi/importate pot să nu aibă
+ * `denumireLower` sau `codFiscal`, iar un `.includes` pe undefined ar arunca
+ * în timpul randării, nu doar ar rata potrivirea. */
+export function clientMatchesQuery(c: Client, lowerQuery: string): boolean {
+  if (!lowerQuery) return true
+  const denumire = (c.denumireLower || c.denumire || '').toLowerCase()
+  if (denumire.includes(lowerQuery)) return true
+  const cif = (c.codFiscal || '').toLowerCase()
+  return cif.length > 0 && cif.includes(lowerQuery)
+}
+
+/**
+ * Opțiunile unui combobox de clienți: clienții deja încărcați (pagina curentă
+ * a `useClienti`, filtrată local prin substring) PLUS rezultatele căutării pe
+ * server, de-duplicate.
+ *
+ * Fără partea de server, orice combobox vedea doar primii PAGE_SIZE clienți
+ * după `createdAt desc`, așa că un client mai vechi pur și simplu nu exista
+ * pentru „Dosar nou"/„Sarcină nouă"/„Generare documente" — deși apărea în
+ * pagina Clienți, care caută pe server. Căutarea rulează doar cât dropdown-ul
+ * e deschis (`enabled`) și debounced, ca să nu facă citiri la fiecare tastă.
+ */
+export function useClientOptions(
+  workspaceId: string | null,
+  loaded: Client[],
+  rawQuery: string,
+  enabled: boolean,
+  max = 30
+): { options: Client[]; searching: boolean } {
+  const q = rawQuery.trim().toLowerCase()
+  const [remote, setRemote] = useState<Client[]>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    if (!workspaceId || !enabled || q.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRemote([]); setSearching(false)
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    const timer = setTimeout(() => {
+      searchClienti(workspaceId, q)
+        .then(rows => { if (!cancelled) setRemote(rows) })
+        .catch(() => { if (!cancelled) setRemote([]) })
+        .finally(() => { if (!cancelled) setSearching(false) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [workspaceId, q, enabled])
+
+  const options = useMemo(() => {
+    if (!q) return loaded.slice(0, max)
+    const local = loaded.filter(c => clientMatchesQuery(c, q))
+    const seen = new Set(local.map(c => c.id))
+    const merged = [...local]
+    for (const c of remote) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      merged.push(c)
+    }
+    return merged.slice(0, max)
+  }, [loaded, remote, q, max])
+
+  // Doar cât nu avem nimic de arătat — altfel lista ar clipi în spinner la
+  // fiecare tastă, deși potrivirile locale sunt deja pe ecran.
+  return { options, searching: searching && options.length === 0 }
 }
 
 export function useClienti(workspaceId: string | null) {
@@ -133,16 +257,7 @@ export function useClienti(workspaceId: string | null) {
   }, [loadingMore])
 
   const search = useCallback(async (workspaceId: string, searchQuery: string): Promise<Client[]> => {
-    const q2 = searchQuery.trim().toLowerCase()
-    if (!q2 || q2.length < 2) return []
-    const q = query(
-      clientiCol(workspaceId),
-      where('denumireLower', '>=', q2),
-      where('denumireLower', '<=', q2 + '\uf8ff'),
-      limit(50)
-    )
-    const snap = await getDocs(q)
-    const rows = snap.docs.map(clientFromDoc)
+    const rows = await searchClientiDocs(workspaceId, searchQuery)
     mergeLegacyRaw(rows)
     return rows.map(r => r.client)
   }, [])

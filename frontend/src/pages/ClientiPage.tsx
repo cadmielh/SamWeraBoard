@@ -475,7 +475,7 @@ export default function ClientiPage() {
       const all = await fetchAllClienti(workspaceId)
       const q = debouncedQ.trim().toLowerCase()
       const searchFiltered = respectSearch && q.length >= 2
-        ? all.filter(c => c.denumireLower.startsWith(q))
+        ? all.filter(c => (c.denumireLower ?? '').startsWith(q))
         : all
       const typeFiltered = typeFilter === 'all' ? searchFiltered : searchFiltered.filter(c => inferTipClient(c) === typeFilter)
       const colFiltered = applyFilters(typeFiltered, colFilters)

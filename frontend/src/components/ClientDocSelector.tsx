@@ -1,9 +1,13 @@
 import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Client } from '../types'
+import { useApp } from '../AppContext'
+import { useClientOptions } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 
 interface Props {
+  /** Pagina de clienți deja încărcată (useClienti) — completată, pe durata
+   * căutării, cu rezultate de pe server; vezi useClientOptions. */
   clients: Client[]
   loading: boolean
   onSelect: (client: Client) => void
@@ -14,19 +18,18 @@ interface Props {
 }
 
 export default function ClientDocSelector({ clients, loading, onSelect, value }: Props) {
+  const { activeWorkspace } = useApp()
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { open, position, containerRef, openAt, close } = usePositionedDropdown({
     matchTriggerWidth: true, onScroll: 'reposition',
   })
-
-  const filtered = query.trim().length < 1
-    ? clients.slice(0, 40)
-    : clients.filter(c =>
-        c.denumireLower.includes(query.toLowerCase()) ||
-        c.codFiscal.includes(query)
-      ).slice(0, 30)
+  // Lista nu se mai oprește la pagina încărcată de useClienti: de la 2
+  // caractere, căutarea pe server aduce și clienții din afara ei.
+  const { options: filtered, searching: remoteSearching } = useClientOptions(
+    activeWorkspace?.id ?? null, clients, query, open, 40
+  )
 
   const handleFocus = () => {
     setSearching(true)
@@ -44,12 +47,12 @@ export default function ClientDocSelector({ clients, loading, onSelect, value }:
       background: 'var(--surface)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)',
       boxShadow: 'var(--sh-md)', maxHeight: 300, overflow: 'auto',
     }}>
-      {loading && (
+      {(loading || remoteSearching) && (
         <div style={{ padding: '.75rem', fontSize: '.85rem', color: 'var(--s400)', textAlign: 'center' }}>
           <span className="spin" style={{ display: 'inline-block' }} />
         </div>
       )}
-      {!loading && filtered.length === 0 && (
+      {!loading && !remoteSearching && filtered.length === 0 && (
         <div style={{ padding: '.75rem', fontSize: '.85rem', color: 'var(--s400)', textAlign: 'center' }}>
           Niciun client găsit
         </div>

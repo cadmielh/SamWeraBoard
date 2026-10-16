@@ -1,9 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { Client } from '../types'
+import { useApp } from '../AppContext'
+import { useClientOptions } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 
 interface Props {
+  /** Pagina de clienți deja încărcată (useClienti) — completată, pe durata
+   * căutării, cu rezultate de pe server; vezi useClientOptions. */
   clients: Client[]
   loading: boolean
   /** Denumirea afișată — fie a clientului legat, fie textul liber. */
@@ -22,20 +26,20 @@ interface Props {
  * Dosare — nu ține nimic specific unui singur modul.
  */
 export default function ClientLinkPicker({ clients, loading, value, onSelectClient, onFreeText, disabled }: Props) {
+  const { activeWorkspace } = useApp()
   const [query, setQuery] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
   const { open, position, containerRef, openAt, close } = usePositionedDropdown({
     matchTriggerWidth: true, onScroll: 'reposition',
   })
+  const { options: filtered, searching } = useClientOptions(
+    activeWorkspace?.id ?? null, clients, query, open && !disabled
+  )
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery(value)
   }, [value])
-
-  const filtered = query.trim().length < 1
-    ? clients.slice(0, 30)
-    : clients.filter(c => c.denumireLower.includes(query.toLowerCase()) || c.codFiscal.includes(query)).slice(0, 30)
 
   const handleFocus = () => { if (inputRef.current) openAt(inputRef.current) }
 
@@ -54,8 +58,8 @@ export default function ClientLinkPicker({ clients, loading, value, onSelectClie
 
   const dropdown = open && !disabled && (
     <div className="combo-dropdown" style={{ position: 'fixed', top: position?.top, left: position?.left, width: position?.width, zIndex: 9999, maxHeight: 260 }}>
-      {loading && <div className="combo-opt" style={{ cursor: 'default', textAlign: 'center' }}><span className="spin spin-dark" /></div>}
-      {!loading && filtered.length === 0 && (
+      {(loading || searching) && <div className="combo-opt" style={{ cursor: 'default', textAlign: 'center' }}><span className="spin spin-dark" /></div>}
+      {!loading && !searching && filtered.length === 0 && (
         <div className="combo-opt" style={{ cursor: 'default', color: 'var(--s400)' }}>
           Niciun client găsit — poți folosi „{query.trim() || '...'}" ca denumire liberă
         </div>
