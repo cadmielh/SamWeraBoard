@@ -25,11 +25,41 @@ export interface Anexa1FillerHandle {
 
 type ElRef = (el: HTMLElement | null) => void
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({ title, children, accent }: { title: string; children: React.ReactNode; accent?: boolean }) {
   return (
-    <div style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
-      <div style={{ fontWeight: 700, fontSize: '.75rem', color: 'var(--s600)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</div>
+    <div style={{
+      border: `1px solid ${accent ? 'var(--p200)' : 'var(--s200)'}`,
+      background: accent ? 'var(--p50)' : undefined,
+      borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem',
+    }}>
+      <div style={{ fontWeight: 700, fontSize: '.75rem', color: accent ? 'var(--p700)' : 'var(--s600)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</div>
       {children}
+    </div>
+  )
+}
+
+// Variantă mai vizibilă a alegerii (butoane mari, nu radio mici) — pentru decizii obligatorii importante,
+// mai ales una cu valoare precompletată (ușor de trecut cu vederea dacă arată ca un simplu radio).
+function ToggleButtonRow({ label, options, value, onChange }: {
+  label: string
+  options: { value: string; label: string }[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="field">
+      <label className="field-label">{label}</label>
+      <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+        {options.map(o => (
+          <button
+            key={o.value} type="button"
+            className={`btn btn-sm ${value === o.value ? 'btn-primary' : 'btn-outline-primary'}`}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -88,8 +118,13 @@ const Anexa1Filler = forwardRef<Anexa1FillerHandle, Props>(function Anexa1Filler
   // eslint-disable-next-line react-hooks/refs
   const bindRef = (id: string): ElRef => el => { fieldRefs.current[id] = el }
 
+  const isProfit = state.impozitTip === 'profit'
   const buildValidationChecks = (): { invalid: boolean; id: string; message: string }[] => [
-    { invalid: !state.dataLuareEvidentaProfit.trim(), id: 'data-luare-evidenta', message: 'data luării în evidență (1.1)' },
+    {
+      invalid: isProfit ? !state.dataLuareEvidentaProfit.trim() : !state.dataLuareEvidentaMicro.trim(),
+      id: 'data-luare-evidenta',
+      message: isProfit ? 'data luării în evidență (1.1)' : 'data luării în evidență (2.1)',
+    },
     { invalid: state.declarantIndex == null, id: 'declarant-choice', message: 'persoana declarantului' },
   ]
 
@@ -123,16 +158,30 @@ const Anexa1Filler = forwardRef<Anexa1FillerHandle, Props>(function Anexa1Filler
         </div>
       </SectionCard>
 
-      <SectionCard title="1. Impozit pe profit">
-        <div ref={bindRef('data-luare-evidenta')}>
-          <DateFieldInput label="1.1. Luare în evidență începând cu data de" value={state.dataLuareEvidentaProfit} onChange={v => patch({ dataLuareEvidentaProfit: v })} />
-        </div>
-        <RadioRow
-          label="1.2. Perioada fiscală"
-          value={state.perioadaProfit}
-          onChange={v => patch({ perioadaProfit: v as Anexa1FormState['perioadaProfit'] })}
-          options={[{ value: 'trimestriala', label: 'Trimestrială' }, { value: 'anuala', label: 'Anuală' }]}
+      <SectionCard title="Impozit pe profit / microîntreprinderi" accent>
+        <ToggleButtonRow
+          label={'Tip de impozit — verifică alegerea, e precompletată cu „Impozit pe profit”'}
+          value={state.impozitTip}
+          onChange={v => patch({ impozitTip: v as Anexa1FormState['impozitTip'] })}
+          options={[{ value: 'profit', label: '1. Impozit pe profit' }, { value: 'micro', label: '2. Impozit pe veniturile microîntreprinderilor' }]}
         />
+        {isProfit ? (
+          <>
+            <div ref={bindRef('data-luare-evidenta')}>
+              <DateFieldInput label="1.1. Luare în evidență începând cu data de" value={state.dataLuareEvidentaProfit} onChange={v => patch({ dataLuareEvidentaProfit: v })} />
+            </div>
+            <RadioRow
+              label="1.2. Perioada fiscală"
+              value={state.perioadaProfit}
+              onChange={v => patch({ perioadaProfit: v as Anexa1FormState['perioadaProfit'] })}
+              options={[{ value: 'trimestriala', label: 'Trimestrială' }, { value: 'anuala', label: 'Anuală' }]}
+            />
+          </>
+        ) : (
+          <div ref={bindRef('data-luare-evidenta')}>
+            <DateFieldInput label="2.1. Luare în evidență începând cu data de" value={state.dataLuareEvidentaMicro} onChange={v => patch({ dataLuareEvidentaMicro: v })} />
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard title="Declarant">
@@ -155,18 +204,11 @@ const Anexa1Filler = forwardRef<Anexa1FillerHandle, Props>(function Anexa1Filler
       </SectionCard>
 
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowOptional(v => !v)} style={{ alignSelf: 'flex-start' }}>
-        {showOptional ? '▴ Ascunde' : '▾ Arată'} secțiunile opționale (2–4.5: microîntreprinderi, salarii și contribuții sociale, TVA)
+        {showOptional ? '▴ Ascunde' : '▾ Arată'} secțiunile opționale (3–4.5: salarii și contribuții sociale, TVA)
       </button>
 
       {showOptional && (
         <>
-          <SectionCard title="2. Impozit pe veniturile microîntreprinderilor">
-            <CheckboxRow label="Se aplică" checked={state.impozitMicro} onChange={v => patch({ impozitMicro: v })} />
-            {state.impozitMicro && (
-              <DateFieldInput label="2.1. Luare în evidență începând cu data de" value={state.dataLuareEvidentaMicro} onChange={v => patch({ dataLuareEvidentaMicro: v })} />
-            )}
-          </SectionCard>
-
           <SectionCard title="3. Impozit pe salarii și contribuții sociale">
             <CheckboxRow label="3.1.1. Număr mediu de salariați estimat de până la 3 salariați exclusiv" checked={state.salariatiSub3} onChange={v => patch({ salariatiSub3: v })} />
             <CheckboxRow label="3.1.2. Venit total estimat de până la 100.000 euro" checked={state.venitSub100k} onChange={v => patch({ venitSub100k: v })} />

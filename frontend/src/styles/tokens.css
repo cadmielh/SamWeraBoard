@@ -504,6 +504,14 @@ body {
   color:var(--s400); text-transform:uppercase; letter-spacing:.04em;
 }
 .btn--cols-active { border-color:var(--p200); color:var(--p600); background:var(--p50); }
+
+/* ── Export columns picker (ExportRangeDialog) ── */
+.export-cols__head { display:flex; align-items:center; justify-content:space-between; margin-bottom:.375rem; }
+.export-cols-grid {
+  display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0 .5rem;
+  max-height:220px; overflow-y:auto; border:1.5px solid var(--s200); border-radius:var(--r-md); padding:.25rem;
+}
+.export-cols-grid .cols-panel__item { padding:.3rem .5rem; border-radius:var(--r-sm); }
 .cols-badge {
   background:var(--p500); color:#fff; font-size:.65rem; font-weight:700;
   border-radius:var(--r-full); padding:.05rem .35rem; margin-left:.25rem;

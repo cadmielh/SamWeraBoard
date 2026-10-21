@@ -4,12 +4,12 @@ import type { IDFields } from '../lib/api'
 import { EMPTY_PERSOANA } from '../lib/clienti'
 import { isValidCNP } from '../lib/cnp'
 import { sexFromCnp } from '../lib/sex'
-import { roDateToISO, isoDateToRo } from '../lib/dates'
 import { JUDETE_ROMANIA } from '../lib/counties'
 import { CETATENII } from '../lib/citizenships'
 import MiniOCR from './MiniOCR'
 import Modal from './Modal'
 import Combobox from './Combobox'
+import DateFieldInput from './DateFieldInput'
 
 interface Props {
   initial: Persoana | null
@@ -109,14 +109,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               <input className="field-input" value={p.prenume} onChange={e => set('prenume', e.target.value)} />
             </div>
 
-            <div className="field">
-              <label className="field-label">Data nașterii</label>
-              <input
-                className="field-input" type="date"
-                value={roDateToISO(p.data_nasterii)}
-                onChange={e => set('data_nasterii', isoDateToRo(e.target.value))}
-              />
-            </div>
+            <DateFieldInput label="Data nașterii" value={p.data_nasterii} onChange={v => set('data_nasterii', v)} showToday={false} />
             <div className="field">
               <label className="field-label">Locul nașterii</label>
               <input className="field-input" value={p.locul_nasterii} onChange={e => set('locul_nasterii', e.target.value)} />
@@ -155,22 +148,8 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               <input className="field-input" value={p.adresa} onChange={e => set('adresa', e.target.value)} />
             </div>
 
-            <div className="field">
-              <label className="field-label">Valabil de la</label>
-              <input
-                className="field-input" type="date"
-                value={roDateToISO(p.valabila_de_la)}
-                onChange={e => set('valabila_de_la', isoDateToRo(e.target.value))}
-              />
-            </div>
-            <div className="field">
-              <label className="field-label">Valabil până la</label>
-              <input
-                className="field-input" type="date"
-                value={roDateToISO(p.valabila_pana_la)}
-                onChange={e => set('valabila_pana_la', isoDateToRo(e.target.value))}
-              />
-            </div>
+            <DateFieldInput label="Valabil de la" value={p.valabila_de_la} onChange={v => set('valabila_de_la', v)} showToday={false} />
+            <DateFieldInput label="Valabil până la" value={p.valabila_pana_la} onChange={v => set('valabila_pana_la', v)} showToday={false} />
 
             <div className="field">
               <label className="field-label">Emis de</label>

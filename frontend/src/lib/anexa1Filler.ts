@@ -55,16 +55,17 @@ export function splitDigitBoxes(prefix: string, dataRo: string): Record<string, 
 }
 
 export interface Anexa1FormState {
-  // Obligatorii
+  // Obligatorii — alegere exclusivă între 1 (impozit pe profit) și 2 (impozit pe veniturile
+  // microîntreprinderilor): exact unul dintre cele două se aplică oricărei firme, niciodată amândouă.
+  impozitTip: 'profit' | 'micro'
   dataLuareEvidentaProfit: string
   perioadaProfit: 'trimestriala' | 'anuala'
+  dataLuareEvidentaMicro: string
   declarantIndex: number | null
   // Opționale, dar vizibile mereu (nu în panoul pliabil)
   nrCerere: string
   dataCerere: string
-  // Panoul opțional (punctele 2-4.5)
-  impozitMicro: boolean
-  dataLuareEvidentaMicro: string
+  // Panoul opțional (punctele 3-4.5)
   salariatiSub3: boolean
   venitSub100k: boolean
   salariiPerioada: 'lunara' | 'trimestriala' | ''
@@ -84,13 +85,13 @@ export interface Anexa1FormState {
 }
 
 export const EMPTY_ANEXA1_STATE: Anexa1FormState = {
+  impozitTip: 'profit',
   dataLuareEvidentaProfit: '',
   perioadaProfit: 'trimestriala',
+  dataLuareEvidentaMicro: '',
   declarantIndex: null,
   nrCerere: '',
   dataCerere: '',
-  impozitMicro: false,
-  dataLuareEvidentaMicro: '',
   salariatiSub3: false,
   venitSub100k: false,
   salariiPerioada: '',
@@ -139,20 +140,21 @@ export function buildAnexa1DocxData(state: Anexa1FormState, client?: Partial<Cli
   set('CAMP_NR_CERERE', state.nrCerere || '.'.repeat(15))
   set('CAMP_DATA_CERERE', state.dataCerere || '.'.repeat(17))
 
-  // 1. Impozit pe profit — presupus mereu aplicabil în zona obligatorie (nicio alegere în UI).
-  set('BIF_IMPOZIT_PROFIT', BIFA.da)
-  Object.assign(replacements, splitDigitBoxes('DLEP', state.dataLuareEvidentaProfit))
-  set('BIF_PERIOADA_TRIM', bif(state.perioadaProfit === 'trimestriala'))
-  set('BIF_PERIOADA_ANUALA', bif(state.perioadaProfit === 'anuala'))
+  // 1. Impozit pe profit vs. 2. Impozit pe veniturile microîntreprinderilor — alegere exclusivă,
+  // obligatorie (vezi Anexa1FormState.impozitTip): niciodată amândouă bifate deodată.
+  const isProfit = state.impozitTip === 'profit'
+  set('BIF_IMPOZIT_PROFIT', bif(isProfit))
+  Object.assign(replacements, splitDigitBoxes('DLEP', isProfit ? state.dataLuareEvidentaProfit : ''))
+  set('BIF_PERIOADA_TRIM', bif(isProfit && state.perioadaProfit === 'trimestriala'))
+  set('BIF_PERIOADA_ANUALA', bif(isProfit && state.perioadaProfit === 'anuala'))
+
+  set('BIF_IMPOZIT_MICRO', bif(!isProfit))
+  Object.assign(replacements, splitDigitBoxes('DLEM', !isProfit ? state.dataLuareEvidentaMicro : ''))
 
   const candidates = declarantCandidatesAnexa1(client)
   const declarant = state.declarantIndex != null ? candidates[state.declarantIndex] : undefined
   set('DECLARANT_NUME_COMPLET', declarant?.numeComplet ?? '')
   set('DECLARANT_FUNCTIE', declarant?.functie ?? '')
-
-  // 2. Microîntreprinderi
-  set('BIF_IMPOZIT_MICRO', bif(state.impozitMicro))
-  Object.assign(replacements, splitDigitBoxes('DLEM', state.impozitMicro ? state.dataLuareEvidentaMicro : ''))
 
   // 3. Impozit pe salarii și contribuții sociale
   set('BIF_SALARIATI_SUB3', bif(state.salariatiSub3))

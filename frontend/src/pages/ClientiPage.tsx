@@ -468,7 +468,7 @@ export default function ClientiPage() {
   /** Exportă .xlsx cu toate coloanele (inclusiv ascunse), peste TOȚI clienții workspace-ului
    * (nu doar pagina curentă — vezi fetchAllClienti), cu aceleași filtre aplicate ca în tabel
    * (tip PF/PJ, filtre pe coloană, opțional căutarea text), restricționat la intervalul ales. */
-  const handleExport = useCallback(async ({ start, end, respectSearch }: ExportRangeResult) => {
+  const handleExport = useCallback(async ({ start, end, respectSearch, selectedColumnKeys }: ExportRangeResult) => {
     if (!workspaceId) return
     setExporting(true)
     try {
@@ -484,7 +484,8 @@ export default function ClientiPage() {
         return dt !== null && dt >= start && dt < end
       })
 
-      const exportColumns: ExportColumnSpec<Client>[] = COLUMNS.map(col => ({
+      const selectedKeySet = new Set(selectedColumnKeys)
+      const exportColumns: ExportColumnSpec<Client>[] = COLUMNS.filter(col => selectedKeySet.has(col.key)).map(col => ({
         key: col.key, label: col.label, width: col.width, type: col.exportType,
         getValue: (c: Client) => col.key === 'createdAt' ? toDateSafe(c.createdAt) : getColValue(c, col.key),
       }))
@@ -645,6 +646,7 @@ export default function ClientiPage() {
               title="Exportă clienți"
               dateFieldOptions={[{ key: 'createdAt', label: 'Data creării' }]}
               showSearchToggle={searchQuery.trim().length >= 2}
+              columnOptions={COLUMNS.map(col => ({ key: col.key, label: col.label }))}
               busy={exporting}
               onConfirm={handleExport}
               onClose={() => setShowExportDialog(false)}

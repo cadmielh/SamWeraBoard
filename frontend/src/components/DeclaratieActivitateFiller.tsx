@@ -8,8 +8,8 @@ import {
 import type { AdresaStructurata, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/declaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { JUDETE_ROMANIA } from '../lib/counties'
-import { roDateToISO, isoDateToRo } from '../lib/dates'
 import Combobox from './Combobox'
+import DateFieldInput from './DateFieldInput'
 
 export interface DeclaratieFormValue {
   replacements: Record<string, string>
@@ -158,13 +158,8 @@ function FieldDate({ label, value, onChange, flex = 1, fieldRef }: {
   label: string; value: string; onChange: (v: string) => void; flex?: number; fieldRef?: ElRef
 }) {
   return (
-    <div className="field" style={{ flex, minWidth: 0 }}>
-      <label className="field-label">{label}</label>
-      <input
-        ref={fieldRef} className="field-input" type="date"
-        value={roDateToISO(value)}
-        onChange={e => onChange(isoDateToRo(e.target.value))}
-      />
+    <div ref={fieldRef} style={{ flex, minWidth: 0 }}>
+      <DateFieldInput label={label} value={value} onChange={onChange} showToday={false} />
     </div>
   )
 }

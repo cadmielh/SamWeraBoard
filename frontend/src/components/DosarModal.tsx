@@ -10,6 +10,7 @@ import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import ClientLinkPicker from './ClientLinkPicker'
 import ObiectCereriiTags from './ObiectCereriiTags'
 import ResponsabilCombobox from './ResponsabilCombobox'
+import { IsoDateFieldInput } from './DateFieldInput'
 import Modal from './Modal'
 
 interface Props {
@@ -175,14 +176,8 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                 <input className="field-input" placeholder="ex: 3088169/05.08.2026" value={form.nrInregistrareDosar} onChange={e => set('nrInregistrareDosar', e.target.value)} />
               </div>
 
-              <div className="field">
-                <label className="field-label">Data admiterii</label>
-                <input className="field-input" type="date" value={form.dataAdmiterii ?? ''} onChange={e => set('dataAdmiterii', e.target.value || null)} />
-              </div>
-              <div className="field">
-                <label className="field-label">Data planificare</label>
-                <input className="field-input" type="date" value={form.dataPlanificare ?? ''} onChange={e => set('dataPlanificare', e.target.value || null)} />
-              </div>
+              <IsoDateFieldInput label="Data admiterii" value={form.dataAdmiterii} onChange={v => set('dataAdmiterii', v)} showToday={false} />
+              <IsoDateFieldInput label="Data planificare" value={form.dataPlanificare} onChange={v => set('dataPlanificare', v)} showToday={false} />
 
               <div className="form-subsection-label">Financiar</div>
 

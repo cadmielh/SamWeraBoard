@@ -7,6 +7,7 @@ import { useApp } from '../../AppContext'
 import ClientLinkPicker from '../ClientLinkPicker'
 import DosarLinkPicker from '../DosarLinkPicker'
 import ResponsabilCombobox from '../ResponsabilCombobox'
+import { IsoDateFieldInput } from '../DateFieldInput'
 import Modal from '../Modal'
 import IconTrash from '../IconTrash'
 
@@ -163,10 +164,7 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
               </select>
             </div>
 
-            <div className="field">
-              <label className="field-label">Termen limită</label>
-              <input className="field-input" type="date" value={form.termenLimita ?? ''} onChange={e => set('termenLimita', e.target.value || null)} />
-            </div>
+            <IsoDateFieldInput label="Termen limită" value={form.termenLimita} onChange={v => set('termenLimita', v)} showToday={false} />
 
             <div className="field full">
               <label className="field-label">Responsabil</label>

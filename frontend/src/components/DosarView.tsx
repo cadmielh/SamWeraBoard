@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Dosar, DosarInput, ObiectCerereItem, StadiuDosar } from '../types'
 import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR } from '../types'
-import { isoDateToRo, toDateSafe, formatDateRo } from '../lib/dates'
+import { isoDateToRo, roDateToISO, toDateSafe, formatDateRo } from '../lib/dates'
 import { formatRon } from '../lib/format'
 import { useDosarFinanciar } from '../lib/useDosarFinanciar'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
@@ -14,6 +14,7 @@ import ResponsabilCombobox from './ResponsabilCombobox'
 import DosarSarciniList from './dosare/DosarSarciniList'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
+import DateFieldInput from './DateFieldInput'
 
 interface Props {
   dosar: Dosar
@@ -35,29 +36,43 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
    * pentru câmpuri de tip dată — inputul tot are nevoie de `value` în format ISO). */
   displayValue?: string
 }) {
+  const isDate = type === 'date'
   const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(value)
+  const [val, setVal] = useState(isDate ? isoDateToRo(value) : value)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const dateWrapRef = useRef<HTMLDivElement>(null)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (!editing) setVal(value) }, [value, editing])
-  useEffect(() => { if (editing) (multiline ? textareaRef.current : inputRef.current)?.focus() }, [editing, multiline])
+  useEffect(() => { if (!editing) setVal(isDate ? isoDateToRo(value) : value) }, [value, editing, isDate])
+  useEffect(() => {
+    if (!editing) return
+    if (isDate) dateWrapRef.current?.querySelector('input')?.focus()
+    else (multiline ? textareaRef.current : inputRef.current)?.focus()
+  }, [editing, multiline, isDate])
 
   const commit = async () => {
-    if (val === value) { setEditing(false); return }
+    const toSave = isDate ? roDateToISO(val) : val
+    if (toSave === value) { setEditing(false); return }
     setSaving(true)
-    try { await onSave(val); setEditing(false) } finally { setSaving(false) }
+    try { await onSave(toSave); setEditing(false) } finally { setSaving(false) }
   }
-  const cancel = () => { setVal(value); setEditing(false) }
+  const cancel = () => { setVal(isDate ? isoDateToRo(value) : value); setEditing(false) }
 
   if (editing) {
     return (
       <div className="cv2-info-row">
         <span className="cv2-info-label">{label}</span>
         <div className="cv2-inline-edit">
-          {multiline ? (
+          {isDate ? (
+            <div
+              ref={dateWrapRef} style={{ flex: 1 }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit() } else if (e.key === 'Escape') cancel() }}
+            >
+              <DateFieldInput value={val} onChange={setVal} showToday={false} />
+            </div>
+          ) : multiline ? (
             <textarea ref={textareaRef} className="field-textarea" rows={2} value={val}
               onChange={e => setVal(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') cancel() }} />

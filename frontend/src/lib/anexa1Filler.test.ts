@@ -91,18 +91,35 @@ describe('buildAnexa1DocxData', () => {
     expect(buildAnexa1DocxData(EMPTY_ANEXA1_STATE, { tipClient: 'PF' }).replacements['{{BIF_PERSOANA_FIZICA}}']).toBe('☒')
   })
 
-  it('1. Impozit pe profit: mereu bifat în zona obligatorie, fără alegere în UI', () => {
-    const { replacements } = buildAnexa1DocxData(EMPTY_ANEXA1_STATE, { tipClient: 'PJ' })
-    expect(replacements['{{BIF_IMPOZIT_PROFIT}}']).toBe('☒')
+  it('1 vs 2: alegere exclusivă profit/micro, niciodată amândouă bifate', () => {
+    const profit = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, impozitTip: 'profit' }, { tipClient: 'PJ' }).replacements
+    expect(profit['{{BIF_IMPOZIT_PROFIT}}']).toBe('☒')
+    expect(profit['{{BIF_IMPOZIT_MICRO}}']).toBe('☐')
+    const micro = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, impozitTip: 'micro' }, { tipClient: 'PJ' }).replacements
+    expect(micro['{{BIF_IMPOZIT_PROFIT}}']).toBe('☐')
+    expect(micro['{{BIF_IMPOZIT_MICRO}}']).toBe('☒')
   })
 
-  it('1.2 perioada fiscală: exclusivitate trimestrială/anuală', () => {
-    const trim = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, perioadaProfit: 'trimestriala' }, { tipClient: 'PJ' }).replacements
+  it('1.2 perioada fiscală: exclusivitate trimestrială/anuală, doar când e ales 1 (profit)', () => {
+    const trim = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, impozitTip: 'profit', perioadaProfit: 'trimestriala' }, { tipClient: 'PJ' }).replacements
     expect(trim['{{BIF_PERIOADA_TRIM}}']).toBe('☒')
     expect(trim['{{BIF_PERIOADA_ANUALA}}']).toBe('☐')
-    const anuala = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, perioadaProfit: 'anuala' }, { tipClient: 'PJ' }).replacements
+    const anuala = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, impozitTip: 'profit', perioadaProfit: 'anuala' }, { tipClient: 'PJ' }).replacements
     expect(anuala['{{BIF_PERIOADA_TRIM}}']).toBe('☐')
     expect(anuala['{{BIF_PERIOADA_ANUALA}}']).toBe('☒')
+  })
+
+  it('1.2 perioada fiscală: niciuna bifată când e ales 2 (micro) — secțiunea nu se aplică', () => {
+    const micro = buildAnexa1DocxData({ ...EMPTY_ANEXA1_STATE, impozitTip: 'micro', perioadaProfit: 'trimestriala' }, { tipClient: 'PJ' }).replacements
+    expect(micro['{{BIF_PERIOADA_TRIM}}']).toBe('☐')
+    expect(micro['{{BIF_PERIOADA_ANUALA}}']).toBe('☐')
+  })
+
+  it('cutia de dată a tipului NEales rămâne goală (spațiu), doar a celui ales se completează', () => {
+    const state: Anexa1FormState = { ...EMPTY_ANEXA1_STATE, impozitTip: 'micro', dataLuareEvidentaProfit: '01.02.2026', dataLuareEvidentaMicro: '13.10.2026' }
+    const { replacements } = buildAnexa1DocxData(state, { tipClient: 'PJ' })
+    for (let i = 1; i <= 8; i++) expect(replacements[`{{DLEP_${i}}}`]).toBe(' ')
+    expect(replacements['{{DLEM_1}}']).toBe('1')
   })
 
   it('declarant: numele complet și funcția vin din candidatul ales (index în listă)', () => {
@@ -142,10 +159,10 @@ describe('buildAnexa1DocxData', () => {
     expect(replacements['{{BIF_TVA_LA_INCASARE}}']).toBe('☒')
   })
 
-  it('cutiile de dată opționale (microîntreprinderi, salarii, CAS/CASS/CAM) ignoră data dacă bifa e nebifată', () => {
-    const state: Anexa1FormState = { ...EMPTY_ANEXA1_STATE, dataLuareEvidentaMicro: '01.02.2026', impozitMicro: false }
+  it('cutiile de dată opționale (salarii, CAS/CASS/CAM) ignoră data dacă bifa e nebifată', () => {
+    const state: Anexa1FormState = { ...EMPTY_ANEXA1_STATE, dataLuareEvidentaSalarii: '01.02.2026', impozitSalarii: false }
     const { replacements } = buildAnexa1DocxData(state, { tipClient: 'PJ' })
-    for (let i = 1; i <= 8; i++) expect(replacements[`{{DLEM_${i}}}`]).toBe(' ')
+    for (let i = 1; i <= 8; i++) expect(replacements[`{{DLES_${i}}}`]).toBe(' ')
   })
 
   it('{{DDEC_1..8}} = data de azi, independent de starea formularului', () => {

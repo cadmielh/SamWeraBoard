@@ -317,7 +317,7 @@ export default function DosarePage() {
    * coloană + opțional căutarea text), restricționate la intervalul ales pe câmpul de
    * dată ales. Foaia „Sumar" se calculează pe acel set exact (bounds=null — intervalul
    * a fost deja aplicat mai sus). */
-  const handleExportDosare = useCallback(async (tabKind: ListTab, { dateField, start, end, respectSearch }: ExportRangeResult) => {
+  const handleExportDosare = useCallback(async (tabKind: ListTab, { dateField, start, end, respectSearch, selectedColumnKeys }: ExportRangeResult) => {
     if (!workspaceId) return
     setExporting(true)
     try {
@@ -343,7 +343,8 @@ export default function DosarePage() {
       const tarifStats = computeTarifStats(ranged, null)
       const sumarLunar = samiAdiEnabled ? computeSumarLunar(ranged.filter(d => d.facturat), facturareConfig) : null
 
-      const exportColumns: ExportColumnSpec<Dosar>[] = columns.map(col => ({
+      const selectedKeySet = new Set(selectedColumnKeys)
+      const exportColumns: ExportColumnSpec<Dosar>[] = columns.filter(col => selectedKeySet.has(col.key)).map(col => ({
         key: col.key, label: col.label, width: col.width, type: col.exportType,
         getValue: (d: Dosar) => getExportValue(d, col.key, facturareConfig),
       }))
@@ -563,6 +564,7 @@ export default function DosarePage() {
               title={`Exportă dosare — ${showExportDialog === 'active' ? 'în lucru' : 'încheiate'}`}
               dateFieldOptions={DATE_FIELD_OPTIONS}
               showSearchToggle={searchQuery.trim().length > 0}
+              columnOptions={columns.map(col => ({ key: col.key, label: col.label }))}
               busy={exporting}
               onConfirm={result => handleExportDosare(showExportDialog, result)}
               onClose={() => setShowExportDialog(null)}
