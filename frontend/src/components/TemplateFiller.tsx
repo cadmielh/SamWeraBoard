@@ -26,10 +26,13 @@ import DeclaratieActivitateFiller from './DeclaratieActivitateFiller'
 import type { DeclaratieActivitateFillerHandle, DeclaratieFormValue } from './DeclaratieActivitateFiller'
 import Anexa1Filler from './Anexa1Filler'
 import type { Anexa1FillerHandle, Anexa1FormValue } from './Anexa1Filler'
+import BeneficiariRealiFiller from './BeneficiariRealiFiller'
+import type { BrxFillerHandle, BrxFormValue } from './BeneficiariRealiFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { buildVariantContext, variantWarningMessage } from '../lib/variants'
 import { withEmptyFieldMarks, withOptionalFieldMarks, isDeclaratieTemplate, DECLARATIE_ACTIVITATE_KEY } from '../lib/declaratieActivitateFiller'
 import { isAnexa1Template, ANEXA1_KEY } from '../lib/anexa1Filler'
+import { isBeneficiariRealiTemplate, BRX_KEY } from '../lib/beneficiariRealiFiller'
 import Modal from './Modal'
 
 interface Props {
@@ -78,6 +81,8 @@ export default function TemplateFiller({
   const declaratieFormRef = useRef<DeclaratieActivitateFillerHandle>(null)
   const [anexa1FormState, setAnexa1FormState] = useState<Record<string, Anexa1FormValue & { forClient?: string }>>({})
   const anexa1FormRef = useRef<Anexa1FillerHandle>(null)
+  const [brxFormState, setBrxFormState] = useState<Record<string, BrxFormValue & { forClient?: string }>>({})
+  const brxFormRef = useRef<BrxFillerHandle>(null)
   const [pendingClientPatches, setPendingClientPatches] = useState<{ key: string; label: string; patch: Partial<ClientInput> }[] | null>(null)
   const [checkedPatchKeys, setCheckedPatchKeys] = useState<Set<string>>(new Set())
   // Șablonul afișat momentan în panoul din dreapta — 'builtin:<key>' pentru
@@ -340,19 +345,28 @@ export default function TemplateFiller({
       if (missing.length > 0) { onToast(`Completează: ${missing.join(', ')}.`, 'err'); return }
       if (!anexa1) return
     }
+    // Declarație Beneficiari Reali (copie din bibliotecă): la fel, formularul dedicat.
+    const brx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl) ? brxFormState[tpl.id] : undefined
+    if (tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)) {
+      const missing = brxFormRef.current?.scrollToFirstMissing() ?? []
+      if (missing.length > 0) { onToast(`Completează: ${missing.join(', ')}.`, 'err'); return }
+      if (!brx) return
+    }
     if (!(await askDestination())) return
     setLoading(tpl.id, true)
     try {
       const outputName = resolveOutputName(tpl)
       const cs = clauseState[tpl.id]
       let mergedReplacements = { ...repl(tpl.id), ...customListReplacementsFor(tpl), ...(cs?.extraReplacements ?? {}) }
-      const mergedGroups = { ...repeatGroups, ...customGroupsFor(tpl), ...(cs?.extraGroups ?? {}) }
+      const mergedGroups = { ...repeatGroups, ...customGroupsFor(tpl), ...(cs?.extraGroups ?? {}), ...(brx?.groups ?? {}) }
       let rowGroups: Record<string, Record<string, string>[]> | undefined
       if (decl) {
         rowGroups = decl.rowGroups
         mergedReplacements = withEmptyFieldMarks(tpl.placeholders ?? [], { ...replacements, ...decl.replacements }, decl.rowGroups)
       } else if (anexa1) {
         mergedReplacements = { ...replacements, ...anexa1.replacements }
+      } else if (brx) {
+        mergedReplacements = { ...replacements, ...brx.replacements }
       } else {
         mergedReplacements = withOptionalFieldMarks(tpl.placeholders ?? [], mergedReplacements, mergedGroups)
       }
@@ -377,7 +391,7 @@ export default function TemplateFiller({
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
         URL.revokeObjectURL(url)
-        onToast(`Descărcat: ${outputName}`, 'ok')
+        onToast(`Se descarcă: ${outputName}`, 'ok')
         await _logGeneration(tpl, outputName)
         maybePromptSaveClient()
       }
@@ -428,7 +442,7 @@ export default function TemplateFiller({
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
         URL.revokeObjectURL(url)
-        onToast(`Descărcat: ${outputName}`, 'ok')
+        onToast(`Se descarcă: ${outputName}`, 'ok')
         maybePromptSaveClient()
       }
       offerClientPatches(cs)
@@ -478,7 +492,7 @@ export default function TemplateFiller({
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
         URL.revokeObjectURL(url)
-        onToast(`Descărcat: ${outputName}`, 'ok')
+        onToast(`Se descarcă: ${outputName}`, 'ok')
       }
       maybePromptSaveClient()
       offerClientPatchList(form.clientPatches)
@@ -520,7 +534,46 @@ export default function TemplateFiller({
         const url = URL.createObjectURL(result.blob)
         const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
         URL.revokeObjectURL(url)
-        onToast(`Descărcat: ${outputName}`, 'ok')
+        onToast(`Se descarcă: ${outputName}`, 'ok')
+      }
+      maybePromptSaveClient()
+    } catch (err: unknown) {
+      onToast((err as Error).message ?? 'Generare eșuată', 'err')
+    } finally {
+      setLoading(key, false)
+    }
+  }
+
+  // Șablon de bază "Declarație Beneficiari Reali" — formular dedicat (bife ☒/☐ +
+  // bloc repetitiv BENEFICIARI_REALI), la fel ca Anexa 1 de mai sus, dar cu
+  // `groups` în plus (lista de beneficiari reali e un bloc repetitiv, nu
+  // placeholdere plate).
+  const handleGenerateBrx = async (b: BuiltinTemplate) => {
+    const key = builtinKey(b)
+    const form = brxFormState[key]
+    const missing = brxFormRef.current?.scrollToFirstMissing() ?? []
+    if (missing.length > 0) {
+      onToast(`Completează: ${missing.join(', ')}.`, 'err')
+      return
+    }
+    if (!form) return
+    if (!(await askDestination())) return
+    setLoading(key, true)
+    try {
+      let outputName = b.outputNameTemplate || b.name
+      for (const [ph, val] of Object.entries(replacements)) outputName = outputName.replaceAll(ph, val)
+      outputName = outputName.replace(/\.(pdf|docx)$/i, '') + '.docx'
+
+      const mergedReplacements = { ...replacements, ...form.replacements }
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, form.groups)
+      if (result.link) {
+        setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
+        onToast(`Salvat pe Drive: ${result.name}`, 'ok')
+      } else if (result.blob) {
+        const url = URL.createObjectURL(result.blob)
+        const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
+        URL.revokeObjectURL(url)
+        onToast(`Se descarcă: ${outputName}`, 'ok')
       }
       maybePromptSaveClient()
     } catch (err: unknown) {
@@ -605,7 +658,7 @@ export default function TemplateFiller({
     // Șabloanele cu clauze au propria verificare de completitudine în
     // ClauseSelector (butonul Generează e dezactivat până e completă) —
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
-    if (tpl.clauses?.length || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl)))) { handleGenerateDocx(tpl); return }
+    if (tpl.clauses?.length || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl) || isBeneficiariRealiTemplate(tpl)))) { handleGenerateDocx(tpl); return }
 
     const { missing } = checkReadiness(tpl.placeholders ?? [], { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) })
     if (missing.length > 0) {
@@ -793,6 +846,20 @@ export default function TemplateFiller({
     return c ? renderProgressBar(id, c, 'De completat înainte de generare') : null
   }
 
+  // Declarație Beneficiari Reali: la fel ca Anexa 1 — procentul vine din formularul dedicat.
+  const brxCompletion = (id: string) => {
+    const st = brxFormState[id]
+    return st && st.forClient === client?.id ? st.completion : undefined
+  }
+  const brxPct = (id: string): number | null => {
+    const c = brxCompletion(id)
+    return c && c.total > 0 ? Math.round((c.done / c.total) * 100) : null
+  }
+  const renderBrxProgress = (id: string) => {
+    const c = brxCompletion(id)
+    return c ? renderProgressBar(id, c, 'De completat înainte de generare') : null
+  }
+
   // Șabloane cu clauze (Decizia Asociatului Unic, Hotărâre AGA și copiile lor): completarea = datele din afara clauzelor
   // (din client) + „cel puțin o clauză bifată” + câmpurile clauzelor bifate. Fără nicio clauză bifată încă, procentul
   // arată doar ce e deja completat din client.
@@ -977,9 +1044,10 @@ export default function TemplateFiller({
     const link = generatedLinks[key]
     const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
     const isAnexa1 = b.key === ANEXA1_KEY
-    const mismatch = (isDeclaratie || isAnexa1) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
+    const isBrx = b.key === BRX_KEY
+    const mismatch = (isDeclaratie || isAnexa1 || isBrx) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = isDeclaratie ? declPct(key) : isAnexa1 ? anexa1Pct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
+    const pct = isDeclaratie ? declPct(key) : isAnexa1 ? anexa1Pct(key) : isBrx ? brxPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
     return (
       <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}${mismatch ? ' tf-row--na' : ''}`}>
         <button
@@ -1015,10 +1083,11 @@ export default function TemplateFiller({
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
     const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
     const isAnexa1 = tpl.type === 'docx' && isAnexa1Template(tpl)
-    const pct = isDecl ? declPct(tpl.id) : isAnexa1 ? anexa1Pct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders, tpl.id, tpl)
+    const isBrx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)
+    const pct = isDecl ? declPct(tpl.id) : isAnexa1 ? anexa1Pct(tpl.id) : isBrx ? brxPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders, tpl.id, tpl)
     return (
       <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}${asociatiMismatch ? ' tf-row--na' : ''}`}>
-        {!hasClauses && !isDecl && !isAnexa1 && (
+        {!hasClauses && !isDecl && !isAnexa1 && !isBrx && (
           <input
             type="checkbox"
             checked={isSelected && !asociatiMismatch}
@@ -1061,6 +1130,7 @@ export default function TemplateFiller({
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
     const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
     const isAnexa1 = tpl.type === 'docx' && isAnexa1Template(tpl)
+    const isBrx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)
 
     return (
       <div className="tf-detail-panel">
@@ -1084,7 +1154,8 @@ export default function TemplateFiller({
 
         {!asociatiMismatch && isDecl && renderDeclaratieProgress(tpl.id)}
         {!asociatiMismatch && isAnexa1 && renderAnexa1Progress(tpl.id)}
-        {!asociatiMismatch && !isDecl && !isAnexa1 && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!), 'De completat înainte de generare')}
+        {!asociatiMismatch && isBrx && renderBrxProgress(tpl.id)}
+        {!asociatiMismatch && !isDecl && !isAnexa1 && !isBrx && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!), 'De completat înainte de generare')}
         {!asociatiMismatch && (isDecl ? (
           <DeclaratieActivitateFiller
             key={`${tpl.id}:${client?.id ?? 'none'}`}
@@ -1098,6 +1169,13 @@ export default function TemplateFiller({
             ref={anexa1FormRef}
             client={client}
             onChange={v => setAnexa1FormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
+          />
+        ) : isBrx ? (
+          <BeneficiariRealiFiller
+            key={`${tpl.id}:${client?.id ?? 'none'}`}
+            ref={brxFormRef}
+            client={client}
+            onChange={v => setBrxFormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
           />
         ) : hasClauses ? (
           <ClauseSelector
@@ -1129,11 +1207,12 @@ export default function TemplateFiller({
     const key = builtinKey(b)
     const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
     const isAnexa1 = b.key === ANEXA1_KEY
+    const isBrx = b.key === BRX_KEY
     const isLoading = loadingIds.has(key)
     const link = generatedLinks[key]
-    // Declarația și Anexa 1 (formulare dedicate, fără clauze/#ASOCIATI) nu au
+    // Declarația, Anexa 1 și Beneficiari Reali (formulare dedicate, fără clauze/#ASOCIATI) nu au
     // legătură cu numărul de asociați din document — restricția nu se aplică.
-    const mismatch = (isDeclaratie || isAnexa1) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
+    const mismatch = (isDeclaratie || isAnexa1 || isBrx) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
 
     return (
@@ -1143,8 +1222,8 @@ export default function TemplateFiller({
           <span className="tf-detail-title" title={b.name}>{b.name}</span>
           <button
             className="btn btn-sm btn-outline-primary"
-            onClick={() => isDeclaratie ? handleGenerateDeclaratie(b) : isAnexa1 ? handleGenerateAnexa1(b) : tryGenerateBuiltinSingle(b)}
-            disabled={isLoading || !!mismatch || !!tipMsg || (!isDeclaratie && !isAnexa1 && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
+            onClick={() => isDeclaratie ? handleGenerateDeclaratie(b) : isAnexa1 ? handleGenerateAnexa1(b) : isBrx ? handleGenerateBrx(b) : tryGenerateBuiltinSingle(b)}
+            disabled={isLoading || !!mismatch || !!tipMsg || (!isDeclaratie && !isAnexa1 && !isBrx && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : '↓ '}
             Generează
@@ -1175,7 +1254,8 @@ export default function TemplateFiller({
 
         {!mismatch && isDeclaratie && renderDeclaratieProgress(key)}
         {!mismatch && isAnexa1 && renderAnexa1Progress(key)}
-        {!mismatch && !isDeclaratie && !isAnexa1 && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses), 'De completat înainte de generare')}
+        {!mismatch && isBrx && renderBrxProgress(key)}
+        {!mismatch && !isDeclaratie && !isAnexa1 && !isBrx && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses), 'De completat înainte de generare')}
         {!mismatch && (isDeclaratie ? (
           <DeclaratieActivitateFiller
             key={client?.id ?? 'none'}
@@ -1189,6 +1269,13 @@ export default function TemplateFiller({
             ref={anexa1FormRef}
             client={client}
             onChange={v => setAnexa1FormState(prev => ({ ...prev, [key]: { ...v, forClient: client?.id } }))}
+          />
+        ) : isBrx ? (
+          <BeneficiariRealiFiller
+            key={client?.id ?? 'none'}
+            ref={brxFormRef}
+            client={client}
+            onChange={v => setBrxFormState(prev => ({ ...prev, [key]: { ...v, forClient: client?.id } }))}
           />
         ) : b.clauses.length > 0 ? (
           <ClauseSelector
