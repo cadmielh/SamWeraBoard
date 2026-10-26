@@ -6,6 +6,7 @@
 import type { Client } from '../types'
 import { splitSerieNumar } from './adresa'
 import { persoanaToSingularMap } from './placeholders'
+import { EMPTY_PERSOANA } from './clienti'
 
 export interface BrxReprezentantCandidate {
   label: string
@@ -123,10 +124,14 @@ export function buildBeneficiariRealiDocxData(
   const asociati = client?.asociati ?? []
   const groups: Record<string, Record<string, string>[]> = {
     BENEFICIARI_REALI: state.beneficiari.map(row => {
+      // `asociatIndex` poate rămâne "stale" dacă lista de asociați a clientului s-a schimbat între
+      // momentul adăugării rândului și generare — fallback la EMPTY_PERSOANA (nu {}), ca toate
+      // cheile {{NUME}}/{{CNP}}/etc. din blocul repetitiv să existe (altfel ar rămâne literal
+      // {{...}} în document — același motiv ca la splitDigitBoxes/anexa1Filler.ts).
       const p = asociati[row.asociatIndex]
       const item: Record<string, string> = p
         ? { ...persoanaToSingularMap(p), CETATENIA: p.cetatenia || 'română' }
-        : {}
+        : { ...persoanaToSingularMap(EMPTY_PERSOANA), NUME: '(asociat indisponibil)' }
       item.DESCRIERE_CONTROL = row.descriere || ' '
       for (const opt of BRX_TEMEI_OPTIONS) {
         item[`BIF_CONTROL_${BRX_TEMEI_OPTIONS.findIndex(o => o.value === opt.value) + 1}`] = bif(row.temei === opt.value)

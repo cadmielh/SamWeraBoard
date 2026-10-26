@@ -1,10 +1,13 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import type { Client } from '../types'
 import {
   EMPTY_ANEXA1_STATE, buildAnexa1DocxData, declarantCandidatesAnexa1,
 } from '../lib/anexa1Filler'
 import type { Anexa1FormState } from '../lib/anexa1Filler'
+import { useFieldRefs } from '../lib/useFieldRefs'
+import type { ElRef } from '../lib/useFieldRefs'
 import DateFieldInput from './DateFieldInput'
+import { SectionCard } from './FormFillerKit'
 
 export interface Anexa1FormValue {
   replacements: Record<string, string>
@@ -21,21 +24,6 @@ interface Props {
 
 export interface Anexa1FillerHandle {
   scrollToFirstMissing: () => string[]
-}
-
-type ElRef = (el: HTMLElement | null) => void
-
-function SectionCard({ title, children, accent }: { title: string; children: React.ReactNode; accent?: boolean }) {
-  return (
-    <div style={{
-      border: `1px solid ${accent ? 'var(--p200)' : 'var(--s200)'}`,
-      background: accent ? 'var(--p50)' : undefined,
-      borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem',
-    }}>
-      <div style={{ fontWeight: 700, fontSize: '.75rem', color: accent ? 'var(--p700)' : 'var(--s600)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</div>
-      {children}
-    </div>
-  )
 }
 
 // Variantă mai vizibilă a alegerii (butoane mari, nu radio mici) — pentru decizii obligatorii importante,
@@ -114,9 +102,7 @@ const Anexa1Filler = forwardRef<Anexa1FillerHandle, Props>(function Anexa1Filler
   const [showOptional, setShowOptional] = useState(false)
   const patch = (p: Partial<Anexa1FormState>) => setState(prev => ({ ...prev, ...p }))
 
-  const fieldRefs = useRef<Record<string, HTMLElement | null>>({})
-  // eslint-disable-next-line react-hooks/refs
-  const bindRef = (id: string): ElRef => el => { fieldRefs.current[id] = el }
+  const { bindRef, scrollToFirstMissing } = useFieldRefs()
 
   const isProfit = state.impozitTip === 'profit'
   const buildValidationChecks = (): { invalid: boolean; id: string; message: string }[] => [
@@ -129,15 +115,7 @@ const Anexa1Filler = forwardRef<Anexa1FillerHandle, Props>(function Anexa1Filler
   ]
 
   useImperativeHandle(ref, () => ({
-    scrollToFirstMissing: () => {
-      const failing = buildValidationChecks().filter(c => c.invalid)
-      if (failing.length > 0) {
-        const el = fieldRefs.current[failing[0].id]
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        el?.focus()
-      }
-      return failing.map(c => c.message)
-    },
+    scrollToFirstMissing: () => scrollToFirstMissing(buildValidationChecks()),
   }))
 
   useEffect(() => {

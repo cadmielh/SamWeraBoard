@@ -16,7 +16,7 @@ import {
 import DosarStatsPanel from '../components/dosare/DosarStatsPanel'
 import IconExport from '../components/IconExport'
 import { LUNI, type StatsPeriod, computeDosarStats, computeTarifStats, computeSumarLunar, buildDosarSummarySections } from '../lib/dosareStats'
-import { exportRowsToXlsx, type ExportColumnSpec } from '../lib/xlsxExport'
+import type { ExportColumnSpec } from '../lib/xlsxExport'
 import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import Modal from '../components/Modal'
 
@@ -321,6 +321,9 @@ export default function DosarePage() {
     if (!workspaceId) return
     setExporting(true)
     try {
+      // exceljs e o dependență mare, descărcată doar la nevoie (export e o acțiune rară) —
+      // niciun import static al ei nu trebuie să ajungă în bundle-ul principal al paginii.
+      const { exportRowsToXlsx } = await import('../lib/xlsxExport')
       const all = await fetchAllDosare(workspaceId)
       const tabFiltered = tabKind === 'active' ? all.filter(d => !isDosarArhivat(d)) : all.filter(isDosarArhivat)
       const filters = tabKind === 'active' ? colFilters : colFiltersInch

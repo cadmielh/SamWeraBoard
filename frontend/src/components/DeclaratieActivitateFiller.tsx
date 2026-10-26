@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Client, Persoana } from '../types'
 import {
@@ -8,6 +8,8 @@ import {
 import type { AdresaStructurata, DeclarantFormFields, DeclaratieFormState, SediuSecundarRow } from '../lib/declaratieActivitateFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { JUDETE_ROMANIA } from '../lib/counties'
+import { useFieldRefs } from '../lib/useFieldRefs'
+import type { ElRef } from '../lib/useFieldRefs'
 import Combobox from './Combobox'
 import DateFieldInput from './DateFieldInput'
 
@@ -33,8 +35,6 @@ export interface DeclaratieActivitateFillerHandle {
    * TemplateFiller la click pe "Generează" în loc de a ține butonul disabled. */
   scrollToFirstMissing: () => string[]
 }
-
-type ElRef = (el: HTMLElement | null) => void
 
 const MAX_SEDII_SECUNDARE = 30
 
@@ -298,12 +298,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
   const cnpValid = !declarant.cnp || /^\d{13}$/.test(declarant.cnp)
   const cnpComplete = !!declarant.cnp && cnpValid
 
-  const fieldRefs = useRef<Record<string, HTMLElement | null>>({})
-  // Callback ref standard React (rulează la commit, nu la render) — regula
-  // nouă react-hooks/refs nu distinge asta de o scriere directă în timpul
-  // randării, deci flagează fals orice fabrică de callback-uri ca aceasta.
-  // eslint-disable-next-line react-hooks/refs
-  const bindRef = (id: string): ElRef => el => { fieldRefs.current[id] = el }
+  const { bindRef, scrollToFirstMissing: scrollToFirstMissingBy } = useFieldRefs()
 
   const anyCaenAnywhere = caenSediu.length > 0 || caenTerti.length > 0 || sediiSecundare.some(r => r.adresa && r.caenCodes.length > 0)
 
@@ -352,15 +347,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
   }
 
   useImperativeHandle(ref, () => ({
-    scrollToFirstMissing: () => {
-      const failing = buildValidationChecks().filter(c => c.invalid)
-      if (failing.length > 0) {
-        const el = fieldRefs.current[failing[0].id]
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        el?.focus()
-      }
-      return failing.map(c => c.message)
-    },
+    scrollToFirstMissing: () => scrollToFirstMissingBy(buildValidationChecks()),
   }))
 
   useEffect(() => {

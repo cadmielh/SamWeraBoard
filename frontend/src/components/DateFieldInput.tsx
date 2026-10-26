@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { formatDateRo, isoDateToRo, roDateInputCaretPos, roDateInputError, roDateInputMask, roDateInputSlotAtCaret, roDateToISO } from '../lib/dates'
+import { formatDateRo, isIncompleteOrInvalidRoDate, isoDateToRo, roDateInputCaretPos, roDateInputError, roDateInputMask, roDateInputSlotAtCaret, roDateToISO, roDigitsToPartialDate } from '../lib/dates'
 import IconCalendar from './IconCalendar'
 
 interface Props {
@@ -48,11 +48,16 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
   const textRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLInputElement>(null)
   const pendingCaretRef = useRef<number | null>(null)
+  const [touched, setTouched] = useState(false)
   const today = formatDateRo(new Date())
   const isToday = !!value && value === today
 
   const digitCount = value.replace(/\D/g, '').length
-  const error = roDateInputError(value)
+  // "Dată incompletă" apare abia la blur (`touched`), nu la fiecare tastă — altfel ar flashui
+  // eroare cât timp utilizatorul încă scrie cifrele. `roDateInputError` deja semnalează imediat
+  // zi/lună clar greșite; aici completăm doar cazul rămas: câmp nevid, dar niciodată terminat.
+  const typingError = roDateInputError(value)
+  const error = typingError ?? (touched && isIncompleteOrInvalidRoDate(value) ? 'Dată incompletă' : null)
 
   // Repoziționează cursorul după orice randare declanșată de o editare (React resetează
   // selecția la scrierea `.value` pe DOM, ca efect secundar al re-randării controlate).
@@ -88,11 +93,11 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
       if (e.key === 'Delete') {
         if (slot >= digits.length) return
         applyCaret(roDateInputCaretPos(slot))
-        onChange(digits.slice(0, slot) + digits.slice(slot + 1))
+        onChange(roDigitsToPartialDate(digits.slice(0, slot) + digits.slice(slot + 1)))
       } else {
         if (slot <= 0) return
         applyCaret(roDateInputCaretPos(slot - 1))
-        onChange(digits.slice(0, slot - 1) + digits.slice(slot))
+        onChange(roDigitsToPartialDate(digits.slice(0, slot - 1) + digits.slice(slot)))
       }
       return
     }
@@ -102,7 +107,7 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
       e.preventDefault()
       if (hasSelection) {
         applyCaret(roDateInputCaretPos(1))
-        onChange(e.key)
+        onChange(roDigitsToPartialDate(e.key))
         return
       }
       const caret = el.selectionStart ?? digits.length
@@ -111,7 +116,7 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
         ? digits.slice(0, slot) + e.key + digits.slice(slot + 1)
         : (digits + e.key).slice(0, 8)
       applyCaret(roDateInputCaretPos(Math.min(slot + 1, 8)))
-      onChange(next)
+      onChange(roDigitsToPartialDate(next))
       return
     }
 
@@ -133,14 +138,14 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
     if (hasSelection) {
       const next = insertedDigits.slice(0, 8)
       applyCaret(roDateInputCaretPos(next.length))
-      onChange(next)
+      onChange(roDigitsToPartialDate(next))
       return
     }
     const caret = el?.selectionStart ?? digits.length
     const slot = Math.min(roDateInputSlotAtCaret(caret), digits.length)
     const next = (digits.slice(0, slot) + insertedDigits).slice(0, 8)
     applyCaret(roDateInputCaretPos(Math.min(slot + insertedDigits.length, 8)))
-    onChange(next)
+    onChange(roDigitsToPartialDate(next))
   }
 
   const openPicker = () => {
@@ -167,6 +172,7 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
             aria-invalid={!!error}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onBlur={() => setTouched(true)}
             onChange={() => {}}
           />
           <button
@@ -209,12 +215,16 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
  * fiecare cifră ar trece prin `roDateToISO`, care întoarce „" pentru orice dată incompletă —
  * câmpul ar reseta mereu la scheletul gol și ar părea „blocat", nu ar acumula cifrele tastate.
  */
-export function IsoDateFieldInput({ id, label, value, onChange, style, showToday }: {
+export function IsoDateFieldInput({ id, label, value, onChange, onValidityChange, style, showToday }: {
   id?: string
   label?: string
   /** Data în format ISO (yyyy-mm-dd), sau null/gol dacă necompletată. */
   value: string | null | undefined
   onChange: (iso: string | null) => void
+  /** Opțional — anunță părintele când textul RO tastat e nevid dar nu (încă) o dată validă, ca
+   * să poată bloca Salvare/Adaugă în loc să lase `onChange` să scrie silențios `null`. Valoarea
+   * ISO existentă e mereu validă-sau-null, deci asta poate deveni `true` doar din tastarea curentă. */
+  onValidityChange?: (invalid: boolean) => void
   style?: CSSProperties
   showToday?: boolean
 }) {
@@ -223,7 +233,11 @@ export function IsoDateFieldInput({ id, label, value, onChange, style, showToday
     <DateFieldInput
       id={id} label={label} style={style} showToday={showToday}
       value={ro}
-      onChange={v => { setRo(v); onChange(roDateToISO(v) || null) }}
+      onChange={v => {
+        setRo(v)
+        onValidityChange?.(isIncompleteOrInvalidRoDate(v))
+        onChange(roDateToISO(v) || null)
+      }}
     />
   )
 }

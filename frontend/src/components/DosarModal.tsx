@@ -63,6 +63,17 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
   const [creatingClient, setCreatingClient] = useState(false)
   const [creeazaSarcina, setCreeazaSarcina] = useState(true)
   const [detaliiOpen, setDetaliiOpen] = useState(!!initial)
+  // Id-urile câmpurilor de dată cu text invalid/incomplet tastat — blochează Salvare, ca o
+  // dată typo-ită să nu fie scrisă silențios ca `null` (vezi DateFieldInput.onValidityChange).
+  const [invalidDates, setInvalidDates] = useState<Set<string>>(new Set())
+  const setDateValidity = (id: string) => (invalid: boolean) =>
+    setInvalidDates(prev => {
+      const has = prev.has(id)
+      if (invalid === has) return prev
+      const next = new Set(prev)
+      if (invalid) next.add(id); else next.delete(id)
+      return next
+    })
 
   const isEditing = !!initial
   const set = <K extends keyof DosarInput>(key: K, val: DosarInput[K]) => setForm(prev => ({ ...prev, [key]: val }))
@@ -101,7 +112,7 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
     }
   }
 
-  const canSave = (!!form.clientId || !!form.clientDenumireLibera) && form.obiecteCererii.length > 0 && !!form.responsabilNume.trim()
+  const canSave = (!!form.clientId || !!form.clientDenumireLibera) && form.obiecteCererii.length > 0 && !!form.responsabilNume.trim() && invalidDates.size === 0
 
   const handleSave = async () => {
     if (!canSave) return
@@ -176,8 +187,8 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
                 <input className="field-input" placeholder="ex: 3088169/05.08.2026" value={form.nrInregistrareDosar} onChange={e => set('nrInregistrareDosar', e.target.value)} />
               </div>
 
-              <IsoDateFieldInput label="Data admiterii" value={form.dataAdmiterii} onChange={v => set('dataAdmiterii', v)} showToday={false} />
-              <IsoDateFieldInput label="Data planificare" value={form.dataPlanificare} onChange={v => set('dataPlanificare', v)} showToday={false} />
+              <IsoDateFieldInput label="Data admiterii" value={form.dataAdmiterii} onChange={v => set('dataAdmiterii', v)} onValidityChange={setDateValidity('dataAdmiterii')} showToday={false} />
+              <IsoDateFieldInput label="Data planificare" value={form.dataPlanificare} onChange={v => set('dataPlanificare', v)} onValidityChange={setDateValidity('dataPlanificare')} showToday={false} />
 
               <div className="form-subsection-label">Financiar</div>
 

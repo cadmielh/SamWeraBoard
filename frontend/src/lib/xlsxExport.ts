@@ -26,13 +26,22 @@ export interface ExportSpec<T> {
 
 const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EAED' } }
 
+/** Un string care începe cu `=`/`@`/tab/CR ar putea fi interpretat ca formulă de un importator
+ * permisiv (CSV, LibreOffice/Sheets import) — îl prefixăm cu apostrof, convenția standard
+ * (OWASP) de a-l forța ca text. NU includem `+`/`-`: telefoanele românești/internaționale
+ * exportate (ex. „+40 721 234 567") încep frecvent cu „+" — le-ar corupe vizual pe toate. */
+const FORMULA_TRIGGER_RE = /^[=@\t\r]/
+function escapeFormulaLeadingChar(s: string): string {
+  return FORMULA_TRIGGER_RE.test(s) ? `'${s}` : s
+}
+
 function cellValue<T>(col: ExportColumnSpec<T>, row: T): unknown {
   const v = col.getValue(row)
   if (v === null || v === undefined) return null
   if (col.type === 'boolean') return v ? 'Da' : 'Nu'
   if (col.type === 'date') return v instanceof Date ? v : null
   if (col.type === 'number') return typeof v === 'number' ? v : null
-  return String(v)
+  return escapeFormulaLeadingChar(String(v))
 }
 
 function buildDataSheet<T>(wb: ExcelJS.Workbook, spec: ExportSpec<T>) {

@@ -1,10 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import type { Client } from '../types'
 import {
   EMPTY_BRX_STATE, EMPTY_BRX_BENEFICIAR_ROW, buildBeneficiariRealiDocxData, reprezentantCandidatesBrx,
   BRX_TIP_DECLARATIE_OPTIONS, BRX_TEMEI_OPTIONS,
 } from '../lib/beneficiariRealiFiller'
 import type { BeneficiariRealiFormState, BrxTemei } from '../lib/beneficiariRealiFiller'
+import { useFieldRefs } from '../lib/useFieldRefs'
+import { SectionCard } from './FormFillerKit'
 
 export interface BrxFormValue {
   replacements: Record<string, string>
@@ -18,25 +20,8 @@ interface Props {
   onChange: (value: BrxFormValue) => void
 }
 
-interface SectionCardProps { title: string; children: React.ReactNode; accent?: boolean }
-
 export interface BrxFillerHandle {
   scrollToFirstMissing: () => string[]
-}
-
-type ElRef = (el: HTMLElement | null) => void
-
-function SectionCard({ title, children, accent }: SectionCardProps) {
-  return (
-    <div style={{
-      border: `1px solid ${accent ? 'var(--p200)' : 'var(--s200)'}`,
-      background: accent ? 'var(--p50)' : undefined,
-      borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem',
-    }}>
-      <div style={{ fontWeight: 700, fontSize: '.75rem', color: accent ? 'var(--p700)' : 'var(--s600)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</div>
-      {children}
-    </div>
-  )
 }
 
 function RadioRow({ label, options, value, onChange }: {
@@ -62,6 +47,7 @@ function RadioRow({ label, options, value, onChange }: {
 
 const BeneficiariRealiFiller = forwardRef<BrxFillerHandle, Props>(function BeneficiariRealiFiller({ client, onChange }, ref) {
   const candidates = reprezentantCandidatesBrx(client)
+  const administratori = client?.administratori ?? []
   const asociati = client?.asociati ?? []
   const [state, setState] = useState<BeneficiariRealiFormState>(() => ({
     ...EMPTY_BRX_STATE,
@@ -71,9 +57,7 @@ const BeneficiariRealiFiller = forwardRef<BrxFillerHandle, Props>(function Benef
   }))
   const patch = (p: Partial<BeneficiariRealiFormState>) => setState(prev => ({ ...prev, ...p }))
 
-  const fieldRefs = useRef<Record<string, HTMLElement | null>>({})
-  // eslint-disable-next-line react-hooks/refs
-  const bindRef = (id: string): ElRef => el => { fieldRefs.current[id] = el }
+  const { bindRef, scrollToFirstMissing } = useFieldRefs()
 
   const buildValidationChecks = (): { invalid: boolean; id: string; message: string }[] => [
     { invalid: !state.tipDeclaratie, id: 'tip-declaratie', message: 'tipul declarației (II)' },
@@ -83,15 +67,7 @@ const BeneficiariRealiFiller = forwardRef<BrxFillerHandle, Props>(function Benef
   ]
 
   useImperativeHandle(ref, () => ({
-    scrollToFirstMissing: () => {
-      const failing = buildValidationChecks().filter(c => c.invalid)
-      if (failing.length > 0) {
-        const el = fieldRefs.current[failing[0].id]
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        el?.focus()
-      }
-      return failing.map(c => c.message)
-    },
+    scrollToFirstMissing: () => scrollToFirstMissing(buildValidationChecks()),
   }))
 
   useEffect(() => {
@@ -146,6 +122,12 @@ const BeneficiariRealiFiller = forwardRef<BrxFillerHandle, Props>(function Benef
               Clientul nu are niciun administrator completat în profil.
             </div>
           )}
+          {/* CNP lipsă e un caz legitim (administrator străin, fără CNP românesc) — avertisment, nu blocare. */}
+          {state.reprezentantIndex != null && !administratori[state.reprezentantIndex]?.cnp && (
+            <div style={{ fontSize: '.78rem', color: 'var(--a800)', marginTop: '.25rem' }}>
+              ⚠ Acest administrator nu are CNP completat în profil — verifică înainte de depunere.
+            </div>
+          )}
         </div>
       </SectionCard>
 
@@ -169,6 +151,12 @@ const BeneficiariRealiFiller = forwardRef<BrxFillerHandle, Props>(function Benef
                 <label className="field-label">Descriere</label>
                 <input className="field-input" value={row.descriere} onChange={e => updateRow(i, { descriere: e.target.value })} />
               </div>
+              {/* CNP lipsă e un caz legitim (beneficiar străin, fără CNP românesc) — avertisment, nu blocare. */}
+              {!asociati[row.asociatIndex]?.cnp && (
+                <div style={{ fontSize: '.78rem', color: 'var(--a800)' }}>
+                  ⚠ Acest beneficiar nu are CNP completat în profil — verifică înainte de depunere.
+                </div>
+              )}
             </div>
           ))}
           {availableAsociati.length > 0 && (

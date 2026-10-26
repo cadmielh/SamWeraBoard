@@ -7,7 +7,7 @@ import { useClienti, fetchAllClienti } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 import { formatAdresa } from '../lib/adresa'
 import { toDateSafe, formatDateRo } from '../lib/dates'
-import { exportRowsToXlsx, type ExportColumnSpec, type ExportCellType } from '../lib/xlsxExport'
+import type { ExportColumnSpec, ExportCellType } from '../lib/xlsxExport'
 import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import { useApp } from '../AppContext'
 import ClientModal from '../components/ClientModalGate'
@@ -472,6 +472,9 @@ export default function ClientiPage() {
     if (!workspaceId) return
     setExporting(true)
     try {
+      // exceljs e o dependență mare, descărcată doar la nevoie (export e o acțiune rară) —
+      // niciun import static al ei nu trebuie să ajungă în bundle-ul principal al paginii.
+      const { exportRowsToXlsx } = await import('../lib/xlsxExport')
       const all = await fetchAllClienti(workspaceId)
       const q = debouncedQ.trim().toLowerCase()
       const searchFiltered = respectSearch && q.length >= 2

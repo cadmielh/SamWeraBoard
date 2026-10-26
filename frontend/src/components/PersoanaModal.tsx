@@ -3,6 +3,7 @@ import type { Persoana } from '../types'
 import type { IDFields } from '../lib/api'
 import { EMPTY_PERSOANA } from '../lib/clienti'
 import { isValidCNP } from '../lib/cnp'
+import { isIncompleteOrInvalidRoDate } from '../lib/dates'
 import { sexFromCnp } from '../lib/sex'
 import { JUDETE_ROMANIA } from '../lib/counties'
 import { CETATENII } from '../lib/citizenships'
@@ -47,7 +48,14 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
 
   const cnpTrimmed = p.cnp.trim()
   const cnpError = cnpTrimmed && !isValidCNP(cnpTrimmed) ? 'CNP invalid (cifră de control sau dată incorectă)' : ''
-  const canSave = !!(p.nume.trim() || cnpTrimmed) && !cnpError
+  // Datele (data_nasterii, valabila_de_la/pana_la) sunt text RO brut, nu ISO — un record vechi ar
+  // putea teoretic avea deja text invalid (dintr-un bug anterior). Blocăm Salvare doar pe câmpurile
+  // CHIAR MODIFICATE în sesiunea curentă, ca un astfel de record vechi, neschimbat, să rămână salvabil.
+  const DATE_FIELDS = ['data_nasterii', 'valabila_de_la', 'valabila_pana_la'] as const
+  const hasInvalidEditedDate = DATE_FIELDS.some(
+    f => p[f] !== (initial?.[f] ?? '') && isIncompleteOrInvalidRoDate(p[f]),
+  )
+  const canSave = !!(p.nume.trim() || cnpTrimmed) && !cnpError && !hasInvalidEditedDate
   const autoSex = sexFromCnp(p.cnp)
 
   const title = initial

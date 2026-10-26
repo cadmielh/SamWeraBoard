@@ -51,6 +51,8 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
   })
   const [saving, setSaving] = useState(false)
   const [creatingClient, setCreatingClient] = useState(false)
+  // Blochează Salvare dacă „Termen limită" are text invalid/incomplet tastat — vezi DosarModal.tsx.
+  const [termenInvalid, setTermenInvalid] = useState(false)
 
   const isEditing = !!initial
   const set = <K extends keyof SarcinaInput>(key: K, val: SarcinaInput[K]) => setForm(prev => ({ ...prev, [key]: val }))
@@ -103,7 +105,7 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
     }
   }
 
-  const canSave = !!form.titlu.trim()
+  const canSave = !!form.titlu.trim() && !termenInvalid
 
   const handleSave = async () => {
     if (!canSave) return
@@ -164,7 +166,7 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
               </select>
             </div>
 
-            <IsoDateFieldInput label="Termen limită" value={form.termenLimita} onChange={v => set('termenLimita', v)} showToday={false} />
+            <IsoDateFieldInput label="Termen limită" value={form.termenLimita} onChange={v => set('termenLimita', v)} onValidityChange={setTermenInvalid} showToday={false} />
 
             <div className="field full">
               <label className="field-label">Responsabil</label>

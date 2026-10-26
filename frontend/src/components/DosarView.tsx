@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Dosar, DosarInput, ObiectCerereItem, StadiuDosar } from '../types'
 import { STADIU_DOSAR_LABELS, STADIU_DOSAR_COLOR } from '../types'
-import { isoDateToRo, roDateToISO, toDateSafe, formatDateRo } from '../lib/dates'
+import { isIncompleteOrInvalidRoDate, isoDateToRo, roDateToISO, toDateSafe, formatDateRo } from '../lib/dates'
 import { formatRon } from '../lib/format'
 import { useDosarFinanciar } from '../lib/useDosarFinanciar'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
@@ -43,6 +43,7 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
   const inputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const dateWrapRef = useRef<HTMLDivElement>(null)
+  const { toast } = useApp()
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (!editing) setVal(isDate ? isoDateToRo(value) : value) }, [value, editing, isDate])
@@ -53,6 +54,12 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
   }, [editing, multiline, isDate])
 
   const commit = async () => {
+    // Enter poate declanșa commit() cât timp data e încă focusată (fără blur) — eroarea inline din
+    // DateFieldInput (care apare abia la blur) n-ar fi vizibilă încă, deci semnalăm explicit aici.
+    if (isDate && isIncompleteOrInvalidRoDate(val)) {
+      toast('Dată invalidă — verifică ziua/luna/anul', 'err')
+      return
+    }
     const toSave = isDate ? roDateToISO(val) : val
     if (toSave === value) { setEditing(false); return }
     setSaving(true)

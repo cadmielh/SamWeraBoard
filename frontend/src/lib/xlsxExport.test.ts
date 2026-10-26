@@ -53,6 +53,30 @@ describe('buildWorkbook — foaia de date', () => {
   })
 })
 
+describe('buildWorkbook — escapare formula-injection la export (coloane string)', () => {
+  const stringCol = (value: string): ExportColumnSpec<Row>[] => [{ key: 'name', label: 'Nume', getValue: () => value }]
+  const exportedValue = (value: string) => {
+    const wb = buildWorkbook({ filename: 'x.xlsx', sheetName: 'Date', columns: stringCol(value), rows: [rows[0]] })
+    return wb.getWorksheet('Date')!.getRow(2).getCell(1).value
+  }
+
+  it('un string care începe cu „=" (declanșator clasic de formulă) e prefixat cu apostrof', () => {
+    expect(exportedValue('=HYPERLINK("http://evil")')).toBe("'=HYPERLINK(\"http://evil\")")
+  })
+
+  it('un string care începe cu „@" e prefixat cu apostrof', () => {
+    expect(exportedValue('@SUM(1,1)')).toBe("'@SUM(1,1)")
+  })
+
+  it('un telefon românesc/internațional care începe cu „+" NU e modificat — regresie reală pentru toți utilizatorii altfel', () => {
+    expect(exportedValue('+40 721 234 567')).toBe('+40 721 234 567')
+  })
+
+  it('un string normal, fără caracter de start riscant, nu e modificat', () => {
+    expect(exportedValue('SRL Exemplu')).toBe('SRL Exemplu')
+  })
+})
+
 describe('buildWorkbook — foaia de sumar', () => {
   it('fără `summary`, workbook-ul are o singură foaie', () => {
     const wb = buildWorkbook({ filename: 'x.xlsx', sheetName: 'Date', columns, rows })

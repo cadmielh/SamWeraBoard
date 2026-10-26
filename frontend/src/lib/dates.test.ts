@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidRoDate, parseIsoDateLocal, roDateInputCaretPos, roDateInputError, roDateInputMask, roDateInputSlotAtCaret, roDateToISO } from './dates'
+import { isIncompleteOrInvalidRoDate, isValidRoDate, parseIsoDateLocal, roDateInputCaretPos, roDateInputError, roDateInputMask, roDateInputSlotAtCaret, roDateToISO, roDigitsToPartialDate } from './dates'
 
 describe('parseIsoDateLocal — yyyy-mm-dd ca dată LOCALĂ, nu UTC', () => {
   it('parsează corect anul/luna/ziua, indiferent de fusul orar al mediului de test', () => {
@@ -15,6 +15,34 @@ describe('parseIsoDateLocal — yyyy-mm-dd ca dată LOCALĂ, nu UTC', () => {
     expect(parseIsoDateLocal(undefined)).toBeNull()
     expect(parseIsoDateLocal('')).toBeNull()
     expect(parseIsoDateLocal('15.01.2026')).toBeNull()
+  })
+})
+
+describe('roDigitsToPartialDate — DateFieldInput trebuie să propage prin onChange text cu puncte, nu cifre brute', () => {
+  it('sub 3 cifre -> fără punct (nimic de delimitat încă)', () => {
+    expect(roDigitsToPartialDate('')).toBe('')
+    expect(roDigitsToPartialDate('1')).toBe('1')
+    expect(roDigitsToPartialDate('15')).toBe('15')
+  })
+
+  it('3-4 cifre -> un singur punct, după zi', () => {
+    expect(roDigitsToPartialDate('150')).toBe('15.0')
+    expect(roDigitsToPartialDate('1504')).toBe('15.04')
+  })
+
+  it('5-8 cifre -> ambele puncte, zi.lună.an(parțial)', () => {
+    expect(roDigitsToPartialDate('15042')).toBe('15.04.2')
+    expect(roDigitsToPartialDate('15042026')).toBe('15.04.2026')
+  })
+
+  it('o dată completă, corect tastată, rezolvă corect prin roDateToISO — bug-ul real găsit la verificarea manuală: fără puncte, "15042026" nu era niciodată recunoscut ca dată validă', () => {
+    const typed = roDigitsToPartialDate('15042026')
+    expect(roDateToISO(typed)).toBe('2026-04-15')
+    expect(isIncompleteOrInvalidRoDate(typed)).toBe(false)
+  })
+
+  it('ignoră orice non-cifră din input (apărare suplimentară, nu doar la emitere)', () => {
+    expect(roDigitsToPartialDate('15.04.2026')).toBe('15.04.2026')
   })
 })
 

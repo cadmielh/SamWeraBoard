@@ -47,6 +47,13 @@ export function roDateInputError(value: string): string | null {
   return null
 }
 
+/** true dacă textul RO introdus NU e gol dar nu reprezintă o dată completă/validă —
+ * folosit pentru a bloca salvarea, nu doar afișarea erorii de tastare (`roDateInputError`,
+ * care nu semnalează un câmp pur și simplu neterminat, doar unul cu zi/lună clar greșite). */
+export function isIncompleteOrInvalidRoDate(ro: string): boolean {
+  return ro.trim() !== '' && !roDateToISO(ro)
+}
+
 export function isoDateToRo(s: string): string {
   const m = ISO_DATE_RE.exec(s.trim())
   if (!m) return ''
@@ -65,6 +72,21 @@ export function roDateInputMask(value: string): string {
   const month = (digits.slice(2, 4) + 'll').slice(0, 2)
   const year = (digits.slice(4, 8) + 'aaaa').slice(0, 4)
   return `${day}.${month}.${year}`
+}
+
+/**
+ * Reconstituie textul canonic „zz.ll.aaaa" (cu punctele la locul lor, vezi comentariul de la
+ * începutul fișierului) dintr-un buffer de 0-8 cifre — DateFieldInput trebuie să propage prin
+ * `onChange` mereu acest format, nu cifrele brute: `roDateToISO`/`isValidRoDate`/`splitDigitBoxes`
+ * (anexa1Filler.ts etc.) cer punctele literal, iar fără ele un text complet și corect tastat
+ * (ex. „15042026") n-ar fi niciodată recunoscut ca dată validă — exact bug-ul găsit la verificarea
+ * manuală a fix-ului de validare la salvare: o dată completă, corect tastată, era blocată la
+ * Salvare pentru că `roDateToISO` nu o putea parsa deloc, nu doar o dată cu adevărat incompletă. */
+export function roDigitsToPartialDate(digits: string): string {
+  const d = digits.replace(/\D/g, '').slice(0, 8)
+  if (d.length <= 2) return d
+  if (d.length <= 4) return `${d.slice(0, 2)}.${d.slice(2)}`
+  return `${d.slice(0, 2)}.${d.slice(2, 4)}.${d.slice(4)}`
 }
 
 /** Poziția din șirul-schelet (10 caractere) unde ar trebui pus cursorul, imediat după
