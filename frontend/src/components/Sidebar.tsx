@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import type { Workspace } from '../types'
 import ThemeToggleSwitch from './ThemeToggleSwitch'
+import LogoMark from './LogoMark'
 
 interface Props {
   user: User
@@ -197,6 +198,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
     <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
       {/* Logo + restrângere meniu, pe același rând, butonul cât mai în dreapta */}
       <div className="sidebar-logo">
+        <LogoMark size={24} className="sidebar-logo-mark" />
         {!collapsed && <span className="sidebar-logo-text">Cabin<b>io</b></span>}
         <button
           className="sidebar-collapse-btn"

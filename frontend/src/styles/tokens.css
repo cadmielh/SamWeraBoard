@@ -299,9 +299,12 @@ body {
   transition: background-color var(--t-md), border-color var(--t-md), width var(--t-md);
 }
 .sidebar--collapsed { width: var(--sidebar-w-collapsed); }
-.sidebar-logo { position:relative; padding:1rem .875rem; border-bottom:1px solid var(--s100); display:flex; align-items:center; justify-content:center; }
+.sidebar-logo { position:relative; padding:1rem .875rem; border-bottom:1px solid var(--s100); display:flex; align-items:center; justify-content:center; gap:.5rem; }
+.sidebar-logo-mark { flex-shrink:0; color:var(--p600); }
 .sidebar-logo-text { margin-right:1.25rem; text-align:center; font-weight:800; font-size:1.1875rem; color:var(--s900); letter-spacing:-.025em; white-space:nowrap; overflow:hidden; }
-.sidebar-logo-text b { color:var(--p500); font-weight:800; }
+.sidebar-logo-text b { color:var(--p600); font-weight:800; }
+.sidebar--collapsed .sidebar-logo { flex-direction:column; }
+.sidebar--collapsed .sidebar-logo-mark { order:-2; }
 .sidebar-collapse-btn {
   flex-shrink:0; width:32px; height:32px; border-radius:var(--r-sm); border:1px solid var(--s200);
   background:var(--surface-2); color:var(--s500); cursor:pointer; display:flex; align-items:center; justify-content:center;

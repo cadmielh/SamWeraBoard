@@ -7,8 +7,10 @@
 .lp-scrolled .lp-navbar { box-shadow: var(--sh-sm); }
 .lp-nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 1.25rem; }
 .lp-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 30; background: var(--p500); transform-origin: 0 50%; transform: scaleX(var(--progress, 0)); }
-.lp-logo { font-weight: 800; font-size: 1.25rem; letter-spacing: -.025em; color: var(--s900); }
-.lp-logo span { color: var(--p500); }
+.lp-logo { display: flex; align-items: center; gap: .5rem; font-weight: 800; font-size: 1.25rem; letter-spacing: -.025em; color: var(--s900); }
+.lp-logo svg { flex-shrink: 0; color: var(--p600); }
+.lp-logo b { font-weight: inherit; }
+.lp-logo span { color: var(--p600); }
 .lp-hero { padding: 3rem 0 3.25rem; display: grid; gap: 2.5rem; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: center; }
 .lp-hero-text { display: grid; gap: 1.25rem; }
 .lp-btn { display: inline-flex; align-items: center; gap: .5rem; }

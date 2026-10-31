@@ -1,0 +1,72 @@
+CABINIO — PACHET DE BRAND
+=========================
+
+SIMBOLUL
+
+  O pagină tăiată de o rază de scanare: sus actul scanat (input), jos
+  documentul generat (output). Numele spune același lucru: „Cabin” de la
+  cabinet și „io” de la input/output.
+
+
+CE FIȘIER FOLOSESC?
+
+  Site, aplicație, tipar, designer ......... logo/svg/ sau logo/pdf/
+  Word, PowerPoint, documente .............. logo/png-transparent/orizontal/ (1200 sau 2400 px)
+  Unde nu se acceptă transparență .......... logo/jpg-fundal-alb/
+  Fundal închis sau colorat ................ variantele „pe-inchis” și „alb”
+  O singură culoare (ștampilă, fax, gravură) variantele „negru” și „alb”
+  Profil social, pictogramă pătrată ........ social/avatar-1080.png
+  Semnătură de e-mail ...................... social/semnatura-email-360.png
+  Previzualizare link-uri .................. social/og-image-1200x630.png
+  Banner LinkedIn / X ...................... social/banner-*.png
+  Site și aplicație instalabilă ............ favicon-si-aplicatie/
+
+
+CE CONȚINE logo/
+
+  cabinio-logo-*            simbol + nume, pe orizontală (varianta principală)
+  cabinio-logo-vertical-*   simbol deasupra numelui
+  cabinio-text-*            doar numele
+  cabinio-simbol-*          doar simbolul
+  cabinio-pictograma-*      simbol alb pe pătrat indigo
+
+  Toate PNG-urile din png-transparent/ au fundal transparent. Modelul în
+  carouri pe care îl arată unele programe este transparența, nu face parte
+  din imagine.
+
+
+CULORI
+
+  Indigo Cabinio    #4F46E5   RGB 79, 70, 229      culoarea principală
+  Indigo deschis    #A5B4FC   RGB 165, 180, 252    simbolul și „io” pe fundal închis
+  Cerneală          #0F172A   RGB 15, 23, 42       „Cabin” și fundaluri închise
+  Alb               #FFFFFF
+
+  Pentru tipar, cereți tipografiei conversia în CMYK și o probă: indigo-ul
+  ecranului nu are un echivalent CMYK exact.
+
+
+FONT
+
+  Inter ExtraBold (800), același font ca în aplicație. Licență SIL Open Font
+  License: se poate folosi gratuit, inclusiv comercial. În SVG, PNG și PDF
+  numele este desenat ca formă, deci logo-ul nu are nevoie de fontul instalat.
+
+
+REGULI DE FOLOSIRE
+
+  Spațiu liber: păstrați în jurul logo-ului cel puțin înălțimea literei „C”.
+  Mărime minimă: 100 px lățime pe ecran sau 25 mm la tipar pentru logo-ul
+  orizontal; 24 px sau 7 mm pentru simbol. Excepție: favicon-ul din
+  tab-ul browserului, unde apare la 16 px.
+
+  Nu întindeți și nu rotiți logo-ul.
+  Nu schimbați culorile și nu separați „io” de „Cabin”.
+  Nu adăugați umbre, contururi sau gradienți.
+  Nu așezați logo-ul pe fotografii aglomerate; folosiți varianta albă pe un
+  fundal uniform.
+
+
+ÎNAINTE DE ÎNREGISTRAREA MĂRCII
+
+  Numele și simbolul nu au fost verificate în bazele OSIM și EUIPO.

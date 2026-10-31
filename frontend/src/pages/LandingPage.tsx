@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { PROVIDER, providerName, contactEmail } from '../lib/legalConfig'
 import { Icon, type IconName } from './landingIcons'
 import ThemeToggleSwitch from '../components/ThemeToggleSwitch'
+import LogoMark from '../components/LogoMark'
 import './landing.css'
 
 const FAQ: [string, string][] = [
@@ -248,7 +249,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void
       <div className="lp-progress" aria-hidden="true" />
       <div className="lp-navbar">
         <div className="lp-wrap lp-nav">
-          <div className="lp-logo">Cabin<span>io</span></div>
+          <div className="lp-logo"><LogoMark size={28} /><b>Cabin<span>io</span></b></div>
           <nav className="lp-links" aria-label="Secțiuni">
             <a href="#clienti">Clienți</a><a href="#documente">Documente</a><a href="#securitate">Securitate</a><a href="#pret">Preț</a>
           </nav>
