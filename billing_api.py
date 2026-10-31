@@ -354,6 +354,8 @@ def create_checkout():
         "subscription_data": sub_data,
         "metadata": {"workspaceId": wid},
         "allow_promotion_codes": True,
+        # Bifa de acceptare a Termenilor; Stripe refuză sesiunea dacă URL-ul lor lipsește din Dashboard (Settings → Public details).
+        "consent_collection": {"terms_of_service": "required"},
         "locale": "ro",
         "success_url": f"{base}/abonament?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{base}/abonament?checkout=cancel",

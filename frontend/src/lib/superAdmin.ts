@@ -58,6 +58,10 @@ export const adminSetComp = (workspaceId: string, until: string | null, reason?:
 export const adminSyncBilling = (workspaceId: string) =>
   apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/sync`)
 
+/** Semnale per cabinet; `cuiSeenInWorkspace`: același CUI a mai avut o perioadă de probă în alt cabinet. */
+export const adminBillingOverview = () =>
+  apiJson<{ id: string; cuiSeenInWorkspace?: string | null }[]>('GET', '/admin/billing/overview')
+
 export interface WorkspaceCreator {
   id: string
   email: string

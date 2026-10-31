@@ -5,6 +5,7 @@ import { listAllWorkspaces, writeWorkspaceFeature } from '../lib/workspace'
 import {
   grantSuperAdmin, listSuperAdminGrants, type SuperAdminGrant,
   listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator, fetchSignupStatus,
+  adminBillingOverview,
 } from '../lib/superAdmin'
 import SuperAdminBilling from '../components/SuperAdminBilling'
 import type { Workspace } from '../types'
@@ -17,6 +18,8 @@ export default function SuperAdminPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [wsLoading, setWsLoading] = useState(true)
   const [wsError, setWsError] = useState<string | null>(null)
+  // Cabinet → cabinetul în care același CUI a mai avut o perioadă de probă.
+  const [cuiSeen, setCuiSeen] = useState<Record<string, string>>({})
 
   const [grants, setGrants] = useState<SuperAdminGrant[]>([])
   const [grantsLoading, setGrantsLoading] = useState(true)
@@ -39,6 +42,10 @@ export default function SuperAdminPage() {
     } finally {
       setWsLoading(false)
     }
+    // Doar un semnal: dacă API-ul nu răspunde, lista de cabinete rămâne utilizabilă.
+    adminBillingOverview()
+      .then(rows => setCuiSeen(Object.fromEntries(rows.flatMap(r => r.cuiSeenInWorkspace ? [[r.id, r.cuiSeenInWorkspace]] : []))))
+      .catch(() => {})
   }, [])
 
   const loadGrants = useCallback(async () => {
@@ -177,6 +184,11 @@ export default function SuperAdminPage() {
                         ))}
                       </div>
 
+                      {cuiSeen[w.id] && (
+                        <div role="status" style={{ color: 'var(--a800, #92400e)', fontSize: '.8125rem', marginBottom: '.5rem' }}>
+                          Atenție: acest CUI a mai avut o perioadă de probă în cabinetul „{workspaces.find(x => x.id === cuiSeen[w.id])?.name ?? cuiSeen[w.id]}”.
+                        </div>
+                      )}
                       <SuperAdminBilling workspaceId={w.id} billing={w.billing}
                         onChange={b => setWorkspaces(prev => prev.map(x => x.id === w.id ? { ...x, billing: b } : x))} />
 

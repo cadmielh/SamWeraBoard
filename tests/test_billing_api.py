@@ -168,6 +168,7 @@ def test_checkout_server_picks_price_and_carries_trial(env):
     params = next(iter(stripe.sessions.values()))["params"]
     assert params["line_items"] == [{"price": "price_y", "quantity": 1}]          # priceId-ul clientului ignorat
     assert params["client_reference_id"] == wid and params["allow_promotion_codes"] and params["locale"] == "ro"
+    assert params["consent_collection"] == {"terms_of_service": "required"}
     trial_end = billing.to_utc(billing_of(db, wid)["trialEndsAt"])
     assert params["subscription_data"]["trial_end"] == int(trial_end.timestamp())
     assert params["success_url"].startswith("https://cabinio.test/abonament?checkout=success")
