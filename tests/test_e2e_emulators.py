@@ -407,6 +407,7 @@ def test_ocr_is_rate_limited_per_user_with_retry_after(app_ctx, monkeypatch):
     assert c.post(f"/invitations/{iid}/accept", headers=hdr(b)).status_code == 200
 
     monkeypatch.setattr(ratelimit, "LIMITS", {**ratelimit.LIMITS, "ocr": [("user", 2, 60)]})
+    monkeypatch.setattr(ratelimit, "LIMITS_TRIAL", {})                          # cabinetul e în probă
     monkeypatch.setattr(azure_extractor, "extract_from_bytes", lambda bts, n: _FakeId({"cnp": VALID_CNP}))
     monkeypatch.setattr(local_extractor, "_quality_score", lambda *_a, **_k: 1.0)
     up = lambda: {"file": (io.BytesIO(b"x" * 100), "ci.jpg")}                         # noqa: E731

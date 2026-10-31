@@ -10,6 +10,7 @@ import { toDateSafe, formatDateRo } from '../lib/dates'
 import type { ExportColumnSpec, ExportCellType } from '../lib/xlsxExport'
 import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import { useApp } from '../AppContext'
+import { READ_ONLY_TITLE } from '../lib/billing'
 import ClientModal from '../components/ClientModalGate'
 import ClientView from '../components/ClientView'
 import Modal from '../components/Modal'
@@ -286,7 +287,7 @@ type ModalState = null | 'add' | Client
 type DeleteState = null | Client
 
 export default function ClientiPage() {
-  const { user, activeWorkspace, toast } = useApp()
+  const { user, activeWorkspace, toast, canEdit } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
 
   const { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove, legacyRawById } = useClienti(workspaceId)
@@ -532,7 +533,7 @@ export default function ClientiPage() {
               <button className="btn btn-ghost" onClick={() => setShowExportDialog(true)}>
                 <IconExport /> Exportă
               </button>
-              <button className="btn btn-primary" onClick={() => setModal('add')}>
+              <button className="btn btn-primary" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
                 + Adaugă client
               </button>
             </div>
@@ -689,7 +690,7 @@ export default function ClientiPage() {
                         : 'Nu există clienți înregistrați.'}
                     </div>
                     {!searchQuery && !hasActiveFiltersOrSort && (
-                      <button className="btn btn-primary" onClick={() => setModal('add')}>
+                      <button className="btn btn-primary" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
                         + Adaugă primul client
                       </button>
                     )}

@@ -4,6 +4,7 @@ import type { User } from 'firebase/auth'
 import { onAuthStateChanged, auth, signIn, signOut } from './lib/firebase'
 import { useWorkspace } from './lib/workspace'
 import { setApiWorkspace } from './lib/api'
+import { billingAccess, setWriteAccess } from './lib/billing'
 import { hasFeature as hasFeatureFn, type FeatureKey } from './lib/features'
 import { applyPendingSuperAdminGrant } from './lib/superAdmin'
 import type { ToastItem } from './types'
@@ -11,6 +12,8 @@ import { AppCtx, type AppContextType } from './AppContext'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
 import ConsentGate from './components/ConsentGate'
+import TrialBanner from './components/TrialBanner'
+import UpgradeModal from './components/UpgradeModal'
 import LandingPage from './pages/LandingPage'
 
 export default function AppLayout() {
@@ -19,6 +22,12 @@ export default function AppLayout() {
   const [accessToken, setAccessToken] = useState(() => sessionStorage.getItem('gat') ?? '')
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [authLoading, setAuthLoading] = useState(true)
+  // Ceasul pentru starea abonamentului: accessUntil nu se rescrie la expirare, deci reevaluăm periodic.
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(t)
+  }, [])
 
   const workspaceCtx = useWorkspace(user?.uid ?? null)
 
@@ -58,6 +67,9 @@ export default function AppLayout() {
   // Workspace-ul activ e trimis la fiecare cerere către API (autorizare server-side).
   const activeWorkspaceId = workspaceCtx.activeWorkspace?.id ?? null
   useEffect(() => { setApiWorkspace(activeWorkspaceId) }, [activeWorkspaceId])
+  // Scrierile Firestore din lib/* se opresc din client când cabinetul e în citire (vezi lib/billing.assertWritable).
+  const billing = billingAccess(workspaceCtx.activeWorkspace?.billing, now)
+  useEffect(() => { setWriteAccess(billing.full) }, [billing.full])
 
   // Redirect to workspace setup if no workspace
   useEffect(() => {
@@ -145,6 +157,7 @@ export default function AppLayout() {
     ? (activeWorkspace.members[user.uid]?.role ?? null)
     : null
   const hasFeature = (key: FeatureKey) => hasFeatureFn(activeWorkspace?.features, key)
+  const canEdit = (userRole === 'admin' || userRole === 'member') && billing.full
 
   const ctx: AppContextType = {
     user,
@@ -153,6 +166,8 @@ export default function AppLayout() {
     activeWorkspace,
     userRole,
     hasFeature,
+    billing,
+    canEdit,
     isSuperAdmin,
     workspaceCtx,
   }
@@ -172,9 +187,11 @@ export default function AppLayout() {
         />
         <div className="main-area">
           <ConsentGate onSignOut={handleSignOut} />
+          <TrialBanner />
           <Outlet />
         </div>
       </div>
+      <UpgradeModal />
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>
   )

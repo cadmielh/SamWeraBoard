@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore'
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
+import { assertWritable } from './billing'
 import type { Dosar, DosarInput, StadiuDosar } from '../types'
 
 const PAGE_SIZE = 100
@@ -122,6 +123,7 @@ export function useDosare(workspaceId: string | null) {
     const tempId = `temp-${crypto.randomUUID()}`
     setDosare(prev => [{ ...(payload as unknown as Dosar), id: tempId, createdAt: new Date().toISOString(), ...localCreatedExtra }, ...prev])
     try {
+      assertWritable()
       const ref = await addDoc(dosareCol(workspaceId), payload)
       setDosare(prev => prev.map(d => d.id === tempId ? { ...d, id: ref.id } : d))
       return ref.id
@@ -179,6 +181,7 @@ export function useDosare(workspaceId: string | null) {
     }
 
     try {
+      assertWritable()
       await updateDoc(doc(dosareCol(workspaceId), dosarId), patch)
     } catch (err) {
       if (foundInState && previous) { const p = previous; setDosare(prev => prev.map(d => d.id === dosarId ? p : d)) }
@@ -197,6 +200,7 @@ export function useDosare(workspaceId: string | null) {
       return prev.filter(d => d.id !== dosarId)
     })
     try {
+      assertWritable()
       await deleteDoc(doc(dosareCol(workspaceId), dosarId))
     } catch (err) {
       if (removed) {
@@ -270,6 +274,7 @@ export async function updateDosarStadiu(workspaceId: string, dosarId: string, st
   } else {
     patch.documentePredateAt = deleteField()
   }
+  assertWritable()
   await updateDoc(doc(dosareCol(workspaceId), dosarId), patch)
 }
 

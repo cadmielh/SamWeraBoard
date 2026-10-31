@@ -19,7 +19,14 @@ service cloud.firestore {
         : null;
     }
     function isMember(wid)  { return roleOf(wid) != null; }
-    function canWrite(wid)  { return roleOf(wid) in ['admin', 'member']; }
+    // Acces complet = perioadă de probă, abonament valabil sau acces gratuit (workspaces/{wid}.billing.accessUntil,
+    // calculat DOAR de server în billing.py). După expirare cabinetul rămâne în citire + export. Fără câmpul
+    // `billing` scrierile sunt refuzate (fail closed). Documentul workspace e deja citit de roleOf(), deci nu costă.
+    function billingOk(wid) {
+      let b = workspace(wid).get('billing', {});
+      return b.get('accessUntil', null) is timestamp && request.time < b.accessUntil;
+    }
+    function canWrite(wid)  { return roleOf(wid) in ['admin', 'member'] && billingOk(wid); }
     function isAdmin(wid)   { return roleOf(wid) == 'admin'; }
 
     // Rol de aplicație (independent de orice workspace) — users/{uid}.isSuperAdmin.
@@ -165,6 +172,19 @@ service cloud.firestore {
 
     // Cine poate crea cabinete (înregistrare pe invitație): doar prin API.
     match /workspaceCreators/{id} {
+      allow read, write: if false;
+    }
+
+    // ── Abonamente ─────────────────────────────────────────────────────────
+    // Date de facturare, id-uri Stripe, facturi; evenimente Stripe procesate; revendicări de perioadă de probă.
+    // Doar server-side (billing_api.py); adminii le văd prin API.
+    match /billingAccounts/{wid}/{document=**} {
+      allow read, write: if false;
+    }
+    match /stripeEvents/{id} {
+      allow read, write: if false;
+    }
+    match /trialClaims/{id} {
       allow read, write: if false;
     }
 

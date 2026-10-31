@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase'
 import { apiJson } from './api'
+import type { WorkspaceBilling } from '../types'
 
 export interface SuperAdminGrant {
   email: string
@@ -44,7 +45,18 @@ export async function applyPendingSuperAdminGrant(uid: string, email: string): P
 }
 
 /** Poate utilizatorul curent crea un cabinet nou (înregistrare pe invitație)? */
-export const fetchSignupStatus = () => apiJson<{ canCreate: boolean }>('GET', '/signup/status')
+export const fetchSignupStatus = () => apiJson<{ canCreate: boolean; mode: 'open' | 'invite' }>('GET', '/signup/status')
+
+// ── Abonamente (super admin) — vezi billing_api.py ───────────────────────────
+export const adminExtendTrial = (workspaceId: string, days: number) =>
+  apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/extend-trial`, { days })
+
+/** Acces gratuit până la `until` (AAAA-LL-ZZ, sfârșitul zilei); `null` îl retrage. */
+export const adminSetComp = (workspaceId: string, until: string | null, reason?: string) =>
+  apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/comp`, { until, reason })
+
+export const adminSyncBilling = (workspaceId: string) =>
+  apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/sync`)
 
 export interface WorkspaceCreator {
   id: string

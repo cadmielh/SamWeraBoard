@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore'
 import type { QueryDocumentSnapshot, DocumentData, Unsubscribe } from 'firebase/firestore'
 import { db } from './firebase'
+import { assertWritable } from './billing'
 import type { Sarcina, SarcinaInput, SarcinaStatus } from '../types'
 import { startOfWeek } from './dateWeek'
 
@@ -74,6 +75,7 @@ export function useSarcini(workspaceId: string | null) {
     // de la bun început — altfel n-ar apărea în niciun query (board-ul cere
     // fie status activ, fie completedAt recent), la fel ca la update().
     if (data.status === 'finalizat') payload.completedAt = serverTimestamp()
+    assertWritable()
     const ref = await addDoc(sarciniCol(workspaceId), payload)
     return ref.id
   }, [])
@@ -99,10 +101,12 @@ export function useSarcini(workspaceId: string | null) {
       }
     }
 
+    assertWritable()
     await updateDoc(doc(sarciniCol(workspaceId), sarcinaId), patch)
   }, [sarcini])
 
   const remove = useCallback(async (workspaceId: string, sarcinaId: string) => {
+    assertWritable()
     await deleteDoc(doc(sarciniCol(workspaceId), sarcinaId))
   }, [])
 
@@ -193,6 +197,7 @@ export function useArchivedSarcini(workspaceId: string | null, refreshKey = 0) {
   /** Scoate o sarcină din arhivă, înapoi pe board — statusul țintă e ales de
    * utilizator (Deschis/În lucru), nu implicit, la fel ca la restoreDosar. */
   const restore = useCallback(async (workspaceId: string, sarcinaId: string, newStatus: SarcinaStatus, newOrder: number) => {
+    assertWritable()
     await updateDoc(doc(sarciniCol(workspaceId), sarcinaId), {
       status: newStatus, order: newOrder, completedAt: deleteField(), arhivatManual: deleteField(),
     })
@@ -205,6 +210,7 @@ export function useArchivedSarcini(workspaceId: string | null, refreshKey = 0) {
 /** Arhivează o sarcină finalizată imediat, fără să aștepte finalul
  * săptămânii — vezi Sarcina.arhivatManual din types.ts. */
 export async function archiveSarcinaNow(workspaceId: string, sarcinaId: string) {
+  assertWritable()
   await updateDoc(doc(sarciniCol(workspaceId), sarcinaId), { arhivatManual: true })
 }
 
@@ -212,6 +218,7 @@ export async function archiveSarcinaNow(workspaceId: string, sarcinaId: string) 
  * serverTimestamp()/deleteField() după caz. Board-ul (onSnapshot) reflectă
  * mutarea automat; nu necesită și un apel local de stare. */
 export async function moveSarcina(workspaceId: string, id: string, newStatus: SarcinaStatus, newOrder: number) {
+  assertWritable()
   await updateDoc(doc(sarciniCol(workspaceId), id), {
     status: newStatus,
     order: newOrder,
@@ -222,6 +229,7 @@ export async function moveSarcina(workspaceId: string, id: string, newStatus: Sa
 /** Re-spațiază `order` (index * 1000) pentru un set de sarcini din aceeași
  * coloană, după o reordonare prin drag — writeBatch, atomic. */
 export async function reorderColumn(workspaceId: string, items: Sarcina[]) {
+  assertWritable()
   const batch = writeBatch(db)
   items.forEach((item, i) => {
     batch.update(doc(sarciniCol(workspaceId), item.id), { order: i * 1000 })

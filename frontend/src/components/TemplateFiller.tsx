@@ -15,6 +15,7 @@ import CustomPersonField from './CustomPersonField'
 import CustomPersonGroupField from './CustomPersonGroupField'
 import DateFieldInput from './DateFieldInput'
 import { useTemplates, logDocGeneration } from '../lib/templates'
+import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
@@ -623,6 +624,8 @@ export default function TemplateFiller({
 
   const handleGenerateGdoc = async (tpl: DocTemplate) => {
     if (!tpl.docId) return
+    // Google Docs se completează direct din browser (nu trece prin API): cabinetul în citire e oprit aici.
+    try { assertWritable() } catch { return }
     setLoading(tpl.id, true)
     try {
       const outputName = tpl.outputNameTemplate || tpl.name

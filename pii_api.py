@@ -82,7 +82,7 @@ def reveal(cid: str):
 
 @bp.put("/clients/<cid>/pii")
 def write(cid: str):
-    principal, wid, _ = authz.require_from_header("member", consent=True, limit="pii")
+    principal, wid, _ = authz.require_from_header("member", consent=True, limit="pii", billing=True)
     if not _ID_RE.match(cid):
         return _err("not_found", 404)
     body = request.get_json(silent=True)

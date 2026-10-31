@@ -31,7 +31,15 @@ export function setApiWorkspace(id: string | null) {
   activeWorkspaceId = id ?? "";
 }
 
-/** Mesajul afișat utilizatorului pentru un răspuns de eroare al API-ului (coduri cunoscute → text clar). */
+/** Evenimentul care deschide fereastra de abonare (UpgradeModal), emis la orice refuz `subscription_required`. */
+export const SUBSCRIPTION_REQUIRED_EVENT = 'cabinio:subscription-required'
+
+export function notifySubscriptionRequired(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SUBSCRIPTION_REQUIRED_EVENT))
+}
+
+/** Mesajul afișat utilizatorului pentru un răspuns de eroare al API-ului (coduri cunoscute → text clar).
+ * Un refuz `subscription_required` deschide și fereastra de abonare (toate apelurile API trec pe aici). */
 export function apiErrorMessage(data: { error?: string } | undefined, res: Response, fallback: string): string {
   switch (data?.error) {
     case "rate_limited": {
@@ -41,7 +49,18 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
     case "consent_required":
       return "Administratorul spațiului de lucru trebuie să accepte termenii și DPA înainte de a prelucra date personale.";
     case "creation_not_allowed":
-      return "Crearea de cabinete noi se face pe invitație. Solicită acces pilot la adresa de contact din subsolul paginii.";
+      return "Crearea de cabinete noi este momentan oprită. Scrie-ne la adresa de contact din subsolul paginii.";
+    case "subscription_required":
+      notifySubscriptionRequired();
+      return "Perioada de probă sau abonamentul cabinetului a expirat. Activează abonamentul pentru a continua.";
+    case "billing_details_required":
+      return "Completează datele de facturare înainte de abonare.";
+    case "subscription_exists":
+      return "Cabinetul are deja un abonament. Îl poți gestiona din portalul de plată.";
+    case "billing_unavailable":
+      return "Plățile sunt temporar indisponibile. Încearcă din nou în câteva minute.";
+    case "invalid_cui":
+      return "CUI-ul nu este valid. Verifică cifrele (cu sau fără „RO”).";
     case "invalid_person":
       return "CNP-ul (13 cifre) sau seria actului au un format nevalid. Corectează datele persoanei și încearcă din nou.";
     case "vault_unavailable":

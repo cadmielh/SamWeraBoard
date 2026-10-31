@@ -40,9 +40,21 @@ export function TermeniPage() {
       <H>6. Disponibilitate</H>
       <P>Furnizorul depune eforturi rezonabile pentru ca Serviciul să fie disponibil, fără a garanta funcționarea neîntreruptă: pot exista întreruperi pentru
         mentenanță sau din cauza unor servicii terțe (ex. Google, Microsoft, ANAF). Întreruperile programate importante se anunță în prealabil, când este posibil.</P>
-      <H>7. Tarife</H>
-      <P>Serviciul poate fi oferit gratuit sau contra cost. Orice tarif se comunică înainte de aplicare și se aplică doar pentru perioade viitoare;
-        modificările de preț se anunță cu cel puțin 30 de zile înainte.</P>
+      <H>7. Tarife, perioadă de probă și abonament</H>
+      <UL>
+        <li>Serviciul se oferă pe bază de abonament per spațiu de lucru (cabinet), cu plată lunară sau anuală, la prețul afișat în aplicație la momentul
+          abonării. Furnizorul nu este plătitor de TVA; prețul afișat este prețul final.</li>
+        <li>Fiecare cont beneficiază o singură dată de o perioadă de probă gratuită de 14 zile, fără card. Furnizorul poate prelungi perioada de probă sau
+          poate acorda acces gratuit, la alegerea sa.</li>
+        <li>Plata se face cu cardul, prin procesatorul de plăți Stripe; Furnizorul nu primește și nu stochează datele cardului. Abonamentul se reînnoiește
+          automat la sfârșitul fiecărei perioade, până la anulare. Pentru fiecare plată se emite factură.</li>
+        <li>Anularea se face oricând din aplicație și produce efecte la sfârșitul perioadei deja plătite; sumele plătite pentru perioada în curs nu se
+          restituie proporțional.</li>
+        <li>Dacă o plată eșuează, accesul complet se păstrează încă 7 zile, timp în care plata se reîncearcă automat.</li>
+        <li>După încheierea perioadei de probă sau a abonamentului, spațiul de lucru trece în modul citire: datele rămân accesibile pentru consultare și
+          export, dar nu mai pot fi adăugate sau modificate. Ștergerea datelor se face la cererea Cabinetului, conform DPA.</li>
+        <li>Modificările de preț se anunță cu cel puțin 30 de zile înainte și se aplică doar perioadelor următoare.</li>
+      </UL>
       <H>8. Răspundere</H>
       <P>În măsura permisă de lege, răspunderea Furnizorului față de Cabinet pentru orice prejudiciu legat de Serviciu este limitată la sumele plătite pentru
         Serviciu în ultimele 12 luni. Limitarea nu se aplică în cazurile în care legea nu permite limitarea răspunderii (de exemplu dol sau culpă gravă). Furnizorul
@@ -73,11 +85,15 @@ export function ConfidentialitatePage() {
           și obligații legale. Aproximativ 13 luni.</li>
         <li><strong>Jurnale tehnice ale infrastructurii</strong> (adresă IP, moment, ruta apelată, cod de răspuns): funcționarea și securitatea Serviciului — interes legitim. Le păstrează Google Cloud Logging, 30 de zile, într-un spațiu de stocare din UE (Frankfurt). Doar jurnalele de administrare ale contului cloud al furnizorului (acțiunile furnizorului ca administrator, nu ale utilizatorilor Serviciului) sunt înregistrate de Google în locația „global”. Nu conțin valori ale datelor personale ale clienților.</li>
         <li><strong>Contoare de limitare a cererilor</strong> (identificatori tehnici pseudonimizați și un număr de cereri): protecția împotriva abuzului — interes legitim. Se șterg automat după câteva zile.</li>
+        <li><strong>Date de facturare ale abonamentului</strong> (denumire sau nume, CUI, adresă, e-mail pentru facturi) și istoricul plăților: facturarea
+          și încasarea abonamentului — executarea contractului și obligații legale (contabilitate). Datele cardului sunt prelucrate exclusiv de Stripe și nu
+          ajung la noi. Documentele contabile se păstrează 10 ani, cât impune legea contabilității.</li>
         <li><strong>Dovada acceptării termenilor și a DPA</strong> (versiune, moment, adresă IP): demonstrarea consimțământului contractual (art. 5 alin. 2 GDPR).
           Pe durata contului și, ulterior, cât impune legea (de regulă până la 3 ani, termenul general de prescripție).</li>
       </UL>
       <H>Destinatari</H>
-      <P>Furnizorii de infrastructură ai Serviciului, listați la <Link to="/sub-imputerniciti">Sub-împuterniciți</Link>. Nu vindem date și nu folosim cookie-uri de
+      <P>Furnizorii de infrastructură ai Serviciului, listați la <Link to="/sub-imputerniciti">Sub-împuterniciți</Link>. Pentru abonament: Stripe Payments
+        Europe Ltd. (Irlanda), procesarea plăților cu cardul, și SmartBill (Intelligent IT SRL, România), emiterea facturilor. Nu vindem date și nu folosim cookie-uri de
         urmărire sau de publicitate; folosim doar stocare locală strict necesară funcționării (preferințe de interfață și sesiunea de autentificare). Când folosiți autentificarea Google sau fereastra Google de alegere a fișierelor din Drive, Google poate seta propriile cookie-uri, potrivit politicilor sale.</P>
       <H>Drepturile dumneavoastră</H>
       <P>Aveți dreptul de acces, rectificare, ștergere, restricționare, portabilitate și opoziție. Le puteți exercita scriind {viaContact(contactEmail())}. Dacă
@@ -165,6 +181,9 @@ export function SubImputernicitiPage() {
         <li><strong>ANAF</strong> (Agenția Națională de Administrare Fiscală) — autoritate publică, nu sub-împuternicit;</li>
         <li><strong>cuiscan.ro</strong> — serviciu terț de consultare a datelor publice ale societăților, care primește doar CIF-ul și returnează date publice. Nu îi sunt trimise date personale ale clienților sau ale utilizatorilor; nu prelucrează date în numele nostru și nu are acces la spațiile de lucru.</li>
       </UL>
+      <P>Pentru plata abonamentului, datele de facturare ale Cabinetului (nu datele clienților săi) ajung la <strong>Stripe Payments Europe Ltd.</strong> (Irlanda),
+        care procesează plata cu cardul, și la <strong>SmartBill</strong> (Intelligent IT SRL, România), care emite factura. Aceștia nu au acces la spațiile de lucru;
+        vezi <Link to="/confidentialitate">Confidențialitate</Link>.</P>
     </LegalLayout>
   )
 }
@@ -221,6 +240,7 @@ export function SecuritatePage() {
         <li><strong>Invitații cu acceptare explicită</strong>: nimeni nu este adăugat automat într-un spațiu; invitațiile expiră după 14 zile.</li>
         <li><strong>Jurnal de activitate</strong> scris exclusiv de server (nu poate fi modificat din aplicație), vizibil administratorilor, păstrat aproximativ 13 luni.</li>
         <li><strong>Autentificare</strong> prin conturi Google cu e-mail verificat; sesiunile revocate sunt respinse.</li>
+        <li><strong>Plăți</strong>: datele cardului se introduc direct pe pagina securizată Stripe și nu ajung pe serverele Furnizorului.</li>
         <li><strong>Fără date personale în jurnalele tehnice</strong> și mesaje de eroare generice către utilizatori.</li>
         <li><strong>Recuperare la un moment anterior</strong> a bazei de date (ultimele 7 zile) și protecție împotriva ștergerii accidentale a bazei de date.</li>
         <li><strong>Procedură scrisă de răspuns la incidente</strong>, cu responsabilități și termene: evaluare în 24 de ore, notificarea cabinetelor în principiu în 48 de ore, registru al incidentelor și exercițiu anual.</li>

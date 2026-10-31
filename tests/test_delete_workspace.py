@@ -26,7 +26,7 @@ def db(monkeypatch):
     monkeypatch.delenv("VAULT_KMS_KEY", raising=False)
     vault._cache.clear()
     c = gcf.Client(project="demo-delete")
-    for coll in ("workspaces", "users", "invitations", "workspaceKeys", "deletionLog"):
+    for coll in ("workspaces", "users", "invitations", "workspaceKeys", "deletionLog", "billingAccounts"):
         for d in c.collection(coll).stream():
             c.recursive_delete(d.reference)
     monkeypatch.setattr(authz, "db", lambda: c)
@@ -89,3 +89,33 @@ def test_delete_removes_everything_of_the_workspace_and_nothing_else(db):
 def test_missing_workspace_stops_with_a_clear_message(db):
     with pytest.raises(SystemExit, match="nu există"):
         dw.run(db, "nu-exista-aaaaaaaaaa")
+
+
+def test_delete_cancels_live_stripe_subscription_and_billing_data(db, monkeypatch):
+    seed(db)
+    import billing_api
+    canceled = []
+    monkeypatch.setattr(billing_api, "stripe_subscription_cancel", canceled.append)
+    db.collection("workspaces").document(W).update({"billing": {"hasSubscription": True}})
+    db.collection("billingAccounts").document(W).set({"stripeSubscriptionId": "sub_123", "details": {"cui": "1"}})
+    db.collection("billingAccounts").document(W).collection("invoices").document("in_1").set({"amount": 1})
+    assert dw.run(db, W, dry_run=True)["stripeSubscription"] == "sub_123" and canceled == []
+    dw.run(db, W, actor="test")
+    assert canceled == ["sub_123"]
+    assert not db.collection("billingAccounts").document(W).get().exists
+    assert list(db.collection("billingAccounts").document(W).collection("invoices").stream()) == []
+
+
+def test_delete_stops_before_anything_if_stripe_cancel_fails(db, monkeypatch):
+    seed(db)
+    import billing_api
+
+    def fail(_sid):
+        raise billing_api.BillingUnavailable("STRIPE_SECRET_KEY lipsește")
+
+    monkeypatch.setattr(billing_api, "stripe_subscription_cancel", fail)
+    db.collection("workspaces").document(W).update({"billing": {"hasSubscription": True}})
+    db.collection("billingAccounts").document(W).set({"stripeSubscriptionId": "sub_123"})
+    with pytest.raises(billing_api.BillingUnavailable):
+        dw.run(db, W, actor="test")
+    assert db.collection("workspaces").document(W).get().to_dict()["status"] == "active"     # nimic atins

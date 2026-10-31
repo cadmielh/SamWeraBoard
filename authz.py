@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from firebase_admin import auth as fb_auth, firestore
 from flask import request
 
+import billing as _billing
 import legal_versions
 
 ROLE_RANK = {"viewer": 1, "member": 2, "admin": 3}
@@ -59,6 +60,19 @@ class ConsentRequired(AuthError):
     @property
     def public(self) -> str:
         return "consent_required"
+
+
+class SubscriptionRequired(AuthError):
+    """Perioada de probă sau abonamentul cabinetului a expirat: 402 cu cod distinct, ca aplicația să arate
+    oferta de abonare. Datele rămân accesibile în citire (și export); doar acțiunile care creează sau
+    modifică date ori consumă OCR/AI sunt blocate."""
+
+    def __init__(self):
+        super().__init__(402)
+
+    @property
+    def public(self) -> str:
+        return "subscription_required"
 
 
 class RateLimited(AuthError):
@@ -148,10 +162,12 @@ def consent_ok(ws: dict) -> bool:
     return c.get("tos") == legal_versions.TOS_VERSION and c.get("dpa") == legal_versions.DPA_VERSION
 
 
-def require_role(principal: Principal, wid: str, min_role: str = "member", consent: bool = False) -> dict:
+def require_role(principal: Principal, wid: str, min_role: str = "member", consent: bool = False,
+                 billing: bool = False) -> dict:
     """Întoarce documentul workspace-ului dacă utilizatorul e membru cu rol
     suficient; altfel AuthError(403). Nu distinge între „nu există” și „nu ești
-    membru”, ca să nu dezvăluie existența unor workspace-uri străine."""
+    membru”, ca să nu dezvăluie existența unor workspace-uri străine.
+    `billing=True`: cere și acces complet (probă sau abonament valabil), altfel SubscriptionRequired."""
     ws = load_workspace(wid)
     if ws is None or ws.get("status") == "pendingDeletion":
         raise AuthError(403)
@@ -160,7 +176,22 @@ def require_role(principal: Principal, wid: str, min_role: str = "member", conse
         raise AuthError(403)
     if consent and not consent_ok(ws):
         raise ConsentRequired()
+    if billing and not _billing.has_full_access(ws):
+        raise SubscriptionRequired()
     return ws
+
+
+def is_super_admin(uid: str) -> bool:
+    """Rol de aplicație (nu de workspace): `users/{uid}.isSuperAdmin`."""
+    snap = db().collection("users").document(uid).get()
+    return bool(snap.exists and (snap.to_dict() or {}).get("isSuperAdmin") is True)
+
+
+def require_super_admin() -> Principal:
+    principal = authenticate()
+    if not is_super_admin(principal.uid):
+        raise AuthError(403)
+    return principal
 
 
 def client_ip() -> str:
@@ -169,14 +200,15 @@ def client_ip() -> str:
 
 
 def require_from_header(min_role: str = "member", consent: bool = False,
-                        limit: str | None = None) -> tuple[Principal, str, dict]:
+                        limit: str | None = None, billing: bool = False) -> tuple[Principal, str, dict]:
     """Autentifică și autorizează pe workspace-ul din `X-Workspace-Id`.
     `consent=True`: cere și acceptarea versiunii curente a termenilor/DPA (operațiuni cu date personale).
-    `limit`: numele acțiunii din `ratelimit.LIMITS` (contor per utilizator/workspace)."""
+    `limit`: numele acțiunii din `ratelimit.LIMITS` (contor per utilizator/workspace; cote reduse în probă).
+    `billing=True`: acțiunea cere probă sau abonament valabil (vezi billing.py)."""
     principal = authenticate()
     wid = request.headers.get("X-Workspace-Id", "")
-    ws = require_role(principal, wid, min_role, consent=consent)
+    ws = require_role(principal, wid, min_role, consent=consent, billing=billing)
     if limit:
         import ratelimit
-        ratelimit.check(principal.uid, wid, limit)
+        ratelimit.check(principal.uid, wid, limit, tier=_billing.quota_tier(ws))
     return principal, wid, ws

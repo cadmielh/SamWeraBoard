@@ -4,8 +4,9 @@ import { FEATURE_REGISTRY, hasFeature } from '../lib/features'
 import { listAllWorkspaces, writeWorkspaceFeature } from '../lib/workspace'
 import {
   grantSuperAdmin, listSuperAdminGrants, type SuperAdminGrant,
-  listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator,
+  listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator, fetchSignupStatus,
 } from '../lib/superAdmin'
+import SuperAdminBilling from '../components/SuperAdminBilling'
 import type { Workspace } from '../types'
 
 const ROLE_LABEL: Record<'admin' | 'member' | 'viewer', string> = { admin: 'Admin', member: 'Membru', viewer: 'Doar citire' }
@@ -26,6 +27,7 @@ export default function SuperAdminPage() {
   const [creators, setCreators] = useState<WorkspaceCreator[]>([])
   const [creatorEmail, setCreatorEmail] = useState('')
   const [creatorError, setCreatorError] = useState<string | null>(null)
+  const [signupMode, setSignupMode] = useState<'open' | 'invite' | null>(null)
 
   const loadWorkspaces = useCallback(async () => {
     setWsLoading(true)
@@ -50,6 +52,7 @@ export default function SuperAdminPage() {
 
   const loadCreators = useCallback(async () => {
     try {
+      setSignupMode((await fetchSignupStatus()).mode)
       setCreators(await listWorkspaceCreators())
     } catch (e: unknown) {
       setCreatorError((e as Error).message ?? 'Eroare la încărcarea listei')
@@ -139,7 +142,7 @@ export default function SuperAdminPage() {
         <div className="page-header">
           <div>
             <div className="page-title">Super admin</div>
-            <div className="page-subtitle">Toate conturile și spațiile de lucru din aplicație, cu feature flags per workspace</div>
+            <div className="page-subtitle">Toate conturile și spațiile de lucru din aplicație: abonamente și feature flags per workspace</div>
           </div>
         </div>
       </div>
@@ -174,6 +177,9 @@ export default function SuperAdminPage() {
                         ))}
                       </div>
 
+                      <SuperAdminBilling workspaceId={w.id} billing={w.billing}
+                        onChange={b => setWorkspaces(prev => prev.map(x => x.id === w.id ? { ...x, billing: b } : x))} />
+
                       <div style={{ borderTop: '1px solid var(--s100)', paddingTop: '.625rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
                         {FEATURE_REGISTRY.map(def => (
                           <label key={def.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '.6rem', cursor: 'pointer' }}>
@@ -197,7 +203,7 @@ export default function SuperAdminPage() {
             </div>
           </div>
 
-          <div className="card">
+          {signupMode === 'invite' && <div className="card">
             <div className="card-head">
               <span className="card-title">🔑 Cine poate crea cabinete noi</span>
             </div>
@@ -229,7 +235,7 @@ export default function SuperAdminPage() {
                 ))}
               </div>
             </div>
-          </div>
+          </div>}
 
           <div className="card">
             <div className="card-head">

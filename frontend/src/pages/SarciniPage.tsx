@@ -7,6 +7,7 @@ import { updateDosarStadiu } from '../lib/dosare'
 import { useClienti } from '../lib/clienti'
 import { startOfWeek, endOfWeek } from '../lib/dateWeek'
 import { useApp } from '../AppContext'
+import { READ_ONLY_TITLE } from '../lib/billing'
 import KanbanBoard from '../components/sarcini/KanbanBoard'
 import TaskModal from '../components/sarcini/TaskModal'
 import ArchivedSarciniSection from '../components/sarcini/ArchivedSarciniSection'
@@ -26,7 +27,7 @@ function todayISO(): string {
 }
 
 export default function SarciniPage() {
-  const { user, activeWorkspace, toast } = useApp()
+  const { user, activeWorkspace, toast, canEdit } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
   const { sarcini, loading, add, update, remove } = useSarcini(workspaceId)
   const { clienti, loading: clientiLoading } = useClienti(workspaceId)
@@ -219,7 +220,7 @@ export default function SarciniPage() {
               <div className="page-subtitle">Board de lucru — dosare ONRC și orice altă sarcină</div>
             </div>
             <div className="page-actions">
-              <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }}>+ Sarcină</button>
+              <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Sarcină</button>
             </div>
           </div>
 

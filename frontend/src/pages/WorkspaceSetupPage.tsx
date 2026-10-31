@@ -33,15 +33,20 @@ export default function WorkspaceSetupPage() {
     if (!name.trim() || !accepted) return
     setSaving(true)
     try {
-      await workspaceCtx.createWorkspace(name.trim())
-      toast('Spațiu de lucru creat cu succes!', 'ok')
-      navigate('/')
+      const { trial } = await workspaceCtx.createWorkspace(name.trim())
+      if (trial) {
+        toast('Spațiu de lucru creat. Perioada de probă de 14 zile a început.', 'ok')
+        navigate('/')
+      } else {
+        toast('Spațiu de lucru creat. Perioada de probă a fost deja folosită de acest cont: activați abonamentul pentru a lucra în el.', 'info')
+        navigate('/abonament')
+      }
     } catch (e) {
       const code = (e as { code?: string }).code
       toast(code === 'workspace_limit'
         ? 'Ai atins numărul maxim de spații de lucru create'
         : code === 'creation_not_allowed'
-          ? `Crearea de cabinete noi se face pe invitație. Solicită acces la ${PROVIDER.contactEmail}.`
+          ? `Crearea de cabinete noi este momentan oprită. Scrie-ne la ${PROVIDER.contactEmail}.`
           : 'Eroare la crearea spațiului de lucru', 'err')
     } finally {
       setSaving(false)
@@ -57,15 +62,15 @@ export default function WorkspaceSetupPage() {
           <div className="card-body" style={{ padding: '2rem 2rem 2.25rem', textAlign: 'center' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '.625rem' }}>🔑</div>
             <h1 style={{ fontWeight: 800, fontSize: '1.375rem', letterSpacing: '-.025em', color: 'var(--s900)', marginBottom: '.5rem' }}>
-              Acces pe invitație
+              Înregistrare momentan închisă
             </h1>
             <p style={{ color: 'var(--s500)', fontSize: '.875rem', lineHeight: 1.55, marginBottom: '1rem' }}>
               Contul dumneavoastră nu este încă asociat niciunui cabinet. Dacă un coleg v-a invitat, invitația apare mai sus.
-              Pentru un cabinet nou, solicitați acces pilot și revenim cu pașii următori.
+              Crearea de cabinete noi este oprită temporar; scrieți-ne și revenim cu pașii următori.
             </p>
             <a className="btn btn-primary" style={{ textDecoration: 'none' }}
-              href={`mailto:${PROVIDER.contactEmail}?subject=${encodeURIComponent('Solicitare acces pilot Cabinio')}`}>
-              Solicită acces pilot
+              href={`mailto:${PROVIDER.contactEmail}?subject=${encodeURIComponent('Cont nou Cabinio')}`}>
+              Scrieți-ne
             </a>
           </div>
         </div>
@@ -80,6 +85,9 @@ export default function WorkspaceSetupPage() {
             <p style={{ color: 'var(--s400)', fontSize: '.875rem', lineHeight: 1.55 }}>
               Un spațiu de lucru conține baza de date de clienți.<br />
               Puteți invita colegi ulterior.
+            </p>
+            <p style={{ color: 'var(--g700, #15803d)', fontSize: '.8125rem', fontWeight: 600, marginTop: '.625rem' }}>
+              Primele 14 zile sunt gratuite, fără card.
             </p>
           </div>
 

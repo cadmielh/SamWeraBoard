@@ -17,7 +17,9 @@ const FAQ: [string, string][] = [
   ['La ce documente accesează aplicația din Google Drive?',
     'Doar la fișierul sau folderul pe care îl alegeți dumneavoastră prin selectorul Google. Nu are acces la restul Drive-ului.'],
   ['Cum primesc acces?',
-    'În perioada de pilot, cabinetele noi sunt aprobate individual. Scrieți-ne și vă răspundem cu pașii de creare a contului.'],
+    'Vă autentificați cu Google și creați cabinetul: primele 14 zile sunt gratuite, fără card. Apoi activați abonamentul din aplicație, cu plata prin card (Stripe).'],
+  ['Ce se întâmplă dacă nu activez abonamentul?',
+    'Cabinetul trece în modul citire: datele rămân vizibile și se pot exporta oricând, dar nu se mai pot adăuga sau modifica. Activarea abonamentului reia imediat lucrul.'],
 ]
 
 type Card = { icon: IconName; title: string; text: string }
@@ -200,7 +202,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void
     setSigning(true)
     try { await onSignIn() } finally { setSigning(false) }
   }
-  const mail = `mailto:${contactEmail()}?subject=${encodeURIComponent('Solicitare acces pilot Cabinio')}`
+  const mail = `mailto:${contactEmail()}?subject=${encodeURIComponent('Întrebare despre Cabinio')}`
 
   // Animații la scroll: apariție, bară de progres, bară de navigare cu umbră și ușor parallax pe ilustrație.
   // Fără JS sau cu „reduce motion” totul rămâne vizibil (vezi landing.css).
@@ -270,13 +272,13 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void
             </p>
             <div className="lp-cta">
               <button className="btn btn-primary lp-btn" onClick={handle} disabled={signing}>
-                {signing ? <><span className="spin" />Se conectează...</> : 'Autentificare cu Google'}
+                {signing ? <><span className="spin" />Se conectează...</> : 'Începe gratuit 14 zile'}
               </button>
-              <a className="btn lp-btn lp-outline" href={mail}><Icon name="mail" size={18} />Solicită acces pilot</a>
+              <a className="btn lp-btn lp-outline" href={mail}><Icon name="mail" size={18} />Scrie-ne</a>
             </div>
             <div className="lp-note">
-              Aveți deja cont sau ați fost invitat de un coleg? Vă autentificați direct. Accesul pe invitație se aplică
-              doar cabinetelor noi, în perioada de pilot. Pentru avocați, contabili și consultanți.
+              Fără card. Autentificare cu Google; aveți deja cont sau ați fost invitat de un coleg? Folosiți același buton.
+              Pentru avocați, contabili și consultanți.
             </div>
             <ul className="lp-badges">
               <li><Icon name="globe" size={16} />Date în UE</li>
@@ -350,15 +352,17 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void
 
         <section className="lp-sec" id="pret">
           <h2 {...reveal()}>Preț</h2>
-          <p className="lp-sub lp-reveal">Simplu în perioada de pilot; după aceea, în funcție de cât folosește cabinetul aplicația.</p>
+          <p className="lp-sub lp-reveal">14 zile gratuite, fără card. Apoi un singur abonament per cabinet, pentru toți colegii.</p>
           <div className="lp-price">
             <div className="lp-item main lp-reveal" data-anim="left">
-              <h3>Abonament de pilot</h3>
-              <div className="lp-amount">de la 200 RON <small>/ lună / cabinet</small></div>
+              <h3>Cabinio Standard</h3>
+              <div className="lp-amount">200 RON <small>/ lună / cabinet</small></div>
+              <p>sau 2000 RON / an (2 luni gratuite). Preț final: furnizor neplătitor de TVA.</p>
               <ul>
+                <li>Primele 14 zile gratuite, fără card</li>
                 <li>Fără taxă de înființare: crearea cabinetului, importul de date și instruirea sunt incluse</li>
                 <li>Prețul rămâne 200 RON/lună până la 31 decembrie 2026</li>
-                <li>Se poate rezilia lunar</li>
+                <li>Se anulează oricând din aplicație, cu efect la sfârșitul perioadei plătite</li>
               </ul>
             </div>
             <div className="lp-item lp-reveal" data-anim="right" style={{ '--d': '120ms' } as React.CSSProperties}>
@@ -382,11 +386,11 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void
 
         <section className="lp-sec">
          <div className="lp-band lp-reveal" data-anim="zoom">
-          <h2>Solicitați acces pilot</h2>
-          <p className="lp-sub">Scrieți-ne câteva rânduri despre cabinet și despre volumul de dosare, iar noi revenim cu pașii următori.</p>
+          <h2>Încercați Cabinio 14 zile</h2>
+          <p className="lp-sub">Gratuit și fără card. Pentru întrebări despre cabinet, importul datelor sau volumul de dosare, scrieți-ne.</p>
           <div className="lp-cta">
-            <a className="btn btn-primary lp-btn" href={mail}><Icon name="mail" size={18} />Scrie-ne</a>
-            <button className="btn lp-btn lp-outline" onClick={handle} disabled={signing}>Am deja cont: Autentificare</button>
+            <button className="btn btn-primary lp-btn" onClick={handle} disabled={signing}>Începe gratuit</button>
+            <a className="btn lp-btn lp-outline" href={mail}><Icon name="mail" size={18} />Scrie-ne</a>
           </div>
          </div>
         </section>

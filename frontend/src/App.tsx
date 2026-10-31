@@ -8,6 +8,7 @@ import SetariPage from './pages/SetariPage'
 import DosarePage from './pages/DosarePage'
 import SarciniPage from './pages/SarciniPage'
 import SuperAdminPage from './pages/SuperAdminPage'
+import AbonamentPage from './pages/AbonamentPage'
 import { TermeniPage, ConfidentialitatePage, DpaPage, SubImputernicitiPage, SecuritatePage } from './pages/legal/LegalPages'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="workspace/setup" element={<WorkspaceSetupPage />} />
           <Route path="utilizatori" element={<MembriPage />} />
           <Route path="setari" element={<SetariPage />} />
+          <Route path="abonament" element={<AbonamentPage />} />
           <Route path="super-admin" element={<SuperAdminPage />} />
         </Route>
         {/* Pagini legale publice — în afara AppLayout, accesibile fără autentificare */}

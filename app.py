@@ -90,11 +90,18 @@ limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 
 import workspaces_api  # noqa: E402  (după init Firebase Admin și limiter)
 import pii_api  # noqa: E402
+import billing_api  # noqa: E402
 limiter.limit("120 per hour")(workspaces_api.bp)
 app.register_blueprint(workspaces_api.bp)
 # Plafon pe citirea datelor sensibile: încetinește o eventuală exfiltrare în masă.
 limiter.limit("60 per minute")(pii_api.bp)
 app.register_blueprint(pii_api.bp)
+limiter.limit("60 per hour")(billing_api.bp)
+app.register_blueprint(billing_api.bp)
+# Webhook Stripe: autentificat prin semnătură, sosește în rafale de pe IP-urile Stripe — fără limită pe IP.
+# În producție rulează în funcția separată billing_webhook (main.py); aici, pentru `stripe listen` local.
+limiter.exempt(billing_api.webhook_bp)
+app.register_blueprint(billing_api.webhook_bp)
 
 UPLOAD_FOLDER = Path(os.getenv("UPLOAD_FOLDER", "uploads"))
 UPLOAD_FOLDER.mkdir(exist_ok=True)
@@ -105,14 +112,13 @@ def _allowed(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
 
-def _verify(min_role: str = "member", consent: bool = False, limit: str | None = None) -> str:
+def _verify(min_role: str = "member", consent: bool = False, limit: str | None = None,
+            billing: bool = False) -> str:
     """Autentifică (token Firebase nerevocat, e-mail verificat) ȘI autorizează: utilizatorul trebuie să fie membru
     al workspace-ului din `X-Workspace-Id` cu cel puțin `min_role`. Întoarce uid-ul.
+    `billing=True`: acțiunea cere probă sau abonament valabil (în citire + export nu e permisă).
     Serverul NU primește și nu folosește tokenul Google al utilizatorului: operațiunile Drive/Docs se fac din browser."""
-    principal = authz.authenticate()
-    authz.require_role(principal, request.headers.get("X-Workspace-Id", ""), min_role, consent=consent)
-    if limit:
-        ratelimit.check(principal.uid, request.headers.get("X-Workspace-Id", ""), limit)
+    principal, _wid, _ws = authz.require_from_header(min_role, consent=consent, limit=limit, billing=billing)
     return principal.uid
 
 
@@ -162,7 +168,7 @@ def _fill_meta(fmt: str, template: str, replacements: dict, destination: str = "
 @limiter.limit("20 per minute")
 def extract():
     try:
-        uid = _verify(consent=True, limit="ocr")
+        uid = _verify(consent=True, limit="ocr", billing=True)
     except PermissionError as e:
         return _auth_error(e)
 
@@ -327,7 +333,7 @@ def get_builtin_template(key: str):
 @app.route("/fill/docx", methods=["POST"])
 def fill_docx_route():
     try:
-        uid = _verify(limit="fill")
+        uid = _verify(limit="fill", billing=True)
     except PermissionError as e:
         return _auth_error(e)
 
@@ -385,7 +391,7 @@ def fill_docx_route():
 @app.route("/fill/pdf", methods=["POST"])
 def fill_pdf_route():
     try:
-        uid = _verify(limit="fill")
+        uid = _verify(limit="fill", billing=True)
     except PermissionError as e:
         return _auth_error(e)
 
@@ -424,7 +430,8 @@ def fill_pdf_route():
 @app.route("/audit/document", methods=["POST"])
 def audit_document():
     """Jurnalul de acces pentru documente generate în afara serverului (ex. un Google Doc completat din browser).
-    Raport al clientului: se acceptă doar metadate cu formă strictă, niciodată valori ale câmpurilor."""
+    Raport al clientului: se acceptă doar metadate cu formă strictă, niciodată valori ale câmpurilor.
+    Fără `billing=True`: jurnalul trebuie să primească orice raport, inclusiv de la un cabinet în citire."""
     try:
         uid = _verify(consent=True, limit="fill")
     except PermissionError as e:
@@ -447,7 +454,7 @@ def audit_document():
 @app.route("/template/placeholders", methods=["POST"])
 def get_placeholders():
     try:
-        _verify()
+        _verify(billing=True)
     except PermissionError as e:
         return _auth_error(e)
     if "template" not in request.files:
@@ -476,7 +483,7 @@ def _read_docx_upload():
 def template_blanks():
     """Locurile libere dintr-un .docx, cu contextul și câmpul propus pentru fiecare (nimic nu se aplică aici)."""
     try:
-        _verify(limit="fill")
+        _verify(limit="fill", billing=True)
     except PermissionError as e:
         return _auth_error(e)
     data = _read_docx_upload()
@@ -496,7 +503,7 @@ def template_blanks():
 def template_blanks_apply():
     """Înlocuiește locurile libere cu etichetele alese de utilizator ({id: {{ETICHETĂ}}}) și întoarce șablonul rezultat."""
     try:
-        _verify(limit="fill")
+        _verify(limit="fill", billing=True)
     except PermissionError as e:
         return _auth_error(e)
     data = _read_docx_upload()
@@ -531,7 +538,7 @@ def template_blanks_ai_suggest():
     utilizatorul să poată cere sugestii doar pentru câmpurile care chiar au nevoie, nu pentru toate — mai
     puțini tokeni trimiși, mai ieftin; lipsă = toate cele needeslușite, ca înainte."""
     try:
-        uid = _verify(limit="ai_suggest")
+        uid = _verify(limit="ai_suggest", billing=True)
     except PermissionError as e:
         return _auth_error(e)
     data = _read_docx_upload()

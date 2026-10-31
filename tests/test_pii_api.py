@@ -39,7 +39,7 @@ def env(monkeypatch):
     monkeypatch.delenv("VAULT_KMS_KEY", raising=False)
     vault._cache.clear()
     client = gcf.Client(project="demo-samwera")
-    for coll in ("workspaces", "invitations", "users", "workspaceKeys"):
+    for coll in ("workspaces", "invitations", "users", "workspaceKeys", "trialClaims"):
         for d in client.collection(coll).stream():
             client.recursive_delete(d.reference)
     monkeypatch.setattr(authz, "db", lambda: client)

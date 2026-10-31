@@ -15,6 +15,8 @@ numpy==2.4.6
 easyocr==1.7.2
 gunicorn==23.0.0
 cryptography==50.0.1
+# Abonamente (billing_api.py). Versiunea API Stripe e fixată în cod (STRIPE_API_VERSION).
+stripe==15.6.1
 google-cloud-kms==3.17.0
 # Sugestii AI opționale pentru locurile libere needeslușite (vezi ai_suggest.py) — Gemini prin Vertex AI, pe
 # același proiect GCP deja folosit pentru Firestore/Auth (fără cheie nouă).

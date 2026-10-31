@@ -22,7 +22,7 @@ export const PROVIDER = {
   securityEmail: '',
 } as const
 
-export const LEGAL_UPDATED = '19 septembrie 2026'
+export const LEGAL_UPDATED = '29 octombrie 2026'
 
 export function providerName(): string {
   return PROVIDER.legalName || PROVIDER.serviceName

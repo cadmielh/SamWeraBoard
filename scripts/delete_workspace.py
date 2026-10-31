@@ -4,10 +4,13 @@
   python scripts/delete_workspace.py --project samwera-board-eu --workspace <ID> --confirm <ID>
 
 Ce face, în ordine:
+  0. anulează imediat abonamentul Stripe al cabinetului, dacă există (altfel Stripe continuă să încaseze); cere
+     STRIPE_SECRET_KEY în mediu — fără ea, scriptul se oprește înainte de orice ștergere;
   1. blochează imediat accesul (status = pendingDeletion: API-ul refuză orice cerere pentru acel workspace);
   2. șterge cheia de date a workspace-ului (`workspaceKeys/{id}`): valorile din vault devin ilizibile chiar și în copiile de siguranță
      care nu expiraseră încă (crypto-shredding, vezi limitările din docs/vault-rollout.md);
-  3. șterge recursiv tot ce ține de workspace (clienți, vault, istoric generări, dosare, sarcini, șabloane, jurnal de acces, membri);
+  3. șterge recursiv tot ce ține de workspace (clienți, vault, istoric generări, dosare, sarcini, șabloane, jurnal de acces, membri)
+     și datele lui de facturare din aplicație (`billingAccounts/{id}`; facturile fiscale rămân în SmartBill, plățile în Stripe);
   4. șterge invitațiile lui și golește `activeWorkspaceId` al utilizatorilor care îl aveau activ;
   5. lasă o înregistrare fără date personale în `deletionLog/{id}` (dovada ștergerii: moment, numere de documente).
 Înainte de ștergere, cabinetul poate primi jurnalul de acces (scripts/incident_tools.py audit) dacă îl cere.
@@ -40,13 +43,19 @@ def run(db, wid: str, dry_run: bool = False, actor: str = "operator") -> dict:
     counts["membri"] = len(members)
     invites = list(db.collection("invitations").where("workspaceId", "==", wid).stream())
     counts["invitații"] = len(invites)
-    report = {"workspace": wid, "dry_run": dry_run, "counts": counts}
+    acct_ref = db.collection("billingAccounts").document(wid)
+    sub_id = (acct_ref.get().to_dict() or {}).get("stripeSubscriptionId") if acct_ref.get().exists else None
+    report = {"workspace": wid, "dry_run": dry_run, "counts": counts, "stripeSubscription": sub_id}
     if dry_run:
         return report
 
+    if sub_id and (data.get("billing") or {}).get("hasSubscription"):    # 0) oprește încasarea
+        import billing_api
+        billing_api.stripe_subscription_cancel(sub_id)
     ref.update({"status": "pendingDeletion"})                     # 1) acces blocat imediat
     vault.destroy_workspace_key(wid)                              # 2) crypto-shredding
     db.recursive_delete(ref)                                      # 3) tot ce ține de workspace
+    db.recursive_delete(acct_ref)                                 #    + datele de facturare din aplicație
     for inv in invites:                                           # 4) invitații + indicatorul de workspace activ
         inv.reference.delete()
     for uid in members:
@@ -71,6 +80,8 @@ def main() -> None:
     from google.cloud import firestore
     r = run(firestore.Client(project=a.project), a.workspace, a.dry_run)
     print(("DRY-RUN (nimic șters)" if r["dry_run"] else "ȘTERS DEFINITIV") + f": {r['workspace']}")
+    if r["stripeSubscription"]:
+        print(f"  abonament Stripe: {r['stripeSubscription']}" + (" (de anulat)" if r["dry_run"] else " (anulat dacă era activ)"))
     for k, v in r["counts"].items():
         print(f"  {k}: {v}")
 

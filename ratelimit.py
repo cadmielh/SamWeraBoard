@@ -22,8 +22,8 @@ from google.api_core import exceptions as gexc
 
 import authz
 
-# acțiune -> [(domeniu, limită, fereastră în secunde)]. Se ajustează într-un singur loc și se
-# poate lega ulterior de planul cabinetului (cote de abonament).
+# acțiune -> [(domeniu, limită, fereastră în secunde)]. Se ajustează într-un singur loc; cotele zilnice
+# per cabinet sunt mai mici în perioada de probă (LIMITS_TRIAL, vezi billing.quota_tier).
 LIMITS: dict[str, list[tuple[str, int, int]]] = {
     # OCR: costă bani (Azure) și procesează acte de identitate
     "ocr": [("user", 20, 60), ("workspace", 300, 86400)],
@@ -35,6 +35,16 @@ LIMITS: dict[str, list[tuple[str, int, int]]] = {
     # simultan un plafon de cost, nu doar de trafic — apăsată explicit de utilizator, o dată per șablon, nu
     # per document generat.
     "ai_suggest": [("user", 10, 3600), ("workspace", 50, 86400)],
+    # recitirea abonamentului din Stripe (după Checkout / reparare): apeluri la Stripe, nu la Firestore
+    "billing_sync": [("workspace", 30, 3600)],
+}
+
+# Perioadă de probă fără abonament: limitează costul OCR/AI pe conturile care nu convertesc. Ferestrele sunt
+# aceleași ca în LIMITS (id-ul contorului nu include limita), deci trecerea la abonament în cursul zilei
+# păstrează ce s-a consumat deja.
+LIMITS_TRIAL: dict[str, list[tuple[str, int, int]]] = {
+    "ocr": [("user", 20, 60), ("workspace", 30, 86400)],
+    "ai_suggest": [("user", 10, 3600), ("workspace", 10, 86400)],
 }
 
 _RETRIES = 6          # reîncercări externe la concurență
@@ -46,9 +56,10 @@ def _doc_id(scope: str, subject: str, action: str, window: int, bucket: int) -> 
     return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
 
-def check(uid: str, wid: str, action: str, now: float | None = None) -> None:
-    """Numără cererea și ridică `authz.RateLimited` dacă o limită a acțiunii e depășită."""
-    rules = LIMITS.get(action)
+def check(uid: str, wid: str, action: str, now: float | None = None, tier: str = "standard") -> None:
+    """Numără cererea și ridică `authz.RateLimited` dacă o limită a acțiunii e depășită.
+    `tier="trial"`: cotele din LIMITS_TRIAL, unde există."""
+    rules = (LIMITS_TRIAL.get(action) if tier == "trial" else None) or LIMITS.get(action)
     if not rules:
         return
     now = time.time() if now is None else now

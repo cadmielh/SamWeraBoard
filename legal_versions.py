@@ -3,5 +3,5 @@
 Trebuie ținute în sync cu frontend/src/lib/legal.ts. Se schimbă la fiecare revizuire a textelor:
 toate workspace-urile cu o versiune acceptată mai veche vor cere din nou acceptarea (vezi ConsentGate).
 """
-TOS_VERSION = "2026-09-18"
+TOS_VERSION = "2026-10-29"
 DPA_VERSION = "2026-09-18"

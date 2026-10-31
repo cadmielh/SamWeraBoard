@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  collection, doc, getDoc, getDocs, query, where,
+  collection, doc, getDoc, getDocs, onSnapshot, query, where,
   setDoc, updateDoc,
 } from 'firebase/firestore'
 import { db } from './firebase'
@@ -85,6 +85,19 @@ export function useWorkspace(uid: string | null) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadWorkspaces() }, [loadWorkspaces])
 
+  // Documentul workspace-ului activ, urmărit live: starea abonamentului (billing) se schimbă pe server
+  // (webhook Stripe, super admin) și trebuie să ajungă imediat în aplicație, fără reîncărcare.
+  const activeId = activeWorkspace?.id ?? null
+  useEffect(() => {
+    if (!activeId) return
+    return onSnapshot(doc(db, 'workspaces', activeId), snap => {
+      if (!snap.exists()) return
+      const fresh = { ...snap.data(), id: snap.id } as Workspace
+      setActiveWorkspaceState(prev => prev?.id === fresh.id ? fresh : prev)
+      setWorkspaces(prev => prev.map(w => w.id === fresh.id ? fresh : w))
+    }, e => console.error('useWorkspace live error', e))
+  }, [activeId])
+
   const setActiveWorkspace = useCallback(async (workspace: Workspace) => {
     setActiveWorkspaceState(workspace)
     if (uid) {
@@ -93,14 +106,15 @@ export function useWorkspace(uid: string | null) {
   }, [uid])
 
   /** Creează un workspace prin API (serverul înregistrează consimțământul la
-   * T&C + DPA). Clienții nu pot crea workspace-uri direct în Firestore. */
+   * T&C + DPA și pornește perioada de probă). Clienții nu pot crea workspace-uri direct în Firestore. */
   const createWorkspace = useCallback(async (name: string) => {
-    const { id } = await apiJson<{ id: string }>('POST', '/workspaces', {
+    // `trial` = false: e-mailul a mai folosit o perioadă de probă; cabinetul pornește direct cu abonare.
+    const created = await apiJson<{ id: string; trial: boolean }>('POST', '/workspaces', {
       name,
       consent: { tos: TOS_VERSION, dpa: DPA_VERSION },
     })
     await loadWorkspaces()
-    return id
+    return created
   }, [loadWorkspaces])
 
   /** Adminul acceptă versiunea curentă a termenilor și DPA pentru un workspace (ex. unul migrat). */

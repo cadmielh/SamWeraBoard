@@ -18,6 +18,7 @@ from flask import Blueprint, jsonify, request
 
 import audit
 import authz
+import billing
 
 bp = Blueprint("workspaces", __name__)
 
@@ -52,8 +53,7 @@ def _handle_auth(e: authz.AuthError):
 
 
 def _is_super_admin(uid: str) -> bool:
-    snap = authz.db().collection("users").document(uid).get()
-    return bool(snap.exists and (snap.to_dict() or {}).get("isSuperAdmin") is True)
+    return authz.is_super_admin(uid)
 
 
 def _creator_id(email: str) -> str:
@@ -101,8 +101,32 @@ def create_workspace():
     if not _may_create_workspace(principal, len(owned)):
         return _err("creation_not_allowed", 403)
 
+    # O singură perioadă de probă per e-mail (normalizat): al doilea cabinet al aceluiași om pornește direct
+    # cu abonare. Revendicarea și cabinetul se scriu în aceeași tranzacție.
+    now = datetime.now(timezone.utc)
+    claim_ref = db.collection("trialClaims").document(
+        billing.claim_id("email", billing.normalize_email(principal.email)))
     ref = db.collection("workspaces").document()
-    ref.set({
+
+    @firestore.transactional
+    def run(txn):
+        trial = not claim_ref.get(transaction=txn).exists
+        if trial:
+            txn.create(claim_ref, {"kind": "email", "workspaceId": ref.id, "claimedAt": firestore.SERVER_TIMESTAMP})
+        txn.set(ref, _new_workspace(name, principal, billing.initial_trial(now) if trial else billing.no_trial(now)))
+        return trial
+
+    trial = run(db.transaction())
+    db.collection("users").document(principal.uid).set({"activeWorkspaceId": ref.id}, merge=True)
+    audit.log(ref.id, principal.uid, "workspace.create", ref.id)
+    audit.log(ref.id, principal.uid, "consent.accept", ref.id,
+              {"tos": TOS_VERSION, "dpa": DPA_VERSION})
+    audit.log(ref.id, principal.uid, "billing.trial_start" if trial else "billing.no_trial", ref.id)
+    return jsonify({"id": ref.id, "trial": trial}), 201
+
+
+def _new_workspace(name: str, principal: authz.Principal, billing_state: dict) -> dict:
+    return {
         "name": name,
         "ownerId": principal.uid,
         "members": {principal.uid: {
@@ -120,12 +144,8 @@ def create_workspace():
         },
         "status": "active",
         "createdAt": firestore.SERVER_TIMESTAMP,
-    })
-    db.collection("users").document(principal.uid).set({"activeWorkspaceId": ref.id}, merge=True)
-    audit.log(ref.id, principal.uid, "workspace.create", ref.id)
-    audit.log(ref.id, principal.uid, "consent.accept", ref.id,
-              {"tos": TOS_VERSION, "dpa": DPA_VERSION})
-    return jsonify({"id": ref.id}), 201
+        "billing": billing_state,
+    }
 
 
 @bp.post("/workspaces/<wid>/consent")
@@ -395,10 +415,7 @@ def list_audit(wid: str):
 # ── Cine poate crea cabinete (înregistrare pe invitație) ────────────────────
 
 def _require_super_admin() -> authz.Principal:
-    principal = authz.authenticate()
-    if not _is_super_admin(principal.uid):
-        raise authz.AuthError(403)
-    return principal
+    return authz.require_super_admin()
 
 
 @bp.get("/signup/status")
@@ -406,7 +423,8 @@ def signup_status():
     """Poate utilizatorul curent crea un cabinet nou? (folosit de ecranul „Creați un spațiu de lucru”)"""
     principal = authz.authenticate()
     owned = list(authz.db().collection("workspaces").where("ownerId", "==", principal.uid).limit(1).stream())
-    return jsonify({"canCreate": _may_create_workspace(principal, len(owned))})
+    return jsonify({"canCreate": _may_create_workspace(principal, len(owned)),
+                    "mode": os.getenv("SIGNUP_MODE", "open")})
 
 
 @bp.get("/signup/creators")

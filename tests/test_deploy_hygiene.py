@@ -18,7 +18,7 @@ MUST_IGNORE = [
     "migrare.zip", "firestore-debug.log",
     "fisiere_template/SabloaneAvocatTavi", "fisiere_template/3 Hot AGA_original.docx", "fisiere_template/Facturare_Sami_Adi.xlsx",   # documente reale ale unor clienți (CNP, adrese), nefolosite de aplicație
 ]
-MUST_SHIP = ["app.py", "main.py", "authz.py", "vault.py", "ratelimit.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
+MUST_SHIP = ["app.py", "main.py", "authz.py", "billing.py", "billing_api.py", "billing_webhook_app.py", "vault.py", "ratelimit.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
              "fisiere_template/registry.json", "fonts/DejaVuSans.ttf", "local_extractor.py"]
 
 

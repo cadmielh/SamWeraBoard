@@ -50,6 +50,16 @@ function IconExtract() {
     </svg>
   )
 }
+function IconCard() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="4.5" width="15" height="11" rx="2" />
+      <path d="M2.5 8.5h15" />
+      <path d="M5.5 12.5h3" />
+    </svg>
+  )
+}
+
 function IconUsers() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -326,6 +336,10 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
             <NavLink to="/utilizatori" title="Utilizatori" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconUsers />
               <span className="sidebar-nav-label">Utilizatori</span>
+            </NavLink>
+            <NavLink to="/abonament" title="Abonament" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+              <IconCard />
+              <span className="sidebar-nav-label">Abonament</span>
             </NavLink>
           </div>
         )}

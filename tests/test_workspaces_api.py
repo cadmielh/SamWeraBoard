@@ -31,7 +31,7 @@ CONSENT = {"tos": workspaces_api.TOS_VERSION, "dpa": workspaces_api.DPA_VERSION}
 def env(monkeypatch):
     client = gcf.Client(project="demo-samwera")
     # curăță emulatorul
-    for coll in ("workspaces", "invitations", "users", "workspaceCreators"):
+    for coll in ("workspaces", "invitations", "users", "workspaceCreators", "trialClaims"):
         for d in client.collection(coll).stream():
             for sub in d.reference.collections():
                 for sd in sub.stream():
@@ -100,6 +100,39 @@ def test_workspace_creation_is_capped(env):
     assert r.status_code == 429
 
 
+# ── Perioadă de probă ────────────────────────────────────────────────────────
+def test_first_workspace_starts_14_day_trial(env):
+    c, db = env
+    r = as_user(c, "alice", "post", "/workspaces", json={"name": "Cabinet", "consent": CONSENT})
+    assert r.status_code == 201 and r.get_json()["trial"] is True
+    b = db.collection("workspaces").document(r.get_json()["id"]).get().to_dict()["billing"]
+    assert b["status"] == "trialing" and not b["hasSubscription"]
+    left = b["accessUntil"] - datetime.now(timezone.utc)
+    assert timedelta(days=13, hours=23) < left <= timedelta(days=14)
+    claims = list(db.collection("trialClaims").stream())
+    assert len(claims) == 1 and "alice" not in claims[0].id          # e-mailul nu apare în clar
+
+
+def test_one_trial_per_email_second_workspace_starts_without(env):
+    c, db = env
+    make_ws(c, "alice", "Primul")
+    r = as_user(c, "alice", "post", "/workspaces", json={"name": "Al doilea", "consent": CONSENT})
+    assert r.status_code == 201 and r.get_json()["trial"] is False
+    ws = db.collection("workspaces").document(r.get_json()["id"]).get().to_dict()
+    assert ws["billing"]["status"] == "none" and ws["billing"]["accessUntil"] < datetime.now(timezone.utc)
+    actions = {a.to_dict()["action"] for a in
+               db.collection("workspaces").document(r.get_json()["id"]).collection("auditLog").stream()}
+    assert "billing.no_trial" in actions
+
+
+def test_trial_claim_uses_normalized_email(env):
+    c, _ = env
+    hdr = lambda e: {"X-Test-User": f"u_{e.split('@')[0].replace('.', '').replace('+', '')}:{e}"}  # noqa: E731
+    r1 = c.post("/workspaces", headers=hdr("ana.pop@gmail.com"), json={"name": "Unu", "consent": CONSENT})
+    r2 = c.post("/workspaces", headers=hdr("anapop+2@gmail.com"), json={"name": "Doi", "consent": CONSENT})
+    assert r1.get_json()["trial"] is True and r2.get_json()["trial"] is False
+
+
 # ── Înregistrare pe invitație ────────────────────────────────────────────────
 def test_invite_only_blocks_new_creators_but_not_existing_owners(env, monkeypatch):
     c, db = env
@@ -141,10 +174,10 @@ def test_creators_list_and_remove(env, monkeypatch):
 def test_signup_status_reflects_invite_mode(env, monkeypatch):
     c, db = env
     monkeypatch.setenv("SIGNUP_MODE", "invite")
-    assert as_user(c, "newbie", "get", "/signup/status").get_json() == {"canCreate": False}
+    assert as_user(c, "newbie", "get", "/signup/status").get_json() == {"canCreate": False, "mode": "invite"}
     db.collection("users").document("root").set({"isSuperAdmin": True})
     as_user(c, "root", "post", "/signup/creators", json={"email": "newbie@ex.ro"})
-    assert as_user(c, "newbie", "get", "/signup/status").get_json() == {"canCreate": True}
+    assert as_user(c, "newbie", "get", "/signup/status").get_json() == {"canCreate": True, "mode": "invite"}
     assert c.get("/signup/status").status_code == 401
 
 

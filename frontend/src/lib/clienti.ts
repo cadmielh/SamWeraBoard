@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore'
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
+import { assertWritable } from './billing'
 import type { Client, Persoana } from '../types'
 import { EMPTY_ADRESA, formatAdresa, parseAdresa, type AdresaStructurata } from './adresa'
 import { sanitizeForSave, savePii, deleteClientOnServer } from './pii'
@@ -294,6 +295,7 @@ export function useClienti(workspaceId: string | null) {
       // Vault întâi: dacă scrierea documentului eșuează, rămâne cel mult o înregistrare
       // criptată orfană (inaccesibilă), niciodată un document fără datele lui sensibile.
       if (vault) await savePii(ref.id, vault)
+      assertWritable()
       await setDoc(ref, payload)
       setClienti(prev => prev.map(c => c.id === tempId ? { ...c, id: ref.id } : c))
     } catch (err) {
@@ -328,6 +330,7 @@ export function useClienti(workspaceId: string | null) {
     }))
     try {
       if (vault) await savePii(clientId, vault)
+      assertWritable()
       await updateDoc(doc(clientiCol(workspaceId), clientId), patch)
     } catch (err) {
       if (previous) { const p = previous; setClienti(prev => prev.map(c => c.id === clientId ? p : c)) }

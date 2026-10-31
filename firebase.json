@@ -198,6 +198,11 @@
           "type": 301
         },
         {
+          "source": "/abonament",
+          "destination": "https://cabinio.web.app/abonament",
+          "type": 301
+        },
+        {
           "source": "/super-admin",
           "destination": "https://cabinio.web.app/super-admin",
           "type": 301
@@ -218,7 +223,9 @@
       "memory": "1GiB",
       "cpu": 1,
       "secrets": [
-        "AZURE_DOCUMENT_INTELLIGENCE_KEY"
+        "AZURE_DOCUMENT_INTELLIGENCE_KEY",
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET"
       ],
       "ignore": [
         "venv",

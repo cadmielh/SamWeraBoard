@@ -217,6 +217,26 @@ export function resolveFacturareConfig(config: FacturareConfig | undefined | nul
   return { ...DEFAULT_FACTURARE_CONFIG, ...(config ?? {}) }
 }
 
+/** Momentul ca Timestamp Firestore (citire directă) sau șir ISO (răspuns API). */
+export type BillingTime = { toDate: () => Date } | string | null
+
+/** Starea abonamentului cabinetului — scrisă doar de server (billing.py). Accesul complet ține cât timp
+ * acum < accessUntil; după, cabinetul e în citire + export. `status` e doar pentru afișare. */
+export interface WorkspaceBilling {
+  plan: string
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'comp' | 'expired' | 'none'
+  interval: 'month' | 'year' | null
+  accessUntil: BillingTime
+  trialEndsAt: BillingTime
+  compUntil: BillingTime
+  compReason: string | null
+  subscriptionStatus: string | null
+  currentPeriodEnd: BillingTime
+  graceUntil: BillingTime
+  cancelAtPeriodEnd: boolean
+  hasSubscription: boolean
+}
+
 export interface Workspace {
   id: string
   name: string
@@ -229,6 +249,8 @@ export interface Workspace {
    * super admin (`/super-admin`), vezi lib/features.ts. Absent = niciun
    * feature activ. */
   features?: Partial<Record<FeatureKey, boolean>>
+  /** Abonament / perioadă de probă — vezi lib/billing.ts. Absent = cabinet nemigrat (fără acces la scriere). */
+  billing?: WorkspaceBilling
   createdAt: string | null
 }
 

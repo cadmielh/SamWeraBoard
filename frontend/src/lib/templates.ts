@@ -4,6 +4,7 @@ import {
   query, orderBy, onSnapshot, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
+import { assertWritable } from './billing'
 import type { DocTemplate, DocGeneration } from '../types'
 
 function templatesCol(workspaceId: string) {
@@ -29,6 +30,7 @@ export function useTemplates(workspaceId: string | null) {
   }, [workspaceId])
 
   const add = useCallback(async (workspaceId: string, data: TemplateInput, uid: string) => {
+    assertWritable()
     await addDoc(templatesCol(workspaceId), {
       ...data,
       createdAt: serverTimestamp(),
@@ -37,6 +39,7 @@ export function useTemplates(workspaceId: string | null) {
   }, [])
 
   const remove = useCallback(async (workspaceId: string, templateId: string) => {
+    assertWritable()
     await deleteDoc(doc(templatesCol(workspaceId), templateId))
   }, [])
 
@@ -49,6 +52,7 @@ export async function logDocGeneration(
   generation: Omit<DocGeneration, 'generatedAt'> & { generatedAt?: string },
 ) {
   const col = collection(db, 'workspaces', workspaceId, 'clienti', clientId, 'docGenerations')
+  assertWritable()
   await addDoc(col, {
     ...generation,
     generatedAt: generation.generatedAt ?? new Date().toISOString(),

@@ -15,12 +15,14 @@ const html = () => renderToStaticMarkup(<SettingsProvider><MemoryRouter><Landing
 const text = () => html().replace(/<[^>]+>/g, ' ')
 
 describe('LandingPage', () => {
-  it('prezintă brandul, prețul de pornire și accesul pe invitație', () => {
+  it('prezintă brandul, prețul, perioada de probă și promisiunea de preț', () => {
     const t = text()
     expect(t).toContain('Cabin')
-    expect(t).toContain('de la 200 RON')
+    expect(t).toContain('200 RON')
+    expect(t).toContain('2000 RON')
     expect(t).toContain('31 decembrie 2026')
-    expect(t).toContain('pe invitație')
+    expect(t).toContain('14 zile')
+    expect(t).toContain('fără card')
     expect(html()).toContain(`mailto:${PROVIDER.contactEmail}`)
   })
 

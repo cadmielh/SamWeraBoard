@@ -2,7 +2,7 @@
  * de lucru. Trebuie ținute în sync cu TOS_VERSION / DPA_VERSION din
  * legal_versions.py — serverul respinge orice altă versiune. Se schimbă la
  * fiecare revizuire a textelor (paginile din pages/legal/). */
-export const TOS_VERSION = '2026-09-18'
+export const TOS_VERSION = '2026-10-29'
 export const DPA_VERSION = '2026-09-18'
 
 /** Workspace-ul a acceptat versiunile curente ale termenilor și DPA? */

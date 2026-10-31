@@ -6,6 +6,7 @@ import { useDosare, useArchivedDosare, isDosarArhivat, fetchAllDosare } from '..
 import { useSarcini } from '../lib/sarcini'
 import { buildSarcinaForDosar } from '../lib/dosarSarcini'
 import { useApp } from '../AppContext'
+import { READ_ONLY_TITLE } from '../lib/billing'
 import DosarModal from '../components/DosarModal'
 import DosarView from '../components/DosarView'
 import DosarTable, { DosarColumnsPanel } from '../components/dosare/DosarTable'
@@ -36,7 +37,7 @@ const STATS_PERIOD_OPTIONS: { key: StatsPeriod; label: string }[] = [
 ]
 
 export default function DosarePage() {
-  const { user, activeWorkspace, toast, hasFeature } = useApp()
+  const { user, activeWorkspace, toast, hasFeature, canEdit } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
   const samiAdiEnabled = hasFeature('facturareSamiAdi')
   const columns = useMemo(() => getVisibleColumns(samiAdiEnabled), [samiAdiEnabled])
@@ -476,7 +477,7 @@ export default function DosarePage() {
               <button className="btn btn-ghost" onClick={() => setShowExportDialog(isListTab(tab) ? tab : returnTab)}>
                 <IconExport /> Exportă
               </button>
-              <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }}>+ Dosar nou</button>
+              <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Dosar nou</button>
             </div>
           </div>
 
@@ -617,7 +618,7 @@ export default function DosarePage() {
                       {searchQuery || hasActiveFiltersOrSort ? 'Niciun dosar nu corespunde filtrelor active.' : 'Nu există dosare înregistrate.'}
                     </div>
                     {!searchQuery && !hasActiveFiltersOrSort && (
-                      <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }}>+ Adaugă primul dosar</button>
+                      <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Adaugă primul dosar</button>
                     )}
                     {hasActiveFiltersOrSort && (
                       <button className="btn btn-ghost btn-sm" onClick={resetAll}>Resetează filtrele</button>

@@ -21,6 +21,11 @@ const VIEWER = 'uViewer'
 const OUTSIDER = 'uOutsider' // membru doar în W2
 const SUPER = 'uSuper'
 
+// Acces complet (probă/abonament valabil) — fără el cabinetul e în citire (billingOk în firestore.rules).
+const FUTURE = new Date(Date.now() + 30 * 86400_000)
+const PAST = new Date(Date.now() - 86400_000)
+const BILLING_OK = { status: 'trialing', accessUntil: FUTURE }
+
 const ctx = (uid, extra = {}) =>
   env.authenticatedContext(uid, { email: `${uid}@ex.ro`, email_verified: true, ...extra }).firestore()
 
@@ -37,7 +42,7 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async c => {
     const db = c.firestore()
     await setDoc(doc(db, 'workspaces', W1), {
-      name: 'W1', ownerId: ADMIN, status: 'active',
+      name: 'W1', ownerId: ADMIN, status: 'active', billing: BILLING_OK,
       members: {
         [ADMIN]: { role: 'admin', email: 'a@ex.ro' },
         [MEMBER]: { role: 'member', email: 'm@ex.ro' },
@@ -45,7 +50,7 @@ beforeEach(async () => {
       },
     })
     await setDoc(doc(db, 'workspaces', W2), {
-      name: 'W2', ownerId: OUTSIDER, status: 'active',
+      name: 'W2', ownerId: OUTSIDER, status: 'active', billing: BILLING_OK,
       members: { [OUTSIDER]: { role: 'admin', email: 'o@ex.ro' } },
     })
     await setDoc(doc(db, 'workspaces', W1, 'clienti', 'c1'), { denumire: 'X', createdBy: ADMIN })
@@ -206,5 +211,74 @@ test('rateLimits nu e accesibil din client (nici citire, nici scriere, nici admi
   for (const uid of [ADMIN, MEMBER, VIEWER, SUPER]) {
     await assertFails(getDoc(doc(ctx(uid), 'rateLimits', 'abc')))
     await assertFails(setDoc(doc(ctx(uid), 'rateLimits', 'abc'), { count: 0 }))
+  }
+})
+
+// ── Abonament: după expirare cabinetul e în citire + export ──────────────────
+const expire = (billing = { status: 'expired', accessUntil: PAST }) =>
+  env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'workspaces', W1), { billing }))
+
+test('cabinet expirat: citirea și interogările de export merg', async () => {
+  await expire()
+  await assertSucceeds(getDoc(doc(ctx(MEMBER), 'workspaces', W1, 'clienti', 'c1')))
+  await assertSucceeds(getDocs(collection(ctx(VIEWER), 'workspaces', W1, 'clienti')))
+  await assertSucceeds(getDocs(collection(ctx(ADMIN), 'workspaces', W1, 'clienti', 'c1', 'docGenerations')))
+})
+test('cabinet expirat: nu se creează și nu se modifică nimic, nici de admin', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore()
+    await setDoc(doc(db, 'workspaces', W1, 'dosare', 'd1'), { t: 1, createdBy: ADMIN })
+    await setDoc(doc(db, 'workspaces', W1, 'sarcini', 's1'), { t: 1, createdBy: ADMIN })
+    await setDoc(doc(db, 'workspaces', W1, 'docTemplates', 't1'), { t: 1 })
+  })
+  await expire()
+  for (const uid of [ADMIN, MEMBER]) {
+    const db = ctx(uid)
+    await assertFails(setDoc(doc(db, 'workspaces', W1, 'clienti', 'n'), { denumire: 'n', createdBy: uid }))
+    await assertFails(updateDoc(doc(db, 'workspaces', W1, 'clienti', 'c1'), { denumire: 'Y' }))
+    await assertFails(addDoc(collection(db, 'workspaces', W1, 'clienti', 'c1', 'docGenerations'), { templateId: 't' }))
+    for (const [coll, id] of [['dosare', 'd1'], ['sarcini', 's1'], ['docTemplates', 't1']]) {
+      await assertFails(setDoc(doc(db, 'workspaces', W1, coll, 'nou'), { t: 1, createdBy: uid }))
+      await assertFails(updateDoc(doc(db, 'workspaces', W1, coll, id), { t: 2 }))
+      await assertFails(deleteDoc(doc(db, 'workspaces', W1, coll, id)))
+    }
+  }
+})
+test('cabinet expirat: adminul poate încă redenumi cabinetul', async () => {
+  await expire()
+  await assertSucceeds(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { name: 'Nou' }))
+})
+test('workspace fără câmpul billing: scrierile sunt refuzate (fail closed)', async () => {
+  await env.withSecurityRulesDisabled(c => updateDoc(doc(c.firestore(), 'workspaces', W1), { billing: deleteField() }))
+  await assertFails(setDoc(doc(ctx(MEMBER), 'workspaces', W1, 'clienti', 'n'), { denumire: 'n', createdBy: MEMBER }))
+  await assertSucceeds(getDoc(doc(ctx(MEMBER), 'workspaces', W1, 'clienti', 'c1')))
+})
+test('accessUntil de alt tip decât timestamp nu dă acces', async () => {
+  await expire({ status: 'active', accessUntil: '2999-01-01' })
+  await assertFails(setDoc(doc(ctx(MEMBER), 'workspaces', W1, 'clienti', 'n'), { denumire: 'n', createdBy: MEMBER }))
+})
+test('nici adminul, nici super adminul nu pot scrie billing', async () => {
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { 'billing.accessUntil': new Date(2999, 0, 1) }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { billing: deleteField() }))
+  await assertFails(updateDoc(doc(ctx(SUPER), 'workspaces', W1), { 'billing.accessUntil': new Date(2999, 0, 1) }))
+})
+test('membrii văd starea abonamentului pe documentul cabinetului', async () => {
+  const snap = await assertSucceeds(getDoc(doc(ctx(VIEWER), 'workspaces', W1)))
+  assert.equal(snap.data().billing.status, 'trialing')
+})
+test('billingAccounts / stripeEvents / trialClaims nu sunt accesibile din client', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore()
+    await setDoc(doc(db, 'billingAccounts', W1), { stripeCustomerId: 'cus_x' })
+    await setDoc(doc(db, 'billingAccounts', W1, 'invoices', 'in_1'), { amount: 20000 })
+    await setDoc(doc(db, 'stripeEvents', 'evt_1'), { status: 'done' })
+    await setDoc(doc(db, 'trialClaims', 'abc'), { kind: 'email' })
+  })
+  for (const uid of [ADMIN, MEMBER, SUPER]) {
+    const db = ctx(uid)
+    for (const path of [['billingAccounts', W1], ['billingAccounts', W1, 'invoices', 'in_1'], ['stripeEvents', 'evt_1'], ['trialClaims', 'abc']]) {
+      await assertFails(getDoc(doc(db, ...path)))
+      await assertFails(setDoc(doc(db, ...path), { x: 1 }))
+    }
   }
 })

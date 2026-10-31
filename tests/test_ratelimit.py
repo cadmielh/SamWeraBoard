@@ -116,3 +116,20 @@ def test_concurrent_requests_never_exceed_the_limit(db):
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert len(ok) == 3 and len(blocked) == 2
+
+
+def test_trial_tier_uses_lower_workspace_quota(db, monkeypatch):
+    monkeypatch.setattr(ratelimit, "LIMITS", {"t1": [("workspace", 5, 86400)]})
+    monkeypatch.setattr(ratelimit, "LIMITS_TRIAL", {"t1": [("workspace", 1, 86400)]})
+    ratelimit.check("alice", "wsT", "t1", now=1000.0, tier="trial")
+    with pytest.raises(authz.RateLimited):
+        ratelimit.check("alice", "wsT", "t1", now=1000.0, tier="trial")
+    ratelimit.check("alice", "wsT", "t1", now=1000.0)              # după abonare: cota plină, același contor
+
+
+def test_trial_tier_falls_back_to_standard_limits(db, monkeypatch):
+    monkeypatch.setattr(ratelimit, "LIMITS", {"t2": [("user", 1, 60)]})
+    monkeypatch.setattr(ratelimit, "LIMITS_TRIAL", {})
+    ratelimit.check("bob", "wsT", "t2", now=1000.0, tier="trial")
+    with pytest.raises(authz.RateLimited):
+        ratelimit.check("bob", "wsT", "t2", now=1000.0, tier="trial")
