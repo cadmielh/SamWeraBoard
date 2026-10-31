@@ -14,7 +14,7 @@ Legendă: **[Tu]** faci tu, **[Claude]** spune-mi și fac eu.
    - scanezi un act și generezi un document;
    - adaugi sau modifici un client;
    - pe Abonament, alegi un plan, completezi datele de facturare și apeși „Continuă spre plată”. Trebuie să apară „Plățile sunt temporar indisponibile”.
-2. **[Tu]** În [Firebase Console](https://console.firebase.google.com/project/samwera-board-eu/firestore): Firestore → **Time-to-live** → **Create policy**. Collection group: `stripeEvents`. Câmp: `expireAt`.
+2. **[Făcut]** Ștergerea automată (TTL) pentru `stripeEvents.expireAt` e setată prin API. Se vede în [Google Cloud Console](https://console.cloud.google.com/firestore/databases/-default-/ttl?project=samwera-board-eu), nu în Firebase Console.
 3. **[Tu]** Anunți colegii din pilot că vor fi rugați să accepte din nou Termenii.
 
 ## Partea 2: pregătire Stripe live (se poate face acum)
