@@ -52,10 +52,6 @@ def _handle_auth(e: authz.AuthError):
     return authz.error_response(e)
 
 
-def _is_super_admin(uid: str) -> bool:
-    return authz.is_super_admin(uid)
-
-
 def _creator_id(email: str) -> str:
     return hashlib.sha256(email.encode()).hexdigest()[:20]
 
@@ -69,7 +65,7 @@ def _may_create_workspace(principal: authz.Principal, owned: int) -> bool:
     """
     if os.getenv("SIGNUP_MODE", "open") != "invite":
         return True
-    if owned > 0 or _is_super_admin(principal.uid):
+    if owned > 0 or authz.is_super_admin(principal):
         return True
     return authz.db().collection("workspaceCreators").document(_creator_id(principal.email)).get().exists
 

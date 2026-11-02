@@ -102,6 +102,7 @@ class Principal:
     uid: str
     email: str
     name: str
+    provider: str = ""      # metoda sesiunii curente (`firebase.sign_in_provider`), ex. „google.com”, „password”
 
 
 def _dev_verify_only() -> bool:
@@ -143,6 +144,7 @@ def authenticate() -> Principal:
         uid=decoded["uid"],
         email=(decoded.get("email") or "").lower(),
         name=decoded.get("name") or decoded.get("email") or "",
+        provider=(decoded.get("firebase") or {}).get("sign_in_provider") or "",
     )
 
 
@@ -181,15 +183,21 @@ def require_role(principal: Principal, wid: str, min_role: str = "member", conse
     return ws
 
 
-def is_super_admin(uid: str) -> bool:
-    """Rol de aplicație (nu de workspace): `users/{uid}.isSuperAdmin`."""
-    snap = db().collection("users").document(uid).get()
+def is_super_admin(principal: Principal) -> bool:
+    """Rol de aplicație (nu de workspace): `users/{uid}.isSuperAdmin`, valabil doar într-o sesiune Google.
+
+    Resetarea parolei ar putea adăuga o parolă contului și ar ocoli 2FA-ul Google. Oglinda `isSuperAdmin()` din
+    firestore.rules; condiția se poate relaxa când există MFA în aplicație (vezi docs/login-parola.md).
+    """
+    if principal.provider != "google.com":
+        return False
+    snap = db().collection("users").document(principal.uid).get()
     return bool(snap.exists and (snap.to_dict() or {}).get("isSuperAdmin") is True)
 
 
 def require_super_admin() -> Principal:
     principal = authenticate()
-    if not is_super_admin(principal.uid):
+    if not is_super_admin(principal):
         raise AuthError(403)
     return principal
 

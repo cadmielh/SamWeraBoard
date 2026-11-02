@@ -27,7 +27,8 @@ const PAST = new Date(Date.now() - 86400_000)
 const BILLING_OK = { status: 'trialing', accessUntil: FUTURE }
 
 const ctx = (uid, extra = {}) =>
-  env.authenticatedContext(uid, { email: `${uid}@ex.ro`, email_verified: true, ...extra }).firestore()
+  env.authenticatedContext(uid, { email: `${uid}@ex.ro`, email_verified: true, firebase: { sign_in_provider: 'google.com' }, ...extra }).firestore()
+const PASSWORD = { firebase: { sign_in_provider: 'password' } }
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -188,6 +189,28 @@ test('super adminul poate modifica doar features', async () => {
 test('un utilizator nu se poate face super admin fără grant', async () => {
   await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'users', 'uNew'), { isSuperAdmin: false }))
   await assertFails(updateDoc(doc(ctx('uNew'), 'users', 'uNew'), { isSuperAdmin: true }))
+})
+test('super adminul într-o sesiune cu parolă nu are rolul', async () => {
+  await assertSucceeds(getDocs(collection(ctx(SUPER), 'superAdminGrants')))
+  await assertFails(getDocs(collection(ctx(SUPER, PASSWORD), 'superAdminGrants')))
+})
+test('doar super adminul poate retrage un grant', async () => {
+  const ref = db => doc(db, 'superAdminGrants', 'retras_AT_ex_DOT_ro')
+  await env.withSecurityRulesDisabled(c => setDoc(ref(c.firestore()), { email: 'retras@ex.ro', used: false }))
+  await assertFails(deleteDoc(ref(ctx(ADMIN))))
+  await assertFails(deleteDoc(ref(ctx(SUPER, PASSWORD))))
+  await assertSucceeds(deleteDoc(ref(ctx(SUPER))))
+})
+test('un grant de super admin nu se poate folosi sau consuma într-o sesiune cu parolă', async () => {
+  const email = 'ugrant@ex.ro'
+  const grant = 'ugrant_AT_ex_DOT_ro'
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), 'users', 'uGrant'), { isSuperAdmin: false })
+    await setDoc(doc(c.firestore(), 'superAdminGrants', grant), { email, used: false })
+  })
+  await assertFails(updateDoc(doc(ctx('uGrant', PASSWORD), 'users', 'uGrant'), { isSuperAdmin: true }))
+  await assertFails(updateDoc(doc(ctx('uGrant', PASSWORD), 'superAdminGrants', grant), { used: true }))
+  await assertSucceeds(updateDoc(doc(ctx('uGrant', { email }), 'users', 'uGrant'), { isSuperAdmin: true }))
 })
 
 // ── Istoric extrageri: fără date personale ────────────────────────────────────

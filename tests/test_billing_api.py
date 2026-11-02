@@ -94,7 +94,7 @@ def env(monkeypatch):
         if not raw:
             raise authz.AuthError(401)
         uid, email = raw.split(":")
-        return authz.Principal(uid=uid, email=email, name=uid)
+        return authz.Principal(uid=uid, email=email, name=uid, provider="google.com")
 
     monkeypatch.setattr(authz, "authenticate", fake_authenticate)
     monkeypatch.setenv("STRIPE_PRICE_STANDARD_MONTH", "price_m")

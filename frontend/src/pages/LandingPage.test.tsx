@@ -15,6 +15,14 @@ const html = () => renderToStaticMarkup(<SettingsProvider><MemoryRouter><Landing
 const text = () => html().replace(/<[^>]+>/g, ' ')
 
 describe('LandingPage', () => {
+  it('nu afișează formularul de parolă până nu e activat și deschis', () => {
+    const auth = { signIn: async () => {}, register: async () => {}, reset: async () => {} }
+    const off = renderToStaticMarkup(<SettingsProvider><MemoryRouter><LandingPage onSignIn={async () => {}} /></MemoryRouter></SettingsProvider>)
+    const closed = renderToStaticMarkup(<SettingsProvider><MemoryRouter><LandingPage onSignIn={async () => {}} passwordAuth={auth} /></MemoryRouter></SettingsProvider>)
+    expect(off).not.toContain('type="password"')
+    expect(closed).not.toContain('type="password"')
+  })
+
   it('prezintă brandul, prețul, perioada de probă și promisiunea de preț', () => {
     const t = text()
     expect(t).toContain('Cabin')

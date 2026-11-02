@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { driveDownload, driveUpload, fillGoogleDoc, driveMeta, DriveError, DOCX_MIME } from './drive'
+import { clearDriveToken } from './driveAuth'
+
+vi.mock('./driveAuth', () => ({ clearDriveToken: vi.fn() }))
 
 const TOKEN = 'ya29.test-token'
 type Call = { url: string; init?: RequestInit }
@@ -12,7 +15,7 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response) {
 }
 const auth = (c: Call) => (c.init?.headers as Record<string, string>).Authorization
 
-beforeEach(() => { vi.unstubAllGlobals() })
+beforeEach(() => { vi.unstubAllGlobals(); vi.mocked(clearDriveToken).mockClear() })
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('descărcare', () => {
@@ -40,6 +43,7 @@ describe('erori', () => {
     const err = await driveMeta('abc123', TOKEN).catch(e => e)
     expect(err).toBeInstanceOf(DriveError)
     expect(err.code).toBe(code)
+    expect(clearDriveToken).toHaveBeenCalledTimes(status === 401 ? 1 : 0)   // tokenul respins nu se mai refolosește
   })
 
   it('refuză identificatori care nu arată a id Google (nu construiește URL-uri din text liber)', async () => {

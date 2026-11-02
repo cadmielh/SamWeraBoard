@@ -3,7 +3,7 @@ import { useApp } from '../AppContext'
 import { FEATURE_REGISTRY, hasFeature } from '../lib/features'
 import { listAllWorkspaces, writeWorkspaceFeature } from '../lib/workspace'
 import {
-  grantSuperAdmin, listSuperAdminGrants, type SuperAdminGrant,
+  grantSuperAdmin, revokeSuperAdminGrant, listSuperAdminGrants, type SuperAdminGrant,
   listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator, fetchSignupStatus,
   adminBillingOverview,
 } from '../lib/superAdmin'
@@ -143,6 +143,16 @@ export default function SuperAdminPage() {
     }
   }
 
+  const handleRevokeGrant = async (grantEmail: string) => {
+    setError(null)
+    try {
+      await revokeSuperAdminGrant(grantEmail)
+      await loadGrants()
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Eroare la retragerea rolului')
+    }
+  }
+
   return (
     <div className="page--data">
       <div className="page-top">
@@ -227,7 +237,7 @@ export default function SuperAdminPage() {
                 <input
                   className="field-input"
                   type="email"
-                  placeholder="adresa Google a cabinetului"
+                  placeholder="adresa de e-mail a cabinetului"
                   value={creatorEmail}
                   onChange={e => setCreatorEmail(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') void handleAddCreator() }}
@@ -281,9 +291,10 @@ export default function SuperAdminPage() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
                     {grants.map(g => (
-                      <div key={g.email} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8125rem', color: 'var(--s600)' }}>
-                        <span>{g.email}</span>
+                      <div key={g.email} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem', fontSize: '.8125rem', color: 'var(--s600)' }}>
+                        <span style={{ flex: 1 }}>{g.email}</span>
                         <span className={`chip ${g.used ? 'chip-success' : 'chip-muted'}`}>{g.used ? 'Aplicat' : 'În așteptare'}</span>
+                        {!g.used && <button className="btn btn-sm" onClick={() => void handleRevokeGrant(g.email)}>Retrage</button>}
                       </div>
                     ))}
                   </div>

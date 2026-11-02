@@ -60,7 +60,7 @@ const CONTENT_STYLE = {
 const COMPACT_STYLE = { maxWidth: 860, margin: '0 auto', width: '100%' }
 
 export default function GenerareDocumentePage() {
-  const { user, accessToken, toast, activeWorkspace } = useApp()
+  const { user, toast, activeWorkspace } = useApp()
   const workspaceId = activeWorkspace?.id ?? ''
   const { clienti, loading: clientiLoading, add: addClient, update: updateClient } = useClienti(workspaceId || null)
 
@@ -471,7 +471,6 @@ export default function GenerareDocumentePage() {
               <div style={COMPACT_STYLE}>
                 {showDrivePicker
                   ? <DriveFilePicker
-                      accessToken={accessToken}
                       onExtracted={handleExtracted}
                       onToast={toast}
                       onClose={() => setShowDrivePicker(false)}
@@ -506,7 +505,6 @@ export default function GenerareDocumentePage() {
                   fields, scanStatus: sourceFile === 'manual' ? 'manual' : 'scanned',
                 }]}
                 client={null}
-                accessToken={accessToken}
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
@@ -571,7 +569,6 @@ export default function GenerareDocumentePage() {
                 fields={null}
                 scannedPersons={scannedPersons}
                 client={societateClientInput}
-                accessToken={accessToken}
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
@@ -684,7 +681,6 @@ export default function GenerareDocumentePage() {
                 fields={fields}
                 scannedPersons={scannedPersons}
                 client={selectedClient}
-                accessToken={accessToken}
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}

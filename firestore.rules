@@ -29,9 +29,15 @@ service cloud.firestore {
     function canWrite(wid)  { return roleOf(wid) in ['admin', 'member'] && billingOk(wid); }
     function isAdmin(wid)   { return roleOf(wid) == 'admin'; }
 
+    // Sesiune deschisă cu Google. Resetarea parolei ar putea adăuga o parolă contului și ar ocoli 2FA-ul Google,
+    // deci rolul de super admin nu funcționează cu parolă (oglinda authz.is_super_admin).
+    function googleSession() {
+      return request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
     // Rol de aplicație (independent de orice workspace) — users/{uid}.isSuperAdmin.
     function isSuperAdmin() {
-      return signedIn() &&
+      return signedIn() && googleSession() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isSuperAdmin', false) == true;
     }
 
@@ -51,7 +57,7 @@ service cloud.firestore {
     // Un grant de super admin în așteptare, nefolosit, pentru e-mailul propriu.
     function hasValidSuperAdminGrant() {
       let path = /databases/$(database)/documents/superAdminGrants/$(ownEmailDocId());
-      return exists(path) && get(path).data.get('used', false) != true;
+      return googleSession() && exists(path) && get(path).data.get('used', false) != true;
     }
 
     // ── users ──────────────────────────────────────────────────────────────
@@ -193,7 +199,7 @@ service cloud.firestore {
       allow read: if signedIn() &&
         (isSuperAdmin() || resource.data.email == request.auth.token.email.lower());
       allow create, delete: if isSuperAdmin();
-      allow update: if signedIn() &&
+      allow update: if signedIn() && googleSession() &&
         resource.data.email == request.auth.token.email.lower() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
         request.resource.data.used == true;

@@ -91,6 +91,40 @@ def test_google_signin_yields_verified_email_and_is_accepted(app_ctx):
     assert make_ws(c, s["idToken"])  # cont Google cu e-mail verificat => acceptat
 
 
+def test_google_token_keeps_super_admin_role(app_ctx):
+    c, db = app_ctx
+    s = _idp_sign_in("g-root-1", "root1@ex.ro")
+    db.collection("users").document(s["localId"]).set({"isSuperAdmin": True})
+    assert c.get("/signup/creators", headers=hdr(s["idToken"])).status_code == 200   # `sign_in_provider` citit din tokenul real
+
+
+def _auth_post(path: str, body: dict) -> dict:
+    host = os.environ["FIREBASE_AUTH_EMULATOR_HOST"]
+    req = urllib.request.Request(
+        f"http://{host}/identitytoolkit.googleapis.com/v1/{path}?key=fake",
+        data=json.dumps(body).encode(), headers={"Content-Type": "application/json"},
+    )
+    return json.load(urllib.request.urlopen(req))
+
+
+def test_password_account_needs_verified_email_and_never_gets_super_admin(app_ctx):
+    c, db = app_ctx
+    email, password = "parola1@ex.ro", "o-parola-suficient-de-lunga"
+    s = _auth_post("accounts:signUp", {"email": email, "password": password, "returnSecureToken": True})
+    assert c.get("/signup/status", headers=hdr(s["idToken"])).status_code == 401      # neverificat
+
+    _auth_post("accounts:sendOobCode", {"requestType": "VERIFY_EMAIL", "idToken": s["idToken"]})
+    host = os.environ["FIREBASE_AUTH_EMULATOR_HOST"]
+    codes = json.load(urllib.request.urlopen(f"http://{host}/emulator/v1/projects/{PROJECT}/oobCodes"))["oobCodes"]
+    oob = next(o["oobCode"] for o in reversed(codes) if o["email"] == email and o["requestType"] == "VERIFY_EMAIL")
+    _auth_post("accounts:update", {"oobCode": oob})
+
+    fresh = _auth_post("accounts:signInWithPassword", {"email": email, "password": password, "returnSecureToken": True})
+    assert make_ws(c, fresh["idToken"])                                                 # verificat => acceptat
+    db.collection("users").document(fresh["localId"]).set({"isSuperAdmin": True}, merge=True)
+    assert c.get("/signup/creators", headers=hdr(fresh["idToken"])).status_code == 403  # rolul cere sesiune Google
+
+
 def test_unverified_email_is_rejected(app_ctx):
     c, _ = app_ctx
     s = _idp_sign_in("g-mallory", "mallory@ex.ro", verified=False)

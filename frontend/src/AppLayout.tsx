@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
-import { onAuthStateChanged, auth, signIn, signOut } from './lib/firebase'
+import { onAuthStateChanged, auth, signIn, signInPassword, registerPassword, resetPassword, resendVerification, signOut } from './lib/firebase'
+import { authErrorMessage, passwordLoginEnabled } from './lib/authErrors'
 import { useWorkspace } from './lib/workspace'
 import { setApiWorkspace } from './lib/api'
+import { clearDriveToken, setDriveLoginHint, setDriveToken } from './lib/driveAuth'
 import { billingAccess, setWriteAccess } from './lib/billing'
 import { hasFeature as hasFeatureFn, type FeatureKey } from './lib/features'
 import { applyPendingSuperAdminGrant } from './lib/superAdmin'
@@ -15,11 +17,16 @@ import ConsentGate from './components/ConsentGate'
 import TrialBanner from './components/TrialBanner'
 import UpgradeModal from './components/UpgradeModal'
 import LandingPage from './pages/LandingPage'
+import type { PasswordAuth } from './components/AuthDialog'
+
+const PASSWORD_AUTH: PasswordAuth = { signIn: signInPassword, register: registerPassword, reset: resetPassword }
+const RESEND_COOLDOWN_MS = 60_000
 
 export default function AppLayout() {
   const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
-  const [accessToken, setAccessToken] = useState(() => sessionStorage.getItem('gat') ?? '')
+  // Separat de `user`: confirmarea e-mailului schimbă același obiect User, fără să declanșeze o randare.
+  const [emailVerified, setEmailVerified] = useState(false)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [authLoading, setAuthLoading] = useState(true)
   // Ceasul pentru starea abonamentului: accessUntil nu se rescrie la expirare, deci reevaluăm periodic.
@@ -29,20 +36,22 @@ export default function AppLayout() {
     return () => clearInterval(t)
   }, [])
 
-  const workspaceCtx = useWorkspace(user?.uid ?? null)
+  // Fără e-mail verificat regulile refuză orice citire, deci nici nu încercăm.
+  const workspaceCtx = useWorkspace(user && emailVerified ? user.uid : null)
 
   // Auth listener
   useEffect(() => {
     return onAuthStateChanged(auth, async u => {
       if (!u) {
         setUser(null)
-        setAccessToken('')
-        sessionStorage.removeItem('gat')
+        clearDriveToken()
         setAuthLoading(false)
       } else {
         // Cont șters/dezactivat între timp: sesiunea locală mai e „validă” până expiră tokenul,
         // dar fără cont nu există spații de lucru. O încheiem, ca să se poată reconecta corect.
         try {
+          // E-mailul poate fi fost confirmat între timp, din alt tab sau de pe alt dispozitiv.
+          if (!u.emailVerified) await u.reload()
           await u.getIdToken(true)
         } catch (e) {
           const code = (e as { code?: string }).code ?? ''
@@ -52,11 +61,15 @@ export default function AppLayout() {
           }
         }
         setUser(u)
+        setEmailVerified(u.emailVerified)
+        setDriveLoginHint(u.email ?? '')
         setAuthLoading(false)
         // Invitațiile NU se mai acceptă automat: utilizatorul le vede și decide
         // explicit (vezi InvitationsPanel).
         try {
-          if (u.email) await applyPendingSuperAdminGrant(u.uid, u.email)
+          // Rolul de super admin funcționează doar într-o sesiune Google (vezi firestore.rules).
+          const { signInProvider } = await u.getIdTokenResult()
+          if (u.email && signInProvider === 'google.com') await applyPendingSuperAdminGrant(u.uid, u.email)
         } catch {
           // Non-blocking — user may not have a pending super-admin grant
         }
@@ -73,10 +86,10 @@ export default function AppLayout() {
 
   // Redirect to workspace setup if no workspace
   useEffect(() => {
-    if (!workspaceCtx.loading && !workspaceCtx.loadError && user && workspaceCtx.workspaces.length === 0) {
+    if (!workspaceCtx.loading && !workspaceCtx.loadError && user && emailVerified && workspaceCtx.workspaces.length === 0) {
       navigate('/workspace/setup')
     }
-  }, [workspaceCtx.loading, workspaceCtx.loadError, workspaceCtx.workspaces.length, user, navigate])
+  }, [workspaceCtx.loading, workspaceCtx.loadError, workspaceCtx.workspaces.length, user, emailVerified, navigate])
 
   // Poziția cursorului, expusă ca variabile CSS — tooltip-urile [data-tooltip]
   // (tokens.css) le folosesc ca să apară chiar de lângă mouse, nu centrate
@@ -120,12 +133,11 @@ export default function AppLayout() {
   const handleSignOut = () => {
     void signOut()
     setUser(null)
-    setAccessToken('')
-    sessionStorage.removeItem('gat')
+    clearDriveToken()
   }
 
   // Auth loading sau workspace loading
-  if (authLoading || (user && workspaceCtx.loading)) {
+  if (authLoading || (user && emailVerified && workspaceCtx.loading)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
         <span className="spin spin-dark" style={{ width: 24, height: 24, borderWidth: 3 }} />
@@ -139,12 +151,16 @@ export default function AppLayout() {
       try {
         const { user: u, accessToken: at } = await signIn()
         setUser(u)
-        setAccessToken(at)
-        sessionStorage.setItem('gat', at)
+        setEmailVerified(u.emailVerified)
+        setDriveToken(at)
       } catch (err: unknown) {
         toast((err as Error).message ?? 'Autentificare eșuată', 'err')
       }
     }} toasts={toasts} onDismiss={dismissToast} />
+  }
+
+  if (!emailVerified) {
+    return <VerifyEmailView user={user} onVerified={() => setEmailVerified(true)} onSignOut={handleSignOut} />
   }
 
   // Încărcarea spațiilor de lucru a eșuat: nu presupunem că nu există (ar duce la ecranul de creare).
@@ -161,7 +177,6 @@ export default function AppLayout() {
 
   const ctx: AppContextType = {
     user,
-    accessToken,
     toast,
     activeWorkspace,
     userRole,
@@ -200,9 +215,64 @@ export default function AppLayout() {
 function SignInView({ onSignIn, toasts, onDismiss }: { onSignIn: () => Promise<void>; toasts: ToastItem[]; onDismiss: (id: string) => void }) {
   return (
     <>
-      <LandingPage onSignIn={onSignIn} />
+      <LandingPage onSignIn={onSignIn} passwordAuth={passwordLoginEnabled() ? PASSWORD_AUTH : undefined} />
       <Toast toasts={toasts} onDismiss={onDismiss} />
     </>
+  )
+}
+
+function VerifyEmailView({ user, onVerified, onSignOut }: { user: User; onVerified: () => void; onSignOut: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [resendBlocked, setResendBlocked] = useState(false)
+
+  const check = async () => {
+    setBusy(true)
+    setMessage(null)
+    try {
+      await user.reload()
+      if (user.emailVerified) {
+        await user.getIdToken(true)   // tokenul vechi nu conține confirmarea și nici numele
+        onVerified()
+      } else {
+        setMessage('Adresa nu a fost confirmată încă. Deschide linkul din e-mail, apoi reîncearcă.')
+      }
+    } catch (err) {
+      setMessage(authErrorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resend = async () => {
+    setResendBlocked(true)
+    setTimeout(() => setResendBlocked(false), RESEND_COOLDOWN_MS)
+    setMessage(null)
+    try {
+      await resendVerification(user)
+      setMessage('Ți-am trimis un nou e-mail. Verifică și folderul Spam.')
+    } catch (err) {
+      setMessage(authErrorMessage(err))
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '2rem', background: 'var(--s100)' }}>
+      <div className="card" style={{ maxWidth: 420, width: '100%' }}>
+        <div className="card-body" style={{ textAlign: 'center', padding: '2rem 1.75rem' }}>
+          <h1 style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--s900)', marginBottom: '.5rem' }}>Confirmă adresa de e-mail</h1>
+          <p style={{ color: 'var(--s500)', fontSize: '.875rem', lineHeight: 1.55, marginBottom: '1.25rem' }}>
+            Am trimis un link de confirmare la <strong>{user.email}</strong>. Contul devine activ după ce îl deschizi.
+          </p>
+          {message && <p role="status" style={{ color: 'var(--s600)', fontSize: '.8125rem', lineHeight: 1.5, marginBottom: '1rem' }}>{message}</p>}
+          <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => void check()} disabled={busy}>Am confirmat</button>
+            <button className="btn btn-ghost" onClick={() => void resend()} disabled={resendBlocked}>Retrimite e-mailul</button>
+            <button className="btn btn-ghost" onClick={onSignOut}>Deconectare</button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

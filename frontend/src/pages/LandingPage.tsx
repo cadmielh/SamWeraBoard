@@ -4,6 +4,7 @@ import { PROVIDER, providerName, contactEmail } from '../lib/legalConfig'
 import { Icon, type IconName } from './landingIcons'
 import ThemeToggleSwitch from '../components/ThemeToggleSwitch'
 import LogoMark from '../components/LogoMark'
+import AuthDialog, { type PasswordAuth } from '../components/AuthDialog'
 import './landing.css'
 
 const FAQ: [string, string][] = [
@@ -196,13 +197,17 @@ function HeroVisual() {
   )
 }
 
-export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void> }) {
+export default function LandingPage({ onSignIn, passwordAuth }: { onSignIn: () => Promise<void>; passwordAuth?: PasswordAuth }) {
   const [signing, setSigning] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const handle = async () => {
+  const googleSignIn = async () => {
+    setAuthOpen(false)
     setSigning(true)
     try { await onSignIn() } finally { setSigning(false) }
   }
+  // Fără autentificare cu parolă activă, butoanele deschid direct fereastra Google.
+  const handle = () => { if (passwordAuth) setAuthOpen(true); else void googleSignIn() }
   const mail = `mailto:${contactEmail()}?subject=${encodeURIComponent('Întrebare despre Cabinio')}`
 
   // Animații la scroll: apariție, bară de progres, bară de navigare cu umbră și ușor parallax pe ilustrație.
@@ -412,6 +417,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => Promise<void
           <div>Contact: {contactEmail()}. Nu folosim cookie-uri de urmărire.</div>
         </footer>
       </div>
+      {authOpen && passwordAuth && <AuthDialog auth={passwordAuth} onGoogle={() => void googleSignIn()} onClose={() => setAuthOpen(false)} />}
     </div>
   )
 }

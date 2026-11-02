@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase'
 import { apiJson } from './api'
 import type { WorkspaceBilling } from '../types'
@@ -30,6 +30,11 @@ export async function grantSuperAdmin(email: string, grantedByUid: string): Prom
     grantedAt: serverTimestamp(),
     used: false,
   })
+}
+
+/** Retrage un grant încă nefolosit: o adresă greșită nu trebuie să rămână activă. */
+export async function revokeSuperAdminGrant(email: string): Promise<void> {
+  await deleteDoc(doc(db, 'superAdminGrants', encodeEmail(email.trim().toLowerCase())))
 }
 
 /** Apelat la fiecare autentificare (mirror checkAndJoinInvitations) — dacă

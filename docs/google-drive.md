@@ -27,6 +27,11 @@ Picker cere o cheie API și numărul proiectului:
 
 Fără cheie, butoanele Drive spun clar că funcția nu e activată, iar restul aplicației (încărcare de pe dispozitiv, descărcare) funcționează normal.
 
+## Conectarea la Drive
+- Tokenul de la login-ul Google se folosește cât e valabil. După expirare, într-un tab nou sau pentru conturile fără Google, aplicația cere unul nou prin Google Identity Services, la prima acțiune Drive (`frontend/src/lib/driveAuth.ts`).
+- Necesită `VITE_GOOGLE_OAUTH_CLIENT_ID` în `frontend/.env.eu.local` și `.env.google.local` (același client OAuth ca la login; valoare publică), iar domeniile aplicației trebuie să fie la *Authorized JavaScript origins* pentru acel client.
+- Tokenul rămâne în `sessionStorage` și se șterge la deconectare. Accesul acordat aplicației se retrage din contul Google.
+
 ## Cont Google și consimțământ
 - La următoarea autentificare, utilizatorii care au acordat vechea permisiune (`drive`, `documents`) vor vedea cererea nouă, mai restrânsă (`drive.file`).
 - Ecranul de consimțământ OAuth din Cloud Console poate rămâne „In production”; cu `drive.file` nu e nevoie de verificare Google.

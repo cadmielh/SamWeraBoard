@@ -3,13 +3,18 @@ import {
   getAuth,
   connectAuthEmulator,
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
+  updateProfile,
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
-import { DRIVE_SCOPE } from "./drive";
+import { DRIVE_SCOPE } from "./driveAuth";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -22,16 +27,17 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+auth.languageCode = "ro";   // limba e-mailurilor de verificare și de resetare
 export const db   = getFirestore(app);
 
 // Dezvoltare locală: `VITE_USE_EMULATORS=1` emulează Auth + Firestore; se pot alege și separat
 // (`VITE_USE_AUTH_EMULATOR`, `VITE_USE_FIRESTORE_EMULATOR`) — ex. Auth real Google + Firestore local.
 const emuAll = import.meta.env.VITE_USE_EMULATORS === "1";
 if (emuAll || import.meta.env.VITE_USE_AUTH_EMULATOR === "1") {
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectAuthEmulator(auth, `http://127.0.0.1:${import.meta.env.VITE_AUTH_EMULATOR_PORT ?? 9099}`, { disableWarnings: true });
 }
 if (emuAll || import.meta.env.VITE_USE_FIRESTORE_EMULATOR === "1") {
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectFirestoreEmulator(db, "127.0.0.1", Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT ?? 8080));
 }
 
 const provider = new GoogleAuthProvider();
@@ -46,6 +52,20 @@ export async function signIn(): Promise<{ user: User; accessToken: string }> {
   const accessToken = cred?.accessToken ?? "";
   return { user: result.user, accessToken };
 }
+
+export async function signInPassword(email: string, password: string): Promise<void> {
+  await signInWithEmailAndPassword(auth, email, password);
+}
+
+/** Contul e creat de la primul pas. Numele și e-mailul de verificare nu îl blochează: ecranul de verificare permite retrimiterea. */
+export async function registerPassword(name: string, email: string, password: string): Promise<void> {
+  const { user } = await createUserWithEmailAndPassword(auth, email, password);
+  await updateProfile(user, { displayName: name }).catch(() => {});
+  await sendEmailVerification(user).catch(() => {});
+}
+
+export const resetPassword = (email: string) => sendPasswordResetEmail(auth, email);
+export const resendVerification = (user: User) => sendEmailVerification(user);
 
 export const signOut = () => fbSignOut(auth);
 export { onAuthStateChanged };

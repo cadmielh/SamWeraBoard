@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { extractFile } from '../lib/api'
 import type { IDFields } from '../lib/api'
 import { DriveError, driveDownload } from '../lib/drive'
+import { ensureDriveToken } from '../lib/driveAuth'
 import { PickerNotConfigured, pickIdDocument, pickerConfigured } from '../lib/picker'
 import type { ToastItem } from '../types'
 
 interface Props {
-  accessToken: string
   onExtracted: (fields: IDFields, filename: string) => void
   onToast: (msg: string, type: ToastItem['type']) => void
   onClose: () => void
@@ -22,19 +22,19 @@ const PHASE_TEXT: Record<Phase, string> = {
 
 /** Alege un act de identitate din Google Drive prin Google Picker (aplicația vede doar fișierul ales, nu tot Drive-ul),
  * îl descarcă în browser și îl trimite la OCR ca pe un fișier încărcat. Tokenul Google nu ajunge pe serverele noastre. */
-export default function DriveFilePicker({ accessToken, onExtracted, onToast, onClose }: Props) {
+export default function DriveFilePicker({ onExtracted, onToast, onClose }: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
   const started = useRef(false)
   const configured = pickerConfigured()
 
   const run = async () => {
-    if (!accessToken) { onToast('Autentifică-te din nou pentru a folosi Google Drive.', 'err'); return }
     setPhase('picking')
     try {
-      const item = await pickIdDocument(accessToken)
+      const token = await ensureDriveToken()
+      const item = await pickIdDocument(token)
       if (!item) { setPhase('idle'); return }
       setPhase('downloading')
-      const f = await driveDownload(item.id, accessToken)
+      const f = await driveDownload(item.id, token)
       setPhase('extracting')
       const file = new File([f.blob], f.name, { type: f.mimeType })
       const result = await extractFile(file, 'drive')

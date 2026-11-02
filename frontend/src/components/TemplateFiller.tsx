@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
+import { ensureDriveToken, getDriveToken } from '../lib/driveAuth'
 import type { IDFields, DriveTarget } from '../lib/api'
 import type { BuiltinTemplate, ClauseMeta, Client, DocTemplate, Persoana, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
@@ -42,7 +43,6 @@ interface Props {
   fields?: IDFields | null
   client?: Partial<Client> | null
   scannedPersons?: ScannedPerson[]
-  accessToken: string
   onToast: (msg: string, type: ToastItem['type']) => void
   onBack: () => void
   onClientSaved?: (client: Client) => void
@@ -68,7 +68,7 @@ const builtinKey = (b: BuiltinTemplate) => `builtin:${b.key}`
 
 export default function TemplateFiller({
   workspaceId, user, fields, client, scannedPersons,
-  accessToken, onToast, onBack, onClientSaved, stepNumber = 3,
+  onToast, onBack, onClientSaved, stepNumber = 3,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
   const { builtins } = useBuiltinTemplates()
@@ -95,7 +95,7 @@ export default function TemplateFiller({
   // Alegerea se ține într-un ref, ca handlerele async să o vadă imediat după închiderea ferestrei. Încărcarea în Drive
   // se face din browser, cu tokenul utilizatorului (nu trece prin serverul nostru).
   const destRef = useRef<{ drive: boolean; folderId: string | null }>({ drive: false, folderId: null })
-  const driveTarget = (): DriveTarget | null => destRef.current.drive ? { token: accessToken, folderId: destRef.current.folderId } : null
+  const driveTarget = (): DriveTarget | null => destRef.current.drive ? { token: getDriveToken(), folderId: destRef.current.folderId } : null
   const [showFolderPicker, setShowFolderPicker] = useState(false)
   // Lățimea coloanei cu șabloane, reglabilă prin tragerea mânerului (preferință locală, ținută în browser).
   const LIST_W_MIN = 240, LIST_W_MAX = 720, LIST_W_DEFAULT = 340
@@ -141,7 +141,16 @@ export default function TemplateFiller({
     if (batchDestChosen.current) return Promise.resolve(true)
     return new Promise<boolean>(resolve => { destResolver.current = resolve; setDestDialogOpen(true) })
   }
-  const closeDestDialog = (ok: boolean) => {
+  const closeDestDialog = async (ok: boolean) => {
+    if (ok && destChoice === 'drive') {
+      // Conectarea la Drive se face acum, din click, nu după ce documentul a fost deja generat.
+      try {
+        await ensureDriveToken()
+      } catch (err) {
+        onToast((err as Error).message, 'err')
+        return
+      }
+    }
     if (ok) destRef.current = { drive: destChoice === 'drive', folderId: destChoice === 'drive' ? (driveFolder?.id ?? null) : null }
     setDestDialogOpen(false)
     setShowFolderPicker(false)
@@ -375,7 +384,7 @@ export default function TemplateFiller({
       const { ctx: variantCtx, labels: variantLabels } = variantsFor(mergedReplacements, customGroupPicks[tpl.id])
 
       if (tpl.driveFileId) {
-        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, accessToken, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, rowGroups, variantCtx)
+        result = await fillDocxFromDriveTemplate(tpl.driveFileId, mergedReplacements, await ensureDriveToken(), driveTarget(), outputName, mergedGroups, cs?.selectedClauses, rowGroups, variantCtx)
       } else {
         const file = await resolveTemplateFile(tpl)
         if (!file) { onToast(`Fișierul pentru "${tpl.name}" nu este disponibil`, 'err'); return }
@@ -629,7 +638,7 @@ export default function TemplateFiller({
     setLoading(tpl.id, true)
     try {
       const outputName = tpl.outputNameTemplate || tpl.name
-      const result = await fillGdoc(tpl.docId, withOptionalFieldMarks(tpl.placeholders ?? [], replacements), accessToken, outputName)
+      const result = await fillGdoc(tpl.docId, withOptionalFieldMarks(tpl.placeholders ?? [], replacements), await ensureDriveToken(), outputName)
       setGeneratedLinks(prev => ({ ...prev, [tpl.id]: result.link }))
       onToast('Document Google creat', 'ok')
       await _logGeneration(tpl, outputName, result.link)
@@ -1458,7 +1467,6 @@ export default function TemplateFiller({
                 <label style={LABEL}>Folder destinație</label>
                 {showFolderPicker ? (
                   <DriveFolderPicker
-                    accessToken={accessToken}
                     onToast={onToast}
                     onSelect={folder => { setDriveFolder(folder); setShowFolderPicker(false) }}
                     onCancel={() => setShowFolderPicker(false)}
@@ -1491,7 +1499,6 @@ export default function TemplateFiller({
       {showLibrary && (
         <TemplateLibrary
           templates={templates}
-          accessToken={accessToken}
           onAdd={data => addTemplate(workspaceId, data, user?.uid ?? '')}
           onRemove={id => removeTemplate(workspaceId, id)}
           onClose={() => setShowLibrary(false)}

@@ -5,7 +5,7 @@ Actualizat: 20 septembrie 2026. Le reiau împreună cu proprietarul în perioada
 | # | Ce | De ce contează | Cine face |
 |---|---|---|---|
 | 1 | **Backup pe termen lung** al Firestore (backup-uri programate, retenție definită) | Acum există doar recuperare la orice moment din ultimele 7 zile | Eu (comenzi Cloud Shell), tu rulezi |
-| 2 | **Autentificare în doi pași (MFA)** pentru adminii cabinetelor și pentru contul de Super Admin | Contul de Super Admin dă acces la lista tuturor cabinetelor | Eu (cod + politică), tu în consolă |
+| 2 | **Autentificare în doi pași (MFA)** pentru adminii cabinetelor și pentru contul de Super Admin | Contul de Super Admin dă acces la lista tuturor cabinetelor. Reamânat pe 2 noiembrie 2026 pentru login-ul cu parolă; devine obligatoriu înainte de `SIGNUP_MODE=open` (vezi `login-parola.md`) | Eu (cod + politică), tu în consolă |
 | 3 | **Revizia juridică** a Termenilor, DPA, Confidențialității, Sub-împuterniciților + verificarea mărcii „Cabinio” la OSIM/EUIPO (clasele 9 și 42) și a domeniului | Documentele sunt scrise atent, dar nevalidate de un avocat | Tu (avocat, OSIM) |
 | 4 | **Decomisionarea proiectului vechi** `samwera-board` (peste 1–2 săptămâni fără probleme): revocă cheia `firebase-service-account.json`, rotește cheia Azure veche, șterge datele vechi (inclusiv 34 de documente cu extrageri în clar) | Datele personale nu trebuie să stea în două locuri, iar cheile vechi rămân un risc | Împreună |
 | 5 | **Alerte de monitorizare și de buget** (erori 5xx, autentificări respinse, cost) | Acum nu există nicio alertă | Eu (comenzi), tu rulezi |

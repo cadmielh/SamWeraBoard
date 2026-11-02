@@ -46,7 +46,7 @@ def env(monkeypatch):
         if not raw:
             raise authz.AuthError(401)
         uid, email = raw.split(":")
-        return authz.Principal(uid=uid, email=email, name=uid)
+        return authz.Principal(uid=uid, email=email, name=uid, provider=request.headers.get("X-Test-Provider", "google.com"))
 
     monkeypatch.setattr(authz, "authenticate", fake_authenticate)
 
@@ -157,6 +157,17 @@ def test_super_admin_can_create_in_invite_mode_and_others_cannot_manage_creators
     assert as_user(c, "root", "post", "/workspaces", json={"name": "Al meu", "consent": CONSENT}).status_code == 201
     assert as_user(c, "mallory", "get", "/signup/creators").status_code == 403
     assert as_user(c, "mallory", "post", "/signup/creators", json={"email": "m@ex.ro"}).status_code == 403
+
+
+def test_super_admin_role_requires_google_session(env, monkeypatch):
+    c, db = env
+    monkeypatch.setenv("SIGNUP_MODE", "invite")
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    hdr = {"X-Test-User": "root:root@ex.ro", "X-Test-Provider": "password"}
+    assert c.get("/signup/creators", headers=hdr).status_code == 403
+    r = c.post("/workspaces", headers=hdr, json={"name": "Al meu", "consent": CONSENT})
+    assert r.status_code == 403 and r.get_json()["error"] == "creation_not_allowed"
+    assert as_user(c, "root", "get", "/signup/creators").status_code == 200
 
 
 def test_creators_list_and_remove(env, monkeypatch):

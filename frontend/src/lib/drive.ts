@@ -3,12 +3,12 @@
  * Aplicația cere doar permisiunea `drive.file` (fișierele create de aplicație sau alese explicit de utilizator
  * prin Google Picker). Tokenul nu mai ajunge pe serverele noastre. Cu `drive.file`, un fișier la care aplicația
  * nu a primit acces răspunde 403/404: îl semnalăm ca `not_granted`, iar interfața cere alegerea lui din nou. */
+import { clearDriveToken } from './driveAuth'
 
 const DRIVE = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
 const DOCS = 'https://docs.googleapis.com/v1'
 
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const GOOGLE_APPS = 'application/vnd.google-apps.'
 
@@ -28,9 +28,12 @@ export class DriveError extends Error {
 export interface DriveItem { id: string; name: string; mimeType: string }
 
 function toError(res: Response): DriveError {
-  if (res.status === 401) return new DriveError('Sesiunea Google a expirat. Deconectează-te și autentifică-te din nou.', 'auth', 401)
+  if (res.status === 401) {
+    clearDriveToken()   // la următoarea încercare, ensureDriveToken cere un token nou
+    return new DriveError('Conexiunea cu Google Drive a expirat. Reîncearcă și reconectează-te.', 'auth', 401)
+  }
   if (res.status === 403 || res.status === 404) {
-    return new DriveError('Aplicația nu are acces la acest fișier. Alege-l din nou din Google Drive.', 'not_granted', res.status)
+    return new DriveError('Aplicația nu are acces la acest fișier. Alege-l din nou din Google Drive și verifică dacă e partajat cu contul Google conectat.', 'not_granted', res.status)
   }
   return new DriveError(`Google Drive a răspuns cu eroare (${res.status}).`, 'other', res.status)
 }

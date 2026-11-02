@@ -12,6 +12,7 @@ const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
   { value: 'PJ', label: 'Persoană Juridică' },
 ]
 import { detectPlaceholders } from '../lib/api'
+import { ensureDriveToken } from '../lib/driveAuth'
 import { pickGoogleDoc } from '../lib/picker'
 import Modal from './Modal'
 import BlankImportModal from './BlankImportModal'
@@ -20,7 +21,6 @@ const MAX_BASE64_BYTES = 500 * 1024  // 500 KB
 
 interface Props {
   templates: DocTemplate[]
-  accessToken: string
   onAdd: (data: TemplateInput) => Promise<void>
   onRemove: (id: string) => Promise<void>
   onClose: () => void
@@ -94,7 +94,7 @@ const GUIDE_SECTIONS = [
   },
 ]
 
-export default function TemplateLibrary({ templates, accessToken, onAdd, onRemove, onClose, onToast }: Props) {
+export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, onToast }: Props) {
   const [view, setView] = useState<View>('list')
   const [addTab, setAddTab] = useState<AddTab>('docx')
   const [saving, setSaving] = useState(false)
@@ -203,7 +203,7 @@ export default function TemplateLibrary({ templates, accessToken, onAdd, onRemov
   const handlePickGdoc = async () => {
     setPickingGdoc(true)
     try {
-      const doc = await pickGoogleDoc(accessToken)
+      const doc = await pickGoogleDoc(await ensureDriveToken())
       if (doc) {
         setGdocDocId(doc.id)
         setGdocPickedName(doc.name)
