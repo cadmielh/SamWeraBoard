@@ -195,6 +195,11 @@ def is_super_admin(principal: Principal) -> bool:
     return bool(snap.exists and (snap.to_dict() or {}).get("isSuperAdmin") is True)
 
 
+def revoke_sessions(uid: str) -> None:
+    """Refuză de acum toate token-urile emise contului (verificate cu `check_revoked=True`)."""
+    fb_auth.revoke_refresh_tokens(uid)
+
+
 def require_super_admin() -> Principal:
     principal = authenticate()
     if not is_super_admin(principal):

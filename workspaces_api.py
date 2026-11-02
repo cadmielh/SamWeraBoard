@@ -414,6 +414,17 @@ def _require_super_admin() -> authz.Principal:
     return authz.require_super_admin()
 
 
+@bp.post("/account/revoke-sessions")
+def revoke_sessions():
+    principal = authz.authenticate()
+    try:
+        authz.revoke_sessions(principal.uid)
+    except Exception as e:
+        print(f"[auth] revoke failed: {type(e).__name__}")
+        return _err("unavailable", 503)
+    return jsonify({"ok": True})
+
+
 @bp.get("/signup/status")
 def signup_status():
     """Poate utilizatorul curent crea un cabinet nou? (folosit de ecranul „Creați un spațiu de lucru”)"""

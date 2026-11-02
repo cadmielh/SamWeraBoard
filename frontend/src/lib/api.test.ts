@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-vi.mock('./firebase', () => ({ auth: { currentUser: { getIdToken: async () => 'FIREBASE-ID-TOKEN' } } }))
+const session = vi.hoisted(() => ({ refreshError: null as { code: string } | null, signOut: vi.fn(async () => {}) }))
+vi.mock('./firebase', () => ({
+  auth: {
+    signOut: session.signOut,
+    currentUser: { getIdToken: async (force?: boolean) => { if (force && session.refreshError) throw session.refreshError; return 'FIREBASE-ID-TOKEN' } },
+  },
+}))
 const driveUpload = vi.fn(async (_b: Blob, name: string) => ({ id: 'd1', name, webViewLink: 'https://drive.google.com/x' }))
 const driveDownload = vi.fn()
 vi.mock('./drive', async () => {
@@ -10,7 +16,7 @@ vi.mock('./drive', async () => {
 const pickAgain = vi.fn()
 vi.mock('./picker', () => ({ pickAgain: (...a: unknown[]) => pickAgain(...a) }))
 
-import { fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, extractFile, apiErrorMessage, setApiWorkspace, parseVariantWarnings } from './api'
+import { apiJson, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, extractFile, apiErrorMessage, setApiWorkspace, parseVariantWarnings } from './api'
 import { DriveError } from './drive'
 
 type Call = { url: string; init: RequestInit }
@@ -23,6 +29,27 @@ const docx = (extra: Record<string, string> = {}) => new Response(new Blob(['DOC
 
 beforeEach(() => { vi.clearAllMocks(); setApiWorkspace('ws123') })
 afterEach(() => { vi.unstubAllGlobals() })
+
+describe('răspuns 401 de la server', () => {
+  beforeEach(() => { session.refreshError = null })
+  const unauthorized = () => mockFetch(() => new Response('{"error":"Unauthorized"}', { status: 401 }))
+
+  it('încheie sesiunea când Firebase confirmă că e revocată', async () => {
+    unauthorized()
+    session.refreshError = { code: 'auth/user-token-expired' }
+    await expect(apiJson('GET', '/x')).rejects.toMatchObject({ status: 401 })
+    expect(session.signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('păstrează sesiunea la o problemă de rețea sau dacă tokenul se reîmprospătează', async () => {
+    unauthorized()
+    session.refreshError = { code: 'auth/network-request-failed' }
+    await expect(apiJson('GET', '/x')).rejects.toMatchObject({ status: 401 })
+    session.refreshError = null
+    await expect(apiJson('GET', '/x')).rejects.toMatchObject({ status: 401 })
+    expect(session.signOut).not.toHaveBeenCalled()
+  })
+})
 
 describe('cereri către server', () => {
   it('trimit doar identitatea Firebase și workspace-ul — niciodată tokenul Google', async () => {

@@ -139,6 +139,15 @@ def test_missing_and_garbage_tokens_are_rejected(app_ctx):
     assert c.get("/invitations", headers=hdr("")).status_code == 401
 
 
+def test_user_can_end_all_own_sessions(app_ctx):
+    c, _ = app_ctx
+    s = _idp_sign_in("g-sesiuni-1", "sesiuni1@ex.ro")
+    assert c.post("/account/revoke-sessions").status_code == 401                         # doar cu sesiune valabilă
+    time.sleep(1.2)  # granularitate de secundă pentru `validSince`
+    assert c.post("/account/revoke-sessions", headers=hdr(s["idToken"])).status_code == 200
+    assert c.get("/signup/status", headers=hdr(s["idToken"])).status_code == 401
+
+
 def test_revoked_token_is_rejected(app_ctx):
     from firebase_admin import auth
     c, _ = app_ctx

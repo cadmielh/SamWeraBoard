@@ -1,6 +1,7 @@
 import { auth } from "./firebase";
 import { DOCX_MIME, DriveError, driveDownload, driveUpload, fillGoogleDoc } from "./drive";
 import { pickAgain } from "./picker";
+import { SESSION_ENDED_CODES } from "./authErrors";
 import type { BuiltinTemplate, ClauseMeta } from "../types";
 import type { VariantContext } from './variants'
 
@@ -80,6 +81,15 @@ async function authHeaders(): Promise<Record<string, string>> {
   };
 }
 
+/** Un 401 poate veni și dintr-o problemă trecătoare; sesiunea se încheie doar dacă Firebase confirmă că nu mai e valabilă. */
+async function endSessionIfInvalid(): Promise<void> {
+  try {
+    await auth.currentUser?.getIdToken(true);
+  } catch (e) {
+    if (SESSION_ENDED_CODES.includes((e as { code?: string }).code ?? "")) await auth.signOut();
+  }
+}
+
 /** Apel JSON către API (membri, invitații, audit, vault). Nu folosește token-ul Google — doar identitatea Firebase.
  * Aruncă Error cu `code` = codul de eroare al serverului (ex. "last_admin", "consent_required"). */
 export async function apiJson<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
@@ -89,6 +99,7 @@ export async function apiJson<T = unknown>(method: string, path: string, body?: 
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) await endSessionIfInvalid();
   if (!res.ok) {
     const err = new Error(apiErrorMessage(data as { error?: string }, res, `HTTP ${res.status}`)) as Error & { code?: string; status?: number };
     err.code = (data as { error?: string }).error;

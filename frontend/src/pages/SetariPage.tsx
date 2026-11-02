@@ -3,6 +3,7 @@ import { FONT_OPTIONS } from '../lib/settings'
 import type { Theme } from '../lib/settings'
 import { useSettingsCtx } from '../SettingsCtx'
 import { useApp } from '../AppContext'
+import AccountCard from '../components/AccountCard'
 import AuditLogCard from '../components/AuditLogCard'
 import { resolveFacturareConfig } from '../types'
 import type { FacturareConfig } from '../types'
@@ -201,6 +202,8 @@ export default function SetariPage() {
               </div>
             </div>
           </div>
+
+          <AccountCard />
 
           {/* Jurnal de acces: doar administratorii; key=workspace id ca să nu rămână intrările altui workspace. */}
           {userRole === 'admin' && activeWorkspace && <AuditLogCard key={activeWorkspace.id} />}

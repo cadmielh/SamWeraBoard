@@ -5,6 +5,9 @@ export const MIN_PASSWORD_LENGTH = 12
 /** Formularul cu parolă apare doar după activarea providerului Email/Password (vezi docs/login-parola.md). */
 export const passwordLoginEnabled = (): boolean => import.meta.env.VITE_PASSWORD_LOGIN === '1'
 
+/** Coduri la reîmprospătarea tokenului care înseamnă că sesiunea s-a încheiat (spre deosebire de o problemă de rețea). */
+export const SESSION_ENDED_CODES = ['auth/user-token-expired', 'auth/user-not-found', 'auth/user-disabled', 'auth/invalid-user-token']
+
 const MESSAGES: Record<string, string> = {
   'auth/invalid-credential': 'E-mail sau parolă incorecte.',
   'auth/invalid-login-credentials': 'E-mail sau parolă incorecte.',

@@ -4,6 +4,9 @@ import {
   connectAuthEmulator,
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -66,6 +69,12 @@ export async function registerPassword(name: string, email: string, password: st
 
 export const resetPassword = (email: string) => sendPasswordResetEmail(auth, email);
 export const resendVerification = (user: User) => sendEmailVerification(user);
+
+/** Cere parola curentă chiar și într-o sesiune recentă: o sesiune rămasă deschisă nu trebuie să poată schimba parola. */
+export async function changePassword(user: User, current: string, next: string): Promise<void> {
+  await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email ?? "", current));
+  await updatePassword(user, next);
+}
 
 export const signOut = () => fbSignOut(auth);
 export { onAuthStateChanged };

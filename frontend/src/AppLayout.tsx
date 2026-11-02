@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, auth, signIn, signInPassword, registerPassword, resetPassword, resendVerification, signOut } from './lib/firebase'
-import { authErrorMessage, passwordLoginEnabled } from './lib/authErrors'
+import { authErrorMessage, passwordLoginEnabled, SESSION_ENDED_CODES } from './lib/authErrors'
 import { useWorkspace } from './lib/workspace'
 import { setApiWorkspace } from './lib/api'
 import { clearDriveToken, setDriveLoginHint, setDriveToken } from './lib/driveAuth'
@@ -55,7 +55,7 @@ export default function AppLayout() {
           await u.getIdToken(true)
         } catch (e) {
           const code = (e as { code?: string }).code ?? ''
-          if (['auth/user-token-expired', 'auth/user-not-found', 'auth/user-disabled', 'auth/invalid-user-token'].includes(code)) {
+          if (SESSION_ENDED_CODES.includes(code)) {
             await signOut()
             return
           }
