@@ -20,7 +20,7 @@ export function TermeniPage() {
         („Operatorul” sau „Cabinetul”) acceptă acești termeni prin bifarea acceptării din aplicație, prin administratorul spațiului.</P>
       <H>2. Conturi și spații de lucru</H>
       <UL>
-        <li>Accesul se face cu un cont Google cu adresă de e-mail verificată.</li>
+        <li>Accesul se face cu un cont Google sau cu e-mail și parolă, în ambele cazuri cu adresă de e-mail verificată. Utilizatorul păstrează confidențialitatea parolei.</li>
         <li>Persoana care creează sau acceptă termenii pentru un spațiu de lucru declară că are dreptul să angajeze Cabinetul.</li>
         <li>Administratorii răspund de persoanele pe care le invită, de rolurile acordate și de păstrarea confidențialității accesului.</li>
         <li>Fiecare spațiu de lucru este izolat: membrii unui spațiu nu văd datele altuia.</li>
@@ -78,7 +78,7 @@ export function ConfidentialitatePage() {
         <Link to="/dpa">Acordul de prelucrare a datelor (DPA)</Link>.</P>
       <H>Ce date prelucrăm, de ce și cât timp</H>
       <UL>
-        <li><strong>Date de cont</strong> (nume, e-mail, fotografie de profil și identificator din contul Google): autentificare și acces — executarea contractului.
+        <li><strong>Date de cont</strong> (nume, e-mail, identificator; pentru conturile Google și fotografia de profil; pentru conturile cu parolă, un hash al parolei, păstrat de Firebase Authentication — Furnizorul nu vede și nu stochează parola): autentificare și acces — executarea contractului.
           Cât timp contul este activ.</li>
         <li><strong>Apartenența la spații de lucru și rolurile</strong>: aplicarea drepturilor de acces — executarea contractului. Cât timp persoana este membră.</li>
         <li><strong>Jurnal de activitate</strong> (acțiune, moment, adresă IP, tip de browser): securitatea Serviciului și demonstrarea conformității — interes legitim
@@ -154,7 +154,7 @@ export function SubImputernicitiPage() {
     ['Google Cloud / Firebase (Firestore, Cloud Functions, Cloud KMS)', 'Găzduirea aplicației, baza de date, serverele aplicației și cheile de criptare', 'Toate datele din aplicație (datele sensibile, criptate)', 'UE — Frankfurt (europe-west3)'],
     ['Firebase Hosting (rețeaua de distribuție Google)', 'Livrarea fișierelor statice ale aplicației (cod, fonturi, imagini); nu conțin date din aplicație', 'Adresa IP a vizitatorului (jurnale tehnice ale rețelei)', 'Rețea globală de distribuție'],
     ['Google Cloud Logging (jurnale tehnice)', 'Jurnalele de funcționare ale serverului (erori, timpi de răspuns), fără valori ale datelor clienților; păstrare 30 de zile', 'Adresa IP, momentul și ruta apelată; nu CNP, nume sau alte date din fișele clienților', 'UE (Frankfurt, europe-west3); doar jurnalele de administrare ale furnizorului rămân în locația „global”'],
-    ['Firebase Authentication (Google)', 'Autentificarea utilizatorilor', 'Date de cont (nume, e-mail, identificator)', 'Global; clauze contractuale standard / Cadrul UE–SUA'],
+    ['Firebase Authentication (Google)', 'Autentificarea utilizatorilor', 'Date de cont (nume, e-mail, identificator; hash-ul parolei, pentru conturile cu parolă)', 'Global; clauze contractuale standard / Cadrul UE–SUA'],
     ['Microsoft Azure (Document Intelligence)', 'Recunoaștere text (OCR) pe imaginea actului de identitate. Aplicația nu o stochează; Azure păstrează temporar fișierul și rezultatul, cel mult 24 de ore (aplicația cere ștergerea imediată după procesare) și nu le folosește pentru antrenarea modelelor', 'Imaginea actului de identitate încărcat', 'UE — Suedia (Sweden Central)'],
     ['Google Drive / Docs (contul utilizatorului)', 'Alegerea opțională a actelor și a șabloanelor și salvarea documentelor generate. Aplicația accesează doar fișierele create de ea sau alese explicit de utilizator (permisiunea „drive.file”); tokenul Google rămâne în browser și nu ajunge pe serverele Furnizorului', 'Fișierele alese sau create de utilizator, la alegerea lui', 'Conform contului Google al utilizatorului'],
   ]
@@ -193,7 +193,7 @@ const CADRU_LEGAL: [string, string][] = [
   ['GDPR, art. 32 — securitatea prelucrării', 'Criptare la nivel de câmp pentru CNP și serie CI, izolare între spații de lucru, acces pe roluri, jurnal de activitate, chei în KMS, teste automate ale regulilor de acces (secțiunea „În vigoare”).'],
   ['GDPR, art. 5 — minimizare și limitarea stocării', 'Imaginile actelor nu se stochează; istoricul extragerilor păstrează doar sursa și data, 30 de zile; jurnalul de activitate ~13 luni; ștergerea unui client elimină în cascadă și datele sensibile.'],
   ['Legea nr. 190/2018, art. 4 — număr național de identificare (CNP)', 'Garanții tehnice și organizatorice specifice: CNP criptat separat de restul fișei, citire doar prin server și înregistrată, perioade de stocare definite, fără CNP în jurnalele tehnice.'],
-  ['GDPR, cap. V — transferuri în afara SEE', 'Datele clienților rămân în SEE (baza de date și serverele: Frankfurt; recunoașterea textului: Suedia). Singura excepție declarată este autentificarea Google (clauze contractuale standard / Cadrul UE–SUA).'],
+  ['GDPR, cap. V — transferuri în afara SEE', 'Datele clienților rămân în SEE (baza de date și serverele: Frankfurt; recunoașterea textului: Suedia). Singura excepție declarată este autentificarea, procesată de Google (clauze contractuale standard / Cadrul UE–SUA).'],
   ['GDPR, art. 33 — încălcări ale securității datelor', 'Furnizorul notifică Operatorul fără întârziere nejustificată, în principiu în 48 de ore; Operatorul are, potrivit GDPR, 72 de ore pentru notificarea ANSPDCP.'],
 ]
 
@@ -239,7 +239,7 @@ export function SecuritatePage() {
         <li><strong>Imaginile actelor de identitate nu sunt stocate de aplicație</strong>: se procesează în memorie, iar după extragere cerem la Azure ștergerea imediată a fișierului trimis și a rezultatului (ștergerea automată, în cel mult 24 de ore, rămâne plasa de siguranță).</li>
         <li><strong>Invitații cu acceptare explicită</strong>: nimeni nu este adăugat automat într-un spațiu; invitațiile expiră după 14 zile.</li>
         <li><strong>Jurnal de activitate</strong> scris exclusiv de server (nu poate fi modificat din aplicație), vizibil administratorilor, păstrat aproximativ 13 luni.</li>
-        <li><strong>Autentificare</strong> prin conturi Google cu e-mail verificat; sesiunile revocate sunt respinse.</li>
+        <li><strong>Autentificare</strong> prin conturi Google sau cu e-mail și parolă (minimum 12 caractere), doar cu e-mail verificat; sesiunile revocate sunt respinse, iar utilizatorul își poate încheia singur sesiunile de pe toate dispozitivele. Rolul de administrator al platformei funcționează doar în sesiuni Google.</li>
         <li><strong>Plăți</strong>: datele cardului se introduc direct pe pagina securizată Stripe și nu ajung pe serverele Furnizorului.</li>
         <li><strong>Fără date personale în jurnalele tehnice</strong> și mesaje de eroare generice către utilizatori.</li>
         <li><strong>Recuperare la un moment anterior</strong> a bazei de date (ultimele 7 zile) și protecție împotriva ștergerii accidentale a bazei de date.</li>

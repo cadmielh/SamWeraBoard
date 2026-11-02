@@ -11,7 +11,7 @@ const FAQ: [string, string][] = [
   ['Cine are acces la datele clienților mei?',
     'Utilizatorii cabinetului dumneavoastră, după rol. Aplicația nu oferă furnizorului acces la fișele clienților, la CNP-uri sau la jurnalul de acces. Accesul excepțional (de exemplu pentru depanare) are loc doar la cererea scrisă a cabinetului și se consemnează.'],
   ['Unde sunt stocate datele?',
-    'Baza de date, serverul, cheile de criptare și jurnalele tehnice sunt în Frankfurt. Citirea actelor rulează în Suedia. Autentificarea Google și rețeaua care livrează fișierele aplicației sunt servicii globale ale Google, declarate în pagina Sub-împuterniciți.'],
+    'Baza de date, serverul, cheile de criptare și jurnalele tehnice sunt în Frankfurt. Citirea actelor rulează în Suedia. Autentificarea și rețeaua care livrează fișierele aplicației sunt servicii globale ale Google, declarate în pagina Sub-împuterniciți.'],
   ['Se păstrează imaginile buletinelor scanate?',
     'Nu. Imaginea este trimisă la citire, iar procesatorul o șterge imediat după analiză. În fișa clientului rămân doar datele extrase, CNP-ul fiind criptat separat.'],
   ['Ce se întâmplă dacă vreau să plec?',
@@ -19,7 +19,7 @@ const FAQ: [string, string][] = [
   ['La ce documente accesează aplicația din Google Drive?',
     'Doar la fișierul sau folderul pe care îl alegeți dumneavoastră prin selectorul Google. Nu are acces la restul Drive-ului.'],
   ['Cum primesc acces?',
-    'Vă autentificați cu Google și creați cabinetul: primele 14 zile sunt gratuite, fără card. Apoi activați abonamentul din aplicație, cu plata prin card (Stripe).'],
+    'Vă autentificați și creați cabinetul: primele 14 zile sunt gratuite, fără card. Apoi activați abonamentul din aplicație, cu plata prin card (Stripe).'],
   ['Ce se întâmplă dacă nu activez abonamentul?',
     'Cabinetul trece în modul citire: datele rămân vizibile și se pot exporta oricând, dar nu se mai pot adăuga sau modifica. Activarea abonamentului reia imediat lucrul.'],
 ]
@@ -283,7 +283,7 @@ export default function LandingPage({ onSignIn, passwordAuth }: { onSignIn: () =
               <a className="btn lp-btn lp-outline" href={mail}><Icon name="mail" size={18} />Scrie-ne</a>
             </div>
             <div className="lp-note">
-              Fără card. Autentificare cu Google; aveți deja cont sau ați fost invitat de un coleg? Folosiți același buton.
+              Fără card. Aveți deja cont sau ați fost invitat de un coleg? Folosiți același buton.
               Pentru avocați, contabili și consultanți.
             </div>
             <ul className="lp-badges">
