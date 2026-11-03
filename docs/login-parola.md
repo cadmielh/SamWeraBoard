@@ -18,7 +18,7 @@ Decizii ale proprietarului (2 noiembrie 2026): `SIGNUP_MODE` rămâne `invite`; 
 | Subiect | Decizie | Motiv |
 |---|---|---|
 | Metodă | E-mail + parolă, prin Firebase Auth | Nu stocăm și nu procesăm parole pe serverul nostru |
-| Parolă | Minimum 12 caractere, politică impusă de Firebase | Validarea din browser se poate ocoli |
+| Parolă | Minimum 12 caractere, cu literă mare, literă mică, cifră și caracter special; politică impusă de Firebase și afișată în aplicație | Validarea din browser se poate ocoli |
 | E-mail neverificat | Ecran dedicat, fără acces la date | Serverul și regulile îl resping deja |
 | Drive | Conectare separată prin Google Identity Services, nu prin legarea contului Google de contul Firebase | Nu adaugă o metodă de login nedorită și merge cu orice cont Google |
 | Client OAuth | Același client ca la login | Păstrează, cel mai probabil, accesul `drive.file` deja acordat; de confirmat la test |
@@ -44,7 +44,7 @@ Stare la 3 noiembrie 2026: cod și teste scrise, necomise și nepublicate. Teste
 
 ### Etapa 2: Drive independent de login (1,5 zile)
 
-Stare la 3 noiembrie 2026: cod scris, necomis și nepublicat. Testele automate trec. Acceptată de proprietar fără test cap-coadă: fereastra Google a dat `origin_mismatch` pe localhost, deci conectarea, salvarea în Drive, șabloanele Google Docs și anularea nu au fost verificate cu Google real. Se verifică înainte de deploy, după completarea originilor (vezi lista manuală).
+Stare la 3 noiembrie 2026: cod scris, necomis și nepublicat. Testele automate trec. Acceptată de proprietar fără test cap-coadă: fereastra Google a dat `origin_mismatch` pe localhost, deci conectarea, salvarea în Drive, șabloanele Google Docs și anularea nu au fost verificate cu Google real. După completarea originilor, proprietarul a confirmat pe 3 noiembrie selecția din Drive pe localhost, inclusiv dintr-un tab nou. Salvarea în Drive și șabloanele Google Docs nu au fost testate manual; proprietarul le reia doar dacă sunt raportate probleme.
 
 1. Modul nou `frontend/src/lib/driveAuth.ts`: `initTokenClient` cu scope `drive.file`, `login_hint` cu e-mailul utilizatorului, token și expirare în `sessionStorage`.
 2. În context, lângă `accessToken`, apare `ensureDriveToken()`, apelat la începutul acțiunii declanșate de click. Google cere un gest al utilizatorului, altfel fereastra e blocată.
@@ -77,6 +77,8 @@ Stare la 3 noiembrie 2026: cod scris, necomis și nepublicat, testat automat și
 
 ### Etapa 4: administrarea contului (1 zi)
 
+Stare la 3 noiembrie 2026: cod scris și testat automat, necomis și nepublicat. Cardul „Cont” din Setări așteaptă testul proprietarului.
+
 1. Secțiune „Cont” în [SetariPage.tsx](../frontend/src/pages/SetariPage.tsx): schimbarea parolei cu reautentificare și stare Drive.
 2. „Deconectează toate dispozitivele”: rută nouă pe server cu `revoke_refresh_tokens`. Serverul respinge imediat sesiunile, iar un ID token existent mai poate citi direct din Firestore până la expirare, maximum o oră.
 3. Pe clienți, un 401 de la API încheie sesiunea, în loc să lase ecrane cu erori.
@@ -84,6 +86,8 @@ Stare la 3 noiembrie 2026: cod scris, necomis și nepublicat, testat automat și
 Amânat: MFA cu TOTP (înrolare cu cod QR, pas de cod la login) și obligativitatea lui pentru administratorii cu parolă. **Se reia obligatoriu înainte de trecerea la `SIGNUP_MODE=open`.**
 
 ### Etapa 5: texte legale și documentație (0,5 zile)
+
+Stare la 3 noiembrie 2026: texte actualizate, necomise și nepublicate, nerevizuite de avocat. Termenii au noua versiune `2026-11-03`, care trebuie să ajungă în producție împreună cu activarea parolelor: textele descriu login-ul cu parolă, iar schimbarea versiunii cere reacceptarea de către administratori. Dacă lansarea e în altă zi, versiunea se actualizează la acea dată.
 
 1. [LegalPages.tsx](../frontend/src/pages/legal/LegalPages.tsx):
    - accesul „cu un cont Google” (Termeni);
@@ -126,10 +130,10 @@ Deploy doar la instrucțiunea explicită a proprietarului, cu `npm run build:eu`
 
 Documentația consultată nu le lămurește, așa că devin **condiții de lansare**:
 
-1. **Preluare anticipată:** un atacator creează cont cu parolă pe adresa victimei, fără verificare, iar victima intră apoi cu Google. Parola atacatorului nu trebuie să mai funcționeze. Se testează pe o adresă Gmail și pe una Google Workspace. Dacă parola supraviețuiește, lansarea se oprește până la remediere.
+1. **Preluare anticipată** (trecut pe Gmail, 3 noiembrie: parola veche e refuzată după login-ul Google): un atacator creează cont cu parolă pe adresa victimei, fără verificare, iar victima intră apoi cu Google. Parola atacatorului nu trebuie să mai funcționeze. Se testează pe o adresă Gmail și pe una Google Workspace. Dacă parola supraviețuiește, lansarea se oprește până la remediere.
 2. **Înregistrare pe o adresă existentă:** ce eroare primește utilizatorul și dacă dezvăluie existența contului.
-3. **Resetare pe cont exclusiv Google:** dacă trimite e-mail și ce metode rămân active.
-4. **Accesul `drive.file`:** rămâne valabil între login-ul Firebase și clientul GIS? Netestat încă, din cauza `origin_mismatch` pe localhost.
+3. **Resetare pe cont exclusiv Google** (trecut, 3 noiembrie: e-mailul vine, iar apoi merg Google și parola): dacă trimite e-mail și ce metode rămân active.
+4. **Accesul `drive.file`:** rămâne valabil între login-ul Firebase și clientul GIS? Conectarea merge dintr-un tab nou (3 noiembrie). Accesul la fișiere alese anterior nu a fost verificat explicit.
 
 ### Lăsate intenționat pentru mai târziu
 
