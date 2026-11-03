@@ -36,6 +36,14 @@ for ROLE in roles/datastore.user roles/firebaseauth.viewer roles/logging.logWrit
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:${FUNCTION_SA}" --role "$ROLE" --condition=None >/dev/null
 done
 
+# Conturile Auth: dezactivare, revocarea sesiunilor și ștergere (Setări → Cont, ștergerea programată). Rol propriu, nu
+# roles/firebaseauth.admin, care ar permite și schimbarea configurării autentificării.
+gcloud iam roles describe cabinioAuthUsers --project "$PROJECT_ID" >/dev/null 2>&1 \
+  || gcloud iam roles create cabinioAuthUsers --project "$PROJECT_ID" --title "Cabinio: conturi Auth" \
+       --permissions firebaseauth.users.get,firebaseauth.users.update,firebaseauth.users.delete >/dev/null
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:${FUNCTION_SA}" \
+  --role "projects/$PROJECT_ID/roles/cabinioAuthUsers" --condition=None >/dev/null
+
 # Doar criptare/decriptare pe cheia vault-ului — funcția nu poate administra sau șterge cheia.
 gcloud kms keys add-iam-policy-binding "$KEY" --keyring "$KEYRING" --location "$LOCATION" --project "$PROJECT_ID" \
   --member "serviceAccount:${FUNCTION_SA}" --role roles/cloudkms.cryptoKeyEncrypterDecrypter >/dev/null
