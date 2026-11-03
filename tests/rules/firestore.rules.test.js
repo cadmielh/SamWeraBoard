@@ -324,18 +324,23 @@ async function seedTemplate() {
     await setDoc(doc(c.firestore(), 'workspaces', W1, 'docTemplates', 't1'), { ...TPL, revision: 2, sourceKey: 'hotarare_aga' })
   })
 }
-test('șabloane: membrul creează un șablon; vizualizatorul și un outsider nu', async () => {
-  await assertSucceeds(setDoc(doc(ctx(MEMBER), 'workspaces', W1, 'docTemplates', 'n'), TPL))
-  await assertFails(setDoc(doc(ctx(VIEWER), 'workspaces', W1, 'docTemplates', 'n2'), TPL))
-  await assertFails(setDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'docTemplates', 'n3'), TPL))
+const GDOC = { name: 'Act', type: 'gdoc', docId: 'abc', outputNameTemplate: 'Act', createdBy: MEMBER }
+test('șabloane: membrul creează un șablon Google Docs; vizualizatorul și un outsider nu', async () => {
+  await assertSucceeds(setDoc(doc(ctx(MEMBER), 'workspaces', W1, 'docTemplates', 'n'), GDOC))
+  await assertFails(setDoc(doc(ctx(VIEWER), 'workspaces', W1, 'docTemplates', 'n2'), GDOC))
+  await assertFails(setDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'docTemplates', 'n3'), GDOC))
 })
-test('șabloane: la creare nu se pot pune câmpuri scrise de server sau un fișier prea mare', async () => {
+test('șabloane: un .docx nu se creează din browser, doar prin server (verificarea fișierului)', async () => {
+  const db = ctx(MEMBER)
+  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), TPL))
+  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...GDOC, fileBase64: 'UEsDBA==' }))
+  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...GDOC, type: 'docx' }))
+})
+test('șabloane: la creare nu se pot pune câmpuri scrise de server', async () => {
   const db = ctx(MEMBER)
   for (const extra of [{ delivery: { by: SUPER } }, { revision: 5 }, { updatedBy: MEMBER }, { updatedAt: new Date() }]) {
-    await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...TPL, ...extra }))
+    await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...GDOC, ...extra }))
   }
-  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...TPL, fileBase64: 'A'.repeat(700001) }))
-  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...TPL, fileBase64: 123 }))
 })
 test('șabloane: din browser se redenumesc, dar fișierul, sourceKey și revizia nu se schimbă', async () => {
   await seedTemplate()

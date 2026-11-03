@@ -1,9 +1,9 @@
-"""Șabloanele proprii ale cabinetelor: înlocuirea fișierului și livrarea unui șablon pregătit de furnizor.
+"""Șabloanele proprii ale cabinetelor: crearea și înlocuirea fișierului, livrarea unui șablon pregătit de furnizor.
 
-Regulile Firestore permit browserului să creeze un șablon și să-i schimbe doar numele, descrierea, tipul și
-numele fișierului generat. Fișierul (`fileBase64`), etichetele detectate, `revision`, `updatedAt/By` și
-`delivery` se scriu DOAR de aici (Admin SDK), după `template_safety.validate_docx` și cu etichetele recalculate
-pe server, deci niciodată din ce trimite clientul.
+Regulile Firestore permit browserului doar să creeze un șablon Google Docs (fără fișier) și să schimbe numele,
+descrierea, tipul și numele fișierului generat. Șabloanele .docx (`fileBase64`), etichetele detectate, `revision`,
+`updatedAt/By` și `delivery` se scriu DOAR de aici (Admin SDK), după `template_safety.validate_docx` și cu
+etichetele recalculate pe server, deci niciodată din ce trimite clientul.
 
 Livrarea (super admin): copiază un șablon din cabinetul super adminului într-un cabinet client cu abonament.
 Nu întoarce niciodată conținut din cabinetul țintă și nu poate suprascrie un șablon existent.
@@ -81,6 +81,59 @@ def _file_name(raw: str | None) -> str:
 
 def _encode(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
+
+
+# ── Crearea unui șablon .docx ────────────────────────────────────────────────
+
+def _create(principal: authz.Principal, wid: str, data: bytes, file_name: str | None, fields: dict, meta: dict,
+            **extra) -> str:
+    name = str(fields.get("name") or "").strip()[:200]
+    tip = fields.get("tipTemplate") if fields.get("tipTemplate") in _TIP_TEMPLATE else "universal"
+    ref = _templates(wid).document()
+    ref.create({
+        "name": name, "description": str(fields.get("description") or "").strip()[:1000],
+        "type": "docx", "fileBase64": _encode(data), "fileName": _file_name(file_name), **meta,
+        "outputNameTemplate": str(fields.get("outputNameTemplate") or "").strip()[:300] or f"{name}_completat.docx",
+        "tipTemplate": tip, "createdAt": firestore.SERVER_TIMESTAMP, "createdBy": principal.uid, "revision": 0, **extra,
+    })
+    audit.log(wid, principal.uid, "template.create", ref.id, {"placeholders": len(meta["placeholders"]), **extra})
+    return ref.id
+
+
+@bp.post("/templates")
+def create_template():
+    """Șablon nou din fișierul încărcat. Fișierul trece prin `template_safety` și etichetele se calculează aici:
+    regulile Firestore nu mai primesc fișiere direct din browser."""
+    principal, wid, _ws = authz.require_from_header("member", limit="fill", billing=True)
+    if not str(request.form.get("name") or "").strip():
+        return _err("name_required", 400)
+    upload = request.files.get("template")
+    if upload is None or not (upload.filename or "").lower().endswith(".docx"):
+        return _err("invalid_template", 400)
+    data = upload.read(template_safety.MAX_STORED_BYTES + 1)
+    try:
+        template_safety.validate_docx(data)
+        meta = _meta(data)
+    except template_safety.TemplateRejected as e:
+        return _err(e.code, 400)
+    tid = _create(principal, wid, data, upload.filename, request.form, meta)
+    return jsonify({"id": tid, **meta}), 201
+
+
+@bp.post("/templates/from-builtin")
+def duplicate_builtin():
+    """Copie a unui șablon de bază („Duplică”). Fișierul se ia de pe server, nu din browser."""
+    principal, wid, _ws = authz.require_from_header("member", limit="fill", billing=True)
+    key = _body().get("key")
+    base = _builtins.get(key) if isinstance(key, str) else None
+    if not base or base.get("type", "docx") != "docx" or not isinstance(base.get("bytes"), bytes):
+        return _err("invalid_source_key", 400)
+    if len(base["bytes"]) > template_safety.MAX_STORED_BYTES:
+        return _err("template_too_large", 400)
+    meta = {k: base.get(k) or [] for k in ("placeholders", "clauses", "repeatGroups")}
+    tid = _create(principal, wid, base["bytes"], base.get("filename"), base, meta,
+                  sourceKey=key, sourceVersion=int(base.get("version") or 0))
+    return jsonify({"id": tid}), 201
 
 
 # ── Înlocuirea fișierului ────────────────────────────────────────────────────

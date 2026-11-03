@@ -1,8 +1,7 @@
 import { useState, useRef } from 'react'
-import type { BuiltinTemplate, ClauseMeta, DocTemplate, ToastItem } from '../types'
+import type { BuiltinTemplate, DocTemplate, ToastItem } from '../types'
 import type { TemplateInput } from '../lib/templates'
 import { useBuiltinTemplates } from '../lib/builtinTemplates'
-import { fetchBuiltinTemplateBytes } from '../lib/api'
 import IconTrash from './IconTrash'
 
 type TipTemplate = 'universal' | 'PF' | 'PJ'
@@ -11,7 +10,8 @@ const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
   { value: 'PF', label: 'Persoană Fizică' },
   { value: 'PJ', label: 'Persoană Juridică' },
 ]
-import { detectPlaceholders, replaceTemplateFile, type TemplateFileMeta } from '../lib/api'
+import { createTemplate, detectPlaceholders, duplicateBuiltinTemplate, replaceTemplateFile, type TemplateFileMeta } from '../lib/api'
+import { assertWritable } from '../lib/billing'
 import { ensureDriveToken } from '../lib/driveAuth'
 import { pickGoogleDoc } from '../lib/picker'
 import { setBuiltinHidden } from '../lib/workspace'
@@ -141,8 +141,6 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const [docxDesc, setDocxDesc] = useState('')
   const [docxOutput, setDocxOutput] = useState('')
   const [docxPlaceholders, setDocxPlaceholders] = useState<string[]>([])
-  const [docxClauses, setDocxClauses] = useState<ClauseMeta[]>([])
-  const [docxRepeatGroups, setDocxRepeatGroups] = useState<string[]>([])
   const [docxTip, setDocxTip] = useState<TipTemplate>('universal')
   const [detecting, setDetecting] = useState(false)
   // Fișierul refuzat de server (nevalid, macro, conținut extern…): nu se poate salva ca șablon.
@@ -168,17 +166,13 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     setDetecting(true)
     setDocxError(null)
     try {
-      const { placeholders, clauses, repeatGroups } = await detectPlaceholders(f)
+      const { placeholders } = await detectPlaceholders(f)
       setDocxPlaceholders(placeholders)
-      setDocxClauses(clauses)
-      setDocxRepeatGroups(repeatGroups)
       if (placeholders.length === 0 && offerBlanks) setBlankFile(f)
     } catch (err: unknown) {
       // Înainte, o eroare aici salva tăcut un șablon fără nicio etichetă; acum fișierul nu se mai poate salva.
       setDocxError((err as Error).message || 'Fișierul nu a putut fi citit.')
       setDocxPlaceholders([])
-      setDocxClauses([])
-      setDocxRepeatGroups([])
     } finally {
       setDetecting(false)
     }
@@ -190,21 +184,11 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     if (docxFile.size > MAX_BASE64_BYTES) { onToast(TOO_LARGE_MSG, 'err'); return }
     setSaving(true)
     try {
-      const base64 = await new Promise<string>((res, rej) => {
-        const reader = new FileReader()
-        reader.onload = () => res((reader.result as string).split(',')[1])
-        reader.onerror = rej
-        reader.readAsDataURL(docxFile)
-      })
-      await onAdd({
+      assertWritable()
+      // Etichetele le recalculează serverul, din același fișier: cele afișate mai sus sunt doar previzualizarea.
+      await createTemplate(docxFile, {
         name: docxName.trim(),
         description: docxDesc.trim(),
-        type: 'docx',
-        fileBase64: base64,
-        fileName: docxFile.name,
-        placeholders: docxPlaceholders,
-        clauses: docxClauses,
-        repeatGroups: docxRepeatGroups,
         tipTemplate: docxTip,
         outputNameTemplate: docxOutput.trim() || `${docxName.trim()}_completat.docx`,
       })
@@ -296,7 +280,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     URL.revokeObjectURL(url)
   }
 
-  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxRepeatGroups([]); setDocxTip('universal'); setJustImported(false); setDocxError(null) }
+  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxTip('universal'); setJustImported(false); setDocxError(null) }
 
   // ── Înlocuirea fișierului ──
   const startReplace = (tpl: DocTemplate) => {
@@ -355,27 +339,8 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const handleDuplicateBuiltin = async (b: BuiltinTemplate) => {
     setDuplicatingKey(b.key)
     try {
-      const blob = await fetchBuiltinTemplateBytes(b.key)
-      const base64 = await new Promise<string>((res, rej) => {
-        const reader = new FileReader()
-        reader.onload = () => res((reader.result as string).split(',')[1])
-        reader.onerror = rej
-        reader.readAsDataURL(blob)
-      })
-      await onAdd({
-        name: b.name,
-        description: b.description,
-        type: 'docx',
-        fileBase64: base64,
-        fileName: b.filename,
-        placeholders: b.placeholders,
-        clauses: b.clauses,
-        repeatGroups: b.repeatGroups,
-        tipTemplate: b.tipTemplate,
-        outputNameTemplate: b.outputNameTemplate,
-        sourceKey: b.key,
-        sourceVersion: b.version,
-      })
+      assertWritable()
+      await duplicateBuiltinTemplate(b.key)
       onToast(`"${b.name}" duplicat în Șabloanele mele`, 'ok')
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Eroare la duplicare', 'err')

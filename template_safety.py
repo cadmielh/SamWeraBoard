@@ -68,11 +68,12 @@ def _xml(raw: bytes):
         raise TemplateRejected("invalid_template")
 
 
-def validate_docx(data: bytes | None, max_bytes: int = MAX_STORED_BYTES) -> None:
-    """Ridică `TemplateRejected` dacă fișierul nu e un document Word sigur de prelucrat și de păstrat.
+def check_archive(data: bytes | None, max_bytes: int) -> zipfile.ZipFile:
+    """Ridică `TemplateRejected` dacă fișierul nu e un document Word pe care python-docx îl poate deschide fără risc
+    (arhivă-bombă, DOCTYPE/ENTITY). Nu judecă și conținutul: pentru documentele doar completate și trimise înapoi
+    aceluiași utilizator (ex. un .docx din Drive la /fill/docx), unde macro-urile sau un șablon atașat sunt legitime.
 
-    Coduri: template_too_large, invalid_template, template_macros, template_embedded_objects,
-    template_external_content."""
+    Coduri: template_too_large, invalid_template, template_macros (.docm redenumit)."""
     if not data:
         raise TemplateRejected("invalid_template")
     if len(data) > max_bytes:
@@ -86,6 +87,27 @@ def validate_docx(data: bytes | None, max_bytes: int = MAX_STORED_BYTES) -> None
     names = {i.filename for i in infos}
     if "[Content_Types].xml" not in names:
         raise TemplateRejected("invalid_template")
+    for name in names:
+        if name.lower().endswith((".xml", ".rels")):
+            raw = _read(zf, name)
+            if b"<!DOCTYPE" in raw or b"<!ENTITY" in raw:
+                raise TemplateRejected("invalid_template")
+
+    types = _xml(_read(zf, "[Content_Types].xml"))
+    content_types = {el.get("ContentType", "") for el in types}
+    if _DOCX_MAIN not in content_types:
+        # include .docm (macroEnabled.main+xml) și .dotx/.dotm (template.main+xml) redenumite în .docx
+        raise TemplateRejected("template_macros" if any("macroEnabled" in t for t in content_types)
+                               else "invalid_template")
+    return zf
+
+
+def validate_docx(data: bytes | None, max_bytes: int = MAX_STORED_BYTES) -> None:
+    """Ridică `TemplateRejected` dacă fișierul nu e un document Word sigur de prelucrat și de păstrat.
+
+    Coduri: cele din `check_archive`, plus template_macros, template_embedded_objects, template_external_content."""
+    zf = check_archive(data, max_bytes)
+    names = {i.filename for i in zf.infolist()}
 
     for name in names:
         low = name.lower()
@@ -98,22 +120,10 @@ def validate_docx(data: bytes | None, max_bytes: int = MAX_STORED_BYTES) -> None
             raise TemplateRejected("template_embedded_objects")
 
     for name in names:
-        if not name.lower().endswith((".xml", ".rels")):
-            continue
-        raw = _read(zf, name)
-        if b"<!DOCTYPE" in raw or b"<!ENTITY" in raw:
-            raise TemplateRejected("invalid_template")
         if name.lower().endswith(".rels"):
-            for rel in _xml(raw):
+            for rel in _xml(_read(zf, name)):
                 if rel.get("TargetMode") == "External" and rel.get("Type") != _HYPERLINK_REL:
                     raise TemplateRejected("template_external_content")
-
-    types = _xml(_read(zf, "[Content_Types].xml"))
-    content_types = {el.get("ContentType", "") for el in types}
-    if _DOCX_MAIN not in content_types:
-        # include .docm (macroEnabled.main+xml) și .dotx/.dotm (template.main+xml) redenumite în .docx
-        raise TemplateRejected("template_macros" if any("macroEnabled" in t for t in content_types)
-                               else "invalid_template")
 
 
 # ── Conținut (doar la livrare) ───────────────────────────────────────────────
@@ -139,9 +149,12 @@ def _valid_cnp(cnp: str) -> bool:
 
 
 def contains_real_cnp(text: str) -> bool:
-    """Un șir de 13 cifre care trece verificarea CNP (cifrele pot fi despărțite de spații)."""
-    compressed = re.sub(r"(\d)\s+(\d)", r"\1\2", text)
-    return any(_valid_cnp(m.group(1)) for m in re.finditer(r"(?<!\d)([1-9]\d{12})(?!\d)", compressed))
+    """Un șir de 13 cifre care trece verificarea CNP (cifrele pot fi despărțite de spații).
+
+    Se verifică și textul original: lipirea cifrelor ar uni un CNP cu numerele de după el (ex. „… 2023”)."""
+    compressed = re.sub(r"(?<=\d)\s+(?=\d)", "", text)
+    return any(_valid_cnp(m.group(1)) for t in (text, compressed)
+               for m in re.finditer(r"(?<!\d)([1-9]\d{12})(?!\d)", t))
 
 
 def _paragraph_texts(root) -> list[str]:

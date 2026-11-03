@@ -133,14 +133,13 @@ service cloud.firestore {
         }
       }
 
-      // Șabloane proprii. Fișierul se schimbă și livrarea se scrie doar prin server (templates_api.py), după
-      // verificarea documentului; din browser: creare (cu fișier de cel mult ~500 KB), redenumire, ștergere.
+      // Șabloane proprii. Șabloanele .docx (cu fișier) se creează și se înlocuiesc doar prin server (templates_api.py),
+      // după verificarea documentului; din browser: șabloane Google Docs (fără fișier), redenumire, ștergere.
       match /docTemplates/{templateId} {
         allow read: if isMember(wid);
         allow create: if canWrite(wid) &&
-          !request.resource.data.keys().hasAny(['delivery', 'revision', 'updatedAt', 'updatedBy']) &&
-          (!('fileBase64' in request.resource.data) ||
-            (request.resource.data.fileBase64 is string && request.resource.data.fileBase64.size() <= 700000));
+          request.resource.data.get('type', '') == 'gdoc' &&
+          !request.resource.data.keys().hasAny(['fileBase64', 'delivery', 'revision', 'updatedAt', 'updatedBy']);
         allow update: if canWrite(wid) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'outputNameTemplate', 'tipTemplate']);
         allow delete: if canWrite(wid);

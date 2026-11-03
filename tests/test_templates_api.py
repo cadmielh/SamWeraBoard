@@ -163,6 +163,53 @@ def test_fisier_nesigur_sau_sablon_google_docs(env):
     assert replace(c, "ana", base="x").get_json()["error"] == "invalid_revision"
 
 
+# ── Crearea ──────────────────────────────────────────────────────────────────
+
+def create(c, uid, data=None, wid=SRC, name="act.docx", **fields):
+    form = {"name": "Act nou", "tipTemplate": "PJ", **fields, "template": (io.BytesIO(data or docx()), name)}
+    return c.post("/templates", headers=hdr(uid, wid), data=form, content_type="multipart/form-data")
+
+
+def test_crearea_calculeaza_etichetele_pe_server(env):
+    c, db = env
+    r = create(c, "ana", placeholders="{{FALS}}", revision="9", delivery="x")
+    assert r.status_code == 201, r.get_json()
+    t = tpl(db, SRC, r.get_json()["id"])
+    assert set(t["placeholders"]) == {"{{CAMP_NR}}", "{{SOCIETATE_DENUMIRE}}"}
+    assert t["revision"] == 0 and "delivery" not in t and t["createdBy"] == "ana" and t["createdAt"] is not None
+    assert t["type"] == "docx" and t["tipTemplate"] == "PJ" and t["outputNameTemplate"] == "Act nou_completat.docx"
+    assert any(a["action"] == "template.create" for a in audit_actions(db, SRC))
+
+
+def test_crearea_refuza_fisierul_nesigur_si_fara_nume(env):
+    c, db = env
+    assert create(c, "ana", data=b"nu e docx").get_json()["error"] == "invalid_template"
+    assert create(c, "ana", name="act.pdf").get_json()["error"] == "invalid_template"
+    assert create(c, "ana", data=b"x" * 600_000).get_json()["error"] == "template_too_large"
+    assert create(c, "ana", **{"name": "  "}).get_json()["error"] == "name_required"
+    assert list(db.collection("workspaces").document(SRC).collection("docTemplates").stream()) == []
+
+
+def test_vizualizatorul_nu_creeaza(env):
+    c, _db = env
+    assert create(c, "vio").status_code == 403
+
+
+def test_duplicarea_unui_sablon_de_baza_ia_fisierul_de_pe_server(env):
+    c, db = env
+    original = docx("{{CAMP_NR}}")
+    templates_api.set_builtins({"hotarare_aga": {
+        "type": "docx", "bytes": original, "filename": "Hotărâre AGA.docx", "version": 3, "name": "Hotărâre AGA",
+        "description": "d", "tipTemplate": "PJ", "outputNameTemplate": "AGA.docx",
+        "placeholders": ["{{CAMP_NR}}"], "clauses": [], "repeatGroups": []}})
+    r = c.post("/templates/from-builtin", headers=hdr("ana"), json={"key": "hotarare_aga"})
+    assert r.status_code == 201, r.get_json()
+    t = tpl(db, SRC, r.get_json()["id"])
+    assert t["sourceKey"] == "hotarare_aga" and t["sourceVersion"] == 3 and t["name"] == "Hotărâre AGA"
+    assert base64.b64decode(t["fileBase64"]) == original and t["placeholders"] == ["{{CAMP_NR}}"]
+    assert c.post("/templates/from-builtin", headers=hdr("ana"), json={"key": "nu_exista"}).get_json()["error"] == "invalid_source_key"
+
+
 # ── Livrarea ─────────────────────────────────────────────────────────────────
 
 def test_livrarea_copiaza_curata_si_nu_suprascrie(env):

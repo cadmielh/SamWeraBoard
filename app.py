@@ -354,6 +354,11 @@ def fill_docx_route():
             return jsonify({"error": "Template must be a .docx file"}), 400
         file_bytes    = template_file.read()
         original_name = template_file.filename
+        # Doar structura (arhivă-bombă, DOCTYPE): un .docx din Drive poate avea legitim macro-uri sau un șablon atașat.
+        try:
+            template_safety.check_archive(file_bytes, max_bytes=app.config["MAX_CONTENT_LENGTH"])
+        except template_safety.TemplateRejected as e:
+            return jsonify({"error": e.code}), 400
     else:
         return jsonify({"error": "No template provided (upload file or set template_builtin_key)"}), 400
 

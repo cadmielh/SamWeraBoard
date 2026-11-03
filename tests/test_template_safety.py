@@ -125,6 +125,20 @@ def test_doctype_e_refuzat():
     assert code_of(rewrite(data, replace={"word/document.xml": doc})) == "invalid_template"
 
 
+def test_completarea_verifica_doar_structura():
+    """check_archive (folosit la /fill/docx) refuză bomba și DOCTYPE-ul, dar acceptă macro-uri și un șablon atașat."""
+    rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/"
+    ts.check_archive(_with_rel(rel + "attachedTemplate"), max_bytes=ts.MAX_STORED_BYTES)
+    ts.check_archive(rewrite(make_docx(), add={"word/vbaProject.bin": b"x"}), max_bytes=ts.MAX_STORED_BYTES)
+    bomb = rewrite(make_docx(), add={"word/media/mare.bin": b"\0" * (21 * 1024 * 1024)})
+    with pytest.raises(TemplateRejected, match="invalid_template"):
+        ts.check_archive(bomb, max_bytes=10 * 1024 * 1024)
+    data = make_docx()
+    doc = part(data, "word/document.xml").replace(b"?>", b'?><!DOCTYPE x [<!ENTITY a "b">]>', 1)
+    with pytest.raises(TemplateRejected, match="invalid_template"):
+        ts.check_archive(rewrite(data, replace={"word/document.xml": doc}), max_bytes=ts.MAX_STORED_BYTES)
+
+
 # ── inspect_content ──────────────────────────────────────────────────────────
 
 def test_document_curat_nu_are_probleme():
@@ -134,6 +148,12 @@ def test_document_curat_nu_are_probleme():
 def test_cnp_real_blocheaza_chiar_si_despartit_de_spatii():
     assert ts.inspect_content(make_docx("CNP 1900101123457")) == ["personal_data"]
     assert ts.inspect_content(make_docx("CNP 1 900101 123457")) == ["personal_data"]
+    assert ts.inspect_content(make_docx("CNP 1 9 0 0 1 0 1 1 2 3 4 5 7")) == ["personal_data"]   # cifră cu cifră
+
+
+def test_cnp_urmat_de_alte_numere_blocheaza():
+    assert ts.contains_real_cnp("CNP 1900101123457 2023")
+    assert ts.contains_real_cnp("1900101123457 01.01.2020")
 
 
 def test_numere_care_nu_sunt_cnp_nu_blocheaza():

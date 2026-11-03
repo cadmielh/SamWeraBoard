@@ -99,6 +99,8 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Cabinetul ales nu are abonament activ: șabloanele pregătite sunt o facilitate pentru abonați.";
     case "invalid_source_key":
       return "Formularul dedicat ales nu există.";
+    case "name_required":
+      return "Introdu un nume pentru șablon.";
     default:
       return data?.error ?? fallback;
   }
@@ -474,6 +476,22 @@ export async function replaceTemplateFile(templateId: string, file: File, baseRe
   return data as TemplateFileMeta & { revision: number };
 }
 
+export interface NewTemplateFields { name: string; description: string; tipTemplate: string; outputNameTemplate: string }
+
+/** Șablon .docx nou: fișierul se verifică și etichetele se calculează pe server (vezi templates_api.py). */
+export async function createTemplate(file: File, fields: NewTemplateFields): Promise<{ id: string }> {
+  const fd = new FormData();
+  fd.append("template", file);
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+  const res = await fetch(`${BASE}/templates`, { method: "POST", headers: await authHeaders(), body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(apiErrorMessage(data as { error?: string }, res, "Salvarea șablonului a eșuat"));
+  return data as { id: string };
+}
+
+/** „Duplică”: copia unui șablon de bază, făcută pe server din fișierul original. */
+export const duplicateBuiltinTemplate = (key: string) => apiJson<{ id: string }>("POST", "/templates/from-builtin", { key })
+
 /** Problemele care blochează livrarea unui șablon (template_safety.inspect_content). */
 export type DeliveryBlocker = "personal_data" | "comments" | "tracked_changes" | "custom_properties"
 export interface DeliveryWarnings { noPlaceholders?: boolean; dedicatedFormUnasked?: string[] }
@@ -508,17 +526,6 @@ export async function fetchBuiltinTemplates(): Promise<BuiltinTemplate[]> {
   const data = await res.json();
   if (!res.ok) throw new Error(apiErrorMessage(data, res, "Nu s-au putut încărca șabloanele de bază"));
   return data.templates as BuiltinTemplate[];
-}
-
-export async function fetchBuiltinTemplateBytes(key: string): Promise<Blob> {
-  const res = await fetch(`${BASE}/templates/builtin/${encodeURIComponent(key)}`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(apiErrorMessage(err, res, "Nu s-a putut descărca șablonul de bază"));
-  }
-  return res.blob();
 }
 
 /** Raportează serverului (doar pentru jurnalul de acces) că s-a generat un document în afara lui, ex. un Google Doc completat

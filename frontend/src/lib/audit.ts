@@ -29,6 +29,7 @@ const ACTIONS: Record<string, { label: string; category: AuditCategory }> = {
   'ocr.extract': { label: 'Scanare act de identitate (OCR)', category: 'date' },
   'client.delete': { label: 'Ștergere client', category: 'date' },
   'document.generate': { label: 'Generare document', category: 'documente' },
+  'template.create': { label: 'Adăugare șablon', category: 'documente' },
   'template.replace': { label: 'Înlocuire fișier șablon', category: 'documente' },
   'template.deliver': { label: 'Șablon pregătit, primit de la Cabinio', category: 'documente' },
   'template.delivery_revoke': { label: 'Șablon pregătit, retras de Cabinio', category: 'documente' },
@@ -120,6 +121,7 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
       return `versiune termeni ${str(m.tos) || '—'}, DPA ${str(m.dpa) || '—'}`
     case 'template.replace':
       return `șablon ${shortId(e.target)} · versiunea ${num(m.revision)} · ${num(m.placeholders)} câmpuri`
+    case 'template.create':
     case 'template.deliver':
       return `șablon ${shortId(e.target)} · ${num(m.placeholders)} câmpuri`
     case 'template.delivery_revoke':
