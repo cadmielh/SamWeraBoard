@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../AppContext'
 import {
-  CATEGORY_LABELS, actionLabel, categoryOf, describe, fetchAudit, toCsv,
+  CATEGORY_LABELS, actionLabel, actorLabel, categoryOf, describe, fetchAudit, toCsv,
   type AuditEntry, type CategoryFilter,
 } from '../lib/audit'
 
@@ -121,7 +121,7 @@ export default function AuditLogCard() {
                 {visible.map(e => (
                   <tr key={e.id}>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{e.ts ? new Date(e.ts).toLocaleString('ro-RO') : '—'}</td>
-                    <td style={td}>{nameOf(e.actorUid)}</td>
+                    <td style={td}>{actorLabel(e, nameOf)}</td>
                     <td style={{ ...td, fontWeight: 600, color: 'var(--s800)' }}>{actionLabel(e.action)}</td>
                     <td style={{ ...td, color: 'var(--s600)' }}>{describe(e, nameOf)}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--s400)' }}>{e.ip || '—'}</td>

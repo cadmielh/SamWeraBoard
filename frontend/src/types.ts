@@ -53,6 +53,13 @@ export interface DocTemplate {
   sourceVersion?: number
   createdAt: string
   createdBy: string
+  // Scrise doar de server (templates_api.py), la înlocuirea fișierului: revizia crește cu fiecare înlocuire
+  // (lipsă = 0), ca o înlocuire concurentă să fie refuzată în loc să suprascrie.
+  revision?: number
+  updatedAt?: { toDate(): Date }
+  updatedBy?: string
+  // Prezent pe șabloanele pregătite de echipa Cabinio și livrate în cabinet (vezi TemplateDeliveryModal).
+  delivery?: { at?: { toDate(): Date }; by: string; sourceTemplateId: string }
 }
 
 // Șablon de bază, servit din backend (nu din Firestore) — aceeași formă ca
@@ -254,6 +261,8 @@ export interface Workspace {
   deleteAfter?: { toDate(): Date }
   /** Abonament / perioadă de probă — vezi lib/billing.ts. Absent = cabinet nemigrat (fără acces la scriere). */
   billing?: WorkspaceBilling
+  /** Cheile șabloanelor de bază ascunse la generare de adminul cabinetului (lipsă = toate vizibile). */
+  hiddenBuiltins?: string[]
   createdAt: string | null
 }
 

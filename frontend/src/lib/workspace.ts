@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  collection, doc, getDoc, getDocs, onSnapshot, query, where,
+  arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, where,
   setDoc, updateDoc,
 } from 'firebase/firestore'
 import { db } from './firebase'
@@ -30,6 +30,12 @@ export interface WorkspaceInvite {
  * (toate workspace-urile). */
 export async function writeWorkspaceFeature(workspaceId: string, key: FeatureKey, enabled: boolean): Promise<void> {
   await updateDoc(doc(db, 'workspaces', workspaceId), { [`features.${key}`]: enabled })
+}
+
+/** Ascunde sau reafișează un șablon de bază la generare, pentru tot cabinetul (doar adminul, vezi firestore.rules).
+ * arrayUnion/arrayRemove: doi admini care schimbă șabloane diferite simultan nu își suprascriu alegerile. */
+export async function setBuiltinHidden(workspaceId: string, key: string, hidden: boolean): Promise<void> {
+  await updateDoc(doc(db, 'workspaces', workspaceId), { hiddenBuiltins: hidden ? arrayUnion(key) : arrayRemove(key) })
 }
 
 /** Toate workspace-urile din aplicație — doar pentru super admini (vezi

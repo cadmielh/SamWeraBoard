@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import { ensureDriveToken, getDriveToken } from '../lib/driveAuth'
@@ -18,6 +18,8 @@ import DateFieldInput from './DateFieldInput'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
+import { visibleBuiltins } from '../lib/templateChanges'
+import { useApp } from '../AppContext'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
 import TemplateLibrary from './TemplateLibrary'
@@ -71,7 +73,11 @@ export default function TemplateFiller({
   onToast, onBack, onClientSaved, stepNumber = 3,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
-  const { builtins } = useBuiltinTemplates()
+  const { activeWorkspace } = useApp()
+  const { builtins: allBuiltins } = useBuiltinTemplates()
+  // La generare apar doar șabloanele de bază pe care adminul cabinetului nu le-a ascuns (biblioteca le arată pe toate).
+  const hiddenBuiltins = activeWorkspace?.hiddenBuiltins
+  const builtins = useMemo(() => visibleBuiltins(allBuiltins, hiddenBuiltins), [allBuiltins, hiddenBuiltins])
   const { update: updateClient } = useClienti(workspaceId)
 
   const [clauseState, setClauseState] = useState<Record<string, ClauseSelectorValue>>({})
@@ -288,7 +294,19 @@ export default function TemplateFiller({
       ?? listTemplates.find(t => !tipMismatchMsg(t.tipTemplate, t.name))
     return (compatible ?? listTemplates[0])?.id ?? null
   })()
-  const effectiveActiveKey = activeKey ?? defaultActiveKey
+  // Un șablon de bază ascuns între timp de admin nu mai rămâne activ: se trece la cel implicit.
+  const activeKeyVisible = activeKey && (!activeKey.startsWith('builtin:') || builtins.some(b => builtinKey(b) === activeKey)) ? activeKey : null
+  const effectiveActiveKey = activeKeyVisible ?? defaultActiveKey
+
+  // Revizia fișierului văzută când s-a deschis formularul: dacă cineva înlocuiește fișierul între timp, documentul
+  // s-ar genera din fișierul nou cu un formular început pe cel vechi — utilizatorul e avertizat.
+  const [seenRevisions, setSeenRevisions] = useState<Record<string, number>>({})
+  const activeTemplate = templates.find(t => t.id === effectiveActiveKey)
+  useEffect(() => {
+    if (!activeTemplate || seenRevisions[activeTemplate.id] !== undefined) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSeenRevisions(prev => ({ ...prev, [activeTemplate.id]: activeTemplate.revision ?? 0 }))
+  }, [activeTemplate, seenRevisions])
 
   // Doar șabloanele fără clauze au checkbox (vezi renderTemplateRow) — cele cu
   // tip incompatibil clientului sunt oricum disabled, excluse din select-all.
@@ -1143,9 +1161,18 @@ export default function TemplateFiller({
     const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
     const isAnexa1 = tpl.type === 'docx' && isAnexa1Template(tpl)
     const isBrx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)
+    const seenRevision = seenRevisions[tpl.id]
+    const fileChanged = seenRevision !== undefined && (tpl.revision ?? 0) !== seenRevision
 
     return (
       <div className="tf-detail-panel">
+        {fileChanged && (
+          <div role="alert" style={WARN_BOX}>
+            ⚠️ Fișierul acestui șablon a fost înlocuit cât timp îl completai. Verifică formularul: unele câmpuri pot fi noi sau eliminate.{' '}
+            <button type="button" className="btn btn-ghost btn-xs"
+              onClick={() => setSeenRevisions(prev => ({ ...prev, [tpl.id]: tpl.revision ?? 0 }))}>Am înțeles</button>
+          </div>
+        )}
         <div className="tf-detail-head">
           <span className="tf-detail-title" title={tpl.name}>{tpl.name}</span>
           <button

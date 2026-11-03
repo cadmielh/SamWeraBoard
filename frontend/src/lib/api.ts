@@ -74,6 +74,31 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Operațiunea nu a putut fi finalizată acum. Încearcă din nou în câteva minute.";
     case "Forbidden":
       return "Nu ai drepturile necesare pentru această acțiune.";
+    // ── Șabloane (template_safety.py, templates_api.py) ──
+    case "invalid_template":
+      return "Fișierul nu este un document Word (.docx) valid sau nu poate fi citit.";
+    case "template_too_large":
+      return "Fișierul depășește 500 KB. Comprimă imaginile din document (Word: Fișier → Comprimare imagini) și încearcă din nou.";
+    case "template_macros":
+      return "Documentul conține macro-uri. Salvează-l din Word ca „Document Word (.docx)” obișnuit și încearcă din nou.";
+    case "template_embedded_objects":
+      return "Documentul conține obiecte încorporate (OLE/ActiveX). Elimină-le din document și încearcă din nou.";
+    case "template_external_content":
+      return "Documentul încarcă un șablon sau conținut de la o adresă externă. Elimină legătura (Word: Dezvoltator → Șablon document) și încearcă din nou.";
+    case "revision_conflict":
+      return "Un coleg a înlocuit între timp fișierul acestui șablon. Verifică versiunea nouă înainte de a-l înlocui din nou.";
+    case "not_replaceable":
+      return "Doar fișierul unui șablon Word încărcat în aplicație poate fi înlocuit.";
+    case "not_deliverable":
+      return "Doar un șablon Word încărcat în aplicație poate fi trimis altui cabinet.";
+    case "already_delivered":
+      return "Șablonul a fost deja trimis acestui cabinet.";
+    case "target_consent_required":
+      return "Cabinetul ales nu a acceptat versiunea curentă a termenilor și a DPA.";
+    case "target_subscription_required":
+      return "Cabinetul ales nu are abonament activ: șabloanele pregătite sunt o facilitate pentru abonați.";
+    case "invalid_source_key":
+      return "Formularul dedicat ales nu există.";
     default:
       return data?.error ?? fallback;
   }
@@ -137,7 +162,7 @@ export async function extractFile(file: File, source: "upload" | "drive" = "uplo
     });
   } catch (e) {
     if ((e as Error).name === "AbortError") {
-      throw new Error("Scanarea durează prea mult. Încearcă din nou sau completează manual.");
+      throw new Error("Scanarea durează prea mult. Încearcă din nou sau completează manual.", { cause: e });
     }
     throw e;
   } finally {
@@ -430,6 +455,51 @@ export async function fillPdfFromBuiltinTemplate(
   }
   return res.blob();
 }
+
+export interface TemplateFileMeta { placeholders: string[]; clauses: ClauseMeta[]; repeatGroups: string[] }
+
+/** Înlocuiește fișierul unui șablon propriu, păstrându-i identitatea (vezi templates_api.py). `baseRevision` =
+ * revizia văzută de utilizator: dacă un coleg l-a înlocuit între timp, eroarea are `code` = "revision_conflict". */
+export async function replaceTemplateFile(templateId: string, file: File, baseRevision: number): Promise<TemplateFileMeta & { revision: number }> {
+  const fd = new FormData();
+  fd.append("template", file);
+  fd.append("baseRevision", String(baseRevision));
+  const res = await fetch(`${BASE}/templates/${encodeURIComponent(templateId)}/file`, { method: "POST", headers: await authHeaders(), body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(apiErrorMessage(data as { error?: string }, res, "Înlocuirea fișierului a eșuat")) as Error & { code?: string };
+    err.code = (data as { error?: string }).error;
+    throw err;
+  }
+  return data as TemplateFileMeta & { revision: number };
+}
+
+/** Problemele care blochează livrarea unui șablon (template_safety.inspect_content). */
+export type DeliveryBlocker = "personal_data" | "comments" | "tracked_changes" | "custom_properties"
+export interface DeliveryWarnings { noPlaceholders?: boolean; dedicatedFormUnasked?: string[] }
+export interface DeliveryRequest {
+  targetWorkspaceId: string
+  sourceTemplateId: string
+  confirmName: string
+  sourceKey?: string | null
+  dryRun?: boolean
+  asNewCopy?: boolean
+}
+
+/** Super admin: trimite un șablon din cabinetul activ în alt cabinet. Eroarea `template_blocked` (422) are
+ * `data.blocking` (DeliveryBlocker[]) — se citește din `err.data`. */
+export function deliverTemplate({ targetWorkspaceId, ...body }: DeliveryRequest) {
+  return apiJson<{ ok?: boolean; id?: string; warnings: DeliveryWarnings }>(
+    "POST", `/admin/workspaces/${encodeURIComponent(targetWorkspaceId)}/templates`, { ...body, sourceKey: body.sourceKey || undefined })
+}
+
+export interface DeliveredTemplate { id: string; name: string; revision: number; deliveredAt: string | null }
+
+export const listDeliveredTemplates = (workspaceId: string) =>
+  apiJson<DeliveredTemplate[]>("GET", `/admin/workspaces/${encodeURIComponent(workspaceId)}/delivered-templates`)
+
+export const revokeDeliveredTemplate = (workspaceId: string, templateId: string) =>
+  apiJson<{ ok: boolean }>("DELETE", `/admin/workspaces/${encodeURIComponent(workspaceId)}/templates/${encodeURIComponent(templateId)}`)
 
 export async function fetchBuiltinTemplates(): Promise<BuiltinTemplate[]> {
   const res = await fetch(`${BASE}/templates/builtin`, {

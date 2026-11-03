@@ -29,6 +29,9 @@ const ACTIONS: Record<string, { label: string; category: AuditCategory }> = {
   'ocr.extract': { label: 'Scanare act de identitate (OCR)', category: 'date' },
   'client.delete': { label: 'Ștergere client', category: 'date' },
   'document.generate': { label: 'Generare document', category: 'documente' },
+  'template.replace': { label: 'Înlocuire fișier șablon', category: 'documente' },
+  'template.deliver': { label: 'Șablon pregătit, primit de la Cabinio', category: 'documente' },
+  'template.delivery_revoke': { label: 'Șablon pregătit, retras de Cabinio', category: 'documente' },
   'member.role_change': { label: 'Schimbare rol', category: 'membri' },
   'member.remove': { label: 'Eliminare membru', category: 'membri' },
   'invite.create': { label: 'Invitație trimisă', category: 'membri' },
@@ -71,6 +74,14 @@ function templateLabel(t: string): string {
 
 const shortId = (id: string | null): string => (id ? `…${id.slice(-6)}` : '')
 
+/** Cine a făcut acțiunea: „Sistem”, „Echipa Cabinio” (acțiuni ale furnizorului, care nu e membru al cabinetului)
+ * sau numele membrului. */
+export function actorLabel(e: AuditEntry, nameOf: NameOf): string {
+  if (e.actorUid === 'system') return 'Sistem'
+  if (e.meta?.byProvider === true) return 'Echipa Cabinio'
+  return nameOf(e.actorUid)
+}
+
 /** Detalii lizibile, construite exclusiv din metadatele nesensibile ale intrării. */
 export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
   const m = e.meta ?? {}
@@ -107,6 +118,12 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
       return `rol: ${ROLE_LABELS[str(m.role)] ?? (str(m.role) || '—')}`
     case 'consent.accept':
       return `versiune termeni ${str(m.tos) || '—'}, DPA ${str(m.dpa) || '—'}`
+    case 'template.replace':
+      return `șablon ${shortId(e.target)} · versiunea ${num(m.revision)} · ${num(m.placeholders)} câmpuri`
+    case 'template.deliver':
+      return `șablon ${shortId(e.target)} · ${num(m.placeholders)} câmpuri`
+    case 'template.delivery_revoke':
+      return `șablon ${shortId(e.target)}${num(m.revision) ? ' · fusese modificat de cabinet' : ''}`
     default:
       return ''
   }
@@ -128,7 +145,7 @@ export function toCsv(entries: AuditEntry[], nameOf: NameOf): string {
   }
   const rows = entries.map(e => [
     e.ts ?? '',
-    e.actorUid === 'system' ? 'Sistem' : nameOf(e.actorUid),
+    actorLabel(e, nameOf),
     actionLabel(e.action),
     describe(e, nameOf),
     e.ip ?? '',

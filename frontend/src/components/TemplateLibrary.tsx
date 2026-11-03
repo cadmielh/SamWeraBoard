@@ -11,13 +11,34 @@ const TIP_TEMPLATE_OPTIONS: { value: TipTemplate; label: string }[] = [
   { value: 'PF', label: 'Persoană Fizică' },
   { value: 'PJ', label: 'Persoană Juridică' },
 ]
-import { detectPlaceholders } from '../lib/api'
+import { detectPlaceholders, replaceTemplateFile, type TemplateFileMeta } from '../lib/api'
 import { ensureDriveToken } from '../lib/driveAuth'
 import { pickGoogleDoc } from '../lib/picker'
+import { setBuiltinHidden } from '../lib/workspace'
+import { deliveryLabel, diffTemplate, hasChanges, type TemplateChanges } from '../lib/templateChanges'
+import { useApp } from '../AppContext'
 import Modal from './Modal'
 import BlankImportModal from './BlankImportModal'
+import TemplateDeliveryModal from './TemplateDeliveryModal'
 
+// Aceeași limită ca template_safety.MAX_STORED_BYTES (verificată și pe server, și în firestore.rules).
 const MAX_BASE64_BYTES = 500 * 1024  // 500 KB
+const TOO_LARGE_MSG = 'Fișierul depășește 500 KB. Comprimă imaginile din document (Word: Fișier → Comprimare imagini) și încearcă din nou.'
+
+/** Înlocuirea în curs a fișierului unui șablon: noul fișier, etichetele lui și ce se schimbă în formular. */
+interface PendingReplace { tpl: DocTemplate; file: File; next: TemplateFileMeta; changes: TemplateChanges }
+
+function ChangeList({ title, items, tone }: { title: string; items: string[]; tone: 'warn' | 'info' }) {
+  if (!items.length) return null
+  return (
+    <div style={{ fontSize: '.8rem', color: tone === 'warn' ? 'var(--o700)' : 'var(--s600)' }}>
+      <strong>{title}</strong>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.25rem', marginTop: '.25rem' }}>
+        {items.map(i => <code key={i} style={{ background: 'var(--s100)', padding: '.1rem .35rem', borderRadius: 4, fontSize: '.75rem' }}>{i}</code>)}
+      </div>
+    </div>
+  )
+}
 
 interface Props {
   templates: DocTemplate[]
@@ -28,7 +49,7 @@ interface Props {
 }
 
 type AddTab = 'docx' | 'gdoc'
-type View = 'list' | 'add' | 'guide'
+type View = 'list' | 'add' | 'guide' | 'replace'
 
 function PlaceholderBadge({ ph }: { ph: string }) {
   return (
@@ -101,6 +122,18 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const [removingId, setRemovingId] = useState<string | null>(null)
   const { builtins, loading: builtinsLoading } = useBuiltinTemplates()
   const [duplicatingKey, setDuplicatingKey] = useState<string | null>(null)
+  const { activeWorkspace, userRole, canEdit, isSuperAdmin } = useApp()
+  const hiddenBuiltins = new Set(activeWorkspace?.hiddenBuiltins ?? [])
+  const isWorkspaceAdmin = userRole === 'admin'
+  const [togglingKey, setTogglingKey] = useState<string | null>(null)
+  const [deliverTpl, setDeliverTpl] = useState<DocTemplate | null>(null)
+
+  // Înlocuirea fișierului unui șablon propriu (templates_api.py): alegere → diferențe → confirmare.
+  const replaceInputRef = useRef<HTMLInputElement>(null)
+  const [replaceTarget, setReplaceTarget] = useState<DocTemplate | null>(null)
+  const [pendingReplace, setPendingReplace] = useState<PendingReplace | null>(null)
+  const [replacingId, setReplacingId] = useState<string | null>(null)
+  const [replaceSaving, setReplaceSaving] = useState(false)
 
   // docx add form state
   const [docxFile, setDocxFile] = useState<File | null>(null)
@@ -112,6 +145,8 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const [docxRepeatGroups, setDocxRepeatGroups] = useState<string[]>([])
   const [docxTip, setDocxTip] = useState<TipTemplate>('universal')
   const [detecting, setDetecting] = useState(false)
+  // Fișierul refuzat de server (nevalid, macro, conținut extern…): nu se poate salva ca șablon.
+  const [docxError, setDocxError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // gdoc add form state
@@ -131,13 +166,16 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     setDocxName(prev => prev || f.name.replace(/\.[^.]+$/, ''))
     setDocxOutput(prev => prev || `${f.name.replace(/\.[^.]+$/, '')}_completat.docx`)
     setDetecting(true)
+    setDocxError(null)
     try {
       const { placeholders, clauses, repeatGroups } = await detectPlaceholders(f)
       setDocxPlaceholders(placeholders)
       setDocxClauses(clauses)
       setDocxRepeatGroups(repeatGroups)
       if (placeholders.length === 0 && offerBlanks) setBlankFile(f)
-    } catch {
+    } catch (err: unknown) {
+      // Înainte, o eroare aici salva tăcut un șablon fără nicio etichetă; acum fișierul nu se mai poate salva.
+      setDocxError((err as Error).message || 'Fișierul nu a putut fi citit.')
       setDocxPlaceholders([])
       setDocxClauses([])
       setDocxRepeatGroups([])
@@ -148,10 +186,8 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
 
   const handleAddDocx = async () => {
     if (!docxFile || !docxName.trim()) { onToast('Selectează un fișier și introdu un nume', 'err'); return }
-    if (docxFile.size > MAX_BASE64_BYTES) {
-      onToast('Fișierul depășește 500 KB. Încarcă-l pe Google Drive și adaugă-l prin Drive ID.', 'err')
-      return
-    }
+    if (docxError) { onToast(docxError, 'err'); return }
+    if (docxFile.size > MAX_BASE64_BYTES) { onToast(TOO_LARGE_MSG, 'err'); return }
     setSaving(true)
     try {
       const base64 = await new Promise<string>((res, rej) => {
@@ -260,7 +296,59 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     URL.revokeObjectURL(url)
   }
 
-  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxRepeatGroups([]); setDocxTip('universal'); setJustImported(false) }
+  const resetDocxForm = () => { setDocxFile(null); setDocxName(''); setDocxDesc(''); setDocxOutput(''); setDocxPlaceholders([]); setDocxClauses([]); setDocxRepeatGroups([]); setDocxTip('universal'); setJustImported(false); setDocxError(null) }
+
+  // ── Înlocuirea fișierului ──
+  const startReplace = (tpl: DocTemplate) => {
+    setReplaceTarget(tpl)
+    replaceInputRef.current?.click()
+  }
+
+  const handleReplaceFileSelect = async (file: File) => {
+    const tpl = replaceTarget
+    if (!tpl) return
+    if (file.size > MAX_BASE64_BYTES) { onToast(TOO_LARGE_MSG, 'err'); return }
+    setReplacingId(tpl.id)
+    try {
+      const next = await detectPlaceholders(file)
+      setPendingReplace({ tpl, file, next, changes: diffTemplate(tpl, next, builtins) })
+      setView('replace')
+    } catch (err: unknown) {
+      onToast((err as Error).message || 'Fișierul nu a putut fi citit.', 'err')
+    } finally {
+      setReplacingId(null)
+    }
+  }
+
+  const confirmReplace = async () => {
+    if (!pendingReplace) return
+    const { tpl, file } = pendingReplace
+    setReplaceSaving(true)
+    try {
+      await replaceTemplateFile(tpl.id, file, tpl.revision ?? 0)
+      onToast(`Fișierul șablonului „${tpl.name}” a fost înlocuit`, 'ok')
+      setPendingReplace(null)
+      setView('list')
+    } catch (err: unknown) {
+      onToast((err as Error).message ?? 'Înlocuirea a eșuat', 'err')
+      // La conflict, lista se actualizează singură (onSnapshot): utilizatorul vede versiunea colegului.
+      if ((err as { code?: string }).code === 'revision_conflict') { setPendingReplace(null); setView('list') }
+    } finally {
+      setReplaceSaving(false)
+    }
+  }
+
+  const toggleBuiltin = async (key: string, visible: boolean) => {
+    if (!activeWorkspace) return
+    setTogglingKey(key)
+    try {
+      await setBuiltinHidden(activeWorkspace.id, key, !visible)
+    } catch {
+      onToast('Nu s-a putut salva alegerea. Doar administratorul cabinetului poate ascunde șabloane de bază.', 'err')
+    } finally {
+      setTogglingKey(null)
+    }
+  }
   const resetGdocForm = () => {
     setGdocPickedName(''); setGdocName(''); setGdocDocId(''); setGdocDesc(''); setGdocOutput(''); setGdocTip('universal') }
 
@@ -327,13 +415,29 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
               {builtinsLoading && (
                 <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}><span className="spin" /> Se încarcă…</div>
               )}
+              {!builtinsLoading && builtins.length > 0 && (
+                <div style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '-.375rem' }}>
+                  {isWorkspaceAdmin
+                    ? 'Debifează „Vizibil la generare” pentru șabloanele pe care cabinetul nu le folosește: dispar din lista de generare pentru toți colegii.'
+                    : 'Administratorul cabinetului poate ascunde șabloanele de bază nefolosite.'}
+                </div>
+              )}
               {!builtinsLoading && builtins.map(b => (
-                <div key={b.key} style={{ background: 'var(--s50)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+                <div key={b.key} style={{ background: 'var(--s50)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.375rem', opacity: hiddenBuiltins.has(b.key) ? 0.6 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: 'var(--p50)', color: 'var(--p700)' }}>
                       DE BAZĂ
                     </span>
                     <span style={{ flex: 1, fontWeight: 600, fontSize: '.9rem', color: 'var(--s800)' }}>{b.name}</span>
+                    {isWorkspaceAdmin ? (
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem', fontSize: '.75rem', color: 'var(--s600)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!hiddenBuiltins.has(b.key)} disabled={togglingKey === b.key}
+                          onChange={e => void toggleBuiltin(b.key, e.target.checked)} />
+                        Vizibil la generare
+                      </label>
+                    ) : hiddenBuiltins.has(b.key) && (
+                      <span style={{ fontSize: '.72rem', color: 'var(--s500)' }}>Ascuns la generare</span>
+                    )}
                     <button
                       className="btn btn-outline-primary btn-sm"
                       onClick={() => handleDuplicateBuiltin(b)}
@@ -375,7 +479,18 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                     )}
                     <span style={{ flex: 1, fontWeight: 600, fontSize: '.9rem', color: 'var(--s800)' }}>{tpl.name}</span>
                     {tpl.type === 'docx' && tpl.fileBase64 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(tpl)} title="Descarcă șablon original" style={{ fontSize: '.75rem' }}>⬇</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(tpl)} title="Descarcă fișierul șablonului (pentru modificare în Word)" style={{ fontSize: '.75rem' }}>⬇</button>
+                    )}
+                    {canEdit && tpl.type === 'docx' && tpl.fileBase64 && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => startReplace(tpl)} disabled={replacingId === tpl.id}
+                        title="Înlocuiește fișierul cu varianta modificată în Word (păstrează formularul)" style={{ fontSize: '.75rem' }}>
+                        {replacingId === tpl.id ? <span className="spin" /> : '⟳ Înlocuiește'}
+                      </button>
+                    )}
+                    {isSuperAdmin && tpl.type === 'docx' && tpl.fileBase64 && (
+                      <button className="btn btn-ghost btn-sm" onClick={() => setDeliverTpl(tpl)} title="Trimite o copie în cabinetul unui client" style={{ fontSize: '.75rem' }}>
+                        ✉ Trimite
+                      </button>
                     )}
                     <button
                       onClick={() => handleRemove(tpl.id)}
@@ -387,6 +502,10 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                     </button>
                   </div>
                   {tpl.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{tpl.description}</div>}
+                  {(() => {
+                    const label = deliveryLabel(tpl, activeWorkspace?.members)
+                    return label && <div style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--p700)' }}>✦ {label}</div>
+                  })()}
                   {tpl.sourceKey && tpl.sourceVersion != null && (() => {
                     const src = builtins.find(b => b.key === tpl.sourceKey)
                     if (!src || src.version <= tpl.sourceVersion!) return null
@@ -457,9 +576,10 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                     <input ref={fileInputRef} type="file" accept=".docx" style={{ display: 'none' }}
                       onChange={e => { const f = e.target.files?.[0]; if (f) handleDocxFileSelect(f); e.target.value = '' }} />
                     {docxFile && docxFile.size > MAX_BASE64_BYTES && (
-                      <p style={{ color: 'var(--r500)', fontSize: '.78rem', marginTop: '.375rem' }}>
-                        Fișierul depășește 500 KB. Te rugăm să-l încarci pe Google Drive și să-l adaugi prin ID Drive.
-                      </p>
+                      <p style={{ color: 'var(--r500)', fontSize: '.78rem', marginTop: '.375rem' }}>{TOO_LARGE_MSG}</p>
+                    )}
+                    {docxError && (
+                      <p role="alert" style={{ color: 'var(--r500)', fontSize: '.78rem', marginTop: '.375rem' }}>{docxError}</p>
                     )}
                   </div>
 
@@ -473,7 +593,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                       </div>
                     </div>
                   )}
-                  {!detecting && docxFile && docxPlaceholders.length === 0 && (
+                  {!detecting && docxFile && !docxError && docxPlaceholders.length === 0 && (
                     <div style={{ fontSize: '.8rem', color: 'var(--s400)', display: 'flex', flexDirection: 'column', gap: '.375rem', alignItems: 'flex-start' }}>
                       <span>Documentul nu are etichete <code style={{ background: 'var(--s100)', padding: '.1rem .3rem', borderRadius: 3 }}>{'{{CAMP}}'}</code>. Dacă are locuri libere („……”, „.....”), aplicația le poate recunoaște din context.</span>
                       <button className="btn btn-outline-primary btn-sm" onClick={() => setBlankFile(docxFile)}>Recunoaște locurile libere</button>
@@ -501,7 +621,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                     <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>Poți folosi placeholder-e și în numele fișierului.</p>
                   </div>
 
-                  <button className="btn btn-primary" onClick={handleAddDocx} disabled={saving || !docxFile || !docxName.trim()}>
+                  <button className="btn btn-primary" onClick={handleAddDocx} disabled={saving || detecting || !!docxError || !docxFile || !docxName.trim()}>
                     {saving ? <><span className="spin" />&nbsp;Salvează…</> : '💾 Salvează șablon'}
                   </button>
                 </div>
@@ -549,6 +669,43 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
             </div>
           )}
 
+          {/* ── REPLACE: diferențele față de fișierul curent, înainte de confirmare ── */}
+          {view === 'replace' && pendingReplace && (() => {
+            const { tpl, file, next, changes } = pendingReplace
+            const back = () => { setPendingReplace(null); setView('list') }
+            return (
+              <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.875rem' }}>
+                <button className="btn btn-ghost btn-sm" onClick={back} style={{ alignSelf: 'flex-start' }}>← Înapoi</button>
+                <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>Înlocuiești fișierul șablonului „{tpl.name}”</div>
+                <p style={{ fontSize: '.8rem', color: 'var(--s500)', margin: 0 }}>
+                  Fișier nou: <strong>{file.name}</strong> · {next.placeholders.length} câmpuri. Numele, formularul și setările șablonului rămân aceleași.
+                  Aplicația nu păstrează versiunile anterioare: descarcă fișierul curent dacă vrei o copie.
+                </p>
+                {!hasChanges(changes) && (
+                  <div style={{ fontSize: '.8rem', color: 'var(--g700)' }}>✓ Aceleași câmpuri ca până acum: s-a schimbat doar textul documentului.</div>
+                )}
+                {changes.dedicatedLost && (
+                  <div role="alert" style={{ fontSize: '.8rem', color: 'var(--o700)' }}>
+                    ⚠️ Șablonul nu mai are etichetele formularului dedicat de declarație: după înlocuire, se completează cu câmpuri simple.
+                  </div>
+                )}
+                <ChangeList title="⚠️ Câmpuri care dispar (verifică dacă le-ai șters intenționat):" items={changes.removed} tone="warn" />
+                <ChangeList title="⚠️ Articole opționale care dispar:" items={changes.removedClauses} tone="warn" />
+                <ChangeList title="⚠️ Câmpuri noi pe care formularul dedicat nu le cere (vor rămâne necompletate):" items={changes.dedicatedUnasked} tone="warn" />
+                <ChangeList title="Câmpuri noi:" items={changes.added.filter(a => !changes.dedicatedUnasked.includes(a))} tone="info" />
+                <ChangeList title="Articole opționale noi:" items={changes.addedClauses} tone="info" />
+                <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(tpl)}>⬇ Descarcă versiunea curentă</button>
+                  <span style={{ flex: 1 }} />
+                  <button className="btn btn-ghost btn-sm" onClick={back}>Renunță</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => void confirmReplace()} disabled={replaceSaving}>
+                    {replaceSaving ? <><span className="spin" />&nbsp;Se înlocuiește…</> : 'Înlocuiește fișierul'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* ── GUIDE ── */}
           {view === 'guide' && (
             <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -570,6 +727,19 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
             </div>
           )}
         </div>
+
+        <input ref={replaceInputRef} type="file" accept=".docx" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) void handleReplaceFileSelect(f); e.target.value = '' }} />
+
+        {deliverTpl && activeWorkspace && (
+          <TemplateDeliveryModal
+            template={deliverTpl}
+            sourceWorkspaceId={activeWorkspace.id}
+            builtins={builtins}
+            onClose={() => setDeliverTpl(null)}
+            onToast={onToast}
+          />
+        )}
 
         {blankFile && (
           <BlankImportModal

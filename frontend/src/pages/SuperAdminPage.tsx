@@ -8,6 +8,7 @@ import {
   adminBillingOverview,
 } from '../lib/superAdmin'
 import SuperAdminBilling from '../components/SuperAdminBilling'
+import DeliveredTemplatesPanel from '../components/DeliveredTemplatesPanel'
 import DeleteWorkspaceModal from '../components/DeleteWorkspaceModal'
 import IconTrash from '../components/IconTrash'
 import type { Workspace } from '../types'
@@ -228,6 +229,7 @@ export default function SuperAdminPage() {
                       )}
                       <SuperAdminBilling workspaceId={w.id} billing={w.billing}
                         onChange={b => setWorkspaces(prev => prev.map(x => x.id === w.id ? { ...x, billing: b } : x))} />
+                      {w.status !== 'pendingDeletion' && <DeliveredTemplatesPanel workspaceId={w.id} />}
 
                       <div style={{ borderTop: '1px solid var(--s100)', paddingTop: '.625rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
                         {FEATURE_REGISTRY.map(def => (
