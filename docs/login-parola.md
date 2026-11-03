@@ -25,6 +25,7 @@ Decizii ale proprietarului (2 noiembrie 2026): `SIGNUP_MODE` rămâne `invite`; 
 | Deconectare | Se șterge tokenul Drive local, fără `revoke` | `revoke` poate afecta accesul acordat; comportamentul nu e confirmat |
 | Super Admin | Doar sesiune Google, cât timp nu există MFA | Resetarea parolei nu trebuie să ocolească 2FA-ul Google |
 | MFA | Amânat. Când se reia: TOTP, nu SMS | Risc acceptat cât timp înregistrarea e pe `invite`; TOTP nu are cost per mesaj și nici risc de SIM swap |
+| reCAPTCHA | Neactivat (decizie din 3 noiembrie 2026). Se reia împreună cu MFA, înainte de `SIGNUP_MODE=open` | Cu `invite`, protecția la enumerare și limitele Firebase ajung. La activare: CSP-ul din [firebase.json](../firebase.json) trebuie să permită sursele reCAPTCHA, altfel login-ul cu parolă nu mai merge |
 | Schimbarea e-mailului | În afara primei versiuni | Invitațiile și trialul depind de e-mail |
 | Lansare | Providerul se activează public abia după etapa 5 | Cu providerul activ, API-ul acceptă conturi chiar dacă interfața e ascunsă |
 
@@ -93,7 +94,6 @@ Stare la 3 noiembrie 2026: texte actualizate, necomise și nepublicate, nerevizu
    - accesul „cu un cont Google” (Termeni);
    - datele de cont: fotografia și identificatorul Google devin „după caz”, parola se stochează doar ca hash de Google;
    - autentificarea din pagina Securitate și din Sub-împuterniciți;
-   - reCAPTCHA, ca serviciu nou, dacă rămâne activ;
    - MFA rămâne la „Planificat”.
 2. [LandingPage.tsx](../frontend/src/pages/LandingPage.tsx): întrebările frecvente și nota despre „Autentificare cu Google”.
 3. `TOS_VERSION` în [legal_versions.py](../legal_versions.py) și [legal.ts](../frontend/src/lib/legal.ts). `DPA_VERSION` se schimbă doar dacă textul sau anexa DPA se modifică. Orice schimbare de versiune cere reacceptarea de către toți administratorii.
@@ -105,7 +105,7 @@ Automat: `tests/run_all.sh`, `tsc`, teste pentru `driveAuth`, fluxul de verifica
 
 Pe emulator (`npm run dev:emu`): înregistrare, verificare, resetare, invitație acceptată, generare fără Drive.
 
-Pe proiectul real (`npm run dev:google`), pentru ce emulatorul nu poate garanta: politica de parolă, reCAPTCHA, antetele de pe pagina `/__/auth/action`.
+Pe proiectul real (`npm run dev:google`), pentru ce emulatorul nu poate garanta: politica de parolă, antetele de pe pagina `/__/auth/action`.
 
 Deploy doar la instrucțiunea explicită a proprietarului, cu `npm run build:eu`.
 
@@ -122,7 +122,7 @@ Deploy doar la instrucțiunea explicită a proprietarului, cu `npm run build:eu`
 | 5 | Mesajele Drive cer deconectare, inutil pentru un cont cu parolă | Etapa 2, pasul 4 |
 | 6 | `name` lipsește din tokenul inițial și ajunge greșit în `members` | Etapa 3, pasul 2 |
 | 7 | CSP e doar `Report-Only`, iar un formular de parolă crește miza unui XSS | CSP impus înainte de lansarea publică, după verificarea rapoartelor |
-| 8 | Limitele din [ratelimit.py](../ratelimit.py) nu acoperă login-ul, care merge direct la Firebase | Protecțiile Firebase, reCAPTCHA și alerte |
+| 8 | Limitele din [ratelimit.py](../ratelimit.py) nu acoperă login-ul, care merge direct la Firebase | Protecțiile Firebase și alerte; reCAPTCHA înainte de `open` |
 | 9 | Trial: domeniile personalizate și adresele de unică folosință ocolesc parțial `normalize_email` | `SIGNUP_MODE=invite` limitează riscul; cota OCR de trial e de 30/zi per cabinet. Blocarea domeniilor temporare e necesară înainte de `open` |
 | 10 | Fișierele Drive sunt legate de contul Google conectat, care poate diferi de e-mailul din Cabinio | `login_hint`, mesaj clar și, dacă se poate, afișarea contului conectat |
 
@@ -141,7 +141,7 @@ Documentația consultată nu le lămurește, așa că devin **condiții de lansa
 - Verificarea parolelor compromise (HIBP): cere un apel extern.
 - Link magic pe e-mail: incomod când e-mailul e pe alt dispozitiv.
 - MFA obligatoriu pentru administratorii cu Google: se tratează în restanța existentă din [de-facut.md](de-facut.md).
-- Ștergerea contului din aplicație: rămâne la cerere, ca până acum.
+- Restrângerea `connect-src` din CSP (`*.run.app` la adresa exactă a API-ului): decizie din 3 noiembrie 2026. Un script injectat ar avea oricum alte căi deschise (`*.googleapis.com`, adică un proiect Firebase al atacatorului, sau o redirecționare), iar o adresă greșită ar opri apelurile către API.
 
 ### Rollback
 
