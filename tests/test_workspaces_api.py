@@ -7,6 +7,7 @@ Se sar automat dacă emulatorul nu rulează (FIRESTORE_EMULATOR_HOST lipsă).
 """
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,7 +32,7 @@ CONSENT = {"tos": workspaces_api.TOS_VERSION, "dpa": workspaces_api.DPA_VERSION}
 def env(monkeypatch):
     client = gcf.Client(project="demo-samwera")
     # curăță emulatorul
-    for coll in ("workspaces", "invitations", "users", "workspaceCreators", "trialClaims"):
+    for coll in ("workspaces", "invitations", "users", "workspaceCreators", "trialClaims", "deletionLog", "workspaceKeys", "accountDeletions"):
         for d in client.collection(coll).stream():
             for sub in d.reference.collections():
                 for sd in sub.stream():
@@ -46,7 +47,8 @@ def env(monkeypatch):
         if not raw:
             raise authz.AuthError(401)
         uid, email = raw.split(":")
-        return authz.Principal(uid=uid, email=email, name=uid, provider=request.headers.get("X-Test-Provider", "google.com"))
+        return authz.Principal(uid=uid, email=email, name=uid, provider=request.headers.get("X-Test-Provider", "google.com"),
+                               auth_time=int(request.headers.get("X-Test-AuthTime", time.time())))
 
     monkeypatch.setattr(authz, "authenticate", fake_authenticate)
 
@@ -168,6 +170,125 @@ def test_super_admin_role_requires_google_session(env, monkeypatch):
     r = c.post("/workspaces", headers=hdr, json={"name": "Al meu", "consent": CONSENT})
     assert r.status_code == 403 and r.get_json()["error"] == "creation_not_allowed"
     assert as_user(c, "root", "get", "/signup/creators").status_code == 200
+
+
+def _seed_ws(db, wid, name, members, owner):
+    db.collection("workspaces").document(wid).set({
+        "name": name, "ownerId": owner, "status": "active",
+        "members": {uid: {"role": role, "email": f"{uid}@ex.ro"} for uid, role in members.items()},
+    })
+
+
+def test_super_admin_schedules_deletion_restores_and_can_delete_immediately(env):
+    c, db = env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    wid = "wsDelAAAAAAAAAAAA01"
+    _seed_ws(db, wid, "Cabinet Test", {"ana": "admin"}, "ana")
+    db.collection("workspaces").document(wid).collection("clienti").document("c1").set({"x": 1})
+
+    assert as_user(c, "ana", "get", f"/admin/workspaces/{wid}/deletion-preview").status_code == 403
+    preview = as_user(c, "root", "get", f"/admin/workspaces/{wid}/deletion-preview").get_json()
+    assert preview["counts"]["clienti"] == 1 and preview["subscription"] is False and preview["graceDays"] == 14
+
+    url = f"/admin/workspaces/{wid}/delete"
+    assert as_user(c, "root", "post", url, json={"confirm": "Alt nume"}).status_code == 400
+    old = {"X-Test-User": "root:root@ex.ro", "X-Test-AuthTime": str(int(time.time()) - 3600)}
+    assert c.post(url, headers=old, json={"confirm": "Cabinet Test"}).get_json() == {"error": "recent_login_required"}
+
+    r = as_user(c, "root", "post", url, json={"confirm": "Cabinet Test"}).get_json()
+    assert r["deleted"] is False and r["deleteAfter"]
+    ws = db.collection("workspaces").document(wid).get().to_dict()
+    assert ws["status"] == "pendingDeletion" and ws["deleteAfter"]
+    assert db.collection("workspaces").document(wid).collection("clienti").document("c1").get().exists   # datele rămân
+    assert as_user(c, "ana", "get", f"/workspaces/{wid}/invites").status_code == 403                       # accesul nu
+
+    assert as_user(c, "ana", "post", f"/admin/workspaces/{wid}/restore").status_code == 403
+    assert as_user(c, "root", "post", f"/admin/workspaces/{wid}/restore").status_code == 200
+    assert db.collection("workspaces").document(wid).get().to_dict()["status"] == "active"
+    assert as_user(c, "root", "post", f"/admin/workspaces/{wid}/restore").status_code == 404
+
+    r = as_user(c, "root", "post", url, json={"confirm": "Cabinet Test", "immediate": True}).get_json()
+    assert r["deleted"] is True and not db.collection("workspaces").document(wid).get().exists
+
+
+def test_account_deletion_is_scheduled_restorable_and_purged_after_grace(env, monkeypatch):
+    import workspace_deletion
+    c, db = env
+    disabled, deleted = {}, []
+    monkeypatch.setattr(authz, "set_user_disabled", lambda uid, d: disabled.__setitem__(uid, d))
+    _seed_ws(db, "wsSoloAAAAAAAAAAA01", "Doar Ana", {"ana": "admin"}, "ana")
+    _seed_ws(db, "wsTeamBBBBBBBBBBB02", "Echipa", {"bob": "admin", "ana": "member"}, "bob")
+    db.collection("users").document("ana").set({"activeWorkspaceId": "wsSoloAAAAAAAAAAA01"})
+    db.collection("users").document("ana").collection("extractions").document("e1").set({"x": 1})
+    db.collection("invitations").document("i1").set({"email": "ana@ex.ro", "status": "pending", "workspaceId": "wsX"})
+
+    assert as_user(c, "ana", "post", "/account/delete", json={"confirm": "alt@ex.ro"}).status_code == 400
+    old = {"X-Test-User": "ana:ana@ex.ro", "X-Test-AuthTime": str(int(time.time()) - 3600)}
+    assert c.post("/account/delete", headers=old, json={"confirm": "ana@ex.ro"}).status_code == 403
+
+    r = as_user(c, "ana", "post", "/account/delete", json={"confirm": "ANA@ex.ro"})
+    assert r.status_code == 200 and r.get_json()["workspaces"] == 1 and disabled == {"ana": True}
+    assert db.collection("workspaces").document("wsSoloAAAAAAAAAAA01").get().to_dict()["status"] == "pendingDeletion"
+    assert "ana" in db.collection("workspaces").document("wsTeamBBBBBBBBBBB02").get().to_dict()["members"]   # nimic șters încă
+
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    listed = as_user(c, "root", "get", "/admin/account-deletions").get_json()
+    assert [(a["uid"], a["email"], a["workspaces"]) for a in listed] == [("ana", "ana@ex.ro", 1)]
+    assert as_user(c, "root", "post", "/admin/account-deletions/ana/restore").status_code == 200
+    assert disabled == {"ana": False} and as_user(c, "root", "get", "/admin/account-deletions").get_json() == []
+    assert db.collection("workspaces").document("wsSoloAAAAAAAAAAA01").get().to_dict()["status"] == "active"
+
+    as_user(c, "ana", "post", "/account/delete", json={"confirm": "ana@ex.ro"})
+    assert workspace_deletion.purge_due(db, deleted.append) == {"workspaces": 0, "accounts": 0, "errors": 0}   # încă în grație
+    later = datetime.now(timezone.utc) + timedelta(days=15)
+    assert workspace_deletion.purge_due(db, deleted.append, now=later) == {"workspaces": 0, "accounts": 1, "errors": 0}
+    assert not db.collection("workspaces").document("wsSoloAAAAAAAAAAA01").get().exists
+    assert "ana" not in db.collection("workspaces").document("wsTeamBBBBBBBBBBB02").get().to_dict()["members"]
+    assert not db.collection("users").document("ana").get().exists
+    assert not list(db.collection("users").document("ana").collection("extractions").stream())
+    assert not db.collection("invitations").document("i1").get().exists
+    assert not db.collection("accountDeletions").document("ana").get().exists
+    assert deleted == ["ana"]
+
+
+def test_purge_deletes_only_workspaces_past_their_grace_period(env):
+    import workspace_deletion
+    _, db = env
+    _seed_ws(db, "wsOldAAAAAAAAAAAA01", "Vechi", {"ana": "admin"}, "ana")
+    _seed_ws(db, "wsNewBBBBBBBBBBBB02", "Nou", {"bob": "admin"}, "bob")
+    past = datetime.now(timezone.utc) - timedelta(days=15)
+    workspace_deletion.schedule(db, "wsOldAAAAAAAAAAAA01", actor="root", reason="admin", now=past)
+    workspace_deletion.schedule(db, "wsNewBBBBBBBBBBBB02", actor="root", reason="admin")
+    assert workspace_deletion.purge_due(db, lambda uid: None) == {"workspaces": 1, "accounts": 0, "errors": 0}
+    assert not db.collection("workspaces").document("wsOldAAAAAAAAAAAA01").get().exists
+    assert db.collection("workspaces").document("wsNewBBBBBBBBBBBB02").get().exists
+
+
+def test_account_delete_is_refused_while_a_shared_workspace_would_lose_its_admin(env, monkeypatch):
+    c, db = env
+    disabled = []
+    monkeypatch.setattr(authz, "set_user_disabled", lambda uid, d: disabled.append(uid))
+    _seed_ws(db, "wsOwnAAAAAAAAAAAA01", "Cabinetul Anei", {"ana": "admin", "bob": "member"}, "ana")
+    _seed_ws(db, "wsAdmBBBBBBBBBBBB02", "Alt cabinet", {"carol": "member", "ana": "admin"}, "carol")
+    r = as_user(c, "ana", "post", "/account/delete", json={"confirm": "ana@ex.ro"})
+    assert r.status_code == 409
+    assert r.get_json() == {"error": "workspace_blockers", "workspaces": ["Alt cabinet", "Cabinetul Anei"]}
+    assert disabled == [] and db.collection("workspaces").document("wsOwnAAAAAAAAAAAA01").get().to_dict()["status"] == "active"
+
+
+def test_account_export_contains_only_the_users_own_account_data(env):
+    c, db = env
+    _seed_ws(db, "wsExpAAAAAAAAAAAA01", "Cabinet A", {"ana": "admin"}, "ana")
+    _seed_ws(db, "wsExpBBBBBBBBBBBB02", "Cabinet B", {"bob": "admin"}, "bob")
+    db.collection("users").document("ana").set({"activeWorkspaceId": "wsExpAAAAAAAAAAAA01"})
+    db.collection("users").document("ana").collection("extractions").document("e1").set({"createdAt": datetime(2026, 11, 1, tzinfo=timezone.utc), "sourceFile": "ci.jpg"})
+    db.collection("invitations").document("i1").set({"email": "ana@ex.ro", "workspaceName": "Cabinet C", "role": "member", "status": "pending"})
+    r = as_user(c, "ana", "get", "/account/export").get_json()
+    assert r["cont"]["email"] == "ana@ex.ro"
+    assert r["cabinete"] == [{"cabinet": "Cabinet A", "rol": "admin", "proprietar": True}]
+    assert r["invitatii"] == [{"cabinet": "Cabinet C", "rol": "member", "stare": "pending"}]
+    assert r["istoricExtrageri"] == [{"moment": "2026-11-01T00:00:00+00:00", "fisier": "ci.jpg"}]
+    assert r["profil"] == {"activeWorkspaceId": "wsExpAAAAAAAAAAAA01"}
 
 
 def test_creators_list_and_remove(env, monkeypatch):

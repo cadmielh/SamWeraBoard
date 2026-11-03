@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 from firebase_admin import firestore
@@ -19,6 +20,7 @@ from flask import Blueprint, jsonify, request
 import audit
 import authz
 import billing
+import workspace_deletion
 
 bp = Blueprint("workspaces", __name__)
 
@@ -28,6 +30,7 @@ MAX_OWNED_WORKSPACES = 5
 MAX_PENDING_INVITES = 50
 INVITE_TTL = timedelta(days=14)
 ROLES = ("admin", "member", "viewer")
+RECENT_LOGIN_SECONDS = 600   # ștergerile definitive cer o autentificare din ultimele 10 minute
 _EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
 
 
@@ -422,6 +425,154 @@ def revoke_sessions():
     except Exception as e:
         print(f"[auth] revoke failed: {type(e).__name__}")
         return _err("unavailable", 503)
+    return jsonify({"ok": True})
+
+
+def _recent_login(principal: authz.Principal) -> bool:
+    return time.time() - principal.auth_time <= RECENT_LOGIN_SECONDS
+
+
+@bp.post("/account/delete")
+def delete_account():
+    """Programează ștergerea contului: îl dezactivează acum, iar datele se șterg după perioada de grație.
+
+    Refuză dacă e proprietarul sau ultimul administrator al unui cabinet cu alți membri: cabinetul ar rămâne fără administrator.
+    """
+    principal = authz.authenticate()
+    if not _recent_login(principal):
+        return _err("recent_login_required", 403)
+    if str(_body().get("confirm", "")).strip().lower() != principal.email:
+        return _err("confirm_mismatch", 400)
+
+    db = authz.db()
+    uid = principal.uid
+    own, blocked = [], []
+    q = db.collection("workspaces").where(filter=FieldFilter(f"members.{uid}.role", "in", list(ROLES)))
+    for snap in q.stream():
+        ws = snap.to_dict() or {}
+        members = ws.get("members") or {}
+        if len(members) == 1:
+            own.append(snap.id)
+        elif uid == ws.get("ownerId") or (members[uid].get("role") == "admin" and _admin_count(members) <= 1):
+            blocked.append(ws.get("name") or snap.id)
+    if blocked:
+        return jsonify({"error": "workspace_blockers", "workspaces": sorted(blocked)}), 409
+
+    try:
+        delete_after = workspace_deletion.schedule_account(db, uid, principal.email, own)
+        authz.set_user_disabled(uid, True)
+    except Exception as e:                       # ex. Stripe indisponibil: nimic nu a fost programat
+        print(f"[account] schedule failed: {type(e).__name__}")
+        return _err("unavailable", 503)
+    for wid in own:
+        audit.log(wid, uid, "workspace.deletion_scheduled", wid, {"reason": "account"})
+    return jsonify({"ok": True, "deleteAfter": delete_after.isoformat(), "workspaces": len(own)})
+
+
+def _iso(v):
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
+@bp.get("/account/export")
+def export_account():
+    """Copia datelor contului (GDPR art. 15 și 20), unde Furnizorul e operator. Datele clienților țin de cabinet (DPA)."""
+    principal = authz.authenticate()
+    db = authz.db()
+    uid = principal.uid
+    memberships = []
+    q = db.collection("workspaces").where(filter=FieldFilter(f"members.{uid}.role", "in", list(ROLES)))
+    for snap in q.stream():
+        ws = snap.to_dict() or {}
+        m = (ws.get("members") or {}).get(uid) or {}
+        memberships.append({"cabinet": ws.get("name"), "rol": m.get("role"), "proprietar": ws.get("ownerId") == uid})
+    profile = db.collection("users").document(uid).get().to_dict() or {}
+    extractions = [{"moment": _iso(v.get("createdAt")), "fisier": v.get("sourceFile")}
+                   for v in (d.to_dict() or {} for d in db.collection("users").document(uid).collection("extractions").stream())]
+    invitations = [{"cabinet": v.get("workspaceName"), "rol": v.get("role"), "stare": v.get("status")}
+                   for v in (d.to_dict() or {} for d in db.collection("invitations").where(filter=FieldFilter("email", "==", principal.email)).stream())]
+    return jsonify({
+        "exportatLa": datetime.now(timezone.utc).isoformat(),
+        "cont": {"id": uid, "email": principal.email, "nume": principal.name, "metodaAutentificare": principal.provider},
+        "profil": {k: _iso(v) for k, v in profile.items()},
+        "cabinete": sorted(memberships, key=lambda m: m["cabinet"] or ""),
+        "invitatii": invitations,
+        "istoricExtrageri": extractions,
+    })
+
+
+@bp.get("/admin/workspaces/<wid>/deletion-preview")
+def workspace_deletion_preview(wid: str):
+    _require_super_admin()
+    if not authz.valid_wid(wid):
+        return _err("not_found", 404)
+    try:
+        r = workspace_deletion.run(authz.db(), wid, dry_run=True)
+    except SystemExit:
+        return _err("not_found", 404)
+    return jsonify({"counts": r["counts"], "subscription": bool(r["stripeSubscription"]), "graceDays": workspace_deletion.GRACE_DAYS})
+
+
+@bp.post("/admin/workspaces/<wid>/delete")
+def delete_workspace(wid: str):
+    """Super admin: programează ștergerea (implicit) sau, cu `immediate`, o face definitiv acum.
+
+    Cere numele exact al cabinetului și o autentificare recentă."""
+    principal = _require_super_admin()
+    if not _recent_login(principal):
+        return _err("recent_login_required", 403)
+    ws = authz.load_workspace(wid)
+    if ws is None:
+        return _err("not_found", 404)
+    body = _body()
+    if str(body.get("confirm", "")).strip() != (ws.get("name") or "").strip():
+        return _err("confirm_mismatch", 400)
+    db = authz.db()
+    try:
+        if body.get("immediate") is True:
+            workspace_deletion.run(db, wid, actor=principal.uid)
+            return jsonify({"ok": True, "deleted": True})
+        delete_after = workspace_deletion.schedule(db, wid, actor=principal.uid, reason="admin")
+    except Exception as e:
+        print(f"[admin] workspace delete failed: {type(e).__name__}")
+        return _err("unavailable", 503)
+    audit.log(wid, principal.uid, "workspace.deletion_scheduled", wid, {"reason": "admin"})
+    return jsonify({"ok": True, "deleted": False, "deleteAfter": delete_after.isoformat()})
+
+
+@bp.post("/admin/workspaces/<wid>/restore")
+def restore_workspace(wid: str):
+    principal = _require_super_admin()
+    if not authz.valid_wid(wid) or not workspace_deletion.restore(authz.db(), wid):
+        return _err("not_found", 404)
+    audit.log(wid, principal.uid, "workspace.deletion_canceled", wid)
+    return jsonify({"ok": True})
+
+
+@bp.get("/admin/account-deletions")
+def list_account_deletions():
+    _require_super_admin()
+    out = []
+    for d in authz.db().collection(workspace_deletion.ACCOUNTS).limit(200).stream():
+        v = d.to_dict() or {}
+        out.append({"uid": d.id, "email": v.get("email"), "deleteAfter": v["deleteAfter"].isoformat() if v.get("deleteAfter") else None,
+                    "workspaces": len(v.get("workspaces") or [])})
+    return jsonify(sorted(out, key=lambda x: x["deleteAfter"] or ""))
+
+
+@bp.post("/admin/account-deletions/<uid>/restore")
+def restore_account(uid: str):
+    _require_super_admin()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", uid):
+        return _err("not_found", 404)
+    db = authz.db()
+    if not db.collection(workspace_deletion.ACCOUNTS).document(uid).get().exists:
+        return _err("not_found", 404)
+    try:
+        authz.set_user_disabled(uid, False)
+    except Exception as e:
+        print(f"[admin] account enable failed: {type(e).__name__}")
+        return _err("unavailable", 503)
+    workspace_deletion.restore_account(db, uid)
     return jsonify({"ok": True})
 
 

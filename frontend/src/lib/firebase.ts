@@ -6,6 +6,7 @@ import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  reauthenticateWithPopup,
   updatePassword,
   sendEmailVerification,
   sendPasswordResetEmail,
@@ -74,6 +75,13 @@ export const resendVerification = (user: User) => sendEmailVerification(user);
 export async function changePassword(user: User, current: string, next: string): Promise<void> {
   await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email ?? "", current));
   await updatePassword(user, next);
+}
+
+/** Autentificare din nou înaintea unei ștergeri definitive: cu parola, dacă e dată, altfel cu Google. */
+export async function reauthenticate(user: User, password?: string): Promise<void> {
+  if (password !== undefined) await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email ?? "", password));
+  else await reauthenticateWithPopup(user, provider);
+  await user.getIdToken(true);   // serverul verifică momentul autentificării din token
 }
 
 export const signOut = () => fbSignOut(auth);

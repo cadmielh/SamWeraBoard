@@ -79,7 +79,7 @@ export function ConfidentialitatePage() {
       <H>Ce date prelucrăm, de ce și cât timp</H>
       <UL>
         <li><strong>Date de cont</strong> (nume, e-mail, identificator; pentru conturile Google și fotografia de profil; pentru conturile cu parolă, un hash al parolei, păstrat de Firebase Authentication — Furnizorul nu vede și nu stochează parola): autentificare și acces — executarea contractului.
-          Cât timp contul este activ.</li>
+          Cât timp contul este activ. La cererea de ștergere din Setări, contul se dezactivează imediat, iar datele se șterg definitiv după 14 zile, interval în care ștergerea poate fi anulată. Copia datelor contului se descarcă tot din Setări.</li>
         <li><strong>Apartenența la spații de lucru și rolurile</strong>: aplicarea drepturilor de acces — executarea contractului. Cât timp persoana este membră.</li>
         <li><strong>Jurnal de activitate</strong> (acțiune, moment, adresă IP, tip de browser): securitatea Serviciului și demonstrarea conformității — interes legitim
           și obligații legale. Aproximativ 13 luni.</li>

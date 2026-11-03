@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from firebase_admin import firestore
-from flask import request
+from flask import has_request_context, request
 
 import authz
 
@@ -27,8 +27,9 @@ def log(wid: str, actor_uid: str, action: str, target: str | None = None,
         "action": action,
         "target": target,
         "meta": meta or {},
-        "ip": authz.client_ip(),
-        "ua": (request.headers.get("User-Agent", "") or "")[:200],
+        # Fără cerere web (ex. ștergerea programată, zilnică) nu există IP sau browser.
+        "ip": authz.client_ip() if has_request_context() else "",
+        "ua": (request.headers.get("User-Agent", "") or "")[:200] if has_request_context() else "",
         "expireAt": now + RETENTION,
     }
     try:

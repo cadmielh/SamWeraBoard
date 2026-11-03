@@ -243,12 +243,15 @@ export interface Workspace {
   ownerId: string
   members: Record<string, WorkspaceMember>
   /** Versiunile de termeni/DPA acceptate (lipsește la workspace-urile migrate până la prima acceptare). */
-  consent?: { tos: string; dpa: string }
+  consent?: { tos: string; dpa: string; acceptedAt?: { toDate(): Date } }
   facturareConfig?: FacturareConfig
   /** Feature flags active pentru acest workspace — comutate din pagina de
    * super admin (`/super-admin`), vezi lib/features.ts. Absent = niciun
    * feature activ. */
   features?: Partial<Record<FeatureKey, boolean>>
+  /** 'pendingDeletion' = ștergere programată: accesul e blocat, datele se șterg la `deleteAfter` (vezi workspace_deletion.py). */
+  status?: string
+  deleteAfter?: { toDate(): Date }
   /** Abonament / perioadă de probă — vezi lib/billing.ts. Absent = cabinet nemigrat (fără acces la scriere). */
   billing?: WorkspaceBilling
   createdAt: string | null

@@ -66,6 +66,12 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "CNP-ul (13 cifre) sau seria actului au un format nevalid. Corectează datele persoanei și încearcă din nou.";
     case "vault_unavailable":
       return "Serviciul de protecție a datelor sensibile este temporar indisponibil. Încearcă din nou în câteva minute.";
+    case "recent_login_required":
+      return "Din motive de siguranță, autentifică-te din nou și reîncearcă.";
+    case "confirm_mismatch":
+      return "Textul de confirmare nu corespunde.";
+    case "unavailable":
+      return "Operațiunea nu a putut fi finalizată acum. Încearcă din nou în câteva minute.";
     case "Forbidden":
       return "Nu ai drepturile necesare pentru această acțiune.";
     default:
@@ -101,9 +107,10 @@ export async function apiJson<T = unknown>(method: string, path: string, body?: 
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) await endSessionIfInvalid();
   if (!res.ok) {
-    const err = new Error(apiErrorMessage(data as { error?: string }, res, `HTTP ${res.status}`)) as Error & { code?: string; status?: number };
+    const err = new Error(apiErrorMessage(data as { error?: string }, res, `HTTP ${res.status}`)) as Error & { code?: string; status?: number; data?: unknown };
     err.code = (data as { error?: string }).error;
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data as T;

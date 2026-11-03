@@ -57,7 +57,8 @@ export function useWorkspace(uid: string | null) {
     try {
       const q = query(collection(db, 'workspaces'), where(`members.${uid}.role`, 'in', ['admin', 'member', 'viewer']))
       const snap = await getDocs(q)
-      const list: Workspace[] = snap.docs.map(d => ({ ...d.data(), id: d.id } as Workspace))
+      // Cabinetele programate pentru ștergere nu mai sunt accesibile (regulile blochează datele lor).
+      const list: Workspace[] = snap.docs.map(d => ({ ...d.data(), id: d.id } as Workspace)).filter(w => w.status !== 'pendingDeletion')
       setWorkspaces(list)
 
       // Profilul utilizatorului (workspace activ, super admin) se citește separat: dacă eșuează,

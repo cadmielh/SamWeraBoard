@@ -103,6 +103,7 @@ class Principal:
     email: str
     name: str
     provider: str = ""      # metoda sesiunii curente (`firebase.sign_in_provider`), ex. „google.com”, „password”
+    auth_time: int = 0      # momentul ultimei autentificări (secunde Unix), pentru operațiunile care cer una recentă
 
 
 def _dev_verify_only() -> bool:
@@ -145,6 +146,7 @@ def authenticate() -> Principal:
         email=(decoded.get("email") or "").lower(),
         name=decoded.get("name") or decoded.get("email") or "",
         provider=(decoded.get("firebase") or {}).get("sign_in_provider") or "",
+        auth_time=int(decoded.get("auth_time") or 0),
     )
 
 
@@ -198,6 +200,17 @@ def is_super_admin(principal: Principal) -> bool:
 def revoke_sessions(uid: str) -> None:
     """Refuză de acum toate token-urile emise contului (verificate cu `check_revoked=True`)."""
     fb_auth.revoke_refresh_tokens(uid)
+
+
+def delete_user(uid: str) -> None:
+    fb_auth.delete_user(uid)
+
+
+def set_user_disabled(uid: str, disabled: bool) -> None:
+    """Un cont dezactivat nu mai primește token-uri; cele existente sunt refuzate de `check_revoked=True`."""
+    fb_auth.update_user(uid, disabled=disabled)
+    if disabled:
+        fb_auth.revoke_refresh_tokens(uid)
 
 
 def require_super_admin() -> Principal:

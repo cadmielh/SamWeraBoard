@@ -35,7 +35,9 @@ UNGATED = {
     ("POST", "/workspaces/<wid>/invites"), ("GET", "/workspaces/<wid>/invites"),
     ("DELETE", "/workspaces/<wid>/invites/<inv_id>"), ("GET", "/invitations"),
     ("POST", "/invitations/<inv_id>/accept"), ("POST", "/invitations/<inv_id>/decline"),
-    ("GET", "/workspaces/<wid>/audit"), ("GET", "/signup/status"), ("POST", "/account/revoke-sessions"), ("GET", "/signup/creators"),
+    ("GET", "/workspaces/<wid>/audit"), ("GET", "/signup/status"), ("POST", "/account/revoke-sessions"), ("POST", "/account/delete"), ("GET", "/account/export"),
+    ("GET", "/admin/workspaces/<wid>/deletion-preview"), ("POST", "/admin/workspaces/<wid>/delete"),
+    ("POST", "/admin/workspaces/<wid>/restore"), ("GET", "/admin/account-deletions"), ("POST", "/admin/account-deletions/<uid>/restore"), ("GET", "/signup/creators"),
     ("POST", "/signup/creators"), ("DELETE", "/signup/creators/<cid>"),
     # abonarea trebuie să meargă tocmai când accesul a expirat
     ("GET", "/billing"), ("PUT", "/billing/details"), ("POST", "/billing/checkout"), ("POST", "/billing/portal"),

@@ -60,6 +60,24 @@ export const adminExtendTrial = (workspaceId: string, days: number) =>
 export const adminSetComp = (workspaceId: string, until: string | null, reason?: string) =>
   apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/comp`, { until, reason })
 
+export interface DeletionPreview { counts: Record<string, number>; subscription: boolean; graceDays: number }
+
+export const adminDeletionPreview = (workspaceId: string) =>
+  apiJson<DeletionPreview>('GET', `/admin/workspaces/${workspaceId}/deletion-preview`)
+
+/** Programează ștergerea sau, cu `immediate`, o face definitiv acum; `confirm` = numele exact al cabinetului. */
+export const adminDeleteWorkspace = (workspaceId: string, confirm: string, immediate = false) =>
+  apiJson<{ ok: boolean; deleted: boolean; deleteAfter?: string }>('POST', `/admin/workspaces/${workspaceId}/delete`, { confirm, immediate })
+
+export const adminRestoreWorkspace = (workspaceId: string) =>
+  apiJson<{ ok: boolean }>('POST', `/admin/workspaces/${workspaceId}/restore`)
+
+export interface AccountDeletion { uid: string; email: string | null; deleteAfter: string | null; workspaces: number }
+
+export const listAccountDeletions = () => apiJson<AccountDeletion[]>('GET', '/admin/account-deletions')
+
+export const adminRestoreAccount = (uid: string) => apiJson<{ ok: boolean }>('POST', `/admin/account-deletions/${uid}/restore`)
+
 export const adminSyncBilling = (workspaceId: string) =>
   apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/sync`)
 

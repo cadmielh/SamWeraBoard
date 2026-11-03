@@ -13,8 +13,9 @@ service cloud.firestore {
     // Rolul utilizatorului în workspace ('admin' | 'member' | 'viewer') sau null.
     // Membership-ul (workspaces/{wid}.members) se scrie DOAR de server (Admin SDK,
     // vezi workspaces_api.py) — clienții nu-l pot modifica (vezi regulile de mai jos).
+    // Un cabinet programat pentru ștergere nu mai e accesibil (datele rămân doar pentru restaurare).
     function roleOf(wid) {
-      return signedIn() && request.auth.uid in workspace(wid).members
+      return signedIn() && workspace(wid).get('status', 'active') != 'pendingDeletion' && request.auth.uid in workspace(wid).members
         ? workspace(wid).members[request.auth.uid].role
         : null;
     }

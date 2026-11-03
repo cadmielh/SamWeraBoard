@@ -148,6 +148,26 @@ def test_user_can_end_all_own_sessions(app_ctx):
     assert c.get("/signup/status", headers=hdr(s["idToken"])).status_code == 401
 
 
+def test_account_delete_disables_the_user_then_purge_removes_it(app_ctx):
+    from datetime import datetime, timedelta, timezone
+
+    from firebase_admin import auth
+
+    import authz
+    import workspace_deletion
+    c, db = app_ctx
+    s = _idp_sign_in("g-sterge-1", "sterge1@ex.ro")
+    make_ws(c, s["idToken"])
+    r = c.post("/account/delete", headers=hdr(s["idToken"]), json={"confirm": "sterge1@ex.ro"})
+    assert r.status_code == 200 and r.get_json()["workspaces"] == 1
+    assert auth.get_user(s["localId"]).disabled
+    assert c.get("/signup/status", headers=hdr(s["idToken"])).status_code == 401           # sesiunea nu mai e acceptată
+
+    workspace_deletion.purge_due(db, authz.delete_user, now=datetime.now(timezone.utc) + timedelta(days=15))
+    with pytest.raises(auth.UserNotFoundError):
+        auth.get_user(s["localId"])
+
+
 def test_revoked_token_is_rejected(app_ctx):
     from firebase_admin import auth
     c, _ = app_ctx

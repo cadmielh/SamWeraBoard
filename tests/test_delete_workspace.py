@@ -119,3 +119,18 @@ def test_delete_stops_before_anything_if_stripe_cancel_fails(db, monkeypatch):
     with pytest.raises(billing_api.BillingUnavailable):
         dw.run(db, W, actor="test")
     assert db.collection("workspaces").document(W).get().to_dict()["status"] == "active"     # nimic atins
+
+
+def test_scheduled_deletion_cancels_stripe_once_and_purge_does_not_cancel_again(db, monkeypatch):
+    import billing_api
+    import workspace_deletion
+    seed(db)
+    db.collection("workspaces").document(W).update({"billing": {"hasSubscription": True}})
+    db.collection("billingAccounts").document(W).set({"stripeSubscriptionId": "sub_123"})
+    canceled = []
+    monkeypatch.setattr(billing_api, "stripe_subscription_cancel", canceled.append)
+    workspace_deletion.schedule(db, W, actor="test", reason="admin")
+    assert canceled == ["sub_123"]
+    assert db.collection("workspaces").document(W).collection("clienti").get()          # datele rămân în grație
+    dw.run(db, W, actor="purge")
+    assert canceled == ["sub_123"] and not db.collection("workspaces").document(W).get().exists

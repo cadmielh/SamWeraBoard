@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault("UPLOAD_FOLDER", "/tmp/uploads")
 
-from firebase_functions import https_fn, params
+from firebase_functions import https_fn, params, scheduler_fn
 
 _azure_docint_key = params.SecretParam("AZURE_DOCUMENT_INTELLIGENCE_KEY")
 _stripe_secret_key = params.SecretParam("STRIPE_SECRET_KEY")
@@ -69,3 +69,19 @@ def billing_webhook(req: https_fn.Request) -> https_fn.Response:
     environ = dict(req.environ)
     environ["PATH_INFO"] = "/billing/webhook"       # o singură rută; URL-ul funcției ajunge cu „/”
     return _dispatch(billing_webhook_app.app, environ)
+
+
+@scheduler_fn.on_schedule(
+    schedule="every day 03:30",
+    timezone=scheduler_fn.Timezone("Europe/Bucharest"),
+    region="europe-west3",
+    memory=512,
+    timeout_sec=540,
+    secrets=[_stripe_secret_key],
+    service_account=_runtime_sa,
+)
+def purge_deletions(event: scheduler_fn.ScheduledEvent) -> None:
+    """Ștergerea definitivă a cabinetelor și conturilor ieșite din perioada de grație (workspace_deletion.GRACE_DAYS)."""
+    import authz
+    import workspace_deletion
+    print(f"[purge] {workspace_deletion.purge_due(authz.db(), authz.delete_user)}")

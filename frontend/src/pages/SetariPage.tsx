@@ -4,6 +4,7 @@ import type { Theme } from '../lib/settings'
 import { useSettingsCtx } from '../SettingsCtx'
 import { useApp } from '../AppContext'
 import AccountCard from '../components/AccountCard'
+import PrivacyCard from '../components/PrivacyCard'
 import AuditLogCard from '../components/AuditLogCard'
 import { resolveFacturareConfig } from '../types'
 import type { FacturareConfig } from '../types'
@@ -204,6 +205,7 @@ export default function SetariPage() {
           </div>
 
           <AccountCard />
+          <PrivacyCard />
 
           {/* Jurnal de acces: doar administratorii; key=workspace id ca să nu rămână intrările altui workspace. */}
           {userRole === 'admin' && activeWorkspace && <AuditLogCard key={activeWorkspace.id} />}

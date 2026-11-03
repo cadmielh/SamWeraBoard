@@ -3,11 +3,13 @@ import { useApp } from '../AppContext'
 import { FEATURE_REGISTRY, hasFeature } from '../lib/features'
 import { listAllWorkspaces, writeWorkspaceFeature } from '../lib/workspace'
 import {
-  grantSuperAdmin, revokeSuperAdminGrant, listSuperAdminGrants, type SuperAdminGrant,
+  grantSuperAdmin, revokeSuperAdminGrant, adminRestoreWorkspace, adminRestoreAccount, listAccountDeletions, type AccountDeletion, listSuperAdminGrants, type SuperAdminGrant,
   listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator, fetchSignupStatus,
   adminBillingOverview,
 } from '../lib/superAdmin'
 import SuperAdminBilling from '../components/SuperAdminBilling'
+import DeleteWorkspaceModal from '../components/DeleteWorkspaceModal'
+import IconTrash from '../components/IconTrash'
 import type { Workspace } from '../types'
 
 const ROLE_LABEL: Record<'admin' | 'member' | 'viewer', string> = { admin: 'Admin', member: 'Membru', viewer: 'Doar citire' }
@@ -31,6 +33,12 @@ export default function SuperAdminPage() {
   const [creatorEmail, setCreatorEmail] = useState('')
   const [creatorError, setCreatorError] = useState<string | null>(null)
   const [signupMode, setSignupMode] = useState<'open' | 'invite' | null>(null)
+  const [deleting, setDeleting] = useState<Workspace | null>(null)
+  const [accountDeletions, setAccountDeletions] = useState<AccountDeletion[]>([])
+
+  const loadAccountDeletions = useCallback(async () => {
+    try { setAccountDeletions(await listAccountDeletions()) } catch { /* lista e doar informativă */ }
+  }, [])
 
   const loadWorkspaces = useCallback(async () => {
     setWsLoading(true)
@@ -68,8 +76,8 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isSuperAdmin) { void loadWorkspaces(); void loadGrants(); void loadCreators() }
-  }, [isSuperAdmin, loadWorkspaces, loadGrants, loadCreators])
+    if (isSuperAdmin) { void loadWorkspaces(); void loadGrants(); void loadCreators(); void loadAccountDeletions() }
+  }, [isSuperAdmin, loadWorkspaces, loadGrants, loadCreators, loadAccountDeletions])
 
   if (!isSuperAdmin) {
     return (
@@ -140,6 +148,25 @@ export default function SuperAdminPage() {
       setError((e as Error).message ?? 'Eroare la acordarea rolului')
     } finally {
       setGranting(false)
+    }
+  }
+
+  const handleRestoreWorkspace = async (w: Workspace) => {
+    try {
+      await adminRestoreWorkspace(w.id)
+      await loadWorkspaces()
+    } catch (e: unknown) {
+      setWsError((e as Error).message ?? 'Restaurarea a eșuat')
+    }
+  }
+
+  const handleRestoreAccount = async (uid: string) => {
+    try {
+      await adminRestoreAccount(uid)
+      await loadAccountDeletions()
+      await loadWorkspaces()
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Restaurarea a eșuat')
     }
   }
 
@@ -218,6 +245,17 @@ export default function SuperAdminPage() {
                           </label>
                         ))}
                       </div>
+                      <div style={{ borderTop: '1px solid var(--s100)', marginTop: '.625rem', paddingTop: '.625rem', display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {w.status === 'pendingDeletion' && (
+                          <>
+                            <span role="status" style={{ color: 'var(--r600)', fontSize: '.8125rem', flex: 1 }}>
+                              Programat pentru ștergere{w.deleteAfter ? ` pe ${w.deleteAfter.toDate().toLocaleDateString('ro-RO')}` : ''}. Membrii nu mai au acces.
+                            </span>
+                            <button className="btn btn-sm" onClick={() => void handleRestoreWorkspace(w)}>Restaurează</button>
+                          </>
+                        )}
+                        <button className="btn btn-danger btn-sm" onClick={() => setDeleting(w)}><IconTrash size={14} /> Șterge cabinetul</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -256,6 +294,23 @@ export default function SuperAdminPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>}
+
+          {accountDeletions.length > 0 && <div className="card">
+            <div className="card-head">
+              <span className="card-title">🗑️ Conturi programate pentru ștergere</span>
+            </div>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+              <div className="card-sub" style={{ marginBottom: '.375rem' }}>
+                Conturile sunt dezactivate. Restaurarea le reactivează, împreună cu cabinetele în care erau singurii membri.
+              </div>
+              {accountDeletions.map(a => (
+                <div key={a.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.5rem', fontSize: '.8125rem', color: 'var(--s600)' }}>
+                  <span style={{ flex: 1 }}>{a.email} · ștergere pe {a.deleteAfter ? new Date(a.deleteAfter).toLocaleDateString('ro-RO') : '—'}</span>
+                  <button className="btn btn-sm" onClick={() => void handleRestoreAccount(a.uid)}>Restaurează</button>
+                </div>
+              ))}
             </div>
           </div>}
 
@@ -304,6 +359,18 @@ export default function SuperAdminPage() {
           </div>
         </div>
       </div>
+      {deleting && (
+        <DeleteWorkspaceModal
+          workspaceId={deleting.id}
+          name={deleting.name}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            void loadWorkspaces()
+            if (workspaceCtx.workspaces.some(x => x.id === deleting.id)) void workspaceCtx.reload()
+            setDeleting(null)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -194,6 +194,17 @@ test('super adminul într-o sesiune cu parolă nu are rolul', async () => {
   await assertSucceeds(getDocs(collection(ctx(SUPER), 'superAdminGrants')))
   await assertFails(getDocs(collection(ctx(SUPER, PASSWORD), 'superAdminGrants')))
 })
+test('un cabinet programat pentru ștergere nu mai e accesibil membrilor', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), 'workspaces', 'wsSters'), { name: 'S', status: 'pendingDeletion', members: { [ADMIN]: { role: 'admin' } }, billing: BILLING_OK })
+    await setDoc(doc(c.firestore(), 'workspaces', 'wsSters', 'clienti', 'c1'), { x: 1 })
+    await setDoc(doc(c.firestore(), 'accountDeletions', ADMIN), { email: 'x@ex.ro' })
+  })
+  await assertFails(getDoc(doc(ctx(ADMIN), 'workspaces', 'wsSters', 'clienti', 'c1')))
+  await assertFails(setDoc(doc(ctx(ADMIN), 'workspaces', 'wsSters', 'clienti', 'c2'), { x: 1 }))
+  await assertFails(getDoc(doc(ctx(ADMIN), 'accountDeletions', ADMIN)))
+  await assertFails(getDoc(doc(ctx(SUPER), 'accountDeletions', ADMIN)))
+})
 test('doar super adminul poate retrage un grant', async () => {
   const ref = db => doc(db, 'superAdminGrants', 'retras_AT_ex_DOT_ro')
   await env.withSecurityRulesDisabled(c => setDoc(ref(c.firestore()), { email: 'retras@ex.ro', used: false }))
