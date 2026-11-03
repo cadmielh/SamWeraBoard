@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { useApp } from '../AppContext'
 import { apiJson } from '../lib/api'
-import { authErrorMessage, MIN_PASSWORD_LENGTH } from '../lib/authErrors'
+import { authErrorMessage, PASSWORD_REQUIREMENTS, passwordMeetsRules } from '../lib/authErrors'
 import { clearDriveToken, ensureDriveToken, getDriveToken } from '../lib/driveAuth'
 import { changePassword, signOut } from '../lib/firebase'
 import ConfirmModal from './ConfirmModal'
+import PasswordRules from './PasswordRules'
 
 function PasswordForm() {
   const { user, toast } = useApp()
@@ -16,7 +17,7 @@ function PasswordForm() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (next.length < MIN_PASSWORD_LENGTH) { setError(`Parola nouă trebuie să aibă cel puțin ${MIN_PASSWORD_LENGTH} caractere.`); return }
+    if (!passwordMeetsRules(next)) { setError(PASSWORD_REQUIREMENTS); return }
     if (next !== confirmation) { setError('Parolele nu coincid.'); return }
     setError(null)
     setSaving(true)
@@ -44,6 +45,7 @@ function PasswordForm() {
       <label className="field">
         <span className="field-label">Parola nouă</span>
         <input className="field-input" type="password" autoComplete="new-password" required value={next} onChange={e => setNext(e.target.value)} />
+        <PasswordRules password={next} />
       </label>
       <label className="field">
         <span className="field-label">Confirmă parola nouă</span>

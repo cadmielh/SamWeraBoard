@@ -1,8 +1,9 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { authErrorMessage, MIN_PASSWORD_LENGTH, resetErrorMessage } from '../lib/authErrors'
+import { authErrorMessage, MIN_PASSWORD_LENGTH, PASSWORD_REQUIREMENTS, passwordMeetsRules, resetErrorMessage } from '../lib/authErrors'
 import LogoMark from './LogoMark'
 import Modal from './Modal'
+import PasswordRules from './PasswordRules'
 
 /** Operațiunile cu parolă; le furnizează AppLayout, ca pagina publică să nu depindă direct de Firebase. */
 export interface PasswordAuth {
@@ -51,8 +52,8 @@ export default function AuthDialog({ auth, onGoogle, onClose }: { auth: Password
     e.preventDefault()
     setError(null)
     setInfo(null)
-    if (mode === 'register' && password.length < MIN_PASSWORD_LENGTH) {
-      setError(`Parola trebuie să aibă cel puțin ${MIN_PASSWORD_LENGTH} caractere.`)
+    if (mode === 'register' && !passwordMeetsRules(password)) {
+      setError(PASSWORD_REQUIREMENTS)
       return
     }
     if (mode === 'register' && password !== confirmation) {
@@ -133,7 +134,7 @@ export default function AuthDialog({ auth, onGoogle, onClose }: { auth: Password
               {mode === 'register' && (
                 <input className="field-input" name="confirm-password" type="password" aria-label="Confirmați parola" placeholder="Confirmați parola" autoComplete="new-password" required value={confirmation} onChange={e => setConfirmation(e.target.value)} style={{ minHeight: 44 }} />
               )}
-              {mode === 'register' && <div style={{ ...SMALL_TEXT, textAlign: 'left', fontSize: '.75rem' }}>Cel puțin {MIN_PASSWORD_LENGTH} caractere.</div>}
+              {mode === 'register' && <PasswordRules password={password} />}
               {error && <div role="alert" style={{ color: 'var(--r600)', fontSize: '.8125rem' }}>{error}</div>}
               {info && <div role="status" style={{ color: 'var(--s600)', fontSize: '.8125rem' }}>{info}</div>}
               <button type="submit" className="btn btn-primary" style={WIDE_BTN} disabled={busy}>

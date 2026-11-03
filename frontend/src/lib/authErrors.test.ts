@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { authErrorMessage, passwordLoginEnabled, resetErrorMessage } from './authErrors'
+import { authErrorMessage, passwordLoginEnabled, passwordMeetsRules, PASSWORD_REQUIREMENTS, resetErrorMessage } from './authErrors'
 
 afterEach(() => { vi.unstubAllEnvs() })
 
@@ -21,6 +21,27 @@ describe('mesajele de autentificare', () => {
   it('la resetare, un cont inexistent nu produce nicio eroare vizibilă', () => {
     expect(resetErrorMessage({ code: 'auth/user-not-found' })).toBeNull()
     expect(resetErrorMessage({ code: 'auth/too-many-requests' })).toContain('Prea multe')
+  })
+})
+
+describe('regulile parolei', () => {
+  it('acceptă o parolă care respectă toate cerințele', () => {
+    expect(passwordMeetsRules('Parola!Buna2026')).toBe(true)
+    expect(passwordMeetsRules('Parola-Buna-2026')).toBe(true)   // Firebase acceptă `-`, testat pe proiectul real
+  })
+
+  it.each([
+    ['prea scurtă', 'Ab1!cdefghi'],
+    ['fără literă mare', 'parola!buna2026'],
+    ['fără literă mică', 'PAROLA!BUNA2026'],
+    ['fără cifră', 'Parola!BunaFaraCifre'],
+    ['fără caracter special', 'ParolaBuna20261'],
+  ])('refuză o parolă %s', (_, password) => {
+    expect(passwordMeetsRules(password)).toBe(false)
+  })
+
+  it('refuzul Firebase afișează toate cerințele', () => {
+    expect(authErrorMessage({ code: 'auth/password-does-not-meet-requirements' })).toBe(PASSWORD_REQUIREMENTS)
   })
 })
 

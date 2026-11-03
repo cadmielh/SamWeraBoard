@@ -2,6 +2,19 @@
 
 export const MIN_PASSWORD_LENGTH = 12
 
+// Oglinda politicii de parolă din Firebase (Authentication → Settings → Password policy), care rămâne verificarea finală.
+export const PASSWORD_RULES: { label: string; test: (password: string) => boolean }[] = [
+  { label: `Cel puțin ${MIN_PASSWORD_LENGTH} caractere`, test: p => p.length >= MIN_PASSWORD_LENGTH },
+  { label: 'O literă mare (A–Z)', test: p => /[A-Z]/.test(p) },
+  { label: 'O literă mică (a–z)', test: p => /[a-z]/.test(p) },
+  { label: 'O cifră', test: p => /[0-9]/.test(p) },
+  { label: 'Un caracter special (de ex. ! @ # - ?)', test: p => /[!-/:-@[-`{-~]/.test(p) },   // semnele de punctuație ASCII
+]
+
+export const PASSWORD_REQUIREMENTS = `Parola trebuie să aibă cel puțin ${MIN_PASSWORD_LENGTH} caractere, o literă mare, o literă mică, o cifră și un caracter special.`
+
+export const passwordMeetsRules = (password: string): boolean => PASSWORD_RULES.every(rule => rule.test(password))
+
 /** Formularul cu parolă apare doar după activarea providerului Email/Password (vezi docs/login-parola.md). */
 export const passwordLoginEnabled = (): boolean => import.meta.env.VITE_PASSWORD_LOGIN === '1'
 
@@ -16,8 +29,8 @@ const MESSAGES: Record<string, string> = {
   'auth/user-disabled': 'E-mail sau parolă incorecte.',
   'auth/invalid-email': 'Adresa de e-mail nu este validă.',
   'auth/email-already-in-use': 'Contul nu a putut fi creat. Dacă aveți deja cont, autentificați-vă sau resetați parola.',
-  'auth/weak-password': `Parola trebuie să aibă cel puțin ${MIN_PASSWORD_LENGTH} caractere.`,
-  'auth/password-does-not-meet-requirements': `Parola trebuie să aibă cel puțin ${MIN_PASSWORD_LENGTH} caractere.`,
+  'auth/weak-password': PASSWORD_REQUIREMENTS,
+  'auth/password-does-not-meet-requirements': PASSWORD_REQUIREMENTS,
   'auth/too-many-requests': 'Prea multe încercări. Așteptați câteva minute și reîncercați.',
   'auth/network-request-failed': 'Conexiune indisponibilă. Verificați internetul și reîncercați.',
   'auth/operation-not-allowed': 'Autentificarea cu parolă nu este disponibilă momentan.',
