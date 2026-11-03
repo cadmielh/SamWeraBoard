@@ -51,12 +51,13 @@ Dacă informațiile nu sunt complete, notificăm în etape (GDPR art. 33 alin. 4
 Alege minimul necesar care oprește răspândirea, fără să distrugi dovezi:
 | Situație | Acțiune |
 |---|---|
-| Cont de utilizator compromis | Firebase Console → Authentication → utilizator → **Disable account** (sesiunile lui nu mai sunt acceptate); scoate-l din workspace (Utilizatori) și cere-i să-și schimbe parola Google |
+| Cont de utilizator compromis | Firebase Console → Authentication → utilizator → **Disable account** (sesiunile lui nu mai sunt acceptate); scoate-l din workspace (Utilizatori), revocă-i sesiunile și cere-i să-și schimbe parola (Google sau din aplicație, Setări → Cont) |
 | Secret compromis (cheia Azure) | Portal Azure → *Regenerate key*; apoi `firebase functions:secrets:set AZURE_DOCUMENT_INTELLIGENCE_KEY --project samwera-board-eu` și redeploy funcția |
 | Cheie de service account expusă | Cloud Console → IAM → Service Accounts → *Delete key*; verifică activitatea cheii în jurnale |
 | Bug de autorizare (acces între spații) | Oprește accesul la API: Cloud Console → Cloud Run → serviciul `api` → *Permissions* → elimină `allUsers` din rolul *Cloud Run Invoker* (aplicația nu mai poate apela API-ul, dar datele rămân intacte); sau deployează o versiune care refuză ruta afectată. Reactivezi după corecție |
 | Acces neautorizat la vault | Ultima soluție: *Disable* versiunea cheii KMS (datele devin nedecriptabile până reactivezi); cere aprobare explicită, pentru că oprește aplicația |
 | Reguli Firestore greșite | Deploy imediat al regulilor precedente (`git` sau din consolă), verifică cu testele de reguli |
+| Șablon livrat cabinetului greșit | Super Admin → cabinetul care l-a primit → *Șabloane livrate* → notează id-ul, data și dacă apare „modificat de cabinet”, apoi **Retrage**. Retragerea șterge doar copia din acel cabinet; jurnalul păstrează livrarea și retragerea (vezi scenariul 8) |
 
 ### C. Investigare (primele 24 de ore)
 1. **Jurnalul de acces al spațiului** (Setări → Jurnal de acces → *Exportă CSV*) sau, dacă adminul nu poate: `python scripts/incident_tools.py audit --project samwera-board-eu --workspace <ID> --since <data> --out incident.csv`.
@@ -96,13 +97,19 @@ registrul de prelucrări. Informează cabinetele despre concluzii.
 - Păstrează o copie a fiecărei comunicări în registru.
 
 ## 7. Scenarii tipice (playbook scurt)
-1. **Cont Google al unui utilizator compromis** — dezactivează contul, exportă jurnalul spațiului pentru perioada suspectă, identifică ce a văzut/generat contul (`pii.reveal`, `ocr.extract`, `document.generate`), notifică cabinetul.
+1. **Cont al unui utilizator compromis (Google sau cu parolă)** — dezactivează contul, exportă jurnalul spațiului pentru perioada suspectă, identifică ce a văzut/generat contul (`pii.reveal`, `ocr.extract`, `document.generate`), notifică cabinetul.
 2. **Acces între spații de lucru (bug de autorizare)** — conținere imediată (secțiunea B), identifică toate cererile afectate din jurnale, notifică *toate* cabinetele posibil afectate, corectează și adaugă un test care reproduce bug-ul.
 3. **Secret/cheie scurse** (Azure, service account) — rotație imediată, verifică utilizarea abuzivă în jurnalele furnizorului, evaluează dacă datele personale au fost accesibile.
 4. **Ștergere sau criptare a datelor (ransomware/eroare de operare)** — oprește scrierile, restaurează din PITR (7 zile) pe o copie, verifică, apoi comută; notifică cabinetele (disponibilitate/integritate).
 5. **Vulnerabilitate raportată de un terț** — confirmă primirea în 2 zile lucrătoare, reproduce, corectează, mulțumește; dacă a fost exploatată, tratează ca incident.
 6. **Incident la un sub-împuternicit** (Google/Microsoft) — obține detaliile de la ei, evaluează dacă datele noastre sunt implicate, notifică cabinetele în termenul de 48 h de la luarea la cunoștință.
 7. **Document trimis greșit** (eroare umană a unui utilizator al cabinetului) — este incidentul *operatorului*; îl ajutăm cu jurnalul de acces și cu informațiile cerute.
+8. **Șablon pregătit, livrat cabinetului greșit** (eroarea noastră, ca furnizor) — spre deosebire de scenariul 7, incidentul e al nostru și îl conducem noi:
+   1. **Conținere:** retrage imediat livrarea (secțiunea B). Înainte, notează id-ul șablonului, ora livrării și dacă fusese modificat de cabinet.
+   2. **Dovezi:** păstrează documentul primit de la client (e-mailul original) și exportă jurnalul cabinetului care l-a primit (`template.deliver`, `template.delivery_revoke`). Aplicația nu înregistrează cine a *deschis* șablonul, deci presupunem că a fost văzut de membrii acelui cabinet între livrare și retragere.
+   3. **Evaluare:** livrarea e blocată automat doar pentru CNP-uri valide, comentarii, modificări urmărite și proprietăți personalizate. Nume, adrese sau alte date personale rămase în text **nu** sunt detectate: citește documentul. Dacă există date personale, e o încălcare a datelor personale, iar operatorul afectat e cabinetul căruia îi aparținea șablonul.
+   4. **Notificare:** cabinetul căruia îi aparținea șablonul primește notificarea în 48 de ore dacă documentul conținea date personale. Altfel, îl informăm oricum, pentru că textul actelor lui a ajuns la un alt cabinet. Cabinetului care l-a primit din greșeală îi cerem în scris să șteargă orice copie descărcată sau generată din acel șablon.
+   5. **Remediere:** livrează șablonul cabinetului corect. Dacă greșeala nu se explică prin confirmarea numelui (ex. două cabinete cu nume apropiate), notează cauza în registru și propune o măsură în plus.
 
 ## Anexa 1 — Șablon de notificare către cabinet
 > **Subiect:** Notificare de securitate — Cabinio (ref. INC-AAAA-NN)

@@ -30,17 +30,31 @@ export function TermeniPage() {
         integral înainte de semnare sau depunere. Serviciul nu oferă consultanță juridică, contabilă sau fiscală, iar formularele și cerințele
         autorităților se pot schimba fără ca Furnizorul să poată garanta actualizarea imediată a șabloanelor.</P>
       <P>Dacă folosiți funcțiile Google Drive (alegerea unui act sau a unui șablon, salvarea documentelor generate), fișierele alese sau create rămân în contul Google al utilizatorului și sunt supuse termenilor Google. Furnizorul are acces doar la fișierul pe care îl alegeți pentru prelucrare, nu la restul Drive-ului.</P>
-      <H>4. Datele clienților Cabinetului</H>
+      <H>4. Șabloane pregătite de Furnizor</H>
+      <UL>
+        <li>Cabinetele cu abonament activ pot cere Furnizorului să le pregătească în aplicație propriile documente ca șabloane (marcarea câmpurilor completate
+          automat și a articolelor opționale). Pregătirea este o facilitate pentru abonați; în funcție de numărul și complexitatea șabloanelor, serviciul poate fi
+          contracost, iar detaliile (preț, termen, număr de documente) se stabilesc la cerere, înainte de începerea lucrului.</li>
+        <li>Cabinetul trimite documentele goale sau anonimizate, fără date personale ale clienților săi, cu locurile pentru datele preluate din aplicație marcate clar. Trimiterea unui
+          document constituie instrucțiunea Cabinetului de a-l prelucra în acest scop. Dacă un document conține totuși date personale, Furnizorul îl prelucrează
+          doar pentru pregătirea șablonului, potrivit <Link to="/dpa">DPA</Link>, și poate cere unul anonimizat.</li>
+        <li>Șablonul pregătit se adaugă în spațiul de lucru al Cabinetului, care îl poate modifica, înlocui sau șterge. După livrare, Furnizorul nu păstrează
+          copii ale documentului.</li>
+        <li>Pregătirea este un serviciu tehnic: Furnizorul nu verifică și nu garantează conținutul juridic al documentelor. Cabinetul răspunde de conținutul
+          șabloanelor, de verificarea documentelor generate din ele și de actualizarea lor la schimbările legislative.</li>
+        <li>La încetarea abonamentului, șabloanele livrate rămân în spațiul de lucru, în același regim ca restul datelor (punctul 8).</li>
+      </UL>
+      <H>5. Datele clienților Cabinetului</H>
       <P>Pentru datele personale ale clienților introduse în aplicație (inclusiv CNP și date din acte de identitate), Cabinetul este operator, iar
         Furnizorul este împuternicit, potrivit <Link to="/dpa">Acordului de prelucrare a datelor (DPA)</Link>. Cabinetul răspunde de temeiul legal al prelucrării,
         de informarea persoanelor vizate și de acuratețea datelor. Nu introduceți categorii speciale de date (ex. date privind sănătatea) în aplicație.</P>
-      <H>5. Utilizare acceptabilă</H>
+      <H>6. Utilizare acceptabilă</H>
       <P>Este interzisă utilizarea Serviciului pentru activități ilegale, accesarea datelor altor spații de lucru, ocolirea măsurilor de securitate,
         automatizarea abuzivă a cererilor sau suprasolicitarea infrastructurii. Furnizorul poate suspenda accesul în caz de abuz sau risc de securitate.</P>
-      <H>6. Disponibilitate</H>
+      <H>7. Disponibilitate</H>
       <P>Furnizorul depune eforturi rezonabile pentru ca Serviciul să fie disponibil, fără a garanta funcționarea neîntreruptă: pot exista întreruperi pentru
         mentenanță sau din cauza unor servicii terțe (ex. Google, Microsoft, ANAF). Întreruperile programate importante se anunță în prealabil, când este posibil.</P>
-      <H>7. Tarife, perioadă de probă și abonament</H>
+      <H>8. Tarife, perioadă de probă și abonament</H>
       <UL>
         <li>Serviciul se oferă pe bază de abonament per spațiu de lucru (cabinet), cu plată lunară sau anuală, la prețul afișat în aplicație la momentul
           abonării. Furnizorul nu este plătitor de TVA; prețul afișat este prețul final.</li>
@@ -55,16 +69,16 @@ export function TermeniPage() {
           export, dar nu mai pot fi adăugate sau modificate. Ștergerea datelor se face la cererea Cabinetului, conform DPA.</li>
         <li>Modificările de preț se anunță cu cel puțin 30 de zile înainte și se aplică doar perioadelor următoare.</li>
       </UL>
-      <H>8. Răspundere</H>
+      <H>9. Răspundere</H>
       <P>În măsura permisă de lege, răspunderea Furnizorului față de Cabinet pentru orice prejudiciu legat de Serviciu este limitată la sumele plătite pentru
         Serviciu în ultimele 12 luni. Limitarea nu se aplică în cazurile în care legea nu permite limitarea răspunderii (de exemplu dol sau culpă gravă). Furnizorul
         nu răspunde pentru documente depuse fără verificare, pentru date introduse greșit de utilizatori sau pentru nefuncționarea serviciilor terțe.</P>
-      <H>9. Modificarea termenilor</H>
+      <H>10. Modificarea termenilor</H>
       <P>Termenii pot fi actualizați. Versiunea în vigoare este afișată în capul paginii. La o modificare importantă, administratorii spațiilor de lucru vor fi
         rugați să accepte din nou noua versiune înainte de a continua să prelucreze date personale.</P>
-      <H>10. Încetare</H>
+      <H>11. Încetare</H>
       <P>Cabinetul poate înceta utilizarea oricând. La încetare, datele se elimină conform Acordului de prelucrare (DPA), în termenul prevăzut acolo.</P>
-      <H>11. Legea aplicabilă</H>
+      <H>12. Legea aplicabilă</H>
       <P>Legea română. Neînțelegerile se soluționează pe cale amiabilă, iar în lipsa unei înțelegeri, de instanțele române competente.</P>
     </LegalLayout>
   )
@@ -100,7 +114,7 @@ export function ConfidentialitatePage() {
         sunteți client al unui cabinet, cererile privind datele dumneavoastră se adresează cabinetului, care este operatorul acestora. Aveți dreptul să depuneți
         plângere la Autoritatea Națională de Supraveghere a Prelucrării Datelor cu Caracter Personal (ANSPDCP).</P>
       <H>Unde sunt prelucrate datele</H>
-      <P>Datele clienților cabinetelor (baza de date, serverele aplicației, cheile de criptare, recunoașterea textului din acte) sunt prelucrate în Spațiul Economic
+      <P>Datele clienților cabinetelor (baza de date, serverele aplicației, cheile de criptare, recunoașterea textului din acte, sugestiile AI pentru șabloane) sunt prelucrate în Spațiul Economic
         European. Autentificarea (Firebase Authentication, Google) poate implica transferuri în afara SEE, pe baza clauzelor contractuale standard și/sau a Cadrului
         UE–SUA privind protecția datelor. Jurnalele tehnice ale serverului (erori, timpi de răspuns) nu conțin date personale ale clienților: valorile cum este CNP-ul
         nu sunt scrise în ele. Detalii despre măsuri: <Link to="/securitate">Securitate</Link>.</P>
@@ -117,6 +131,10 @@ export function DpaPage() {
       <H>1. Obiect, natură, scop, durată</H>
       <P>Împuternicitul prelucrează date personale în numele Operatorului exclusiv pentru furnizarea aplicației: stocarea fișelor de clienți, extragerea datelor din acte de
         identitate, generarea documentelor și evidența dosarelor. Durata: cât timp spațiul de lucru este activ, plus perioada de ștergere de la punctul 3.</P>
+      <P>La cererea Operatorului, Împuternicitul pregătește și șabloane din documentele trimise de acesta (vezi <Link to="/termeni">Termenii și condițiile</Link>, punctul 4).
+        Documentele se trimit fără date personale; dacă le conțin totuși, Împuternicitul le prelucrează doar în acest scop, nu le folosește în alt mod și nu păstrează
+        copii după livrarea șablonului în spațiul de lucru al Operatorului. Înainte de livrare, aplicația refuză automat documentele care conțin un CNP valid, comentarii
+        sau modificări urmărite și elimină din proprietățile documentului autorul și titlul.</P>
       <H>2. Categorii de date și persoane vizate</H>
       <P>Persoane vizate: clienții Operatorului, asociați, administratori și reprezentanți ai acestora. Date: nume, CNP, serie și număr act de identitate, data și locul nașterii,
         adresă, cetățenie, date de contact, date ale societăților și ale dosarelor.</P>
@@ -155,6 +173,7 @@ export function SubImputernicitiPage() {
     ['Firebase Hosting (rețeaua de distribuție Google)', 'Livrarea fișierelor statice ale aplicației (cod, fonturi, imagini); nu conțin date din aplicație', 'Adresa IP a vizitatorului (jurnale tehnice ale rețelei)', 'Rețea globală de distribuție'],
     ['Google Cloud Logging (jurnale tehnice)', 'Jurnalele de funcționare ale serverului (erori, timpi de răspuns), fără valori ale datelor clienților; păstrare 30 de zile', 'Adresa IP, momentul și ruta apelată; nu CNP, nume sau alte date din fișele clienților', 'UE (Frankfurt, europe-west3); doar jurnalele de administrare ale furnizorului rămân în locația „global”'],
     ['Firebase Authentication (Google)', 'Autentificarea utilizatorilor', 'Date de cont (nume, e-mail, identificator; hash-ul parolei, pentru conturile cu parolă)', 'Global; clauze contractuale standard / Cadrul UE–SUA'],
+    ['Google Cloud Vertex AI (modelul Gemini)', 'Sugestii opționale pentru locurile libere („……”) dintr-un șablon fără etichete, doar la cererea explicită a utilizatorului (butonul „Cere sugestii AI”), la importul șablonului; nu se folosește la generarea documentelor. Google nu folosește datele pentru antrenarea modelelor', 'Fragmente de text din jurul locurilor libere ale șablonului; aplicația refuză trimiterea dacă fragmentele conțin un CNP valid', 'UE — Frankfurt (europe-west3)'],
     ['Microsoft Azure (Document Intelligence)', 'Recunoaștere text (OCR) pe imaginea actului de identitate. Aplicația nu o stochează; Azure păstrează temporar fișierul și rezultatul, cel mult 24 de ore (aplicația cere ștergerea imediată după procesare) și nu le folosește pentru antrenarea modelelor', 'Imaginea actului de identitate încărcat', 'UE — Suedia (Sweden Central)'],
     ['Google Drive / Docs (contul utilizatorului)', 'Alegerea opțională a actelor și a șabloanelor și salvarea documentelor generate. Aplicația accesează doar fișierele create de ea sau alese explicit de utilizator (permisiunea „drive.file”); tokenul Google rămâne în browser și nu ajunge pe serverele Furnizorului', 'Fișierele alese sau create de utilizator, la alegerea lui', 'Conform contului Google al utilizatorului'],
   ]
@@ -193,7 +212,7 @@ const CADRU_LEGAL: [string, string][] = [
   ['GDPR, art. 32 — securitatea prelucrării', 'Criptare la nivel de câmp pentru CNP și serie CI, izolare între spații de lucru, acces pe roluri, jurnal de activitate, chei în KMS, teste automate ale regulilor de acces (secțiunea „În vigoare”).'],
   ['GDPR, art. 5 — minimizare și limitarea stocării', 'Imaginile actelor nu se stochează; istoricul extragerilor păstrează doar sursa și data, 30 de zile; jurnalul de activitate ~13 luni; ștergerea unui client elimină în cascadă și datele sensibile.'],
   ['Legea nr. 190/2018, art. 4 — număr național de identificare (CNP)', 'Garanții tehnice și organizatorice specifice: CNP criptat separat de restul fișei, citire doar prin server și înregistrată, perioade de stocare definite, fără CNP în jurnalele tehnice.'],
-  ['GDPR, cap. V — transferuri în afara SEE', 'Datele clienților rămân în SEE (baza de date și serverele: Frankfurt; recunoașterea textului: Suedia). Singura excepție declarată este autentificarea, procesată de Google (clauze contractuale standard / Cadrul UE–SUA).'],
+  ['GDPR, cap. V — transferuri în afara SEE', 'Datele clienților rămân în SEE (baza de date, serverele și sugestiile AI pentru șabloane: Frankfurt; recunoașterea textului: Suedia). Singura excepție declarată este autentificarea, procesată de Google (clauze contractuale standard / Cadrul UE–SUA).'],
   ['GDPR, art. 33 — încălcări ale securității datelor', 'Furnizorul notifică Operatorul fără întârziere nejustificată, în principiu în 48 de ore; Operatorul are, potrivit GDPR, 72 de ore pentru notificarea ANSPDCP.'],
 ]
 
@@ -207,6 +226,7 @@ export function SecuritatePage() {
       <UL>
         <li><strong>Baza de date, serverele aplicației și cheile de criptare</strong>: Uniunea Europeană — Google Cloud, regiunea Frankfurt (europe-west3).</li>
         <li><strong>Recunoașterea textului din acte</strong> (OCR): Microsoft Azure, regiunea Suedia (Sweden Central), UE. Aplicația nu stochează imaginea. Azure păstrează temporar, criptate și în aceeași regiune, fișierul trimis și rezultatul analizei, cel mult 24 de ore, apoi le șterge automat; <strong>aplicația cere ștergerea lor imediat după procesare</strong>. Azure nu le folosește pentru antrenarea modelelor.</li>
+        <li><strong>Sugestiile AI pentru șabloane</strong> (opționale, doar la cererea utilizatorului): Google Cloud Vertex AI, regiunea Frankfurt (europe-west3), UE. Se trimit doar fragmente de text din jurul locurilor libere ale șablonului, niciodată un fragment care conține un CNP valid; Google nu le folosește pentru antrenarea modelelor.</li>
         <li><strong>Fișierele statice ale aplicației</strong> (cod, fonturi, imagini, fără date personale) sunt distribuite prin rețeaua Google, iar <strong>autentificarea</strong> (Google) este procesată de Google, cu clauze contractuale standard / Cadrul UE–SUA. <strong>Jurnalele tehnice ale infrastructurii</strong> (adresă IP, moment, ruta apelată; fără valori ale datelor clienților) sunt stocate în UE (Frankfurt) — vezi <Link to="/sub-imputerniciti">Sub-împuterniciți</Link> și <Link to="/confidentialitate">Confidențialitate</Link>.</li>
       </UL>
 

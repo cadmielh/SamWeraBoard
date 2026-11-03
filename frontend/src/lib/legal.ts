@@ -3,7 +3,7 @@
  * legal_versions.py — serverul respinge orice altă versiune. Se schimbă la
  * fiecare revizuire a textelor (paginile din pages/legal/). */
 export const TOS_VERSION = '2026-11-03'
-export const DPA_VERSION = '2026-09-18'
+export const DPA_VERSION = '2026-11-03'
 
 /** Workspace-ul a acceptat versiunile curente ale termenilor și DPA? */
 export function hasCurrentConsent(consent: { tos?: string; dpa?: string } | undefined | null): boolean {
