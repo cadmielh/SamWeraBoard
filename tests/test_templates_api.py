@@ -165,8 +165,8 @@ def test_fisier_nesigur_sau_sablon_google_docs(env):
 
 # ── Crearea ──────────────────────────────────────────────────────────────────
 
-def create(c, uid, data=None, wid=SRC, name="act.docx", **fields):
-    form = {"name": "Act nou", "tipTemplate": "PJ", **fields, "template": (io.BytesIO(data or docx()), name)}
+def create(c, uid, data=None, wid=SRC, filename="act.docx", **fields):
+    form = {"name": "Act nou", "tipTemplate": "PJ", **fields, "template": (io.BytesIO(data or docx()), filename)}
     return c.post("/templates", headers=hdr(uid, wid), data=form, content_type="multipart/form-data")
 
 
@@ -184,9 +184,9 @@ def test_crearea_calculeaza_etichetele_pe_server(env):
 def test_crearea_refuza_fisierul_nesigur_si_fara_nume(env):
     c, db = env
     assert create(c, "ana", data=b"nu e docx").get_json()["error"] == "invalid_template"
-    assert create(c, "ana", name="act.pdf").get_json()["error"] == "invalid_template"
+    assert create(c, "ana", filename="act.pdf").get_json()["error"] == "invalid_template"
     assert create(c, "ana", data=b"x" * 600_000).get_json()["error"] == "template_too_large"
-    assert create(c, "ana", **{"name": "  "}).get_json()["error"] == "name_required"
+    assert create(c, "ana", name="  ").get_json()["error"] == "name_required"
     assert list(db.collection("workspaces").document(SRC).collection("docTemplates").stream()) == []
 
 

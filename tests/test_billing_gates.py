@@ -23,6 +23,7 @@ GATED = {
     ("POST", "/extract"), ("POST", "/fill/docx"), ("POST", "/fill/pdf"),
     ("POST", "/template/placeholders"), ("POST", "/template/blanks"), ("POST", "/template/blanks/apply"),
     ("POST", "/template/blanks/ai-suggest"), ("PUT", "/clients/<cid>/pii"), ("POST", "/templates/<tid>/file"),
+    ("POST", "/templates"), ("POST", "/templates/from-builtin"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
 # ștergerea GDPR a unui client, căutarea ANAF (necesară completării datelor de facturare) și abonarea.
