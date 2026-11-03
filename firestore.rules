@@ -101,9 +101,12 @@ service cloud.firestore {
       allow create: if false;
       allow delete: if false;
 
-      // Adminul de workspace poate modifica doar numele și configurul de facturare.
+      // Adminul de workspace poate modifica doar numele, configurul de facturare și ce șabloane de bază
+      // sunt ascunse la generare (o preferință de afișare, nu un control de acces).
       allow update: if isAdmin(wid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig', 'hiddenBuiltins']) &&
+        request.resource.data.get('hiddenBuiltins', []) is list &&
+        request.resource.data.get('hiddenBuiltins', []).size() <= 50;
       // Super adminul poate comuta doar feature flag-urile.
       allow update: if isSuperAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['features']);
@@ -130,9 +133,17 @@ service cloud.firestore {
         }
       }
 
+      // Șabloane proprii. Fișierul se schimbă și livrarea se scrie doar prin server (templates_api.py), după
+      // verificarea documentului; din browser: creare (cu fișier de cel mult ~500 KB), redenumire, ștergere.
       match /docTemplates/{templateId} {
         allow read: if isMember(wid);
-        allow create, update, delete: if canWrite(wid);
+        allow create: if canWrite(wid) &&
+          !request.resource.data.keys().hasAny(['delivery', 'revision', 'updatedAt', 'updatedBy']) &&
+          (!('fileBase64' in request.resource.data) ||
+            (request.resource.data.fileBase64 is string && request.resource.data.fileBase64.size() <= 700000));
+        allow update: if canWrite(wid) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'outputNameTemplate', 'tipTemplate']);
+        allow delete: if canWrite(wid);
       }
 
       match /dosare/{dosarId} {

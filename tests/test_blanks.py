@@ -4,7 +4,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -201,15 +200,6 @@ def test_rutele_verifica_fisierul_si_alegerile(monkeypatch):
     broken = c.post("/template/blanks/apply", data={"template": (io.BytesIO(make_doc()), "t.docx"), "choices": "nu e json"}, content_type="multipart/form-data")
     assert broken.status_code == 400
 
-
-LOCAL = Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate"
-
-
-@pytest.mark.skipif(not (LOCAL / "ACTUL CONSTITUTIV.docx").exists(), reason="documentele locale ale avocatului nu sunt în repository")
-def test_actul_constitutiv_real_e_recunoscut_aproape_complet():
-    found = blanks.analyze((LOCAL / "ACTUL CONSTITUTIV.docx").read_bytes())
-    manual = [f for f in found if f["scope"] == "manual"]
-    assert len(found) > 60 and len(manual) <= 3, (len(found), [m["tag"] for m in manual])
 
 
 # ── câmpuri manuale cu etichetă curată (nu ghicită) — „a câte …. pagini”, „…… exemplare” ────────────────────

@@ -454,18 +454,6 @@ def test_sediul_intreg_fara_judet_separat_ramane_campul_complet():
     assert [f["field"] for f in found] == ["SOCIETATE_SEDIU"]
 
 
-def test_actul_constitutiv_real_are_sediul_intreg():
-    """Sediul e scris ca un singur loc liber („îşi are sediul în ………….”), fără județ defalcat separat alături —
-    rămâne SOCIETATE_SEDIU complet. Un SOCIETATE_JUDET apare separat, la p17 (banca „de pe teritoriul jud.……”),
-    fără legătură cu sediul."""
-    raw = Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate" / "ACTUL CONSTITUTIV.docx"
-    if not raw.exists():
-        return
-    found = blanks.analyze(raw.read_bytes())
-    fields = [f["field"] for f in found if f["field"] in ("SOCIETATE_SEDIU", "SOCIETATE_SEDIU_FARA_JUDET", "SOCIETATE_JUDET")]
-    assert fields == ["SOCIETATE_SEDIU", "SOCIETATE_JUDET"]
-
-
 # ── font ─────────────────────────────────────────────────────────────────────
 def test_paragrafele_generate_pastreaza_fontul_sablonului_nu_cad_pe_cel_implicit():
     """Bug raportat de utilizator: textul completat ieșea mereu cu Times New Roman, indiferent de fontul

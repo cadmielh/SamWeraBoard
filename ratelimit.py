@@ -37,6 +37,8 @@ LIMITS: dict[str, list[tuple[str, int, int]]] = {
     "ai_suggest": [("user", 10, 3600), ("workspace", 50, 86400)],
     # recitirea abonamentului din Stripe (după Checkout / reparare): apeluri la Stripe, nu la Firestore
     "billing_sync": [("workspace", 30, 3600)],
+    # livrarea unui șablon către alt cabinet (super admin): acțiune rară, care scrie în cabinetul altcuiva
+    "template_delivery": [("user", 30, 3600)],
 }
 
 # Perioadă de probă fără abonament: limitează costul OCR/AI pe conturile care nu convertesc. Ferestrele sunt

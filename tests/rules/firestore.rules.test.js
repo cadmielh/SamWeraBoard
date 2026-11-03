@@ -316,3 +316,41 @@ test('billingAccounts / stripeEvents / trialClaims nu sunt accesibile din client
     }
   }
 })
+
+// ── Șabloane proprii (fișierul și livrarea se scriu doar prin server, templates_api.py) ──
+const TPL = { name: 'Act', type: 'docx', fileBase64: 'UEsDBA==', fileName: 'act.docx', placeholders: [], createdBy: MEMBER }
+async function seedTemplate() {
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), 'workspaces', W1, 'docTemplates', 't1'), { ...TPL, revision: 2, sourceKey: 'hotarare_aga' })
+  })
+}
+test('șabloane: membrul creează un șablon; vizualizatorul și un outsider nu', async () => {
+  await assertSucceeds(setDoc(doc(ctx(MEMBER), 'workspaces', W1, 'docTemplates', 'n'), TPL))
+  await assertFails(setDoc(doc(ctx(VIEWER), 'workspaces', W1, 'docTemplates', 'n2'), TPL))
+  await assertFails(setDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'docTemplates', 'n3'), TPL))
+})
+test('șabloane: la creare nu se pot pune câmpuri scrise de server sau un fișier prea mare', async () => {
+  const db = ctx(MEMBER)
+  for (const extra of [{ delivery: { by: SUPER } }, { revision: 5 }, { updatedBy: MEMBER }, { updatedAt: new Date() }]) {
+    await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...TPL, ...extra }))
+  }
+  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...TPL, fileBase64: 'A'.repeat(700001) }))
+  await assertFails(setDoc(doc(db, 'workspaces', W1, 'docTemplates', 'x'), { ...TPL, fileBase64: 123 }))
+})
+test('șabloane: din browser se redenumesc, dar fișierul, sourceKey și revizia nu se schimbă', async () => {
+  await seedTemplate()
+  const ref = doc(ctx(MEMBER), 'workspaces', W1, 'docTemplates', 't1')
+  await assertSucceeds(updateDoc(ref, { name: 'Nou', description: 'd', outputNameTemplate: 'o.docx', tipTemplate: 'PJ' }))
+  for (const patch of [{ fileBase64: 'UEsDBB==' }, { placeholders: ['{{X}}'] }, { sourceKey: 'anexa1_inregistrare_fiscala' },
+    { revision: 3 }, { delivery: { by: MEMBER } }, { createdBy: ADMIN }]) {
+    await assertFails(updateDoc(ref, patch))
+  }
+  await assertSucceeds(deleteDoc(ref))
+})
+test('hiddenBuiltins: doar adminul îl schimbă, ca listă de cel mult 50', async () => {
+  await assertSucceeds(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: ['act_constitutiv'] }))
+  await assertFails(updateDoc(doc(ctx(MEMBER), 'workspaces', W1), { hiddenBuiltins: [] }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: 'act_constitutiv' }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: Array.from({ length: 51 }, (_, i) => `k${i}`) }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: [], members: {} }))
+})

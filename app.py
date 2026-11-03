@@ -44,6 +44,7 @@ import azure_extractor
 from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx, list_repeat_groups_in_docx
 import blanks
 import ai_suggest
+import template_safety
 from pdf_filler import fill_pdf, list_pdf_fields
 
 # Pre-load EasyOCR models at container startup so requests don't time out waiting
@@ -91,7 +92,10 @@ limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 import workspaces_api  # noqa: E402  (după init Firebase Admin și limiter)
 import pii_api  # noqa: E402
 import billing_api  # noqa: E402
+import templates_api  # noqa: E402
 limiter.limit("120 per hour")(workspaces_api.bp)
+limiter.limit("120 per hour")(templates_api.bp)
+app.register_blueprint(templates_api.bp)
 app.register_blueprint(workspaces_api.bp)
 # Plafon pe citirea datelor sensibile: încetinește o eventuală exfiltrare în masă.
 limiter.limit("60 per minute")(pii_api.bp)
@@ -300,6 +304,7 @@ def _load_builtin_templates() -> dict[str, dict]:
 
 
 BUILTIN_TEMPLATES = _load_builtin_templates()
+templates_api.set_builtins(BUILTIN_TEMPLATES)
 
 
 @app.route("/templates/builtin", methods=["GET"])
@@ -453,18 +458,24 @@ def audit_document():
 
 @app.route("/template/placeholders", methods=["POST"])
 def get_placeholders():
+    """Etichetele unui .docx, înainte de salvarea lui ca șablon (sau de înlocuirea fișierului unui șablon).
+    Același filtru de siguranță ca la păstrare (template_safety.py), deci un fișier refuzat aici nu se salvează."""
     try:
-        _verify(billing=True)
+        _verify(limit="fill", billing=True)
     except PermissionError as e:
         return _auth_error(e)
-    if "template" not in request.files:
-        return jsonify({"error": "No file"}), 400
-    file_bytes = request.files["template"].read()
-    return jsonify({
-        "placeholders": list_placeholders_in_docx(file_bytes),
-        "clauses": list_clauses_in_docx(file_bytes),
-        "repeatGroups": list_repeat_groups_in_docx(file_bytes),
-    })
+    data = _read_docx_upload()
+    try:
+        template_safety.validate_docx(data, max_bytes=_MAX_TEMPLATE_BYTES)
+        return jsonify({
+            "placeholders": list_placeholders_in_docx(data),
+            "clauses": list_clauses_in_docx(data),
+            "repeatGroups": list_repeat_groups_in_docx(data),
+        })
+    except template_safety.TemplateRejected as e:
+        return jsonify({"error": e.code}), 400
+    except Exception as e:
+        return _server_error("invalid_template", e, 400)
 
 
 # ── Șabloane fără etichete: locuri libere („……”) recunoscute din context (vezi blanks.py) ────────────────

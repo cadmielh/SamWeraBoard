@@ -22,7 +22,7 @@ CID = "clientBilling01"
 GATED = {
     ("POST", "/extract"), ("POST", "/fill/docx"), ("POST", "/fill/pdf"),
     ("POST", "/template/placeholders"), ("POST", "/template/blanks"), ("POST", "/template/blanks/apply"),
-    ("POST", "/template/blanks/ai-suggest"), ("PUT", "/clients/<cid>/pii"),
+    ("POST", "/template/blanks/ai-suggest"), ("PUT", "/clients/<cid>/pii"), ("POST", "/templates/<tid>/file"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
 # ștergerea GDPR a unui client, căutarea ANAF (necesară completării datelor de facturare) și abonarea.
@@ -44,6 +44,9 @@ UNGATED = {
     ("POST", "/billing/sync"), ("POST", "/billing/webhook"),
     ("GET", "/admin/billing/overview"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
     ("POST", "/admin/workspaces/<wid>/billing/comp"), ("POST", "/admin/workspaces/<wid>/billing/sync"),
+    # super admin: livrarea cere abonament la cabinetul ȚINTĂ (billing.has_paid_access), nu la cel al apelantului
+    ("POST", "/admin/workspaces/<target>/templates"), ("GET", "/admin/workspaces/<wid>/delivered-templates"),
+    ("DELETE", "/admin/workspaces/<wid>/templates/<tid>"),
 }
 
 

@@ -81,6 +81,15 @@ def has_full_access(ws: dict | None, now: datetime | None = None) -> bool:
     return until is not None and _now(now) < until
 
 
+def has_paid_access(ws: dict | None, now: datetime | None = None) -> bool:
+    """Abonament valabil sau acces gratuit acordat de super admin; perioada de probă singură nu ajunge.
+    Pentru facilitățile rezervate abonaților (ex. șabloane pregătite de furnizor, vezi templates_api.py)."""
+    b = (ws or {}).get("billing") or {}
+    if (to_utc(b.get("compUntil")) or EPOCH) > _now(now):
+        return True
+    return bool(b.get("hasSubscription")) and has_full_access(ws, now)
+
+
 def quota_tier(ws: dict | None, now: datetime | None = None) -> str:
     """'trial' cât timp cabinetul e în perioada de probă fără abonament (cote OCR/AI mai mici), altfel 'standard'."""
     b = (ws or {}).get("billing") or {}
