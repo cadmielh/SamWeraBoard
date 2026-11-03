@@ -51,3 +51,15 @@ def test_only_the_expected_python_modules_ship():
 def test_production_env_is_invite_only():
     env = (ROOT / ".env.samwera-board-eu").read_text(encoding="utf-8")
     assert "SIGNUP_MODE=invite" in env.splitlines()
+
+
+def test_csp_is_enforced_and_allows_the_firebase_auth_frame():
+    """Firebase Auth încarcă un cadru de pe domeniul aplicației (authDomain = cabinio.ro): fără 'self' în frame-src, login-ul se strică."""
+    hosting = json.loads((ROOT / "firebase.json").read_text(encoding="utf-8"))["hosting"]
+    for site in hosting:
+        headers = {h["key"]: h["value"] for block in site["headers"] for h in block["headers"]}
+        assert "Content-Security-Policy-Report-Only" not in headers
+        directives = dict(d.strip().split(" ", 1) for d in headers["Content-Security-Policy"].split(";") if d.strip())
+        assert "'self'" in directives["frame-src"].split()
+        assert "https://accounts.google.com/gsi/client" in directives["script-src"].split()
+        assert directives["frame-ancestors"] == "'none'" and directives["object-src"] == "'none'"
