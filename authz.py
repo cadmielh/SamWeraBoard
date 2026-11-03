@@ -12,8 +12,10 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
-from firebase_admin import auth as fb_auth, firestore
+import firebase_admin
+from firebase_admin import auth as fb_auth, credentials as fb_creds, firestore
 from flask import request
 
 import billing as _billing
@@ -23,6 +25,17 @@ ROLE_RANK = {"viewer": 1, "member": 2, "admin": 3}
 _WID_RE = re.compile(r"^[A-Za-z0-9]{10,40}$")
 
 _db = None
+
+
+def init_admin() -> None:
+    """Inițializează Firebase Admin, dacă nu e deja. Pentru funcțiile care nu încarcă app.py (webhook, ștergerea zilnică)."""
+    if firebase_admin._apps:
+        return
+    sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "firebase-service-account.json")
+    if Path(sa_file).exists():
+        firebase_admin.initialize_app(fb_creds.Certificate(sa_file))
+    else:
+        firebase_admin.initialize_app()                    # Cloud Run: Application Default Credentials
 
 
 def db():

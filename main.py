@@ -84,4 +84,5 @@ def purge_deletions(event: scheduler_fn.ScheduledEvent) -> None:
     """Ștergerea definitivă a cabinetelor și conturilor ieșite din perioada de grație (workspace_deletion.GRACE_DAYS)."""
     import authz
     import workspace_deletion
+    authz.init_admin()          # instanța funcției nu încarcă app.py, unde se face inițializarea pentru `api`
     print(f"[purge] {workspace_deletion.purge_due(authz.db(), authz.delete_user)}")

@@ -6,19 +6,11 @@ e rapidă și o instanță procesează mai multe evenimente deodată, fără să
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
-import firebase_admin
-from firebase_admin import credentials as fb_creds
 from flask import Flask
 
-if not firebase_admin._apps:
-    _sa_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "firebase-service-account.json")
-    if Path(_sa_file).exists():
-        firebase_admin.initialize_app(fb_creds.Certificate(_sa_file))
-    else:
-        firebase_admin.initialize_app()                    # Cloud Run: Application Default Credentials
+import authz
+
+authz.init_admin()
 
 import billing_api  # noqa: E402  (după init Firebase Admin)
 
