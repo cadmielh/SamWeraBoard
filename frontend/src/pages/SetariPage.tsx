@@ -152,7 +152,10 @@ export default function SetariPage() {
       </div>
 
       <div className="page-body" style={{ overflowY: 'auto' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 720 }}>
+        <div className="settings-grid">
+          <AccountCard />
+          <PrivacyCard />
+
           <div className="card">
             <div className="card-head">
               <span className="card-title">🎨 Aspect</span>
@@ -204,16 +207,15 @@ export default function SetariPage() {
             </div>
           </div>
 
-          <AccountCard />
-          <PrivacyCard />
-
           {/* Jurnal de acces: doar administratorii; key=workspace id ca să nu rămână intrările altui workspace. */}
           {userRole === 'admin' && activeWorkspace && <AuditLogCard key={activeWorkspace.id} />}
 
           {/* key=workspace id — forțează remount la schimbarea workspace-ului activ,
               ca `form` să nu rămână cu valorile vechiului workspace (altfel Save
               ar suprascrie configul noului workspace cu date stale). */}
-          {userRole === 'admin' && activeWorkspace && hasFeature('facturareSamiAdi') && <FacturareConfigCard key={activeWorkspace.id} />}
+          {userRole === 'admin' && activeWorkspace && hasFeature('facturareSamiAdi') && (
+            <div className="settings-grid-full"><FacturareConfigCard key={activeWorkspace.id} /></div>
+          )}
         </div>
       </div>
     </div>

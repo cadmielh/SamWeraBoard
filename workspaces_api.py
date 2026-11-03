@@ -458,11 +458,17 @@ def delete_account():
     if blocked:
         return jsonify({"error": "workspace_blockers", "workspaces": sorted(blocked)}), 409
 
+    # Întâi dezactivarea: dacă eșuează, nu s-a programat nimic. Dacă programarea eșuează, contul se reactivează.
+    try:
+        authz.set_user_disabled(uid, True)
+    except Exception as e:
+        print(f"[account] disable failed: {type(e).__name__}")
+        return _err("unavailable", 503)
     try:
         delete_after = workspace_deletion.schedule_account(db, uid, principal.email, own)
-        authz.set_user_disabled(uid, True)
-    except Exception as e:                       # ex. Stripe indisponibil: nimic nu a fost programat
+    except Exception as e:                       # ex. Stripe indisponibil
         print(f"[account] schedule failed: {type(e).__name__}")
+        authz.set_user_disabled(uid, False)
         return _err("unavailable", 503)
     for wid in own:
         audit.log(wid, uid, "workspace.deletion_scheduled", wid, {"reason": "account"})

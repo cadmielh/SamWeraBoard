@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useApp } from '../AppContext'
 import { apiJson } from '../lib/api'
 import { authErrorMessage, PASSWORD_REQUIREMENTS, passwordMeetsRules } from '../lib/authErrors'
@@ -7,7 +7,20 @@ import { changePassword, signOut } from '../lib/firebase'
 import ConfirmModal from './ConfirmModal'
 import PasswordRules from './PasswordRules'
 
-function PasswordForm() {
+/** Un rând al cardului: titlu și o explicație scurtă în stânga, acțiunea în dreapta. */
+function Row({ title, desc, action }: { title: string; desc: ReactNode; action: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <div style={{ minWidth: 0, flex: '1 1 14rem' }}>
+        <div style={{ fontWeight: 600, color: 'var(--s800)' }}>{title}</div>
+        <div className="card-sub">{desc}</div>
+      </div>
+      <div style={{ flexShrink: 0 }}>{action}</div>
+    </div>
+  )
+}
+
+function PasswordForm({ onDone }: { onDone: () => void }) {
   const { user, toast } = useApp()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -27,6 +40,7 @@ function PasswordForm() {
       setNext('')
       setConfirmation('')
       toast('Parola a fost schimbată', 'ok')
+      onDone()
     } catch (err) {
       const code = (err as { code?: string }).code
       setError(code === 'auth/invalid-credential' || code === 'auth/wrong-password' ? 'Parola curentă este incorectă.' : authErrorMessage(err))
@@ -36,26 +50,27 @@ function PasswordForm() {
   }
 
   return (
-    <form onSubmit={e => void submit(e)} style={{ display: 'flex', flexDirection: 'column', gap: '.625rem', maxWidth: 360 }}>
+    <form onSubmit={e => void submit(e)} style={{ display: 'flex', flexDirection: 'column', gap: '.625rem', maxWidth: 360, padding: '.875rem 1rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)' }}>
       <input type="email" name="email" autoComplete="username" value={user.email ?? ''} readOnly hidden />
       <label className="field">
         <span className="field-label">Parola curentă</span>
-        <input className="field-input" type="password" autoComplete="current-password" required value={current} onChange={e => setCurrent(e.target.value)} />
+        <input className="field-input" type="password" autoComplete="current-password" required autoFocus value={current} onChange={e => setCurrent(e.target.value)} />
       </label>
       <label className="field">
         <span className="field-label">Parola nouă</span>
         <input className="field-input" type="password" autoComplete="new-password" required value={next} onChange={e => setNext(e.target.value)} />
-        <PasswordRules password={next} />
+        {next && <PasswordRules password={next} />}
       </label>
       <label className="field">
         <span className="field-label">Confirmă parola nouă</span>
         <input className="field-input" type="password" autoComplete="new-password" required value={confirmation} onChange={e => setConfirmation(e.target.value)} />
       </label>
       {error && <div role="alert" style={{ color: 'var(--r600)', fontSize: '.8125rem' }}>{error}</div>}
-      <div>
+      <div style={{ display: 'flex', gap: '.5rem' }}>
         <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
-          {saving ? <span className="spin" /> : 'Schimbă parola'}
+          {saving ? <span className="spin" /> : 'Salvează parola'}
         </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onDone} disabled={saving}>Anulează</button>
       </div>
     </form>
   )
@@ -70,6 +85,7 @@ export default function AccountCard() {
   const [connecting, setConnecting] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [revoking, setRevoking] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
 
   const connectDrive = async () => {
     setConnecting(true)
@@ -105,7 +121,7 @@ export default function AccountCard() {
       <div className="card-head">
         <span className="card-title">👤 Cont</span>
       </div>
-      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div>
           <div style={{ fontWeight: 600, color: 'var(--s800)' }}>{user.displayName ?? user.email}</div>
           <div className="card-sub">
@@ -113,35 +129,35 @@ export default function AccountCard() {
           </div>
         </div>
 
-        {hasPassword && <PasswordForm />}
+        {hasPassword && (
+          <>
+            <Row title="Parolă" desc="Schimb-o dacă bănuiești că a ajuns la altcineva."
+              action={!changingPassword && <button className="btn btn-sm" onClick={() => setChangingPassword(true)}>Schimbă parola</button>} />
+            {changingPassword && <PasswordForm onDone={() => setChangingPassword(false)} />}
+          </>
+        )}
 
-        <div>
-          <div style={{ fontWeight: 600, color: 'var(--s800)', marginBottom: '.25rem' }}>Google Drive</div>
-          <div className="card-sub" style={{ marginBottom: '.5rem' }}>
-            {driveConnected
-              ? 'Conectat în acest tab. Aplicația vede doar fișierele alese de tine sau create de ea.'
-              : 'Neconectat în acest tab. Conectarea pornește și automat, când folosești o funcție Drive.'}
-          </div>
-          {driveConnected
-            ? <button className="btn btn-sm" onClick={disconnectDrive}>Deconectează Drive</button>
-            : <button className="btn btn-sm" onClick={() => void connectDrive()} disabled={connecting}>{connecting ? <span className="spin spin-dark" /> : 'Conectează Google Drive'}</button>}
-        </div>
+        <Row
+          title="Google Drive"
+          desc={driveConnected ? 'Conectat în acest tab; aplicația vede doar fișierele alese.' : 'Neconectat în acest tab; se conectează automat la nevoie.'}
+          action={driveConnected
+            ? <button className="btn btn-sm" onClick={disconnectDrive}>Deconectează</button>
+            : <button className="btn btn-sm" onClick={() => void connectDrive()} disabled={connecting}>{connecting ? <span className="spin spin-dark" /> : 'Conectează'}</button>}
+        />
 
-        <div>
-          <div style={{ fontWeight: 600, color: 'var(--s800)', marginBottom: '.25rem' }}>Sesiuni</div>
-          <div className="card-sub" style={{ marginBottom: '.5rem' }}>
-            Încheie sesiunile de pe toate dispozitivele, inclusiv cea curentă. Folosește opțiunea dacă ai pierdut un dispozitiv sau suspectezi un acces neautorizat.
-          </div>
-          <button className="btn btn-sm" onClick={() => setConfirmRevoke(true)} disabled={revoking}>
-            {revoking ? <span className="spin spin-dark" /> : 'Deconectează toate dispozitivele'}
-          </button>
-        </div>
+        <Row
+          title="Sesiuni"
+          desc="Pentru un dispozitiv pierdut sau un acces suspect."
+          action={<button className="btn btn-sm" onClick={() => setConfirmRevoke(true)} disabled={revoking}>
+            {revoking ? <span className="spin spin-dark" /> : 'Deconectează peste tot'}
+          </button>}
+        />
       </div>
 
       {confirmRevoke && (
         <ConfirmModal
           title="Deconectezi toate dispozitivele?"
-          message="Va trebui să te autentifici din nou, inclusiv aici."
+          message="Se încheie sesiunile de pe toate dispozitivele, inclusiv cea curentă. Va trebui să te autentifici din nou."
           confirmLabel="Deconectează"
           danger
           onConfirm={() => void revokeSessions()}

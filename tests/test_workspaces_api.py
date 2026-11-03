@@ -264,6 +264,38 @@ def test_purge_deletes_only_workspaces_past_their_grace_period(env):
     assert db.collection("workspaces").document("wsNewBBBBBBBBBBBB02").get().exists
 
 
+def test_account_delete_changes_nothing_if_the_account_cannot_be_disabled(env, monkeypatch):
+    c, db = env
+    def fail(uid, disabled):
+        raise RuntimeError("fără drepturi")
+    monkeypatch.setattr(authz, "set_user_disabled", fail)
+    _seed_ws(db, "wsSoloAAAAAAAAAAA01", "Doar Ana", {"ana": "admin"}, "ana")
+    r = as_user(c, "ana", "post", "/account/delete", json={"confirm": "ana@ex.ro"})
+    assert r.status_code == 503
+    assert db.collection("workspaces").document("wsSoloAAAAAAAAAAA01").get().to_dict()["status"] == "active"
+    assert not db.collection("accountDeletions").document("ana").get().exists
+
+
+def test_account_delete_reenables_the_account_if_scheduling_fails(env, monkeypatch):
+    import billing_api
+    c, db = env
+    calls = []
+    monkeypatch.setattr(authz, "set_user_disabled", lambda uid, d: calls.append(d))
+    def stripe_down(sub_id):
+        raise RuntimeError("Stripe indisponibil")
+    monkeypatch.setattr(billing_api, "stripe_subscription_cancel", stripe_down)
+    _seed_ws(db, "wsSoloAAAAAAAAAAA01", "Unu", {"ana": "admin"}, "ana")
+    _seed_ws(db, "wsSoloBBBBBBBBBBB02", "Doi", {"ana": "admin"}, "ana")
+    db.collection("workspaces").document("wsSoloBBBBBBBBBBB02").update({"billing": {"hasSubscription": True}})
+    db.collection("billingAccounts").document("wsSoloBBBBBBBBBBB02").set({"stripeSubscriptionId": "sub_1"})
+    r = as_user(c, "ana", "post", "/account/delete", json={"confirm": "ana@ex.ro"})
+    assert r.status_code == 503 and calls == [True, False]
+    for wid in ("wsSoloAAAAAAAAAAA01", "wsSoloBBBBBBBBBBB02"):
+        assert db.collection("workspaces").document(wid).get().to_dict()["status"] == "active"
+    assert not db.collection("accountDeletions").document("ana").get().exists
+    db.collection("billingAccounts").document("wsSoloBBBBBBBBBBB02").delete()
+
+
 def test_account_delete_is_refused_while_a_shared_workspace_would_lose_its_admin(env, monkeypatch):
     c, db = env
     disabled = []

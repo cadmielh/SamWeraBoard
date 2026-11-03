@@ -18,6 +18,7 @@ export default function AuditLogCard() {
   const [error, setError] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [category, setCategory] = useState<CategoryFilter>('toate')
+  const [showOlder, setShowOlder] = useState(false)
 
   const nameOf = useCallback((uid: string): string => {
     if (uid === 'system') return 'Sistem'
@@ -55,10 +56,17 @@ export default function AuditLogCard() {
     }
   }
 
-  const visible = useMemo(
+  const filtered = useMemo(
     () => category === 'toate' ? entries : entries.filter(e => categoryOf(e.action) === category),
     [entries, category],
   )
+  // Implicit doar ziua curentă (ora locală); restul la cerere.
+  const todayCount = useMemo(() => {
+    const today = new Date().toDateString()
+    return filtered.filter(e => e.ts && new Date(e.ts).toDateString() === today).length
+  }, [filtered])
+  const visible = showOlder ? filtered : filtered.slice(0, todayCount)
+  const olderCount = filtered.length - todayCount
 
   const exportCsv = () => {
     const blob = new Blob([toCsv(visible, nameOf)], { type: 'text/csv;charset=utf-8' })
@@ -100,7 +108,9 @@ export default function AuditLogCard() {
             Nu s-a putut încărca jurnalul. <button className="btn btn-ghost btn-xs" onClick={() => void load()}>Reîncearcă</button>
           </div>
         ) : visible.length === 0 ? (
-          <div style={{ color: 'var(--s400)', fontSize: '.875rem', padding: '1rem 0' }}>Nicio înregistrare pentru filtrul ales.</div>
+          <div style={{ color: 'var(--s400)', fontSize: '.875rem', padding: '1rem 0' }}>
+            {showOlder || olderCount === 0 ? 'Nicio înregistrare pentru filtrul ales.' : 'Nicio înregistrare astăzi.'}
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.78rem' }}>
@@ -122,7 +132,15 @@ export default function AuditLogCard() {
           </div>
         )}
 
-        {hasMore && !loading && (
+        {!loading && !showOlder && (olderCount > 0 || hasMore) && (
+          <div style={{ marginTop: '.75rem', textAlign: 'center' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowOlder(true)}>
+              Arată și înregistrările mai vechi{olderCount > 0 ? ` (${olderCount}${hasMore ? '+' : ''})` : ''}
+            </button>
+          </div>
+        )}
+
+        {showOlder && hasMore && !loading && (
           <div style={{ marginTop: '.75rem', textAlign: 'center' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => void loadMore()} disabled={loadingMore}>
               {loadingMore ? <span className="spin" /> : 'Încarcă mai multe'}

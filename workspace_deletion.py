@@ -91,9 +91,18 @@ def restore(db, wid: str) -> bool:
 
 
 def schedule_account(db, uid: str, email: str, workspaces: list[str], now: datetime | None = None) -> datetime:
-    """Programează ștergerea contului; `workspaces` = cabinetele în care e singurul membru (programate și ele)."""
-    for wid in workspaces:
-        schedule(db, wid, actor=uid, reason="account", now=now)
+    """Programează ștergerea contului; `workspaces` = cabinetele în care e singurul membru (programate și ele).
+
+    Tot sau nimic: dacă un cabinet nu poate fi programat (ex. Stripe indisponibil), cele deja programate se restaurează."""
+    done = []
+    try:
+        for wid in workspaces:
+            schedule(db, wid, actor=uid, reason="account", now=now)
+            done.append(wid)
+    except Exception:
+        for wid in done:
+            restore(db, wid)
+        raise
     delete_after = _now(now) + timedelta(days=GRACE_DAYS)
     db.collection(ACCOUNTS).document(uid).set({"uid": uid, "email": email, "workspaces": workspaces,
                                                "requestedAt": _now(now), "deleteAfter": delete_after})
