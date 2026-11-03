@@ -6,6 +6,9 @@ import { reauthenticate, signOut } from '../lib/firebase'
 import IconTrash from './IconTrash'
 import Modal from './Modal'
 
+/** Cabinetele care blochează ștergerea (vezi workspaces_api.delete_account): proprietatea nu se poate transfera. */
+interface Blockers { owned: string[]; lastAdmin: string[] }
+
 /** Ștergerea contului propriu: cabinetele în care e singur, calitatea de membru în celelalte, profilul și contul. */
 export default function DeleteAccountModal({ hasPassword, onClose }: { hasPassword: boolean; onClose: () => void }) {
   const { user } = useApp()
@@ -13,20 +16,20 @@ export default function DeleteAccountModal({ hasPassword, onClose }: { hasPasswo
   const [typed, setTyped] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [blockers, setBlockers] = useState<string[]>([])
+  const [blockers, setBlockers] = useState<Blockers | null>(null)
   const [busy, setBusy] = useState(false)
 
   const remove = async () => {
     setError(null)
-    setBlockers([])
+    setBlockers(null)
     setBusy(true)
     try {
       await reauthenticate(user, hasPassword ? password : undefined)
       await apiJson('POST', '/account/delete', { confirm: typed.trim() })
       await signOut()
     } catch (e) {
-      const err = e as Error & { status?: number; code?: string; data?: { workspaces?: string[] } }
-      if (err.code === 'workspace_blockers') setBlockers(err.data?.workspaces ?? [])
+      const err = e as Error & { status?: number; code?: string; data?: Partial<Blockers> }
+      if (err.code === 'workspace_blockers') setBlockers({ owned: err.data?.owned ?? [], lastAdmin: err.data?.lastAdmin ?? [] })
       else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') setError('Parola este incorectă.')
       else setError(err.status ? err.message : authErrorMessage(err))
       setBusy(false)
@@ -50,7 +53,7 @@ export default function DeleteAccountModal({ hasPassword, onClose }: { hasPasswo
           <li>profilul și contul tău de autentificare.</li>
         </ul>
         <p style={{ margin: 0 }}>
-          Dacă ești proprietarul sau singurul administrator al unui cabinet cu alți membri, numește întâi alt administrator sau elimină ceilalți membri.
+          Dacă ai creat un cabinet în care mai sunt și alți membri, elimină-i întâi. Dacă ești singurul administrator al unui cabinet creat de altcineva, numește întâi alt administrator.
         </p>
         <label className="field">
           <span className="field-label">Scrie adresa ta de e-mail pentru confirmare</span>
@@ -62,9 +65,14 @@ export default function DeleteAccountModal({ hasPassword, onClose }: { hasPasswo
             <input className="field-input" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
           </label>
         ) : <p className="card-sub" style={{ margin: 0 }}>La confirmare ți se cere din nou autentificarea Google.</p>}
-        {blockers.length > 0 && (
-          <div role="alert" style={{ color: 'var(--r600)' }}>
-            Nu poți șterge contul cât timp aceste cabinete ar rămâne fără administrator: {blockers.join(', ')}.
+        {blockers && (
+          <div role="alert" style={{ color: 'var(--r600)', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+            {blockers.owned.length > 0 && (
+              <span>Ai creat aceste cabinete, în care mai sunt și alți membri: {blockers.owned.join(', ')}. Elimină ceilalți membri, apoi reîncearcă.</span>
+            )}
+            {blockers.lastAdmin.length > 0 && (
+              <span>Ești singurul administrator în: {blockers.lastAdmin.join(', ')}. Numește alt administrator, apoi reîncearcă.</span>
+            )}
           </div>
         )}
         {error && <div role="alert" style={{ color: 'var(--r600)' }}>{error}</div>}

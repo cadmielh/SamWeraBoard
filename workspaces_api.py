@@ -437,6 +437,8 @@ def delete_account():
     """Programează ștergerea contului: îl dezactivează acum, iar datele se șterg după perioada de grație.
 
     Refuză dacă e proprietarul sau ultimul administrator al unui cabinet cu alți membri: cabinetul ar rămâne fără administrator.
+    Proprietatea nu se poate transfera, deci proprietarul trebuie întâi să elimine ceilalți membri (`owned`), iar
+    ultimul administrator poate și să numească altul (`lastAdmin`).
     """
     principal = authz.authenticate()
     if not _recent_login(principal):
@@ -446,17 +448,19 @@ def delete_account():
 
     db = authz.db()
     uid = principal.uid
-    own, blocked = [], []
+    own, owned, last_admin = [], [], []
     q = db.collection("workspaces").where(filter=FieldFilter(f"members.{uid}.role", "in", list(ROLES)))
     for snap in q.stream():
         ws = snap.to_dict() or {}
         members = ws.get("members") or {}
         if len(members) == 1:
             own.append(snap.id)
-        elif uid == ws.get("ownerId") or (members[uid].get("role") == "admin" and _admin_count(members) <= 1):
-            blocked.append(ws.get("name") or snap.id)
-    if blocked:
-        return jsonify({"error": "workspace_blockers", "workspaces": sorted(blocked)}), 409
+        elif uid == ws.get("ownerId"):
+            owned.append(ws.get("name") or snap.id)
+        elif members[uid].get("role") == "admin" and _admin_count(members) <= 1:
+            last_admin.append(ws.get("name") or snap.id)
+    if owned or last_admin:
+        return jsonify({"error": "workspace_blockers", "owned": sorted(owned), "lastAdmin": sorted(last_admin)}), 409
 
     # Întâi dezactivarea: dacă eșuează, nu s-a programat nimic. Dacă programarea eșuează, contul se reactivează.
     try:

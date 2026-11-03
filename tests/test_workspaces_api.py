@@ -304,7 +304,7 @@ def test_account_delete_is_refused_while_a_shared_workspace_would_lose_its_admin
     _seed_ws(db, "wsAdmBBBBBBBBBBBB02", "Alt cabinet", {"carol": "member", "ana": "admin"}, "carol")
     r = as_user(c, "ana", "post", "/account/delete", json={"confirm": "ana@ex.ro"})
     assert r.status_code == 409
-    assert r.get_json() == {"error": "workspace_blockers", "workspaces": ["Alt cabinet", "Cabinetul Anei"]}
+    assert r.get_json() == {"error": "workspace_blockers", "owned": ["Cabinetul Anei"], "lastAdmin": ["Alt cabinet"]}
     assert disabled == [] and db.collection("workspaces").document("wsOwnAAAAAAAAAAAA01").get().to_dict()["status"] == "active"
 
 
