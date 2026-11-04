@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { IDFields } from '../lib/api'
-import type { Client, ScannedPerson } from '../types'
+import type { Client, ScannedPerson, ToastItem } from '../types'
 import { inferTipClient } from '../types'
 import { useApp } from '../AppContext'
 import { useClienti, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from '../lib/clienti'
@@ -12,6 +12,8 @@ import DriveFilePicker from '../components/DriveFilePicker'
 import FieldsForm from '../components/FieldsForm'
 import TemplateFiller from '../components/TemplateFiller'
 import History from '../components/History'
+import TemplateLibrary from '../components/TemplateLibrary'
+import { useTemplates } from '../lib/templates'
 import { logExtraction } from '../lib/extractions'
 import ScanQueue from '../components/ScanQueue'
 import ClientDocSelector from '../components/ClientDocSelector'
@@ -59,6 +61,26 @@ const CONTENT_STYLE = {
 }
 const COMPACT_STYLE = { maxWidth: 860, margin: '0 auto', width: '100%' }
 
+/** Biblioteca deschisă din antetul paginii, fără un client ales (administrarea șabloanelor).
+ * Se abonează la șabloane doar cât e deschisă. */
+function WorkspaceTemplateLibrary({ workspaceId, uid, onClose, onToast }: {
+  workspaceId: string
+  uid: string
+  onClose: () => void
+  onToast: (msg: string, type: ToastItem['type']) => void
+}) {
+  const { templates, add, remove } = useTemplates(workspaceId)
+  return (
+    <TemplateLibrary
+      templates={templates}
+      onAdd={data => add(workspaceId, data, uid)}
+      onRemove={id => remove(workspaceId, id)}
+      onClose={onClose}
+      onToast={onToast}
+    />
+  )
+}
+
 export default function GenerareDocumentePage() {
   const { user, toast, activeWorkspace } = useApp()
   const workspaceId = activeWorkspace?.id ?? ''
@@ -97,6 +119,7 @@ export default function GenerareDocumentePage() {
   const [pendingClientSave, setPendingClientSave] = useState<{ id: string; fields: Partial<ClientInput> } | null>(null)
 
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [searchParams] = useSearchParams()
 
   // Deep-link din ClientView (?clientId=...&mode=client) — calculat sincron,
@@ -385,6 +408,9 @@ export default function GenerareDocumentePage() {
           </span>
         )}
 
+        {workspaceId && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setLibraryOpen(true)}>📁 Șabloane</button>
+        )}
         <button className="btn btn-ghost btn-sm" onClick={() => setHistoryOpen(h => !h)}>
           {historyOpen ? 'Închide' : 'Istoric'}
         </button>
@@ -691,6 +717,10 @@ export default function GenerareDocumentePage() {
         )}
         </div>
       </main>
+
+      {libraryOpen && workspaceId && (
+        <WorkspaceTemplateLibrary workspaceId={workspaceId} uid={user?.uid ?? ''} onClose={() => setLibraryOpen(false)} onToast={toast} />
+      )}
 
       {historyOpen && user && (
         <History

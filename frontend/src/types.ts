@@ -263,6 +263,8 @@ export interface Workspace {
   billing?: WorkspaceBilling
   /** Cheile șabloanelor de bază ascunse la generare de adminul cabinetului (lipsă = toate vizibile). */
   hiddenBuiltins?: string[]
+  /** Ordinea șabloanelor din bibliotecă și de la generare, stabilită de admin: `b:<cheie>` (de bază), `t:<id>` (proprii). */
+  templateOrder?: string[]
   createdAt: string | null
 }
 

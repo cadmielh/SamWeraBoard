@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  collection, doc, addDoc, deleteDoc,
+  collection, doc, addDoc, deleteDoc, updateDoc,
   query, orderBy, onSnapshot, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from './firebase'
@@ -44,6 +44,14 @@ export function useTemplates(workspaceId: string | null) {
   }, [])
 
   return { templates, loading, add, remove }
+}
+
+/** Câmpurile unui șablon propriu editabile din browser (firestore.rules: validTemplateEdit). */
+export type TemplateMetaPatch = Partial<Pick<DocTemplate, 'name' | 'description' | 'outputNameTemplate' | 'tipTemplate'>>
+
+export async function updateTemplateMeta(workspaceId: string, templateId: string, patch: TemplateMetaPatch) {
+  assertWritable()
+  await updateDoc(doc(templatesCol(workspaceId), templateId), patch)
 }
 
 export async function logDocGeneration(

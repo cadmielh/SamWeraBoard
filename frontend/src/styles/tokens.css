@@ -828,6 +828,31 @@ body {
 .tf-resizer::after { content:''; position:absolute; top:0; bottom:0; left:50%; width:2px; transform:translateX(-50%); border-radius:2px; background:transparent; transition:background var(--t); }
 .tf-resizer:hover::after, .tf-resizer:focus-visible::after, .tf-resizer:active::after { background:var(--p500); }
 .tf-resizer:focus-visible { outline:none; }
+/* Perechea „număr + dată” de la câmpurile completate manual (TemplateFiller): rânduri comune (subgrid), ca
+   ambele câmpuri să stea pe aceeași linie chiar dacă un titlu se întinde pe două rânduri; titlul se lipește
+   de câmpul lui. Data are lățime fixă, numărul primește restul. */
+.tf-manual-pair { display:grid; grid-template-columns:minmax(0,1fr) minmax(12rem,16rem); column-gap:.75rem; }
+.tf-manual-pair > .field { display:grid; grid-row:span 3; grid-template-rows:subgrid; row-gap:.3rem; }
+.tf-manual-pair > .field > .field-label { align-self:end; }
+@media (max-width: 560px) { .tf-manual-pair { grid-template-columns:minmax(0,1fr); } }
+/* Cardurile din biblioteca de șabloane: închise implicit, la click se deschid detaliile (TemplateLibrary) */
+.tl-card { background:var(--s50); border:1.5px solid var(--s200); border-radius:var(--r-sm); transition:border-color var(--t), background var(--t); }
+.tl-card:hover, .tl-card--open { border-color:var(--p200); }
+.tl-card--dim .tl-card-head > :not(label) { opacity:.6; }
+.tl-card-head { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; padding:.625rem .875rem; cursor:pointer; border-radius:var(--r-sm); user-select:none; }
+.tl-card-head:hover { background:var(--p50); }
+.tl-card-head:focus-visible { outline:2px solid var(--p500); outline-offset:-2px; }
+.tl-card-name { flex:1; min-width:0; font-weight:600; font-size:.9rem; color:var(--s800); transition:color var(--t); }
+.tl-card-head:hover .tl-card-name { color:var(--p700); }
+.tl-chevron { flex-shrink:0; width:.75rem; color:var(--s400); font-size:1rem; line-height:1; transition:transform var(--t), color var(--t); }
+.tl-card-head:hover .tl-chevron { color:var(--p600); }
+.tl-card--open .tl-chevron { transform:rotate(90deg); }
+.tl-drag { flex-shrink:0; background:none; border:none; padding:.1rem .2rem; margin-left:-.35rem; border-radius:4px; color:var(--s400); font-size:.8rem; letter-spacing:-.15em; line-height:1; cursor:grab; touch-action:none; }
+.tl-drag:hover { color:var(--p600); background:var(--p100); }
+.tl-drag:active { cursor:grabbing; }
+.tl-drag:focus-visible { outline:2px solid var(--p500); outline-offset:1px; }
+.tl-card--dragging { position:relative; z-index:2; box-shadow:var(--sh-lg, 0 8px 24px rgba(0,0,0,.18)); border-color:var(--p500); }
+.tl-card-body { display:flex; flex-direction:column; gap:.375rem; padding:.625rem .875rem .75rem; border-top:1px solid var(--s200); }
 .tf-list-label { font-size:.7rem; font-weight:700; color:var(--s500); letter-spacing:.06em; text-transform:uppercase; margin-top:.25rem; }
 .tf-rows { display:flex; flex-direction:column; gap:.375rem; }
 .tf-row { display:flex; align-items:center; gap:.5rem; }

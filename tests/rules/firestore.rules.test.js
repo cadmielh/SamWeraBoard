@@ -352,6 +352,22 @@ test('șabloane: din browser se redenumesc, dar fișierul, sourceKey și revizia
   }
   await assertSucceeds(deleteDoc(ref))
 })
+test('șabloane: editarea din browser validează valorile câmpurilor schimbate', async () => {
+  await seedTemplate()
+  const ref = doc(ctx(MEMBER), 'workspaces', W1, 'docTemplates', 't1')
+  for (const patch of [{ name: '' }, { name: 'x'.repeat(201) }, { name: 5 }, { description: 'x'.repeat(1001) },
+    { outputNameTemplate: 'x'.repeat(301) }, { tipTemplate: 'SRL' }, { tipTemplate: null }]) {
+    await assertFails(updateDoc(ref, patch))
+  }
+  await assertSucceeds(updateDoc(ref, { tipTemplate: 'universal', description: '' }))
+  await assertFails(updateDoc(doc(ctx(VIEWER), 'workspaces', W1, 'docTemplates', 't1'), { name: 'Alt nume' }))
+})
+test('templateOrder: doar adminul îl schimbă, ca listă de cel mult 500', async () => {
+  await assertSucceeds(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateOrder: ['b:act_constitutiv', 't:t1'] }))
+  await assertFails(updateDoc(doc(ctx(MEMBER), 'workspaces', W1), { templateOrder: [] }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateOrder: 'b:act_constitutiv' }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateOrder: Array.from({ length: 501 }, (_, i) => `t:${i}`) }))
+})
 test('hiddenBuiltins: doar adminul îl schimbă, ca listă de cel mult 50', async () => {
   await assertSucceeds(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: ['act_constitutiv'] }))
   await assertFails(updateDoc(doc(ctx(MEMBER), 'workspaces', W1), { hiddenBuiltins: [] }))

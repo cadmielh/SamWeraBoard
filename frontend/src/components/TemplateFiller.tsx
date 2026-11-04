@@ -18,7 +18,7 @@ import DateFieldInput from './DateFieldInput'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
-import { visibleBuiltins } from '../lib/templateChanges'
+import { applyTemplateOrder, builtinOrderKey, matchesTemplateSearch, ownOrderKey, visibleBuiltins } from '../lib/templateChanges'
 import { useApp } from '../AppContext'
 import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
@@ -38,6 +38,7 @@ import { withEmptyFieldMarks, withOptionalFieldMarks, isDeclaratieTemplate, DECL
 import { isAnexa1Template, ANEXA1_KEY } from '../lib/anexa1Filler'
 import { isBeneficiariRealiTemplate, BRX_KEY } from '../lib/beneficiariRealiFiller'
 import Modal from './Modal'
+import TemplateSearchInput from './TemplateSearchInput'
 
 interface Props {
   workspaceId: string
@@ -77,7 +78,11 @@ export default function TemplateFiller({
   const { builtins: allBuiltins } = useBuiltinTemplates()
   // La generare apar doar șabloanele de bază pe care adminul cabinetului nu le-a ascuns (biblioteca le arată pe toate).
   const hiddenBuiltins = activeWorkspace?.hiddenBuiltins
-  const builtins = useMemo(() => visibleBuiltins(allBuiltins, hiddenBuiltins), [allBuiltins, hiddenBuiltins])
+  // Ordinea stabilită de admin în biblioteca de șabloane (Workspace.templateOrder).
+  const templateOrder = activeWorkspace?.templateOrder
+  const builtins = useMemo(
+    () => applyTemplateOrder(visibleBuiltins(allBuiltins, hiddenBuiltins), b => builtinOrderKey(b.key), templateOrder),
+    [allBuiltins, hiddenBuiltins, templateOrder])
   const { update: updateClient } = useClienti(workspaceId)
 
   const [clauseState, setClauseState] = useState<Record<string, ClauseSelectorValue>>({})
@@ -182,7 +187,11 @@ export default function TemplateFiller({
   // implicit "actualizare", cazul de utilizare mai frecvent.
   const [actConstitutivMode, setActConstitutivMode] = useState<'infiintare' | 'actualizare'>('actualizare')
 
-  const listTemplates = templates
+  const listTemplates = useMemo(() => applyTemplateOrder(templates, t => ownOrderKey(t.id), templateOrder), [templates, templateOrder])
+  // Căutarea filtrează doar ce se afișează în listă: selecția și generarea în lot rămân neschimbate.
+  const [tplSearch, setTplSearch] = useState('')
+  const shownBuiltins = builtins.filter(b => matchesTemplateSearch(b.name, tplSearch))
+  const shownTemplates = listTemplates.filter(t => matchesTemplateSearch(t.name, tplSearch))
 
   const replacements = buildReplacements({ idFields: fields, client, scannedPersons })
   const repeatGroups = buildRepeatGroups({ idFields: fields, client, scannedPersons })
@@ -961,9 +970,9 @@ export default function TemplateFiller({
               return (
                 <>
                   {pairs.map(([nr, data]) => (
-                    <div key={nr} style={{ display: 'flex', gap: '.5rem' }}>
-                      {renderManualField(nr, { flex: '0 0 13rem' })}
-                      {renderManualField(data, { flex: 1 })}
+                    <div key={nr} className="tf-manual-pair">
+                      {renderManualField(nr)}
+                      {renderManualField(data)}
                     </div>
                   ))}
                   {rest.map(ph => renderManualField(ph))}
@@ -1384,10 +1393,19 @@ export default function TemplateFiller({
                 </div>
               )}
 
-              {builtins.length > 0 && (
+              {(builtins.length > 0 || listTemplates.length > 0) && (
+                <TemplateSearchInput value={tplSearch} onChange={setTplSearch} />
+              )}
+              {tplSearch.trim() && !tplLoading && shownBuiltins.length === 0 && shownTemplates.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '1rem 0', color: 'var(--s400)', fontSize: '.85rem' }}>
+                  Niciun șablon nu se potrivește căutării.
+                </div>
+              )}
+
+              {shownBuiltins.length > 0 && (
                 <>
                   <div className="tf-list-label">Șabloane de bază</div>
-                  <div className="tf-rows">{builtins.map(renderBuiltinRow)}</div>
+                  <div className="tf-rows">{shownBuiltins.map(renderBuiltinRow)}</div>
                 </>
               )}
 
@@ -1400,7 +1418,7 @@ export default function TemplateFiller({
                 </div>
               )}
 
-              {!tplLoading && listTemplates.length > 0 && (
+              {!tplLoading && shownTemplates.length > 0 && (
                 <>
                   <div className="tf-list-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span>Șabloanele mele</span>
@@ -1414,7 +1432,7 @@ export default function TemplateFiller({
                       </button>
                     )}
                   </div>
-                  <div className="tf-rows">{listTemplates.map(renderTemplateRow)}</div>
+                  <div className="tf-rows">{shownTemplates.map(renderTemplateRow)}</div>
                 </>
               )}
 

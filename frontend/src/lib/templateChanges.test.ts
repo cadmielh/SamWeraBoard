@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BuiltinTemplate, WorkspaceMember } from '../types'
-import { dedicatedFormKey, deliveryLabel, diffTemplate, hasChanges, visibleBuiltins } from './templateChanges'
+import { applyTemplateOrder, dedicatedFormKey, deliveryLabel, diffTemplate, formLinkOptions, hasChanges, matchesTemplateSearch, visibleBuiltins } from './templateChanges'
 import { actorLabel, type AuditEntry } from './audit'
 
 const builtin = (key: string, placeholders: string[] = []): BuiltinTemplate => ({
@@ -73,5 +73,34 @@ describe('actorLabel', () => {
     expect(actorLabel(entry('sa', { byProvider: true }), nameOf)).toBe('Echipa Cabinio')
     expect(actorLabel(entry('system'), nameOf)).toBe('Sistem')
     expect(actorLabel(entry('ana'), uid => uid)).toBe('ana')
+  })
+})
+
+describe('formLinkOptions', () => {
+  it('oferă doar șabloanele de bază care schimbă ceva, în ordinea lor', () => {
+    const opts = formLinkOptions([builtin('act_constitutiv'), builtin('hotarare_aga'), builtin('contract_comodat'), builtin('anexa1_inregistrare_fiscala')])
+    expect(opts.map(o => o.key)).toEqual(['hotarare_aga', 'anexa1_inregistrare_fiscala'])
+    expect(opts.every(o => o.effect.length > 0)).toBe(true)
+  })
+})
+
+describe('matchesTemplateSearch', () => {
+  it('ignoră diacriticele și majusculele și cere toate cuvintele', () => {
+    expect(matchesTemplateSearch('Hotărâre AGA', 'hot aga')).toBe(true)
+    expect(matchesTemplateSearch('Declarație Beneficiari Reali', 'DECLARATIE')).toBe(true)
+    expect(matchesTemplateSearch('Hotărâre AGA', 'hotarare comodat')).toBe(false)
+  })
+  it('o căutare goală se potrivește cu orice', () => {
+    expect(matchesTemplateSearch('Act Constitutiv', '  ')).toBe(true)
+  })
+})
+
+describe('applyTemplateOrder', () => {
+  const items = ['a', 'b', 'c', 'd']
+  it('fără ordine salvată, lista rămâne neschimbată', () => {
+    expect(applyTemplateOrder(items, x => x, undefined)).toEqual(items)
+  })
+  it('respectă ordinea salvată; elementele noi vin primele, iar cheile vechi sunt ignorate', () => {
+    expect(applyTemplateOrder(items, x => x, ['c', 'zzz', 'a', 'b'])).toEqual(['d', 'c', 'a', 'b'])
   })
 })

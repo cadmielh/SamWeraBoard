@@ -58,6 +58,48 @@ export function visibleBuiltins(builtins: BuiltinTemplate[], hidden: string[] | 
   return builtins.filter(b => !h.has(b.key))
 }
 
+/** Cheile din `Workspace.templateOrder`: aceeași listă ține ordinea ambelor secțiuni. */
+export const builtinOrderKey = (key: string) => `b:${key}`
+export const ownOrderKey = (id: string) => `t:${id}`
+
+/** Aplică ordinea stabilită de admin. Elementele care nu apar în ea (șabloane noi, adăugate după ultima
+ * reordonare) vin primele, în ordinea lor obișnuită, ca un șablon tocmai adăugat să se vadă imediat. */
+export function applyTemplateOrder<T>(items: T[], keyOf: (t: T) => string, order: string[] | undefined): T[] {
+  if (!order?.length) return items
+  const pos = new Map(order.map((k, i) => [k, i]))
+  const unknown = items.filter(t => !pos.has(keyOf(t)))
+  const known = items.filter(t => pos.has(keyOf(t))).sort((a, b) => pos.get(keyOf(a))! - pos.get(keyOf(b))!)
+  return [...unknown, ...known]
+}
+
+const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+
+/** Căutarea după nume în listele de șabloane: fără diacritice și majuscule, toate cuvintele trebuie să apară
+ * („hot aga” găsește „Hotărâre AGA”). O căutare goală se potrivește cu orice. */
+export function matchesTemplateSearch(name: string, query: string): boolean {
+  const words = fold(query).split(/\s+/).filter(Boolean)
+  const n = fold(name)
+  return words.every(w => n.includes(w))
+}
+
+/** Ce aduce legarea unui șablon livrat de un șablon de bază (`sourceKey`). Doar aceste chei schimbă ceva:
+ * celelalte șabloane de bază au formularul construit tot din etichete. Cheile de asociați sunt cele din
+ * ASOCIATI_COUNT_RULES (builtinTemplates.ts). */
+const FORM_LINK_EFFECTS: Record<string, string> = {
+  [ANEXA1_KEY]: 'Folosește formularul dedicat al Anexei 1, cu aceeași completare automată ca la șablonul de bază.',
+  [BRX_KEY]: 'Folosește formularul dedicat al declarației de beneficiari reali, cu aceeași completare automată ca la șablonul de bază.',
+  [DECLARATIE_ACTIVITATE_KEY]: 'Folosește formularul dedicat al declarației (activitate), cu aceeași completare automată ca la șablonul de bază.',
+  decizie_asociat_unic: 'Formularul rămâne cel din etichete; șablonul apare la generare doar pentru clienții cu exact un asociat.',
+  hotarare_aga: 'Formularul rămâne cel din etichete; șablonul apare la generare doar pentru clienții cu cel puțin doi asociați.',
+}
+
+export interface FormLinkOption { key: string; name: string; effect: string }
+
+/** Opțiunile utile la livrare, în ordinea șabloanelor de bază. */
+export function formLinkOptions(builtins: BuiltinTemplate[]): FormLinkOption[] {
+  return builtins.filter(b => b.key in FORM_LINK_EFFECTS).map(b => ({ key: b.key, name: b.name, effect: FORM_LINK_EFFECTS[b.key] }))
+}
+
 const formatDate = (d: Date) => d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })
 
 /** Eticheta unui șablon livrat de Cabinio: „Pregătit de Cabinio”, iar după ce cabinetul a înlocuit fișierul,

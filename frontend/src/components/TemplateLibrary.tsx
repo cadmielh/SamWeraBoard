@@ -1,6 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { BuiltinTemplate, DocTemplate, ToastItem } from '../types'
-import type { TemplateInput } from '../lib/templates'
+import { updateTemplateMeta, type TemplateInput } from '../lib/templates'
 import { useBuiltinTemplates } from '../lib/builtinTemplates'
 import IconTrash from './IconTrash'
 
@@ -14,8 +17,9 @@ import { createTemplate, detectPlaceholders, duplicateBuiltinTemplate, replaceTe
 import { assertWritable } from '../lib/billing'
 import { ensureDriveToken } from '../lib/driveAuth'
 import { pickGoogleDoc } from '../lib/picker'
-import { setBuiltinHidden } from '../lib/workspace'
-import { deliveryLabel, diffTemplate, hasChanges, type TemplateChanges } from '../lib/templateChanges'
+import { setBuiltinHidden, setTemplateOrder } from '../lib/workspace'
+import { applyTemplateOrder, builtinOrderKey, deliveryLabel, diffTemplate, hasChanges, matchesTemplateSearch, ownOrderKey, type TemplateChanges } from '../lib/templateChanges'
+import TemplateSearchInput from './TemplateSearchInput'
 import { useApp } from '../AppContext'
 import Modal from './Modal'
 import BlankImportModal from './BlankImportModal'
@@ -49,7 +53,60 @@ interface Props {
 }
 
 type AddTab = 'docx' | 'gdoc'
-type View = 'list' | 'add' | 'guide' | 'replace'
+type View = 'list' | 'add' | 'guide' | 'replace' | 'edit'
+
+/** Câmpurile editabile din aplicație ale unui șablon propriu (aceleași limite ca în firestore.rules). */
+interface EditForm { name: string; description: string; outputNameTemplate: string; tipTemplate: TipTemplate }
+
+/** Cardul unui șablon din bibliotecă: închis arată doar antetul (tip, nume, semnale), la click se deschid detaliile
+ * și acțiunile. Antetul e un div cu rol de buton, nu un <button>, pentru că poate conține bifa „Vizibil la generare”.
+ * Ordinea se schimbă doar din mânerul „⋮⋮” (adminul): un click pe card îl deschide, nu îl mută. */
+function LibraryCard({ sortId, name, canDrag, open, onToggle, dim, head, children }: {
+  sortId: string
+  name: string
+  canDrag: boolean
+  open: boolean
+  onToggle: () => void
+  dim?: boolean
+  head: ReactNode
+  children: ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: sortId, disabled: !canDrag })
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition: transition ?? undefined }}
+      className={`tl-card${open ? ' tl-card--open' : ''}${dim ? ' tl-card--dim' : ''}${isDragging ? ' tl-card--dragging' : ''}`}>
+      <div className="tl-card-head" role="button" tabIndex={0} aria-expanded={open} onClick={onToggle}
+        onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onToggle() } }}>
+        {canDrag && (
+          <button type="button" ref={setActivatorNodeRef} className="tl-drag" {...attributes} {...listeners}
+            onClick={e => e.stopPropagation()} title="Trage pentru a schimba ordinea" aria-label={`Mută „${name}” (Spațiu, apoi săgeți)`}>
+            ⋮⋮
+          </button>
+        )}
+        <span className="tl-chevron" aria-hidden>›</span>
+        {head}
+      </div>
+      {open && <div className="tl-card-body">{children}</div>}
+    </div>
+  )
+}
+
+/** O secțiune reordonabilă a bibliotecii (șabloanele de bază sau cele proprii), cu mouse, atingere sau tastatură. */
+function SortableSection({ ids, onReorder, children }: { ids: string[]; onReorder: (ids: string[]) => void; children: ReactNode }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return
+    onReorder(arrayMove(ids, ids.indexOf(String(active.id)), ids.indexOf(String(over.id))))
+  }
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>{children}</SortableContext>
+    </DndContext>
+  )
+}
 
 function PlaceholderBadge({ ph }: { ph: string }) {
   return (
@@ -62,7 +119,7 @@ function PlaceholderBadge({ ph }: { ph: string }) {
 const GUIDE_SECTIONS = [
   {
     title: 'Persoană fizică / titular (PF sau scanare CI)',
-    items: ['{{CNP}}', '{{NUME}}', '{{PRENUME}}', '{{SERIE_NUMAR}}', '{{DATA_NASTERII}}', '{{LOCUL_NASTERII}}', '{{CETATENIA}}', '{{ADRESA}}', '{{JUDET}}', '{{EMISA_DE}}', '{{VALABILA_DE_LA}}', '{{VALABILA_PANA_LA}}'],
+    items: ['{{CNP}}', '{{NUME}}', '{{PRENUME}}', '{{SERIE_NUMAR}}', '{{DATA_NASTERII}}', '{{LOCUL_NASTERII}}', '{{CETATENIA}} (după „cetățenia”: română)', '{{CETATENIA_ACORD}} (după „cetățean”: român / română, după sexul persoanei)', '{{ADRESA}}', '{{JUDET}}', '{{EMISA_DE}}', '{{VALABILA_DE_LA}}', '{{VALABILA_PANA_LA}}'],
   },
   {
     title: 'Entitate / Societate',
@@ -96,7 +153,7 @@ const GUIDE_SECTIONS = [
     items: [
       '{{#ASOCIATI}} ... {{/ASOCIATI}} — paragraful/paragrafele dintre cele două marcaje se repetă o dată pentru fiecare asociat',
       '{{#ADMINISTRATORI}} ... {{/ADMINISTRATORI}} — la fel, pentru administratori',
-      'În interiorul {{#ASOCIATI}}/{{#ADMINISTRATORI}}: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{SERIE_NUMAR}}, {{SERIE_ACT}}, {{NR_ACT}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
+      'În interiorul {{#ASOCIATI}}/{{#ADMINISTRATORI}}: {{NUME}}, {{PRENUME}}, {{CNP}}, {{ADRESA}}, {{JUDET}}, {{DATA_NASTERII}}, {{LOCUL_NASTERII}}, {{CETATENIA}}, {{CETATENIA_ACORD}}, {{SERIE_NUMAR}}, {{SERIE_ACT}}, {{NR_ACT}}, {{EMISA_DE}}, {{VALABILA_DE_LA}}, {{VALABILA_PANA_LA}}, {{COTA_PARTICIPARE}}',
       '{{INDEX}} — numărul de ordine (1, 2, 3…) în cadrul blocului',
       '{{CAPITAL_SOCIAL}}, {{PARTI_SOCIALE}} — doar în {{#ASOCIATI}}, calculate din cota asociatului',
       '{{#CAEN_SECUNDARE}} {{CAEN}} {{/CAEN_SECUNDARE}} — un rând per activitate secundară CAEN (nelimitat); dacă nu există niciuna, tot blocul dispare din document',
@@ -127,6 +184,44 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const isWorkspaceAdmin = userRole === 'admin'
   const [togglingKey, setTogglingKey] = useState<string | null>(null)
   const [deliverTpl, setDeliverTpl] = useState<DocTemplate | null>(null)
+  const [search, setSearch] = useState('')
+  // Cardurile deschise: `b:<cheie>` pentru șabloanele de bază, `t:<id>` pentru cele proprii.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleExpanded = (k: string) => setExpanded(prev => {
+    const next = new Set(prev)
+    if (!next.delete(k)) next.add(k)
+    return next
+  })
+  // Ordinea stabilită de admin (Workspace.templateOrder), aceeași și la pasul de generare. După o mutare, ordinea nouă
+  // se arată imediat; rămâne valabilă până sosește documentul cabinetului actualizat (`base` nu mai e același).
+  const savedOrder = activeWorkspace?.templateOrder
+  const [localOrder, setLocalOrder] = useState<{ base: string[] | undefined; order: string[] } | null>(null)
+  const order = localOrder && localOrder.base === savedOrder ? localOrder.order : savedOrder
+  const orderedBuiltins = applyTemplateOrder(builtins, b => builtinOrderKey(b.key), order)
+  const orderedTemplates = applyTemplateOrder(templates, t => ownOrderKey(t.id), order)
+  const shownBuiltins = orderedBuiltins.filter(b => matchesTemplateSearch(b.name, search))
+  const shownTemplates = orderedTemplates.filter(t => matchesTemplateSearch(t.name, search))
+  // Pe o listă filtrată, „mută mai sus” nu are un sens clar: reordonarea merge doar fără căutare.
+  const canReorder = isWorkspaceAdmin && !search.trim()
+
+  const reorder = async (section: 'builtins' | 'own', ids: string[]) => {
+    if (!activeWorkspace) return
+    const builtinIds = section === 'builtins' ? ids : orderedBuiltins.map(b => builtinOrderKey(b.key))
+    const ownIds = section === 'own' ? ids : orderedTemplates.map(t => ownOrderKey(t.id))
+    const next = [...builtinIds, ...ownIds]
+    setLocalOrder({ base: savedOrder, order: next })
+    try {
+      await setTemplateOrder(activeWorkspace.id, next)
+    } catch {
+      setLocalOrder(null)
+      onToast('Ordinea nu s-a putut salva. Doar administratorul cabinetului poate schimba ordinea șabloanelor.', 'err')
+    }
+  }
+
+  // Editarea numelui, descrierii, tipului și numelui fișierului generat (direct în Firestore, validat de reguli).
+  const [editTpl, setEditTpl] = useState<DocTemplate | null>(null)
+  const [editForm, setEditForm] = useState<EditForm | null>(null)
+  const [editSaving, setEditSaving] = useState(false)
 
   // Înlocuirea fișierului unui șablon propriu (templates_api.py): alegere → diferențe → confirmare.
   const replaceInputRef = useRef<HTMLInputElement>(null)
@@ -322,6 +417,47 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     }
   }
 
+  const startEdit = (tpl: DocTemplate) => {
+    setEditTpl(tpl)
+    setEditForm({
+      name: tpl.name,
+      description: tpl.description ?? '',
+      outputNameTemplate: tpl.outputNameTemplate ?? '',
+      tipTemplate: (tpl.tipTemplate as TipTemplate | undefined) ?? 'universal',
+    })
+    setView('edit')
+  }
+
+  const closeEdit = () => { setEditTpl(null); setEditForm(null); setView('list') }
+
+  const saveEdit = async () => {
+    if (!editTpl || !editForm || !activeWorkspace) return
+    const next = {
+      name: editForm.name.trim(),
+      description: editForm.description.trim(),
+      outputNameTemplate: editForm.outputNameTemplate.trim()
+        || `${editForm.name.trim()}_completat${editTpl.type === 'docx' ? '.docx' : ''}`,
+      tipTemplate: editForm.tipTemplate,
+    }
+    // Se trimit doar câmpurile schimbate: regulile validează exact ce se modifică.
+    const before = { name: editTpl.name, description: editTpl.description ?? '', outputNameTemplate: editTpl.outputNameTemplate ?? '', tipTemplate: editTpl.tipTemplate ?? 'universal' }
+    const patch = Object.fromEntries(Object.entries(next).filter(([k, v]) => before[k as keyof typeof before] !== v))
+    if (!Object.keys(patch).length) { closeEdit(); return }
+    setEditSaving(true)
+    try {
+      await updateTemplateMeta(activeWorkspace.id, editTpl.id, patch)
+      onToast('Șablon actualizat', 'ok')
+      closeEdit()
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code
+      onToast(code === 'permission-denied'
+        ? 'Modificarea nu a fost acceptată. Verifică lungimea câmpurilor sau dacă ai drept de editare.'
+        : (err as Error).message ?? 'Eroare la salvare', 'err')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   const toggleBuiltin = async (key: string, visible: boolean) => {
     if (!activeWorkspace) return
     setTogglingKey(key)
@@ -373,6 +509,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
           {/* ── LIST ── */}
           {view === 'list' && (
             <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+              <TemplateSearchInput value={search} onChange={setSearch} />
               {/* ── Șabloane de bază — servite din backend, disponibile din prima în orice workspace ── */}
               <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>
                 Șabloane de bază
@@ -383,40 +520,55 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
               {!builtinsLoading && builtins.length > 0 && (
                 <div style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '-.375rem' }}>
                   {isWorkspaceAdmin
-                    ? 'Debifează „Vizibil la generare” pentru șabloanele pe care cabinetul nu le folosește: dispar din lista de generare pentru toți colegii.'
-                    : 'Administratorul cabinetului poate ascunde șabloanele de bază nefolosite.'}
+                    ? `Debifează „Vizibil la generare” pentru șabloanele pe care cabinetul nu le folosește. ${search.trim()
+                      ? 'Golește căutarea ca să poți schimba ordinea.'
+                      : 'Trage de ⋮⋮ ca să schimbi ordinea.'} Ambele se aplică la generare, pentru toți colegii.`
+                    : 'Administratorul cabinetului alege ce șabloane de bază apar la generare și în ce ordine.'}
                 </div>
               )}
-              {!builtinsLoading && builtins.map(b => (
-                <div key={b.key} style={{ background: 'var(--s50)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.375rem', opacity: hiddenBuiltins.has(b.key) ? 0.6 : 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: 'var(--p50)', color: 'var(--p700)' }}>
-                      DE BAZĂ
-                    </span>
-                    <span style={{ flex: 1, fontWeight: 600, fontSize: '.9rem', color: 'var(--s800)' }}>{b.name}</span>
-                    {isWorkspaceAdmin ? (
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem', fontSize: '.75rem', color: 'var(--s600)', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={!hiddenBuiltins.has(b.key)} disabled={togglingKey === b.key}
-                          onChange={e => void toggleBuiltin(b.key, e.target.checked)} />
-                        Vizibil la generare
-                      </label>
-                    ) : hiddenBuiltins.has(b.key) && (
-                      <span style={{ fontSize: '.72rem', color: 'var(--s500)' }}>Ascuns la generare</span>
+              {!builtinsLoading && builtins.length > 0 && shownBuiltins.length === 0 && (
+                <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Niciun șablon de bază nu se potrivește căutării.</div>
+              )}
+              {!builtinsLoading && (
+              <SortableSection ids={shownBuiltins.map(b => builtinOrderKey(b.key))} onReorder={ids => void reorder('builtins', ids)}>
+              {shownBuiltins.map(b => {
+                const hidden = hiddenBuiltins.has(b.key)
+                return (
+                  <LibraryCard
+                    key={b.key} sortId={builtinOrderKey(b.key)} name={b.name} canDrag={canReorder} open={expanded.has(`b:${b.key}`)} onToggle={() => toggleExpanded(`b:${b.key}`)} dim={hidden}
+                    head={<>
+                      <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: 'var(--p50)', color: 'var(--p700)' }}>
+                        DE BAZĂ
+                      </span>
+                      <span className="tl-card-name">{b.name}</span>
+                      {isWorkspaceAdmin ? (
+                        // Bifa rămâne pe cardul închis: se folosește des și nu deschide cardul.
+                        <label onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '.3rem', fontSize: '.75rem', color: 'var(--s600)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!hidden} disabled={togglingKey === b.key}
+                            onChange={e => void toggleBuiltin(b.key, e.target.checked)} />
+                          Vizibil la generare
+                        </label>
+                      ) : hidden && (
+                        <span style={{ fontSize: '.72rem', color: 'var(--s500)' }}>Ascuns la generare</span>
+                      )}
+                    </>}
+                  >
+                    {b.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{b.description}</div>}
+                    {b.clauses.length > 0 && (
+                      <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>{b.clauses.length} articole opționale, la alegere</div>
                     )}
-                    <button
-                      className="btn btn-outline-primary btn-sm"
-                      onClick={() => handleDuplicateBuiltin(b)}
-                      disabled={duplicatingKey === b.key}
-                    >
-                      {duplicatingKey === b.key ? <span className="spin" /> : '📋 Duplică'}
-                    </button>
-                  </div>
-                  {b.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{b.description}</div>}
-                  {b.clauses.length > 0 && (
-                    <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>{b.clauses.length} articole opționale, la alegere</div>
-                  )}
-                </div>
-              ))}
+                    <div style={{ display: 'flex', gap: '.375rem', flexWrap: 'wrap' }}>
+                      <button className="btn btn-outline-primary btn-sm" onClick={() => handleDuplicateBuiltin(b)} disabled={duplicatingKey === b.key}
+                        title="Creează o copie în „Șabloanele mele”, pe care o poți modifica">
+                        {duplicatingKey === b.key ? <span className="spin" /> : '📋 Duplică'}
+                      </button>
+                    </div>
+                  </LibraryCard>
+                )
+              })}
+              </SortableSection>
+              )}
 
               <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase', marginTop: '.375rem' }}>
                 Șabloanele mele
@@ -427,72 +579,91 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                   <button className="btn btn-outline-primary btn-sm" style={{ marginTop: '.75rem' }} onClick={() => setView('add')}>+ Adaugă primul șablon</button>
                 </div>
               )}
-              {templates.map(tpl => (
-                <div key={tpl.id} style={{ background: 'var(--s50)', border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem .875rem', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: tpl.type === 'docx' ? 'var(--b50)' : 'var(--p50)', color: tpl.type === 'docx' ? 'var(--b700)' : 'var(--p700)' }}>
-                      {tpl.type === 'docx' ? 'DOCX' : 'GDoc'}
-                    </span>
-                    {tpl.tipTemplate && tpl.tipTemplate !== 'universal' && (
-                      <span style={{
-                        fontSize: '.68rem', fontWeight: 700, padding: '.1rem .35rem', borderRadius: 3,
-                        background: tpl.tipTemplate === 'PF' ? 'var(--b100)' : 'var(--g100)',
-                        color: tpl.tipTemplate === 'PF' ? 'var(--b700)' : 'var(--g700)',
-                      }}>
-                        {tpl.tipTemplate}
+              {templates.length > 0 && shownTemplates.length === 0 && (
+                <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Niciun șablon propriu nu se potrivește căutării.</div>
+              )}
+              <SortableSection ids={shownTemplates.map(t => ownOrderKey(t.id))} onReorder={ids => void reorder('own', ids)}>
+              {shownTemplates.map(tpl => {
+                const label = deliveryLabel(tpl, activeWorkspace?.members)
+                const newerSource = tpl.sourceKey && tpl.sourceVersion != null
+                  ? builtins.find(b => b.key === tpl.sourceKey && b.version > tpl.sourceVersion!)
+                  : undefined
+                const hasFile = tpl.type === 'docx' && !!tpl.fileBase64
+                return (
+                  <LibraryCard
+                    key={tpl.id} sortId={ownOrderKey(tpl.id)} name={tpl.name} canDrag={canReorder} open={expanded.has(`t:${tpl.id}`)} onToggle={() => toggleExpanded(`t:${tpl.id}`)}
+                    head={<>
+                      <span style={{ fontSize: '.75rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 3, background: tpl.type === 'docx' ? 'var(--b50)' : 'var(--p50)', color: tpl.type === 'docx' ? 'var(--b700)' : 'var(--p700)' }}>
+                        {tpl.type === 'docx' ? 'DOCX' : 'GDoc'}
                       </span>
-                    )}
-                    <span style={{ flex: 1, fontWeight: 600, fontSize: '.9rem', color: 'var(--s800)' }}>{tpl.name}</span>
-                    {tpl.type === 'docx' && tpl.fileBase64 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(tpl)} title="Descarcă fișierul șablonului (pentru modificare în Word)" style={{ fontSize: '.75rem' }}>⬇</button>
-                    )}
-                    {canEdit && tpl.type === 'docx' && tpl.fileBase64 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => startReplace(tpl)} disabled={replacingId === tpl.id}
-                        title="Înlocuiește fișierul cu varianta modificată în Word (păstrează formularul)" style={{ fontSize: '.75rem' }}>
-                        {replacingId === tpl.id ? <span className="spin" /> : '⟳ Înlocuiește'}
-                      </button>
-                    )}
-                    {isSuperAdmin && tpl.type === 'docx' && tpl.fileBase64 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => setDeliverTpl(tpl)} title="Trimite o copie în cabinetul unui client" style={{ fontSize: '.75rem' }}>
-                        ✉ Trimite
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleRemove(tpl.id)}
-                      disabled={removingId === tpl.id}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--r500)', padding: '.125rem .3rem', borderRadius: 4, display: 'inline-flex', alignItems: 'center' }}
-                      title="Șterge"
-                    >
-                      {removingId === tpl.id ? <span className="spin" /> : <IconTrash />}
-                    </button>
-                  </div>
-                  {tpl.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{tpl.description}</div>}
-                  {(() => {
-                    const label = deliveryLabel(tpl, activeWorkspace?.members)
-                    return label && <div style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--p700)' }}>✦ {label}</div>
-                  })()}
-                  {tpl.sourceKey && tpl.sourceVersion != null && (() => {
-                    const src = builtins.find(b => b.key === tpl.sourceKey)
-                    if (!src || src.version <= tpl.sourceVersion!) return null
-                    return (
-                      <div style={{ fontSize: '.72rem', color: 'var(--o700)' }}>
-                        ⚠️ bazat pe "{src.name}" v{tpl.sourceVersion} — există o versiune mai nouă (v{src.version})
-                      </div>
-                    )
-                  })()}
-                  {tpl.placeholders && tpl.placeholders.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.25rem', marginTop: '.125rem' }}>
-                      {tpl.placeholders.slice(0, 8).map(ph => <PlaceholderBadge key={ph} ph={ph} />)}
-                      {tpl.placeholders.length > 8 && (
-                        <span style={{ fontSize: '.75rem', color: 'var(--s400)' }}>+{tpl.placeholders.length - 8} mai multe</span>
+                      {tpl.tipTemplate && tpl.tipTemplate !== 'universal' && (
+                        <span style={{
+                          fontSize: '.68rem', fontWeight: 700, padding: '.1rem .35rem', borderRadius: 3,
+                          background: tpl.tipTemplate === 'PF' ? 'var(--b100)' : 'var(--g100)',
+                          color: tpl.tipTemplate === 'PF' ? 'var(--b700)' : 'var(--g700)',
+                        }}>
+                          {tpl.tipTemplate}
+                        </span>
                       )}
+                      <span className="tl-card-name">{tpl.name}</span>
+                      {/* Semnalele care cer atenție rămân vizibile și pe cardul închis; detaliile lor, la deschidere. */}
+                      {label && <span title={label} aria-label={label} style={{ fontSize: '.8rem', color: 'var(--p700)' }}>✦</span>}
+                      {newerSource && <span title={`Există o versiune mai nouă a „${newerSource.name}”`} style={{ fontSize: '.8rem' }}>⚠️</span>}
+                    </>}
+                  >
+                    {tpl.description && <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>{tpl.description}</div>}
+                    {label && <div style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--p700)' }}>✦ {label}</div>}
+                    {newerSource && (
+                      <div style={{ fontSize: '.72rem', color: 'var(--o700)' }}>
+                        ⚠️ bazat pe "{newerSource.name}" v{tpl.sourceVersion} — există o versiune mai nouă (v{newerSource.version})
+                      </div>
+                    )}
+                    {tpl.placeholders && tpl.placeholders.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.25rem', marginTop: '.125rem' }}>
+                        {tpl.placeholders.slice(0, 8).map(ph => <PlaceholderBadge key={ph} ph={ph} />)}
+                        {tpl.placeholders.length > 8 && (
+                          <span style={{ fontSize: '.75rem', color: 'var(--s400)' }}>+{tpl.placeholders.length - 8} mai multe</span>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>
+                      Output: <code style={{ background: 'var(--s100)', padding: '.1rem .3rem', borderRadius: 3 }}>{tpl.outputNameTemplate}</code>
                     </div>
-                  )}
-                  <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>
-                    Output: <code style={{ background: 'var(--s100)', padding: '.1rem .3rem', borderRadius: 3 }}>{tpl.outputNameTemplate}</code>
-                  </div>
-                </div>
-              ))}
+                    <div style={{ display: 'flex', gap: '.375rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '.25rem' }}>
+                      {canEdit && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => startEdit(tpl)}
+                          title="Schimbă numele, descrierea, tipul sau numele fișierului generat" style={{ fontSize: '.75rem' }}>
+                          ✎ Editează
+                        </button>
+                      )}
+                      {hasFile && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(tpl)} title="Descarcă fișierul șablonului (pentru modificare în Word)" style={{ fontSize: '.75rem' }}>⬇ Descarcă</button>
+                      )}
+                      {canEdit && hasFile && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => startReplace(tpl)} disabled={replacingId === tpl.id}
+                          title="Înlocuiește fișierul cu varianta modificată în Word (păstrează formularul)" style={{ fontSize: '.75rem' }}>
+                          {replacingId === tpl.id ? <span className="spin" /> : '⟳ Înlocuiește'}
+                        </button>
+                      )}
+                      {isSuperAdmin && hasFile && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => setDeliverTpl(tpl)} title="Trimite o copie în cabinetul unui client" style={{ fontSize: '.75rem' }}>
+                          ✉ Trimite
+                        </button>
+                      )}
+                      <span style={{ flex: 1 }} />
+                      <button
+                        onClick={() => handleRemove(tpl.id)}
+                        disabled={removingId === tpl.id}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--r500)', padding: '.125rem .3rem', borderRadius: 4, display: 'inline-flex', alignItems: 'center' }}
+                        title="Șterge" aria-label={`Șterge „${tpl.name}”`}
+                      >
+                        {removingId === tpl.id ? <span className="spin" /> : <IconTrash />}
+                      </button>
+                    </div>
+                  </LibraryCard>
+                )
+              })}
+              </SortableSection>
             </div>
           )}
 
@@ -670,6 +841,47 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
               </div>
             )
           })()}
+
+          {/* ── EDIT: numele, descrierea, tipul și numele fișierului generat ── */}
+          {view === 'edit' && editTpl && editForm && (
+            <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '.875rem' }}>
+              <button className="btn btn-ghost btn-sm" onClick={closeEdit} style={{ alignSelf: 'flex-start' }}>← Înapoi</button>
+              <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>Editezi „{editTpl.name}”</div>
+              <p style={{ fontSize: '.8rem', color: 'var(--s500)', margin: 0 }}>
+                Textul documentului se schimbă în Word, apoi cu „⟳ Înlocuiește”.
+              </p>
+              <div className="field">
+                <label className="field-label" htmlFor="tpl-edit-name">Nume șablon *</label>
+                <input id="tpl-edit-name" className="field-input" value={editForm.name} maxLength={200}
+                  onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="tpl-edit-desc">Descriere (opțional)</label>
+                <input id="tpl-edit-desc" className="field-input" value={editForm.description} maxLength={1000}
+                  onChange={e => setEditForm({ ...editForm, description: e.target.value })} placeholder="Scurtă descriere…" />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="tpl-edit-tip">Tip șablon</label>
+                <select id="tpl-edit-tip" className="field-input" value={editForm.tipTemplate} style={{ appearance: 'auto' }}
+                  onChange={e => setEditForm({ ...editForm, tipTemplate: e.target.value as TipTemplate })}>
+                  {TIP_TEMPLATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="tpl-edit-output">{editTpl.type === 'docx' ? 'Numele fișierului generat' : 'Numele documentului generat'}</label>
+                <input id="tpl-edit-output" className="field-input" value={editForm.outputNameTemplate} maxLength={300}
+                  onChange={e => setEditForm({ ...editForm, outputNameTemplate: e.target.value })}
+                  placeholder={editTpl.type === 'docx' ? 'ex: contract_{{SOCIETATE_DENUMIRE}}_{{DATA_AZI}}.docx' : 'ex: contract_{{SOCIETATE_DENUMIRE}}'} />
+                <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>Poți folosi placeholder-e și în numele fișierului.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost btn-sm" onClick={closeEdit}>Renunță</button>
+                <button className="btn btn-primary btn-sm" onClick={() => void saveEdit()} disabled={editSaving || !editForm.name.trim()}>
+                  {editSaving ? <><span className="spin" />&nbsp;Se salvează…</> : 'Salvează'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── GUIDE ── */}
           {view === 'guide' && (

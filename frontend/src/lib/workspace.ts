@@ -38,6 +38,11 @@ export async function setBuiltinHidden(workspaceId: string, key: string, hidden:
   await updateDoc(doc(db, 'workspaces', workspaceId), { hiddenBuiltins: hidden ? arrayUnion(key) : arrayRemove(key) })
 }
 
+/** Ordinea șabloanelor pentru tot cabinetul (doar adminul, vezi firestore.rules); lista întreagă, scrisă dintr-o dată. */
+export async function setTemplateOrder(workspaceId: string, order: string[]): Promise<void> {
+  await updateDoc(doc(db, 'workspaces', workspaceId), { templateOrder: order })
+}
+
 /** Toate workspace-urile din aplicație — doar pentru super admini (vezi
  * regula `allow read: if isSuperAdmin()` pe `workspaces/{wid}`), folosită de
  * pagina de super admin pentru vizibilitate completă, nu doar pe workspace-urile

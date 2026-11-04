@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BuiltinTemplate, DocTemplate, ToastItem, Workspace } from '../types'
 import { deliverTemplate, type DeliveryBlocker, type DeliveryWarnings } from '../lib/api'
+import { formLinkOptions } from '../lib/templateChanges'
 import { listAllWorkspaces } from '../lib/workspace'
 import Modal from './Modal'
 
@@ -28,7 +29,9 @@ export default function TemplateDeliveryModal({ template, sourceWorkspaceId, bui
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null)
   const [targetId, setTargetId] = useState('')
   const [confirmName, setConfirmName] = useState('')
-  const [sourceKey, setSourceKey] = useState(template.sourceKey ?? '')
+  const formOptions = useMemo(() => formLinkOptions(builtins), [builtins])
+  // O copie a unui șablon de bază fără efect la livrare (ex. actul constitutiv) pornește de la „fără formular dedicat”.
+  const [sourceKey, setSourceKey] = useState(() => formOptions.some(o => o.key === template.sourceKey) ? template.sourceKey! : '')
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState<{ key: string; result: Check } | null>(null)
   const [alreadyDelivered, setAlreadyDelivered] = useState(false)
@@ -113,11 +116,11 @@ export default function TemplateDeliveryModal({ template, sourceWorkspaceId, bui
           <label className="field-label" htmlFor="dlv-form">Formular</label>
           <select id="dlv-form" className="field-input" style={{ appearance: 'auto' }} value={sourceKey} onChange={e => setSourceKey(e.target.value)}>
             <option value="">Fără formular dedicat (câmpuri din etichete)</option>
-            {builtins.map(b => <option key={b.key} value={b.key}>Ca „{b.name}”</option>)}
+            {formOptions.map(o => <option key={o.key} value={o.key}>Ca „{o.name}”</option>)}
           </select>
           <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>
-            Leagă șablonul de un șablon de bază: preia formularul dedicat (Anexa 1, Beneficiari reali, Declarația) și regulile de
-            număr de asociați (Decizie / Hotărâre AGA).
+            {formOptions.find(o => o.key === sourceKey)?.effect
+              ?? 'Formularul se construiește din etichetele {{ }} ale documentului. Potrivit pentru majoritatea șabloanelor.'}
           </p>
         </div>
 

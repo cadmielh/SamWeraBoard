@@ -101,12 +101,14 @@ service cloud.firestore {
       allow create: if false;
       allow delete: if false;
 
-      // Adminul de workspace poate modifica doar numele, configurul de facturare și ce șabloane de bază
-      // sunt ascunse la generare (o preferință de afișare, nu un control de acces).
+      // Adminul de workspace poate modifica doar numele, configurul de facturare, ce șabloane de bază sunt ascunse
+      // la generare și ordinea șabloanelor (preferințe de afișare, nu un control de acces).
       allow update: if isAdmin(wid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig', 'hiddenBuiltins']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig', 'hiddenBuiltins', 'templateOrder']) &&
         request.resource.data.get('hiddenBuiltins', []) is list &&
-        request.resource.data.get('hiddenBuiltins', []).size() <= 50;
+        request.resource.data.get('hiddenBuiltins', []).size() <= 50 &&
+        request.resource.data.get('templateOrder', []) is list &&
+        request.resource.data.get('templateOrder', []).size() <= 500;
       // Super adminul poate comuta doar feature flag-urile.
       allow update: if isSuperAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['features']);
@@ -141,8 +143,17 @@ service cloud.firestore {
           request.resource.data.get('type', '') == 'gdoc' &&
           !request.resource.data.keys().hasAny(['fileBase64', 'delivery', 'revision', 'updatedAt', 'updatedBy']);
         allow update: if canWrite(wid) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'outputNameTemplate', 'tipTemplate']);
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'outputNameTemplate', 'tipTemplate']) &&
+          validTemplateEdit(request.resource.data, request.resource.data.diff(resource.data).affectedKeys());
         allow delete: if canWrite(wid);
+      }
+
+      // Se verifică doar câmpurile schimbate: un șablon vechi cu valori neobișnuite rămâne editabil.
+      function validTemplateEdit(d, changed) {
+        return (!changed.hasAny(['name']) || (d.name is string && d.name.size() > 0 && d.name.size() <= 200))
+          && (!changed.hasAny(['description']) || (d.description is string && d.description.size() <= 1000))
+          && (!changed.hasAny(['outputNameTemplate']) || (d.outputNameTemplate is string && d.outputNameTemplate.size() <= 300))
+          && (!changed.hasAny(['tipTemplate']) || d.tipTemplate in ['universal', 'PF', 'PJ']);
       }
 
       match /dosare/{dosarId} {
