@@ -85,7 +85,8 @@ describe('buildBeneficiariRealiDocxData', () => {
     const row: BrxBeneficiarRow = { asociatIndex: 1, temei: 'a1', descriere: '' }
     const state: BeneficiariRealiFormState = { ...EMPTY_BRX_STATE, beneficiari: [row] }
     const { groups } = buildBeneficiariRealiDocxData(state, client)
-    expect(groups.BENEFICIARI_REALI[0].CETATENIA).toBe('franceză')
+    // Șablonul scrie „cetățean {{CETATENIA}}”: fără CNP sau sex în fișă, adjectivul se acordă cu „cetățean”.
+    expect(groups.BENEFICIARI_REALI[0].CETATENIA).toBe('francez')
   })
 
   it('asociatIndex stale (clientul și-a schimbat lista de asociați după adăugarea rândului) -> rândul rămâne prezent, marcat explicit, nu gol/dispărut', () => {

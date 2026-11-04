@@ -75,6 +75,8 @@ PERSON_FIELDS = {
     "DATA_NASTERII": "Data nașterii",
     "LOCUL_NASTERII": "Locul nașterii",
     "CETATENIA": "Cetățenia",
+    # După „cetățean …”: cetățenia ca adjectiv acordat cu persoana („cetățean român” / „cetățeană română”), în aplicație.
+    "CETATENIA_ACORD": "Cetățenia (acordată: român / română)",
     "SERIE_ACT": "Seria actului de identitate",
     "NR_ACT": "Numărul actului de identitate",
     "SERIE_NUMAR": "Seria și numărul actului",
@@ -372,7 +374,11 @@ def suggest(before: str, after: str, para_before: str, state: _State, pi: int = 
         return person("ADRESA")
     if re.search(r"\bjud\.?\s*$", b) and state.last_scope == "person":
         return person("JUDET", "medium")
-    if re.search(r"cetatenia\s*$", b) or re.search(r"cetatean\s*$", b):
+    # „cetățean ……” (și „cetățeană”, „cetățean/ă”, „cetățean(ă)”, „cetățeanul”): locul liber e un adjectiv, care
+    # se acordă cu persoana; „cetățenia/cetățenie/naționalitatea ……”: substantiv, forma de bază („română”).
+    if re.search(r"\bcetatean(?:a|ul|/a|\(a\))?\s*:?\s*$", b):
+        return person("CETATENIA_ACORD", "medium")
+    if re.search(r"\b(?:cetatenia|cetatenie|nationalitatea|nationalitate)\s*:?\s*$", b):
         return person("CETATENIA", "medium")
 
     # — societate —
@@ -410,7 +416,7 @@ def suggest(before: str, after: str, para_before: str, state: _State, pi: int = 
         return person("PARTI_SOCIALE")
 
     # — persoane: nume —
-    identity_follows = bool(re.match(r"^\s*,\s*(?:cetatean|cetatenia|domiciliat|nascut|identificat)", a))
+    identity_follows = bool(re.match(r"^\s*,\s*(?:cetatean|cetaten|nationalitat|domiciliat|nascut|identificat)", a))
     if identity_follows:                               # nume urmat de date de identitate = persoană definită aici
         return person("NUME_COMPLET", "high", new_person=True)
     if _MENTION_TRIGGER_RE.search(b):
@@ -678,7 +684,7 @@ def analyze(docx_bytes: bytes) -> list[dict]:
             # deloc (bug real, găsit pe un document real: comodantul cădea pe implicitul ASOCIAT, în loc de
             # COMODANT — „în calitate de COMODANT”, scrisă la finalul clauzei, nu mai apuca să se aplice).
             starts_by_identity = not cb.strip(" \t\n\r,") and bool(
-                re.match(r"^\s*,\s*(?:cetatean|cetatenia|domiciliat|nascut|identificat)", ca))
+                re.match(r"^\s*,\s*(?:cetatean|cetaten|nationalitat|domiciliat|nascut|identificat)", ca))
             if starts_by_identity or _MENTION_TRIGGER_RE.search(cb):
                 clause_starts.append(cm.start())
         clause_role: dict[int, str] = {}

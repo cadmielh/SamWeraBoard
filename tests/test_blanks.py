@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from docx import Document
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -254,3 +255,22 @@ def test_punctul_final_de_propozitie_dupa_elipsa_ramane_neschimbat():
     out = fill_docx(tpl, {found[0]["tag"]: "Popescu Ion"})
     text = Document(io.BytesIO(out)).paragraphs[0].text
     assert text == "Reprezentantul legal va fi asociatul Popescu Ion. Reprezentarea este generală."
+
+
+@pytest.mark.parametrize("before, field", [
+    ("Ion Pop, cetățean ", "CETATENIA_ACORD"),
+    ("Ana Pop, cetățeană ", "CETATENIA_ACORD"),
+    ("Ion Pop, cetățean/ă ", "CETATENIA_ACORD"),
+    ("Ion Pop, cetățean(ă) ", "CETATENIA_ACORD"),
+    ("Ion Pop, cetățenia ", "CETATENIA"),
+    ("Ion Pop, cetățenia: ", "CETATENIA"),
+    ("Ion Pop, de cetățenie ", "CETATENIA"),
+    ("Ion Pop, având cetăţenia ", "CETATENIA"),
+    ("Ion Pop, naționalitatea ", "CETATENIA"),
+])
+def test_cetatenia_recunoscuta_in_toate_formularile(before, field):
+    """După „cetățean” locul liber e un adjectiv acordat cu persoana; după „cetățenia” e forma de bază.
+    Înainte, „cetățenia:”, „de cetățenie”, „cetățeană” erau luate drept numele persoanei."""
+    state = blanks._State()
+    blanks.suggest("……, CNP 123, ", "", "", state)
+    assert blanks.suggest(before, ", domiciliat în", "", state)["field"] == field

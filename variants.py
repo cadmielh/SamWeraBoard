@@ -29,7 +29,7 @@ _TAG_RE = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
 
 # Câmpurile persoanei singulare (fără prefix), ca în lib/placeholders.ts (ID_FIELD_MAP)
 SINGULAR_PERSON_TAGS = {
-    "CNP", "NUME", "PRENUME", "SERIE_NUMAR", "DATA_NASTERII", "LOCUL_NASTERII", "CETATENIA", "ADRESA", "JUDET",
+    "CNP", "NUME", "PRENUME", "SERIE_NUMAR", "DATA_NASTERII", "LOCUL_NASTERII", "CETATENIA", "CETATENIA_ACORD", "ADRESA", "JUDET",
     "EMISA_DE", "VALABILA_DE_LA", "VALABILA_PANA_LA",
 }
 

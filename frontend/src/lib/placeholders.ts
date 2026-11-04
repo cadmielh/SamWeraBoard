@@ -4,6 +4,7 @@ import { persoanaToIDFields } from './idFields'
 import { parsePercent } from './cota'
 import { formatAdresa, splitSerieNumar } from './adresa'
 import { personSex } from './sex'
+import { cetatenieAcord, cetatenieText } from './cetatenie'
 import { findCaenGrupaDescriere } from '../data/caenGrupe'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
@@ -70,6 +71,8 @@ function persoanaToMap(p: Persoana, prefix: string): Record<string, string> {
   // Alias retro-compatibil: șabloane importate înainte de redenumirea SERIE → SERIE_ACT
   // au tag-ul vechi scris literal în fișier; fără alias ar rămâne goale definitiv.
   out[`{{${prefix}_SERIE}}`] = serie
+  out[`{{${prefix}_CETATENIA}}`] = cetatenieText(p.cetatenia)
+  out[`{{${prefix}_CETATENIA_ACORD}}`] = cetatenieAcord(p.cetatenia, personSex(p))
   return out
 }
 
@@ -78,6 +81,8 @@ function idFieldsToSingleMap(f: IDFields): Record<string, string> {
   for (const [key, field] of Object.entries(ID_FIELD_MAP)) {
     out[`{{${key}}}`] = f[field] ?? ''
   }
+  out['{{CETATENIA}}'] = cetatenieText(f.cetatenia)
+  out['{{CETATENIA_ACORD}}'] = cetatenieAcord(f.cetatenia, personSex({ cnp: f.cnp }))
   return out
 }
 
@@ -117,7 +122,7 @@ export function resolvePersons(
 }
 
 const KNOWN_AUTO_ROLES = new Set(['ASOCIAT', 'ADMINISTRATOR', 'MEMBRU_IF'])
-const PERSOANA_FIELD_NAMES = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'SERIE_ACT', 'NR_ACT', 'SERIE'])
+const PERSOANA_FIELD_NAMES = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD'])
 
 /**
  * Roluri de persoană „noi”, în afara Asociat/Administrator/Membru IF (care au deja completare automată din
@@ -361,6 +366,9 @@ export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: 
   out.NR_ACT = numar
   // Alias retro-compatibil: vezi persoanaToMap mai sus.
   out.SERIE = serie
+  // Cetățenia: forma de bază („română”) și cea acordată cu persoana, după „cetățean …” (vezi lib/cetatenie.ts).
+  out.CETATENIA = cetatenieText(p.cetatenia)
+  out.CETATENIA_ACORD = cetatenieAcord(p.cetatenia, personSex(p))
   if (opts.capitalSocialTotal != null) {
     const capitalAsociat = opts.capitalSocialTotal * parsePercent(p.cotaParticipare) / 100
     out.CAPITAL_SOCIAL = formatNumber(capitalAsociat)
@@ -396,7 +404,7 @@ export interface ReadinessResult {
 // SERIE_ACT/NR_ACT: calculate separat (splitSerieNumar), nu vin din PERSOANA_FIELD_MAP — trebuie adăugate explicit,
 // altfel checkReadiness nu le recunoaște ca fiind câmpuri per-persoană dintr-un {{#ASOCIATI}}/{{#ADMINISTRATORI}}
 // și le raportează mereu ca lipsă, chiar și cu Serie & Nr. CI completat la toate persoanele.
-const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'SERIE_ACT', 'NR_ACT', 'SERIE'])
+const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD'])
 
 export function checkReadiness(
   placeholders: string[],
@@ -442,6 +450,7 @@ const FRIENDLY_FIELD: Record<string, string> = {
   DATA_NASTERII: 'Data nașterii',
   LOCUL_NASTERII: 'Locul nașterii',
   CETATENIA: 'Cetățenia',
+  CETATENIA_ACORD: 'Cetățenia',
   SERIE_NUMAR: 'Serie & Nr. CI',
   SERIE_ACT: 'Serie CI',
   SERIE: 'Serie CI',

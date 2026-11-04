@@ -7,6 +7,8 @@ import type { Client } from '../types'
 import { splitSerieNumar } from './adresa'
 import { persoanaToSingularMap } from './placeholders'
 import { EMPTY_PERSOANA } from './clienti'
+import { cetatenieAcord } from './cetatenie'
+import { personSex } from './sex'
 
 export interface BrxReprezentantCandidate {
   label: string
@@ -130,7 +132,7 @@ export function buildBeneficiariRealiDocxData(
       // {{...}} în document — același motiv ca la splitDigitBoxes/anexa1Filler.ts).
       const p = asociati[row.asociatIndex]
       const item: Record<string, string> = p
-        ? { ...persoanaToSingularMap(p), CETATENIA: p.cetatenia || 'română' }
+        ? { ...persoanaToSingularMap(p), CETATENIA: cetatenieAcord(p.cetatenia || 'română', personSex(p)) }  // șablonul: „cetățean {{CETATENIA}}”
         : { ...persoanaToSingularMap(EMPTY_PERSOANA), NUME: '(asociat indisponibil)' }
       item.DESCRIERE_CONTROL = row.descriere || ' '
       for (const opt of BRX_TEMEI_OPTIONS) {
