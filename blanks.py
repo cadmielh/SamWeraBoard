@@ -117,9 +117,10 @@ def _paragraphs(doc):
         t = stack.pop(0)
         for r in t.rows:
             for c in r.cells:
-                if id(c._tc) in seen:
+                # Elementul însuși, nu id(): un proxy eliberat își lasă id-ul altei celule, care ar fi sărită
+                if c._tc in seen:
                     continue
-                seen.add(id(c._tc))
+                seen.add(c._tc)
                 out.extend(c.paragraphs)
                 stack.extend(c.tables)
     return out

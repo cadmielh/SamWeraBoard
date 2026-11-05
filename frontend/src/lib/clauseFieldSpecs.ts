@@ -13,7 +13,7 @@
  */
 
 export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruOpen' | 'punctLucruClose' | 'majorareCapital' | 'majorareCapitalMulti' | 'identitateAsociat'
-  | 'asociatiActualizati' | 'administratoriActualizati' | 'durataSocietate' | 'durataMandat'
+  | 'asociatiActualizati' | 'administratoriActualizati' | 'durataSocietate' | 'durataMandat' | 'lichidareAsociati'
 
 export interface ClauseFieldSpec {
   /** Placeholdere plate pe care widget-ul le completează direct. */
@@ -92,6 +92,14 @@ export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
   DURATA_MANDAT_ADMINISTRATOR: {
     fields: ['DURATA_MANDAT'],
     widget: 'durataMandat',
+  },
+  // „… care urmează să revină: {{#LICHIDARE_ASOCIATI}}{{COTA_PARTICIPARE}} către {{NUME}};{{/LICHIDARE_ASOCIATI}}” —
+  // asociații bifați, cu cota editabilă (nu blocul {{#ASOCIATI}}, care i-ar lua pe toți, cu cota din fișă)
+  MOD_DE_LICHIDARE: {
+    fields: [],
+    groupName: 'LICHIDARE_ASOCIATI',
+    groupFields: ['NUME', 'COTA_PARTICIPARE'],
+    widget: 'lichidareAsociati',
   },
 }
 

@@ -67,7 +67,7 @@ def test_dash_leaves_no_raw_tags_and_keeps_blank_row_cells():
 
 def test_act_constitutiv_durata_societatii_fara_data_inmatricularii():
     """Art. „Durata societății”: 99 de ani, fără „începând cu data înmatriculării” (formularea cerută de proprietar)."""
-    text = _all_text((TEMPLATE.parent / "Act Constitutiv PJ - actualizare.docx").read_bytes())
+    text = _all_text((TEMPLATE.parent / "Act Constitutiv.docx").read_bytes())
     assert "Durata de funcţionare a societăţii este pe o perioadă de 99 de ani." in text
     assert "perioada de 99 de ani, începând cu data înmatriculării" not in text
 
@@ -75,7 +75,7 @@ def test_act_constitutiv_durata_societatii_fara_data_inmatricularii():
 def test_clauzele_de_durata_fara_perioada_nelimitata():
     """Clauzele de modificare a duratei (societate, mandat administrator) spun doar „într-o perioadă de 99 de ani”."""
     base = TEMPLATE.parent
-    for name in ("2 Decizia Asociatului unic.docx", "3 Hot AGA.docx"):
+    for name in ("Decizia Asociatului Unic.docx", "Hotărârea AGA.docx"):
         text = _all_text((base / name).read_bytes())
         assert "Se aprobă modificarea duratei societății într-o perioadă de 99 de ani." in text, name
         assert "Se aprobă modificarea duratei mandatului de administrator într-o perioadă de 99 de ani." in text, name
@@ -85,7 +85,7 @@ def test_clauzele_de_durata_fara_perioada_nelimitata():
 def test_clauza_actualizare_caen_rev3_cu_data_de_azi_si_liste_de_coduri():
     """„Actualizare cod CAEN REV3”: data de azi, „astfel:”, apoi codul principal și codurile secundare pe câte un rând."""
     base = TEMPLATE.parent
-    for name in ("2 Decizia Asociatului unic.docx", "3 Hot AGA.docx"):
+    for name in ("Decizia Asociatului Unic.docx", "Hotărârea AGA.docx"):
         text = _all_text((base / name).read_bytes())
         assert "din data de {{DATA_AZI}}, astfel:" in text, name
         assert "Activitatea principală:\t{{CAEN_PRINCIPAL_COD}}" in text, name
@@ -97,7 +97,7 @@ def test_clauza_caen_rev3_se_completeaza_la_generare():
     import re
     from doc_filler import list_clauses_in_docx
     base = TEMPLATE.parent
-    for name in ("2 Decizia Asociatului unic.docx", "3 Hot AGA.docx"):
+    for name in ("Decizia Asociatului Unic.docx", "Hotărârea AGA.docx"):
         raw = (base / name).read_bytes()
         rev3 = next(c for c in list_clauses_in_docx(raw) if "REV3" in c["label"].upper().replace(" ", ""))
         assert set(rev3["placeholders"]) == {"{{DATA_AZI}}", "{{CAEN_PRINCIPAL_COD}}", "{{CAEN_SECUNDARE_COD}}"}, name
@@ -112,7 +112,7 @@ def test_clauza_caen_rev3_se_completeaza_la_generare():
 def test_liniile_cu_coduri_caen_nu_sunt_bold():
     """„Activitatea principală/secundară” și codurile CAEN se scriu normal (doar „Art. N” rămâne bold, ca la celelalte clauze)."""
     base = TEMPLATE.parent
-    for name in ("2 Decizia Asociatului unic.docx", "3 Hot AGA.docx"):
+    for name in ("Decizia Asociatului Unic.docx", "Hotărârea AGA.docx"):
         doc = Document(io.BytesIO((base / name).read_bytes()))
         lines = [p for p in doc.paragraphs if p.text.lstrip("\t").startswith(("Activitatea principală:", "Activitatea secundară:"))]
         assert len(lines) == 2, name
@@ -123,7 +123,7 @@ def test_liniile_cu_coduri_caen_nu_sunt_bold():
 def test_liniile_cu_coduri_caen_sunt_aliniate_cu_indentare_suspendata():
     """Eticheta începe la un tab de margine, iar valorile (și rândurile următoare, dacă lista e lungă) încep aliniat, după etichetă."""
     base = TEMPLATE.parent
-    for name in ("2 Decizia Asociatului unic.docx", "3 Hot AGA.docx"):
+    for name in ("Decizia Asociatului Unic.docx", "Hotărârea AGA.docx"):
         doc = Document(io.BytesIO((base / name).read_bytes()))
         lines = [p for p in doc.paragraphs if p.text.startswith(("Activitatea principală:", "Activitatea secundară:"))]
         assert len(lines) == 2, name
@@ -137,7 +137,7 @@ def test_liniile_cu_coduri_caen_sunt_aliniate_cu_indentare_suspendata():
 
 def test_tabul_dintre_eticheta_si_coduri_ramane_dupa_completare():
     from doc_filler import list_clauses_in_docx
-    raw = (TEMPLATE.parent / "2 Decizia Asociatului unic.docx").read_bytes()
+    raw = (TEMPLATE.parent / "Decizia Asociatului Unic.docx").read_bytes()
     rev3 = next(c for c in list_clauses_in_docx(raw) if "REV3" in c["label"].upper().replace(" ", ""))
     out = fill_docx(raw, {"{{DATA_AZI}}": "15.07.2026", "{{CAEN_PRINCIPAL_COD}}": "7020", "{{CAEN_SECUNDARE_COD}}": "4100, 4311"}, None, [rev3["tag"]], None)
     text = _all_text(out)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parteSocialaError, valoareParteSociala } from './cota'
+import { cotaCuProcent, parteSocialaError, valoareParteSociala } from './cota'
 
 describe('valoarea unei părți sociale', () => {
   it('implicit 10 lei, inclusiv pentru clienții fără valoare salvată', () => {
@@ -23,5 +23,14 @@ describe('valoarea unei părți sociale', () => {
     expect(parteSocialaError(200, 0)).toMatch(/număr întreg/)
     expect(parteSocialaError(null, 10)).toBe('')
     expect(parteSocialaError(200, null)).toBe('')
+  })
+})
+
+describe('cotaCuProcent', () => {
+  it('adaugă „%” doar unui număr simplu', () => {
+    expect(cotaCuProcent('50')).toBe('50%')
+    expect(cotaCuProcent(' 33,33 ')).toBe('33,33%')
+    expect(cotaCuProcent('50%')).toBe('50%')
+    expect(cotaCuProcent('')).toBe('')
   })
 })

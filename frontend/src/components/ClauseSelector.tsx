@@ -16,6 +16,7 @@ import ModificareIdentitateAsociatFields from './clauses/ModificareIdentitateAso
 import ActualizarePersoaneFields from './clauses/ActualizarePersoaneFields'
 import DurataFields from './clauses/DurataFields'
 import CaenFieldInput from './clauses/CaenFieldInput'
+import LichidareAsociatiFields from './clauses/LichidareAsociatiFields'
 import { findCaenDescriere } from '../data/caen'
 
 export interface ClauseSelectorValue {
@@ -256,6 +257,9 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                 )}
                 {useWidget && spec.widget === 'durataMandat' && (
                   <DurataFields tipuri={['ani', 'data']} onChange={v => setField(c.tag, 'DURATA_MANDAT', v)} />
+                )}
+                {useWidget && spec.widget === 'lichidareAsociati' && (
+                  <LichidareAsociatiFields client={client} onRows={rows => setGroup(c.tag, spec.groupName!, rows)} />
                 )}
                 {useWidget && spec.widget === 'identitateAsociat' && (
                   <ModificareIdentitateAsociatFields

@@ -17,15 +17,24 @@ MUST_IGNORE = [
     "credentials.json", "token.json", ".emulator-data-google", "firebase-export-abc123",   # chei și date reale de test
     "migrare.zip", "firestore-debug.log",
     "fisiere_template/SabloaneAvocatTavi", "fisiere_template/3 Hot AGA_original.docx", "fisiere_template/Facturare_Sami_Adi.xlsx",   # documente reale ale unor clienți (CNP, adrese), nefolosite de aplicație
+    "fisiere_template/.golden/hotarare_aga--pj_doi_asociati.txt",   # versiunile salvate ale testului de regresie (tests/test_golden_templates.py)
+    "fisiere_template/Șabloane Dorothea - Actus Consult/MODEL.docx",   # orice subfolder = șabloanele unui client, nu ale aplicației
 ]
 MUST_SHIP = ["app.py", "main.py", "authz.py", "billing.py", "billing_api.py", "billing_webhook_app.py", "vault.py", "ratelimit.py", "workspace_deletion.py", "templates_api.py", "template_safety.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
              "fisiere_template/registry.json", "fonts/DejaVuSans.ttf", "local_extractor.py"]
 
 
+def test_every_builtin_template_ships():
+    """Fiecare fișier din registru (ex. după o redenumire) ajunge în pachet — altfel funcția nu pornește."""
+    for e in json.loads((ROOT / "fisiere_template" / "registry.json").read_text(encoding="utf-8")):
+        assert not ignored(f"fisiere_template/{e['filename']}"), e["filename"]
+
+
 def ignored(path: str) -> bool:
     parts = path.split("/")
     for pat in IGNORE:
-        if fnmatch.fnmatch(path, pat) or any(fnmatch.fnmatch(p, pat) for p in parts):
+        # Firebase CLI compară tiparele cu calea absolută — „**/x/*/**” prinde și cu un „/” în față
+        if fnmatch.fnmatch(path, pat) or fnmatch.fnmatch("/" + path, pat) or any(fnmatch.fnmatch(p, pat) for p in parts):
             return True
     return False
 

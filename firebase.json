@@ -274,6 +274,8 @@
         "*.pem",
         "*.key",
         "SabloaneAvocatTavi",
+        "**/fisiere_template/*/**",
+        ".golden",
         "*_original.docx",
         "*.xlsx",
         ".emulator-data",

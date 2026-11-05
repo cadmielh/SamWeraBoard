@@ -97,14 +97,16 @@ def _iter_all_tables(container, _seen: set | None = None):
     underlying `<w:tc>` XML element referenced once per spanned grid
     column/row by python-docx's `row.cells` — walking it naively would visit
     (and, for row-group expansion, mutate) the same nested table 2-3x. `_seen`
-    dedupes by the nested table's own XML element identity.
+    dedupes by the nested table's own XML element identity — the element itself, kept in the set, not its
+    id(): a proxy nobody references is freed and its id() reused by another table's proxy, which would then
+    be skipped as "already seen" (a whole table left unfilled, depending on memory layout).
     """
     if _seen is None:
         _seen = set()
     for table in container.tables:
-        if id(table._tbl) in _seen:
+        if table._tbl in _seen:
             continue
-        _seen.add(id(table._tbl))
+        _seen.add(table._tbl)
         yield table
         for row in table.rows:
             for cell in row.cells:

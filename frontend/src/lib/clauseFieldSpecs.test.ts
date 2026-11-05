@@ -4,7 +4,7 @@ import { findClauseSpec } from './clauseFieldSpecs'
 const ph = (...keys: string[]) => keys.map(k => `{{${k}}}`)
 const widget = (tag: string, keys: string[]) => findClauseSpec(tag, ph(...keys))?.widget ?? null
 
-// Clauzele din șabloanele de bază (list_clauses_in_docx pe „2 Decizia Asociatului unic” / „3 Hot AGA”) — widget-ul lor
+// Clauzele din șabloanele de bază (list_clauses_in_docx pe „Decizia Asociatului Unic” / „Hotărârea AGA”) — widget-ul lor
 // nu trebuie să se schimbe când potrivirea după câmpuri se aplică și clauzelor cu nume necunoscute.
 describe('findClauseSpec — șabloanele de bază rămân neschimbate', () => {
   it.each([
@@ -40,5 +40,13 @@ describe('findClauseSpec — clauze cu alt nume, recunoscute după câmpuri', ()
 
   it('două spec-uri potrivite în aceeași clauză → randare generică, ca să nu se piardă câmpuri', () => {
     expect(widget('DURATE', ['DURATA_SOCIETATE', 'DURATA_MANDAT'])).toBeNull()
+  })
+})
+
+describe('findClauseSpec — mod de lichidare', () => {
+  it('lista de asociați bifați apare doar în versiunea nouă a clauzei (blocul {{#LICHIDARE_ASOCIATI}})', () => {
+    expect(widget('MOD_DE_LICHIDARE', ['CAPITAL_SOCIAL_TOTAL', 'COTA_PARTICIPARE', 'NUME'])).toBe('lichidareAsociati')
+    // versiunea veche, cu {{#ASOCIATI}} completat automat: câmpurile blocului nu sunt raportate → fără widget
+    expect(widget('MOD_DE_LICHIDARE', ['CAPITAL_SOCIAL_TOTAL'])).toBeNull()
   })
 })

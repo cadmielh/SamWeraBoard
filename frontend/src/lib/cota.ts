@@ -12,6 +12,11 @@ export function parsePercent(s: string): number {
   return m ? parseFloat(m[1].replace(',', '.')) : 0
 }
 
+/** Cota tastată doar ca număr primește „%” (în fișă cotele sunt „50%”, iar șabloanele nu adaugă semnul). */
+export function cotaCuProcent(v: string): string {
+  return /^\s*\d+(?:[.,]\d+)?\s*$/.test(v) ? `${v.trim()}%` : v.trim()
+}
+
 /** Suma cotelor unei liste de asociați — ar trebui să fie mereu 100%. */
 export function sumCota(values: string[]): number {
   return Math.round(values.reduce((sum, v) => sum + parsePercent(v), 0) * 100) / 100

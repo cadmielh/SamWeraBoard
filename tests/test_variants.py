@@ -272,7 +272,7 @@ def test_bloc_repetitiv_fiecare_asociat_cu_sexul_lui():
 
 
 def test_actul_constitutiv_real_asociat_unic_vs_asociati():
-    raw = (TPL / "Act Constitutiv PJ - actualizare.docx").read_bytes()
+    raw = (TPL / "Act Constitutiv.docx").read_bytes()
     unic = _text(fill_docx(raw, {}, None, None, None, {"asociati": 1, "administratori": 1, "tip": "PJ", "sex": {}}))
     assert "unic/asociați" not in unic and "Administratorul/Administratorii" not in unic and "va/vor" not in unic
     assert "asociat unic pe:" in unic and "Administratorul reprezintă" in unic
