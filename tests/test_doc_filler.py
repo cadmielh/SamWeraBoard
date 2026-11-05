@@ -267,6 +267,26 @@ def test_list_repeat_groups_in_docx_fara_blocuri_repetitive():
     assert df.list_repeat_groups_in_docx(_build_docx(["Text simplu, fără niciun bloc {{#TAG}}."])) == []
 
 
+def test_list_repeat_group_fields_in_docx_campurile_fiecarui_bloc():
+    """Cetățenia cerută doar la asociați nu apare la administratori: verificarea dinainte de generare nu mai cere
+    cetățenia unui administrator care nu apare în blocul cu cetățenie."""
+    template = _build_docx([
+        "{{#ASOCIATI}}", "{{NUME}}, cetățean {{CETATENIA_ACORD}}", "{{/ASOCIATI}}",
+        "Sediul: {{SOCIETATE_SEDIU}}",
+        "{{#ADMINISTRATORI}}", "{{NUME}} {{CNP}}", "{{/ADMINISTRATORI}}",
+        "{{#ASOCIATI}}", "{{INDEX}}. {{PRENUME}}", "{{/ASOCIATI}}",
+    ])
+    assert df.list_repeat_group_fields_in_docx(template) == {
+        "ADMINISTRATORI": ["CNP", "NUME"],
+        "ASOCIATI": ["CETATENIA_ACORD", "INDEX", "NUME", "PRENUME"],
+    }
+
+
+def test_list_repeat_group_fields_in_docx_randuri_de_tabel():
+    template = _build_docx_with_table([["{{#CAEN_SEDIU}}"], ["{{CAEN}}", "{{CAEN_DESC}}"], ["{{/CAEN_SEDIU}}"]])
+    assert df.list_repeat_group_fields_in_docx(template) == {"CAEN_SEDIU": ["CAEN", "CAEN_DESC"]}
+
+
 def test_fill_docx_nested_repeat_group_inside_a_clause():
     """Un bloc {{#TAG}} imbricat în interiorul unei clauze (ex. structura
     rezultată după cesiune) e expandat corect înainte de filtrarea clauzelor."""

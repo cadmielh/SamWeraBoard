@@ -842,6 +842,37 @@ def list_repeat_groups_in_docx(template_bytes: bytes) -> list[str]:
     return sorted(found)
 
 
+_FIELD_RE = re.compile(r"\{\{([^}#/][^}]*)\}\}")
+
+
+def list_repeat_group_fields_in_docx(template_bytes: bytes) -> dict[str, list[str]]:
+    """Etichetele din interiorul fiecărui bloc {{#TAG}}…{{/TAG}} (ex. {"ASOCIATI": ["CETATENIA_ACORD", "NUME", …]}),
+    din paragrafe și din rândurile de tabel. Frontendul verifică un câmp per-persoană doar la persoanele
+    blocului care îl conține: cetățenia cerută doar la asociați nu mai e raportată lipsă pentru un administrator."""
+    doc = Document(io.BytesIO(template_bytes))
+    fields: dict[str, set[str]] = {}
+
+    def scan(texts):
+        open_tag = None
+        for text in texts:
+            m = _REPEAT_GROUP_START_RE.match(text)
+            if m and m.group(1) != "CLAUZE":
+                open_tag = m.group(1)
+                fields.setdefault(open_tag, set())
+            elif open_tag and text == f"{{{{/{open_tag}}}}}":
+                open_tag = None
+            elif open_tag:
+                fields[open_tag].update(_FIELD_RE.findall(text))
+
+    scan(_para_text(p) for p in doc.paragraphs)
+    for table in _iter_all_tables(doc):
+        scan(_row_text(r) for r in table.rows)
+        for row in table.rows:
+            for cell in _row_distinct_cells(row):
+                scan(_para_text(p) for p in cell.paragraphs)
+    return {tag: sorted(names) for tag, names in sorted(fields.items())}
+
+
 def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
     """Return all unique {{PLACEHOLDER}} markers found in the template.
 

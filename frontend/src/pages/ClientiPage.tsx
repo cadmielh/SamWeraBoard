@@ -3,7 +3,7 @@ import { FixedSizeList } from 'react-window'
 import type { Client } from '../types'
 import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
-import { useClienti, fetchAllClienti } from '../lib/clienti'
+import { useClienti, fetchAllClienti, missingRegistrationFields } from '../lib/clienti'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 import { formatAdresa } from '../lib/adresa'
 import { toDateSafe, formatDateRo } from '../lib/dates'
@@ -134,7 +134,11 @@ function renderCellContent(c: Client, key: string): React.ReactNode {
     }
     case 'codFiscal': {
       const v = getColValue(c, 'codFiscal')
-      return v ? <span style={{ fontFamily: 'monospace', fontSize: '.8125rem' }}>{v}</span> : null
+      if (v) return <span style={{ fontFamily: 'monospace', fontSize: '.8125rem' }}>{v}</span>
+      const lipsa = missingRegistrationFields(c)
+      return lipsa.length > 0
+        ? <span className="badge badge-infiintare" title={`Firmă în înființare: lipsesc ${lipsa.join(' și ')}`}>În înființare</span>
+        : null
     }
     case 'tva': {
       const tva = getColValue(c, 'tva')

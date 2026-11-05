@@ -2,7 +2,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import type { Client, Persoana, ScannedPerson, ToastItem } from '../types'
 import { persoanaToIDFields, idFieldsToPersoana } from '../lib/idFields'
 import { EMPTY_PERSOANA, missingCompanyFields } from '../lib/clienti'
-import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
+import { equalShare, sumCota, isCotaTotalValid, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
 import PersonScanModal from './PersonScanModal'
 import CompanyInfoForm, { type CompanyData, type CompanyInfoFormHandle } from './CompanyInfoForm'
 import IconTrash from './IconTrash'
@@ -23,12 +23,14 @@ function companyDataFromClient(client: Client): CompanyData {
     formaJuridica: client.formaJuridica,
     codFiscal: client.codFiscal,
     nrRegistrul: client.nrRegistrul,
+    inInfiintare: client.inInfiintare ?? false,
     sediuSocial: client.sediuSocial,
     caenCod: client.caenCod,
     caenDescriere: client.caenDescriere,
     caenSecundare: client.caenSecundare ?? [],
     puncteLucru: client.puncteLucru ?? [],
     capitalSocial: client.capitalSocial,
+    valoareParteSociala: client.valoareParteSociala ?? VALOARE_PARTE_SOCIALA_DEFAULT,
   }
 }
 

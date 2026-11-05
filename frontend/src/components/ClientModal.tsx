@@ -4,17 +4,18 @@ import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, missingCompanyFields, typ
 import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
-import { equalShare, sumCota, isCotaTotalValid } from '../lib/cota'
+import { equalShare, sumCota, isCotaTotalValid, parteSocialaError, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
 import { useApp } from '../AppContext'
 import { formatDateRo } from '../lib/dates'
 import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet } from '../lib/adresa'
-import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
 import Modal from './Modal'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import SediuSocialFields from './SediuSocialFields'
+import InfiintareCheckbox, { INFIINTARE_PLACEHOLDER } from './InfiintareCheckbox'
+import CapitalSocialFields from './CapitalSocialFields'
 
 interface Props {
   initial: Client | null
@@ -59,6 +60,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
       formaJuridica: initial.formaJuridica,
       codFiscal: initial.codFiscal,
       nrRegistrul: initial.nrRegistrul,
+      inInfiintare: initial.inInfiintare ?? false,
       sediuSocial: initial.sediuSocial,
       sediuSocialAnaf: initial.sediuSocialAnaf ?? null,
       sediuSocialAnafText: initial.sediuSocialAnafText ?? '',
@@ -77,6 +79,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
       eFactura: initial.eFactura ?? false,
       administratoriAnaf: initial.administratoriAnaf ?? [],
       capitalSocial: initial.capitalSocial ?? null,
+      valoareParteSociala: initial.valoareParteSociala ?? VALOARE_PARTE_SOCIALA_DEFAULT,
       dataAnafActualizat: initial.dataAnafActualizat,
       notite: initial.notite,
       asociati: [...initial.asociati],
@@ -102,6 +105,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
   const nrRegistrulRef = useRef<HTMLInputElement>(null)
   const sediuSocialRef = useRef<HTMLInputElement>(null)
   const capitalSocialRef = useRef<HTMLInputElement>(null)
+  const valoareParteRef = useRef<HTMLInputElement>(null)
 
   const set = (key: keyof ClientInput, val: unknown) => setForm(prev => ({ ...prev, [key]: val }))
   const setSediu = (patch: Partial<ClientInput['sediuSocial']>) =>
@@ -272,10 +276,11 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     { invalid: !form.denumire.trim(), ref: denumireRef, message: 'denumirea' },
     ...(!isPF ? [
       { invalid: !form.formaJuridica.trim(), ref: formaJuridicaRef, message: 'forma juridică' },
-      { invalid: !cifTrimmed || !!cifError, ref: codFiscalRef, message: 'CIF' },
-      { invalid: !form.nrRegistrul.trim(), ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
+      { invalid: !form.nrRegistrul.trim() && !form.inInfiintare, ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
+      { invalid: (!cifTrimmed && !form.inInfiintare) || !!cifError, ref: codFiscalRef, message: 'CIF' },
       { invalid: !formatAdresa(form.sediuSocial).trim(), ref: sediuSocialRef, message: 'sediul social' },
       { invalid: form.capitalSocial == null || form.capitalSocial <= 0, ref: capitalSocialRef, message: 'capitalul social' },
+      { invalid: !!parteSocialaError(form.capitalSocial, form.valoareParteSociala), ref: valoareParteRef, message: 'valoarea unei părți sociale' },
     ] : [
       { invalid: !!cifError, ref: codFiscalRef, message: 'CIF valid' },
     ]),
@@ -328,9 +333,6 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
   const removePunctLucru = (i: number) => {
     const arr = [...form.puncteLucru]; arr.splice(i, 1); set('puncteLucru', arr)
   }
-
-  // Părți sociale — derivat din capitalul social (valoare nominală minimă 10 lei/parte), nu se stochează separat
-  const partiSocialeTotal = form.capitalSocial != null ? form.capitalSocial / 10 : null
 
   const addAsociat = (p: Persoana) => {
     const prevEqual = equalShare(form.asociati.length)
@@ -669,50 +671,60 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
           {/* ── Bloc Date entitate (ANAF/manual) — PF autorizată și PJ ── */}
           <SectionCard title={isPF ? 'Date entitate (ANAF/manual)' : undefined}>
             <div className="form-grid">
-              {/* Denumire firmă */}
-              <div className="field full">
-                <label className="field-label">
-                  Denumire <span style={{ color: 'var(--r500)' }}>*</span>
-                </label>
-                <input ref={denumireRef} className="field-input" autoFocus={!isPF} value={form.denumire}
-                  onChange={e => { set('denumire', e.target.value); if (denumireError) setDenumireError('') }}
-                  placeholder={isPF ? 'ex: Popescu Ion PFA' : 'Denumirea firmei'}
-                  aria-invalid={!!denumireError}
-                  required />
-                {denumireError && <span className="field-error">{denumireError}</span>}
+              {/* Denumire + forma juridică pe același rând (forma, îngustă, doar la PJ) */}
+              <div className={`full ${isPF ? '' : 'form-row-denumire'}`}>
+                {/* Denumire firmă */}
+                <div className="field">
+                  <label className="field-label">
+                    Denumire <span style={{ color: 'var(--r500)' }}>*</span>
+                  </label>
+                  <input ref={denumireRef} className="field-input" autoFocus={!isPF} value={form.denumire}
+                    onChange={e => { set('denumire', e.target.value); if (denumireError) setDenumireError('') }}
+                    placeholder={isPF ? 'ex: Popescu Ion PFA' : 'Denumirea firmei'}
+                    aria-invalid={!!denumireError}
+                    required />
+                  {denumireError && <span className="field-error">{denumireError}</span>}
+                </div>
+
+                {/* Forma juridică — doar PJ */}
+                {!isPF && (
+                  <div className="field">
+                    <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
+                    <select ref={formaJuridicaRef} className="field-input" value={form.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
+                      <option value="">— selectați —</option>
+                      {FORME_JURIDICE_PJ.map(f => <option key={f}>{f}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
 
-              {/* Forma juridică — doar PJ */}
-              {!isPF && (
-                <div className="field">
-                  <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
-                  <select ref={formaJuridicaRef} className="field-input" value={form.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
-                    <option value="">— selectați —</option>
-                    {FORME_JURIDICE_PJ.map(f => <option key={f}>{f}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {/* Cod fiscal cu buton ANAF */}
-              <div className="field">
-                <label className="field-label">Cod fiscal (CIF) {!isPF && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
-                <div className="field-with-btn">
-                  <input ref={codFiscalRef} className="field-input" placeholder="ex: RO12345678"
-                    value={form.codFiscal} onChange={e => set('codFiscal', e.target.value)}
-                    aria-invalid={!!cifError} />
-                  <button type="button" className="btn btn-outline-primary btn-sm"
-                    onClick={preiaAnaf} disabled={!form.codFiscal.trim() || anafLoading}
-                    title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
-                  </button>
-                </div>
-                {cifError && <span className="field-error">{cifError}</span>}
+              {/* Firmă în curs de înființare — CUI-ul și J-ul nu există încă */}
+              <div className="field full">
+                <InfiintareCheckbox checked={!!form.inInfiintare} onChange={v => set('inInfiintare', v)} />
               </div>
 
               {/* Nr. registrul comerțului */}
               <div className="field">
-                <label className="field-label">Nr. registrul comerțului {!isPF && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
-                <input ref={nrRegistrulRef} className="field-input" placeholder="ex: J40/123/2020" value={form.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
+                <label className="field-label">Nr. registrul comerțului {!isPF && !form.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
+                <input ref={nrRegistrulRef} className="field-input" placeholder={form.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: J40/123/2020'} value={form.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
+              </div>
+
+              {/* Cod fiscal cu buton ANAF */}
+              <div className="field">
+                <label className="field-label">Cod fiscal (CIF) {!isPF && !form.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
+                <div className="field-with-btn">
+                  <input ref={codFiscalRef} className="field-input" placeholder={form.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: RO12345678'}
+                    value={form.codFiscal} onChange={e => set('codFiscal', e.target.value)}
+                    aria-invalid={!!cifError} />
+                  {!form.inInfiintare && (
+                    <button type="button" className="btn btn-outline-primary btn-sm"
+                      onClick={preiaAnaf} disabled={!form.codFiscal.trim() || anafLoading}
+                      title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+                      {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
+                    </button>
+                  )}
+                </div>
+                {cifError && <span className="field-error">{cifError}</span>}
               </div>
 
               {/* CAEN */}
@@ -739,21 +751,10 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
 
               {/* Capital social — doar PJ, tot dată de înregistrare a firmei, ca CIF/Nr. Reg. Com. */}
               {!isPF && (
-                <>
-                  <div className="field">
-                    <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
-                    <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
-                      value={form.capitalSocial ?? ''}
-                      onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))}
-                      onWheel={blurNumberInputOnWheel} />
-                  </div>
-                  <div className="field">
-                    <label className="field-label">Părți sociale</label>
-                    <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
-                      {partiSocialeTotal != null ? partiSocialeTotal.toLocaleString('ro-RO') : '—'}
-                    </div>
-                  </div>
-                </>
+                <CapitalSocialFields
+                  capitalSocial={form.capitalSocial} valoareParte={form.valoareParteSociala}
+                  onCapital={v => set('capitalSocial', v)} onValoareParte={v => set('valoareParteSociala', v)}
+                  capitalRef={capitalSocialRef} valoareParteRef={valoareParteRef} />
               )}
 
               {/* Sediu */}

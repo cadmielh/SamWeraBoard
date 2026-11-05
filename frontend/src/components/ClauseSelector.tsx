@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Client, ClauseMeta } from '../types'
-import { CLAUSE_FIELD_SPECS, specMatchesClause, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
+import { findClauseSpec, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { parsePlaceholder, isDateLabel } from '../lib/placeholders'
 import { parseAdresa } from '../lib/adresa'
 import DateFieldInput from './DateFieldInput'
@@ -10,6 +10,7 @@ import SchimbareCaenPrincipalFields from './clauses/SchimbareCaenPrincipalFields
 import SchimbareAdministratorFields from './clauses/SchimbareAdministratorFields'
 import InchiderePunctLucruFields from './clauses/InchiderePunctLucruFields'
 import MajorareCapitalFields from './clauses/MajorareCapitalFields'
+import MajorareCapitalMultiFields from './clauses/MajorareCapitalMultiFields'
 import ModificareIdentitateAsociatFields from './clauses/ModificareIdentitateAsociatFields'
 
 export interface ClauseSelectorValue {
@@ -87,9 +88,8 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
 
   // Condițiile de completare ale unei clauze: câte una pentru fiecare câmp plat, plus una pentru lista repetitivă, dacă are.
   const clauseChecks = (c: ClauseMeta): { label: string; ok: boolean }[] => {
-    const spec = CLAUSE_FIELD_SPECS[c.tag]
-    const useWidget = !!spec && specMatchesClause(spec, c.placeholders)
-    const groupFieldSet = new Set(useWidget && spec.groupFields ? spec.groupFields : [])
+    const spec = findClauseSpec(c.tag, c.placeholders)
+    const groupFieldSet = new Set(spec?.groupFields ?? [])
     const checks = c.placeholders
       .filter(ph => !groupFieldSet.has(ph.replace(/^\{\{|\}\}$/g, ''))) // câmpurile din listă se verifică separat, ca grup
       .map(ph => {
@@ -97,7 +97,7 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
         const v = fieldsByClause[c.tag]?.[key] ?? baseReplacements[ph]
         return { label: ph, ok: !!v && v.trim() !== '' }
       })
-    if (useWidget && spec.groupName) {
+    if (spec?.groupName) {
       checks.push({ label: `listă: ${spec.groupName}`, ok: (groupsByClause[c.tag]?.[spec.groupName]?.length ?? 0) > 0 })
     }
     return checks
@@ -145,8 +145,8 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
       )}
       {clauses.map(c => {
         const isSelected = selected.has(c.tag)
-        const spec = CLAUSE_FIELD_SPECS[c.tag]
-        const useWidget = !!spec && specMatchesClause(spec, c.placeholders)
+        const spec = findClauseSpec(c.tag, c.placeholders)
+        const useWidget = spec !== null
 
         return (
           <div key={c.tag} style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
@@ -208,6 +208,14 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     client={client}
                     fields={fieldsByClause[c.tag] ?? {}}
                     onField={(k, v) => setField(c.tag, k, v)}
+                    onClientPatch={p => setClientPatch(c.tag, p)}
+                  />
+                )}
+                {useWidget && spec.widget === 'majorareCapitalMulti' && (
+                  <MajorareCapitalMultiFields
+                    client={client}
+                    onField={(k, v) => setField(c.tag, k, v)}
+                    onRows={rows => setGroup(c.tag, spec.groupName!, rows)}
                     onClientPatch={p => setClientPatch(c.tag, p)}
                   />
                 )}

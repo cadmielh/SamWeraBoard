@@ -563,6 +563,7 @@ body {
 .badge-notva { background:var(--s100); color:var(--s400); }
 .badge-inactiv-anaf { background:var(--r600); color:#fff; }
 .badge-split-tva { background:var(--a100); color:var(--a800); }
+.badge-infiintare { background:var(--o50); color:var(--o700); border:1px solid var(--o200); }
 .badge-efactura { background:var(--g50); color:var(--g600); }
 
 /* ── Modals ── */
@@ -613,7 +614,10 @@ body {
 .field-textarea:focus { border-color:var(--p500); box-shadow:0 0 0 3px rgba(99,102,241,.1); }
 .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
 .form-grid .full { grid-column:1/-1; }
-@media (max-width:560px) { .form-grid { grid-template-columns:1fr; } .form-grid .full { grid-column:1; } }
+/* Denumire lată + forma juridică îngustă pe același rând (formularele de client) */
+.form-grid .form-row-denumire { display:grid; grid-template-columns:minmax(0,1fr) 10rem; gap:1rem; }
+.form-grid .form-row-capital { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:.3rem 1rem; }
+@media (max-width:560px) { .form-grid, .form-grid .form-row-denumire, .form-grid .form-row-capital { grid-template-columns:1fr; } .form-grid .full { grid-column:1; } }
 .field-with-btn { display:flex; gap:.5rem; }
 .field-with-btn .field-input { flex:1; }
 

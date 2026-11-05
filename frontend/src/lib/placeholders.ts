@@ -1,7 +1,7 @@
 import type { IDFields } from './api'
 import type { Client, Persoana, ScannedPerson } from '../types'
 import { persoanaToIDFields } from './idFields'
-import { parsePercent } from './cota'
+import { parsePercent, valoareParteSociala, VALOARE_PARTE_SOCIALA_DEFAULT } from './cota'
 import { formatAdresa, splitSerieNumar } from './adresa'
 import { personSex } from './sex'
 import { cetatenieAcord, cetatenieText } from './cetatenie'
@@ -221,6 +221,9 @@ export function customPersonReplacements(role: string, position: number, p: Pers
   return persoanaToMap(p, `${role}_${position}`)
 }
 
+/** Spațiul lăsat în document pentru o valoare care se completează de mână (ex. CUI-ul unei firme în înființare). */
+export const HAND_FILL_BLANK = '....................'
+
 export function buildReplacements({ idFields, client, scannedPersons }: BuildOptions): Record<string, string> {
   const out: Record<string, string> = {}
 
@@ -237,18 +240,22 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
   // Câmpuri societate din client
   if (client) {
     out['{{SOCIETATE_DENUMIRE}}'] = client.denumire ?? ''
-    out['{{SOCIETATE_CIF}}'] = client.codFiscal ?? ''
-    out['{{SOCIETATE_NR_REG}}'] = client.nrRegistrul ?? ''
+    // Firmă în înființare: CUI-ul și J-ul nu există încă — loc de completat de mână, nu „-” sau etichetă rămasă.
+    const deCompletat = client.inInfiintare ? HAND_FILL_BLANK : ''
+    out['{{SOCIETATE_CIF}}'] = client.codFiscal?.trim() || deCompletat
+    out['{{SOCIETATE_NR_REG}}'] = client.nrRegistrul?.trim() || deCompletat
     out['{{SOCIETATE_SEDIU}}'] = client.sediuSocial ? formatAdresa(client.sediuSocial) : ''
     // Pentru șabloane care cer județul separat („sediul în ……, jud. ……”) — fără județ, ca să nu apară de două ori.
     out['{{SOCIETATE_SEDIU_FARA_JUDET}}'] = client.sediuSocial ? formatAdresa(client.sediuSocial, { includeJudet: false }) : ''
     out['{{SOCIETATE_JUDET}}'] = client.sediuSocial?.judet ?? ''
     out['{{SOCIETATE_FORMA_JURIDICA}}'] = client.formaJuridica ?? ''
 
+    const valoareParte = valoareParteSociala(client)
     if (client.capitalSocial != null) {
       out['{{CAPITAL_SOCIAL_TOTAL}}'] = formatNumber(client.capitalSocial)
-      out['{{PARTI_SOCIALE_TOTALE}}'] = formatNumber(client.capitalSocial / 10)
+      out['{{PARTI_SOCIALE_TOTALE}}'] = formatNumber(client.capitalSocial / valoareParte)
     }
+    out['{{VALOARE_PARTE_SOCIALA}}'] = formatNumber(valoareParte)
 
     // CAEN_1 = activitate principală (unică — fără prefix numeric). Activitățile
     // secundare (număr nelimitat) se pun în blocul repetitiv {{#CAEN_SECUNDARE}}.
@@ -275,7 +282,7 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
       if (client?.capitalSocial != null) {
         const capitalAsociat = client.capitalSocial * parsePercent(p.cotaParticipare) / 100
         out[`{{CAPITAL_SOCIAL_ASOCIAT_${i + 1}}}`] = formatNumber(capitalAsociat)
-        out[`{{PARTI_SOCIALE_ASOCIAT_${i + 1}}}`] = formatNumber(capitalAsociat / 10)
+        out[`{{PARTI_SOCIALE_ASOCIAT_${i + 1}}}`] = formatNumber(capitalAsociat / valoareParteSociala(client))
       }
     })
     adminiToUse.forEach((p, i) => {
@@ -350,7 +357,7 @@ export function joinNames(persons: Persoana[]): string {
 /** Câmpurile unei persoane (NUME, PRENUME, CNP…), fără prefix de rol/poziție — forma pe care o așteaptă un
  * element dintr-un bloc repetitiv {{#ROL}} (vezi blanks.py: generic_person_tag) la completare, per element
  * din listă (vezi buildRepeatGroups mai jos și detectCustomPersonGroups, pentru roluri custom repetitive). */
-export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number | null; includeCota?: boolean } = {}): Record<string, string> {
+export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: number | null; valoareParte?: number; includeCota?: boolean } = {}): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {
     // COTA_PARTICIPARE nu se aplică administratorilor — dacă e inclus mereu,
@@ -372,7 +379,7 @@ export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: 
   if (opts.capitalSocialTotal != null) {
     const capitalAsociat = opts.capitalSocialTotal * parsePercent(p.cotaParticipare) / 100
     out.CAPITAL_SOCIAL = formatNumber(capitalAsociat)
-    out.PARTI_SOCIALE = formatNumber(capitalAsociat / 10)
+    out.PARTI_SOCIALE = formatNumber(capitalAsociat / (opts.valoareParte ?? VALOARE_PARTE_SOCIALA_DEFAULT))
   }
   return out
 }
@@ -384,13 +391,15 @@ export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: 
  * activitate secundară) — multiplicate de backend o dată per element din listă.
  */
 export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Record<string, Record<string, string>[]> {
-  if (client?.tipClient === 'PF') return {}
+  // Un rând lăsat gol în fișa clientului nu e o activitate: ar ieși un rând gol în document și câmpul ar apărea ca lipsă.
+  const caenSecundare = (client?.caenSecundare ?? []).filter(c => c.cod?.trim())
+  // PFA/II/IF n-au asociați sau administratori, dar au activități CAEN secundare.
+  if (client?.tipClient === 'PF') return { CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })) }
   const asociati = resolvePersons(client, scannedPersons, 'asociat')
   const admini = resolvePersons(client, scannedPersons, 'administrator')
-  const caenSecundare = client?.caenSecundare ?? []
   return {
     // SEX / SEX_REF: sexul fiecărei persoane, folosit de server la variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
-    ASOCIATI: asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` })),
+    ASOCIATI: asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, valoareParte: valoareParteSociala(client), includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` })),
     ADMINISTRATORI: admini.map((p, i) => ({ ...persoanaToSingularMap(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` })),
     CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })),
   }
@@ -406,14 +415,20 @@ export interface ReadinessResult {
 // și le raportează mereu ca lipsă, chiar și cu Serie & Nr. CI completat la toate persoanele.
 const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD'])
 
+/** `groupFields` (etichetele din fiecare bloc al șablonului, vezi list_repeat_group_fields_in_docx): un câmp
+ * per-persoană se verifică doar la elementele blocurilor care îl conțin. Fără el (șabloane salvate înainte),
+ * se verifică la toate elementele care au câmpul. */
 export function checkReadiness(
   placeholders: string[],
   replacements: Record<string, string>,
   repeatGroups?: Record<string, Record<string, string>[]>,
+  groupFields?: Record<string, string[]>,
 ): ReadinessResult {
   const filled: string[] = []
   const missing: string[] = []
   const groupItems = repeatGroups ? Object.values(repeatGroups).flat() : []
+  const itemsFor = (inner: string) => !groupFields ? groupItems.filter(item => inner in item)
+    : Object.entries(repeatGroups ?? {}).filter(([tag]) => groupFields[tag]?.includes(inner)).flatMap(([, items]) => items)
 
   for (const ph of placeholders) {
     const inner = ph.replace(/^\{\{|\}\}$/g, '')
@@ -426,7 +441,7 @@ export function checkReadiness(
       // Câmp singular dintr-un bloc repetitiv — se ia în calcul doar în elementele
       // grupului care chiar au acest câmp (ex. {{CAEN}} nu apare la asociați),
       // ca să nu se contamineze verificarea între grupuri diferite.
-      const relevantItems = groupItems.filter(item => inner in item)
+      const relevantItems = itemsFor(inner)
       if (relevantItems.length > 0 && relevantItems.every(item => (item[inner] ?? '').trim() !== '')) {
         filled.push(ph)
       } else {
@@ -513,6 +528,7 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
 
   if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
   if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }
+  if (inner === 'VALOARE_PARTE_SOCIALA') return { group: 'Societate', field: 'Valoarea unei părți sociale' }
   if (inner === 'DATA_CURENTA') return { group: 'Date automate', field: 'Data curentă' }
 
   const soc = inner.match(/^SOCIETATE_(.+)$/)

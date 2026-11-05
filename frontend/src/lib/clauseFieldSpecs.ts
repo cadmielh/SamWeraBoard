@@ -12,7 +12,7 @@
  * cade automat pe randarea generică (un input text per placeholder găsit).
  */
 
-export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruClose' | 'majorareCapital' | 'identitateAsociat'
+export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruClose' | 'majorareCapital' | 'majorareCapitalMulti' | 'identitateAsociat'
 
 export interface ClauseFieldSpec {
   /** Placeholdere plate pe care widget-ul le completează direct. */
@@ -69,6 +69,24 @@ export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
     fields: ['ASOCIAT_MODIFICAT_NUME', 'ASOCIAT_MODIFICAT_PRENUME', 'ASOCIAT_MODIFICAT_SERIE_NUMAR'],
     widget: 'identitateAsociat',
   },
+}
+
+/** Variante ale aceleiași clauze, cu alt text în șablon: Hotărârea AGA are majorarea de capital cu mai mulți
+ * asociați care aportă (blocul {{#APORTURI}}), Decizia asociatului unic — cu un singur aportator. Se alege
+ * prima variantă ale cărei etichete apar în clauză, apoi spec-ul de bază din CLAUSE_FIELD_SPECS. */
+export const CLAUSE_FIELD_SPEC_VARIANTS: Record<string, ClauseFieldSpec[]> = {
+  MAJORARE_CAPITAL_SOCIAL: [{
+    fields: ['CAPITAL_SOCIAL_NOU', 'PARTI_SOCIALE_NOI'],
+    groupName: 'APORTURI',
+    groupFields: ['NUME', 'APORT', 'PARTI_APORT', 'COTA_PARTICIPARE'],
+    widget: 'majorareCapitalMulti',
+  }],
+}
+
+/** Spec-ul cu widget dedicat potrivit clauzei din șablonul curent, sau null (→ randare generică). */
+export function findClauseSpec(tag: string, clausePlaceholders: string[]): ClauseFieldSpec | null {
+  const candidates = [...(CLAUSE_FIELD_SPEC_VARIANTS[tag] ?? []), ...(CLAUSE_FIELD_SPECS[tag] ? [CLAUSE_FIELD_SPECS[tag]] : [])]
+  return candidates.find(s => specMatchesClause(s, clausePlaceholders)) ?? null
 }
 
 /** True doar dacă toate câmpurile așteptate de spec chiar apar în lista de

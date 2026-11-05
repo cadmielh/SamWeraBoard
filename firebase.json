@@ -69,6 +69,15 @@
               "value": "no-cache"
             }
           ]
+        },
+        {
+          "regex": "^/[^.]*$",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
         }
       ],
       "site": "cabinio"
@@ -132,6 +141,15 @@
         },
         {
           "source": "**/*.@(html|json)",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        {
+          "regex": "^/[^.]*$",
           "headers": [
             {
               "key": "Cache-Control",

@@ -55,6 +55,7 @@ COMPANY_FIELDS = {
     "SOCIETATE_NR_REG": "Nr. de înmatriculare (J…/…/…)",
     "CAPITAL_SOCIAL_TOTAL": "Capitalul social (lei)",
     "PARTI_SOCIALE_TOTALE": "Numărul total de părți sociale",
+    "VALOARE_PARTE_SOCIALA": "Valoarea unei părți sociale (lei)",
     "CAEN_1": "Activitatea principală (cod și denumire)",
     "CAEN_DOMENIU": "Domeniul principal de activitate (grupa CAEN, cod și denumire)",
     "CAEN_PRINCIPAL_COD": "Cod CAEN principal",

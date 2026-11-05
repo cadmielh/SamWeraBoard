@@ -4,23 +4,27 @@ import { fetchAnafCompany } from '../lib/api'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet, type AdresaStructurata } from '../lib/adresa'
-import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import CAENCombobox from './CAENCombobox'
 import Modal from './Modal'
 import IconTrash from './IconTrash'
 import SediuSocialFields from './SediuSocialFields'
+import InfiintareCheckbox, { INFIINTARE_PLACEHOLDER } from './InfiintareCheckbox'
+import CapitalSocialFields from './CapitalSocialFields'
+import { parteSocialaError } from '../lib/cota'
 
 export interface CompanyData {
   denumire: string
   formaJuridica: string
   codFiscal: string
   nrRegistrul: string
+  inInfiintare?: boolean
   sediuSocial: AdresaStructurata
   caenCod: string
   caenDescriere: string
   caenSecundare: CaenActivitate[]
   puncteLucru: string[]
   capitalSocial: number | null
+  valoareParteSociala?: number | null
 }
 
 interface Props {
@@ -56,6 +60,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
   const nrRegistrulRef = useRef<HTMLInputElement>(null)
   const sediuSocialRef = useRef<HTMLInputElement>(null)
   const capitalSocialRef = useRef<HTMLInputElement>(null)
+  const valoareParteRef = useRef<HTMLInputElement>(null)
 
   const set = <K extends keyof CompanyData>(key: K, val: CompanyData[K]) => onChange({ [key]: val } as Partial<CompanyData>)
   const setSediu = (patch: Partial<AdresaStructurata>) => onChange({ sediuSocial: { ...value.sediuSocial, ...patch } })
@@ -70,10 +75,11 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
       const checks: { invalid: boolean; ref: React.RefObject<HTMLElement | null>; message: string }[] = [
         { invalid: !value.denumire.trim(), ref: denumireRef, message: 'denumirea' },
         { invalid: !value.formaJuridica.trim(), ref: formaJuridicaRef, message: 'forma juridică' },
-        { invalid: !cifTrimmed || !!cifError, ref: codFiscalRef, message: 'CIF' },
-        { invalid: !value.nrRegistrul.trim(), ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
+        { invalid: !value.nrRegistrul.trim() && !value.inInfiintare, ref: nrRegistrulRef, message: 'nr. registrul comerțului' },
+        { invalid: (!cifTrimmed && !value.inInfiintare) || !!cifError, ref: codFiscalRef, message: 'CIF' },
         { invalid: !formatAdresa(value.sediuSocial).trim(), ref: sediuSocialRef, message: 'sediul social' },
         { invalid: value.capitalSocial == null || value.capitalSocial <= 0, ref: capitalSocialRef, message: 'capitalul social' },
+        { invalid: !!parteSocialaError(value.capitalSocial, value.valoareParteSociala), ref: valoareParteRef, message: 'valoarea unei părți sociale' },
       ]
       const failing = checks.filter(c => c.invalid)
       if (failing.length > 0) {
@@ -150,8 +156,6 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
     const arr = [...value.puncteLucru]; arr.splice(i, 1); set('puncteLucru', arr)
   }
 
-  const partiSocialeTotal = value.capitalSocial != null ? value.capitalSocial / 10 : null
-
   if (sediuPicker) {
     return (
       <Modal onClose={() => setSediuPicker(false)} ariaLabel="Alege adresa asociatului">
@@ -194,37 +198,46 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
 
   return (
     <div className="form-grid">
+      {/* Denumire + forma juridică (îngustă) pe același rând */}
+      <div className="full form-row-denumire">
+        <div className="field">
+          <label className="field-label">Denumire <span style={{ color: 'var(--r500)' }}>*</span></label>
+          <input ref={denumireRef} className="field-input" value={value.denumire} onChange={e => set('denumire', e.target.value)} placeholder="Denumirea firmei" />
+        </div>
+
+        <div className="field">
+          <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
+          <select ref={formaJuridicaRef} className="field-input" value={value.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
+            <option value="">— selectați —</option>
+            {FORME_JURIDICE_PJ.map(f => <option key={f}>{f}</option>)}
+          </select>
+        </div>
+      </div>
+
       <div className="field full">
-        <label className="field-label">Denumire <span style={{ color: 'var(--r500)' }}>*</span></label>
-        <input ref={denumireRef} className="field-input" value={value.denumire} onChange={e => set('denumire', e.target.value)} placeholder="Denumirea firmei" />
+        <InfiintareCheckbox checked={!!value.inInfiintare} onChange={v => set('inInfiintare', v)} />
       </div>
 
       <div className="field">
-        <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
-        <select ref={formaJuridicaRef} className="field-input" value={value.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
-          <option value="">— selectați —</option>
-          {FORME_JURIDICE_PJ.map(f => <option key={f}>{f}</option>)}
-        </select>
+        <label className="field-label">Nr. registrul comerțului {!value.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
+        <input ref={nrRegistrulRef} className="field-input" placeholder={value.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: J40/123/2020'} value={value.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
       </div>
 
       <div className="field">
-        <label className="field-label">Cod fiscal (CIF) <span style={{ color: 'var(--r500)' }}>*</span></label>
+        <label className="field-label">Cod fiscal (CIF) {!value.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
         <div className="field-with-btn">
-          <input ref={codFiscalRef} className="field-input" placeholder="ex: RO12345678"
+          <input ref={codFiscalRef} className="field-input" placeholder={value.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: RO12345678'}
             value={value.codFiscal} onChange={e => set('codFiscal', e.target.value)}
             aria-invalid={!!cifError} />
-          <button type="button" className="btn btn-outline-primary btn-sm"
-            onClick={preiaAnaf} disabled={!value.codFiscal.trim() || anafLoading}
-            title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-            {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
-          </button>
+          {!value.inInfiintare && (
+            <button type="button" className="btn btn-outline-primary btn-sm"
+              onClick={preiaAnaf} disabled={!value.codFiscal.trim() || anafLoading}
+              title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+              {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
+            </button>
+          )}
         </div>
         {cifError && <span className="field-error">{cifError}</span>}
-      </div>
-
-      <div className="field full">
-        <label className="field-label">Nr. registrul comerțului <span style={{ color: 'var(--r500)' }}>*</span></label>
-        <input ref={nrRegistrulRef} className="field-input" placeholder="ex: J40/123/2020" value={value.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
       </div>
 
       <div className="field full">
@@ -274,19 +287,10 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         <button type="button" className="btn btn-ghost btn-xs" onClick={addPunctLucru}>+ Adaugă punct de lucru</button>
       </div>
 
-      <div className="field">
-        <label className="field-label">Capital social (lei) <span style={{ color: 'var(--r500)' }}>*</span></label>
-        <input ref={capitalSocialRef} className="field-input" type="number" min={0} placeholder="-"
-          value={value.capitalSocial ?? ''}
-          onChange={e => set('capitalSocial', e.target.value === '' ? null : Number(e.target.value))}
-          onWheel={blurNumberInputOnWheel} />
-      </div>
-      <div className="field">
-        <label className="field-label">Părți sociale</label>
-        <div className="field-input" style={{ background: 'var(--s50)', color: 'var(--s600)' }}>
-          {partiSocialeTotal != null ? partiSocialeTotal.toLocaleString('ro-RO') : '—'}
-        </div>
-      </div>
+      <CapitalSocialFields
+        capitalSocial={value.capitalSocial} valoareParte={value.valoareParteSociala}
+        onCapital={v => set('capitalSocial', v)} onValoareParte={v => set('valoareParteSociala', v)}
+        capitalRef={capitalSocialRef} valoareParteRef={valoareParteRef} />
     </div>
   )
 })

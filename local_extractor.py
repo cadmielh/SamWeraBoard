@@ -260,7 +260,9 @@ def _cnp_to_dob(cnp: str) -> str:
 # ── Field regex extractors ────────────────────────────────────────────────────
 
 def _find_serie_numar(text: str) -> str:
-    m = re.search(r"\b([A-Z]{2})\s?(\d{6})\b", text)
+    # 6 cifre pe CI clasic, 7 pe noua carte electronică de identitate (CEI). Eticheta
+    # "NR" dintre serie și număr (citită uneori "NA"/"NO") e sărită, nu luată drept serie.
+    m = re.search(r"\b(?!N[RO]\b)([A-Z]{2})\s?(?:N[RAO]\.?\s?)?(\d{6,7})\b", text)
     return f"{m.group(1)} {m.group(2)}" if m else ""
 
 

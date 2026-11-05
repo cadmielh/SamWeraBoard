@@ -24,3 +24,23 @@ export function isCotaTotalValid(values: string[]): boolean {
   if (values.length === 0) return true
   return Math.abs(sumCota(values) - 100) <= COTA_TOLERANCE
 }
+
+/** Valoarea nominală implicită a unei părți sociale — folosită când clientul n-are una setată (toți clienții vechi). */
+export const VALOARE_PARTE_SOCIALA_DEFAULT = 10
+
+/** Valoarea unei părți sociale a clientului (lei, număr întreg ≥ 1); 10 dacă lipsește sau e invalidă. */
+export function valoareParteSociala(c: { valoareParteSociala?: number | null } | null | undefined): number {
+  const v = c?.valoareParteSociala
+  return v != null && Number.isInteger(v) && v >= 1 ? v : VALOARE_PARTE_SOCIALA_DEFAULT
+}
+
+/** Eroarea de afișat pentru valoarea părții sociale din formular ('' dacă e în regulă): număr întreg ≥ 1, iar
+ * capitalul trebuie să se împartă exact în părți (nu există fracțiuni de parte socială). */
+export function parteSocialaError(capitalSocial: number | null, valoare: number | null | undefined): string {
+  if (valoare == null) return ''
+  if (!Number.isInteger(valoare) || valoare < 1) return 'Valoarea unei părți sociale trebuie să fie un număr întreg de lei, cel puțin 1.'
+  if (capitalSocial != null && capitalSocial > 0 && capitalSocial % valoare !== 0) {
+    return `Capitalul de ${capitalSocial.toLocaleString('ro-RO')} lei nu se împarte exact în părți de ${valoare} lei.`
+  }
+  return ''
+}

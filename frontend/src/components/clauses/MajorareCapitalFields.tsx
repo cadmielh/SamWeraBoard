@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { Client, Persoana } from '../../types'
-import { parsePercent } from '../../lib/cota'
+import { parsePercent, valoareParteSociala } from '../../lib/cota'
 import type { ClientPatchProposal } from '../../lib/clauseFieldSpecs'
 
 interface Props {
@@ -19,14 +19,14 @@ interface Calc {
 /** Aportatorul primește restul de părți din aport; ceilalți asociați rămân
  * cu același nominal de părți, dar cota li se recalculează proporțional la
  * capitalul nou, mai mare. */
-function calculeaza(asociati: Persoana[], capitalVechi: number, capitalNou: number, aportatorNume: string): Calc | null {
+function calculeaza(asociati: Persoana[], capitalVechi: number, capitalNou: number, aportatorNume: string, valoareParte: number): Calc | null {
   if (capitalNou <= 0 || capitalNou <= capitalVechi || !aportatorNume || asociati.length === 0) return null
-  const partiAport = (capitalNou - capitalVechi) / 10
-  const partiNoiTotal = capitalNou / 10
+  const partiAport = (capitalNou - capitalVechi) / valoareParte
+  const partiNoiTotal = capitalNou / valoareParte
 
   const rezultat = asociati.map(a => {
     const numeComplet = `${a.nume} ${a.prenume}`.trim()
-    const partiVechi = Math.round(capitalVechi * parsePercent(a.cotaParticipare) / 100 / 10)
+    const partiVechi = Math.round(capitalVechi * parsePercent(a.cotaParticipare) / 100 / valoareParte)
     const partiNoi = partiVechi + (numeComplet === aportatorNume ? partiAport : 0)
     return { nume: numeComplet, partiNoi, cotaNoua: partiNoiTotal > 0 ? partiNoi / partiNoiTotal * 100 : 0 }
   })
@@ -41,7 +41,7 @@ export default function MajorareCapitalFields({ client, fields, onField, onClien
   const capitalNou = parseFloat(fields.CAPITAL_SOCIAL_NOU ?? '') || 0
   const aportatorNume = fields.ASOCIAT_APORT_NUME ?? ''
 
-  const calc = calculeaza(asociati, capitalVechi, capitalNou, aportatorNume)
+  const calc = calculeaza(asociati, capitalVechi, capitalNou, aportatorNume, valoareParteSociala(client))
 
   useEffect(() => {
     if (!calc) {

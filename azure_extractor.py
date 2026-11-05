@@ -20,6 +20,7 @@ Dacă un scan viitor întoarce câmpuri diferite, verificați log-ul
 import os
 import re
 import time
+import unicodedata
 from pathlib import Path
 
 import requests as _req
@@ -66,6 +67,15 @@ _JUDET_COD_MAP = {
     "TM": "Timiș", "TL": "Tulcea", "VS": "Vaslui", "VL": "Vâlcea", "VN": "Vrancea",
 }
 _JUDET_COD_RE = re.compile(r"\bJUD\.?\s*([A-Z]{1,2})\b", re.IGNORECASE)
+# Variante întâlnite mai rar: numele complet ("Jud. Cluj") și Bucureștiul, care nu
+# are "Jud." deloc pe act ("Mun.București Sec.3").
+_JUDET_NUME_RE = re.compile(r"\bJUD(?:E[TȚŢ]UL)?\.?\s*([^\W\d_]+(?:[\s\-][^\W\d_]+)?)", re.IGNORECASE)
+_BUCURESTI_RE = re.compile(r"\bBUCURE[SȘŞ]TI\b|\bSEC(?:TOR(?:UL)?)?\.?\s*[1-6]\b", re.IGNORECASE)
+
+# Etichetele de pe CI care încadrează blocul de domiciliu în textul brut al paginii
+# ("Domiciliu/Adresse/Address", urmat de 1–2 rânduri, apoi "Emisă de/.../Issued by").
+_ADRESA_LABEL_RE = re.compile(r"DOMICILIU|ADRESSE|\bADDRESS\b", re.IGNORECASE)
+_DUPA_ADRESA_RE = re.compile(r"EMIS[AĂ]\s+DE|D[ÉE]LIVR[ÉE]E|ISSUED\s+BY|VALABILITATE|VALIDIT", re.IGNORECASE)
 
 
 class RomanianIDData(BaseModel):
@@ -235,10 +245,55 @@ def _split_validity_content(content: str) -> tuple[str, str]:
 def _extract_judet(address_content: str) -> str:
     """Codul de județ (ex. "Jud.BH") apare direct în textul brut al adresei —
     îl mapăm la numele complet (cu diacritice) prin _JUDET_COD_MAP."""
-    m = _JUDET_COD_RE.search(address_content or "")
+    text = address_content or ""
+    m = _JUDET_COD_RE.search(text)
+    if m and m.group(1).upper() in _JUDET_COD_MAP:
+        return _JUDET_COD_MAP[m.group(1).upper()]
+    m = _JUDET_NUME_RE.search(text)
+    if m:
+        # încercăm întâi două cuvinte ("Satu Mare", "Caraș-Severin"), apoi unul
+        words = re.split(r"([\s\-])", m.group(1))
+        for candidate in ("".join(words), words[0]):
+            key = _strip_diacritics(candidate).upper()
+            if key in local_extractor._JUDETE_DISPLAY:
+                return local_extractor._JUDETE_DISPLAY[key]
+    if _BUCURESTI_RE.search(text):
+        return "București"
+    return ""
+
+
+def _strip_diacritics(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c))
+
+
+def _extract_adresa_from_page(page_content: str) -> str:
+    """Fallback când Azure nu întoarce câmpul structurat Address: rândurile de sub
+    eticheta "Domiciliu/Adresse/Address", până la următoarea etichetă."""
+    lines = (page_content or "").splitlines()
+    for i, line in enumerate(lines):
+        if not _ADRESA_LABEL_RE.search(line):
+            continue
+        parts = []
+        for nxt in lines[i + 1:i + 4]:
+            if _DUPA_ADRESA_RE.search(nxt) or _INSTITUTIE_RE.search(nxt):
+                break
+            if nxt.strip():
+                parts.append(nxt.strip())
+        return " ".join(parts)
+    return ""
+
+
+# Pe CI scrie "SERIA TZ NR 123456" — Azure prinde uneori și "NR" (citit adesea "NA")
+# în DocumentNumber, rezultând "TZ NA 123456". Păstrăm doar seria (primul grup de
+# 2 litere de sine stătător) și numărul: 6 cifre pe CI clasic, 7 pe noua CEI.
+_SERIE_NUMAR_RE = re.compile(r"\b([A-Z]{2})(?![A-Z])\D*?(\d{6,7})(?!\d)", re.IGNORECASE)
+
+
+def _normalize_serie_numar(value: str) -> str:
+    m = _SERIE_NUMAR_RE.search(value or "")
     if not m:
-        return ""
-    return _JUDET_COD_MAP.get(m.group(1).upper(), "")
+        return value  # format neașteptat — păstrăm ce a citit Azure, corectabil din UI
+    return f"{m.group(1).upper()} {m.group(2)}"
 
 
 def _extract_emisa_de(page_content: str) -> str:
@@ -275,7 +330,9 @@ def _map_azure_fields(analyze_result: dict) -> RomanianIDData:
     # câmpurilor primite (nu valorile, care pot conține CNP/date personale).
     print(f"[azure] fields received: {sorted(fields.keys())}")
 
-    cnp = _field_value(fields.get("PersonalNumber"))
+    # Azure poate întoarce CNP-ul cu spații între grupuri de cifre — altfel validarea
+    # pică, CNP-ul se golește și scorul scade sub prag (→ fallback OCR local inutil).
+    cnp = re.sub(r"\s+", "", _field_value(fields.get("PersonalNumber")))
     if not cnp or not local_extractor._validate_cnp(cnp):
         cnp = ""
 
@@ -298,18 +355,23 @@ def _map_azure_fields(analyze_result: dict) -> RomanianIDData:
     if not valabila_pana_la:
         valabila_pana_la = _azure_date_to_ro(_field_value(expiry_field))
 
-    adresa_content = (fields.get("Address") or {}).get("content", "")
     page_content = analyze_result.get("content", "")
+    adresa_content = (fields.get("Address") or {}).get("content", "")
+    adresa = _field_value(fields.get("Address"))
+    if not adresa:
+        # Azure nu întoarce mereu câmpul Address, deși textul e citit în pagină.
+        adresa_content = _extract_adresa_from_page(page_content)
+        adresa = _clean_field_text(adresa_content)
 
     result = RomanianIDData(
         cnp=cnp,
         nume=_field_name_value(fields.get("LastName")),
         prenume=_field_name_value(fields.get("FirstName")),
-        serie_numar=_field_value(fields.get("DocumentNumber")),
+        serie_numar=_normalize_serie_numar(_field_value(fields.get("DocumentNumber"))),
         data_nasterii=_azure_date_to_ro(_field_value(fields.get("DateOfBirth"))),
         locul_nasterii=_field_value(fields.get("PlaceOfBirth")),
         cetatenia=cetatenia,
-        adresa=_field_value(fields.get("Address")),
+        adresa=adresa,
         # Nu sunt câmpuri structurate Azure — extrase din textul brut al paginii
         # (vezi _extract_judet / _extract_emisa_de), confirmat prin test real.
         judet=_extract_judet(adresa_content),

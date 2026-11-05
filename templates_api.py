@@ -25,7 +25,8 @@ import authz
 import billing
 import ratelimit
 import template_safety
-from doc_filler import list_clauses_in_docx, list_placeholders_in_docx, list_repeat_groups_in_docx
+from doc_filler import (list_clauses_in_docx, list_placeholders_in_docx, list_repeat_group_fields_in_docx,
+                        list_repeat_groups_in_docx)
 
 bp = Blueprint("templates", __name__)
 
@@ -66,7 +67,7 @@ def _meta(data: bytes) -> dict:
     """Etichetele, clauzele și blocurile repetitive, recalculate pe server."""
     try:
         return {"placeholders": list_placeholders_in_docx(data), "clauses": list_clauses_in_docx(data),
-                "repeatGroups": list_repeat_groups_in_docx(data)}
+                "repeatGroups": list_repeat_groups_in_docx(data), "repeatGroupFields": list_repeat_group_fields_in_docx(data)}
     except Exception as e:  # noqa: BLE001 — document pe care python-docx nu-l poate citi
         print(f"[templates] citire eșuată ({type(e).__name__})")
         raise template_safety.TemplateRejected("invalid_template")
@@ -131,6 +132,7 @@ def duplicate_builtin():
     if len(base["bytes"]) > template_safety.MAX_STORED_BYTES:
         return _err("template_too_large", 400)
     meta = {k: base.get(k) or [] for k in ("placeholders", "clauses", "repeatGroups")}
+    meta["repeatGroupFields"] = base.get("repeatGroupFields") or {}
     tid = _create(principal, wid, base["bytes"], base.get("filename"), base, meta,
                   sourceKey=key, sourceVersion=int(base.get("version") or 0))
     return jsonify({"id": tid}), 201

@@ -43,6 +43,8 @@ export interface DocTemplate {
   // Tag-urile {{#TAG}} de bloc repetitiv găsite în șablon (ex. ASOCIATI, sau un rol custom ca COMODANTI —
   // vezi detectCustomPersonGroups din lib/placeholders.ts).
   repeatGroups?: string[]
+  // Etichetele din fiecare bloc (ex. ASOCIATI → [NUME, CETATENIA_ACORD, …]); lipsește la șabloanele salvate înainte.
+  repeatGroupFields?: Record<string, string[]>
   docId?: string
   outputNameTemplate: string
   tipTemplate?: 'PF' | 'PJ' | 'universal'
@@ -76,6 +78,7 @@ export interface BuiltinTemplate {
   placeholders: string[]
   clauses: ClauseMeta[]
   repeatGroups: string[]
+  repeatGroupFields?: Record<string, string[]>
   // Prezent doar pentru type === 'pdf' — numele tuturor câmpurilor AcroForm
   // din PDF, în ordinea din document.
   pdfFields: string[]
@@ -138,6 +141,9 @@ export interface Client {
   formaJuridica: string
   codFiscal: string
   nrRegistrul: string
+  // Firmă în curs de înființare: CUI-ul și nr. de înregistrare nu există încă, deci nu sunt obligatorii,
+  // iar în documente apar ca spațiu de completat de mână. Se scoate singur când se completează amândouă.
+  inInfiintare?: boolean
   sediuSocial: AdresaStructurata
   // Instantaneu al ultimei valori structurate primite de la ANAF pentru sediul
   // social — folosit doar pentru hint-ul de proveniență din formular (compară
@@ -165,6 +171,8 @@ export interface Client {
   // Strict informativ, din ANAF — nu înlocuiește lista structurată `administratori`
   administratoriAnaf: { nume: string; rol: string }[]
   capitalSocial: number | null
+  // Valoarea nominală a unei părți sociale, în lei (întreg ≥ 1). Lipsă = 10 lei (vezi lib/cota.ts valoareParteSociala).
+  valoareParteSociala?: number | null
   dataAnafActualizat: string | null
   notite: string
   asociati: Persoana[]

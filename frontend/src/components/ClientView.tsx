@@ -7,8 +7,8 @@ import { findCaenDescriere } from '../data/caen'
 import { formatDateRo, toDateSafe } from '../lib/dates'
 import { getInitials, getAvatarColor } from '../lib/avatar'
 import { formatAdresa } from '../lib/adresa'
-import { missingCompanyFields } from '../lib/clienti'
-import { sumCota, isCotaTotalValid } from '../lib/cota'
+import { missingCompanyFields, missingRegistrationFields } from '../lib/clienti'
+import { sumCota, isCotaTotalValid, valoareParteSociala } from '../lib/cota'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
@@ -272,6 +272,11 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
             )}
           </div>
           <div className="cv2-header-actions">
+            {missingRegistrationFields(client).length > 0 && (
+              <span className="badge badge-infiintare" title="Firma e în curs de înființare: completează CUI-ul și J-ul după înregistrarea la ONRC.">
+                În înființare · lipsesc {missingRegistrationFields(client).join(' și ')}
+              </span>
+            )}
             {missingCompany.length > 0 && (
               <span
                 className="badge badge-inactiv-anaf"
@@ -347,7 +352,8 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
               {!isPF && (
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />
-                  <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / 10).toLocaleString('ro-RO') : undefined} />
+                  <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / valoareParteSociala(client)).toLocaleString('ro-RO') : undefined} />
+                  <InfoRow label="Valoare parte socială" value={`${valoareParteSociala(client).toLocaleString('ro-RO')} lei`} />
                 </div>
               )}
             </div>

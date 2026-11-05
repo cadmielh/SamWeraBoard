@@ -10,6 +10,7 @@ import { assertWritable } from './billing'
 import type { Client, Persoana } from '../types'
 import { EMPTY_ADRESA, formatAdresa, parseAdresa, type AdresaStructurata } from './adresa'
 import { sanitizeForSave, savePii, deleteClientOnServer } from './pii'
+import { VALOARE_PARTE_SOCIALA_DEFAULT, parteSocialaError } from './cota'
 
 export type ClientInput = Omit<Client, 'id' | 'denumireLower' | 'createdAt' | 'createdBy'>
 
@@ -24,17 +25,36 @@ export function missingCompanyFields(data: {
   codFiscal: string
   formaJuridica: string
   nrRegistrul: string
+  inInfiintare?: boolean
   sediuSocial: AdresaStructurata
   capitalSocial: number | null
+  valoareParteSociala?: number | null
 }): string[] {
   const cif = data.codFiscal.trim()
   const missing: string[] = []
-  if (!cif || !/^(RO)?\d{2,10}$/i.test(cif)) missing.push('CIF')
+  // În înființare, CIF-ul poate lipsi; dacă e scris totuși, formatul se verifică la fel.
+  if (cif ? !/^(RO)?\d{2,10}$/i.test(cif) : !data.inInfiintare) missing.push('CIF')
   if (!data.formaJuridica.trim()) missing.push('forma juridică')
-  if (!data.nrRegistrul.trim()) missing.push('nr. registrul comerțului')
+  if (!data.nrRegistrul.trim() && !data.inInfiintare) missing.push('nr. registrul comerțului')
   if (!formatAdresa(data.sediuSocial).trim()) missing.push('sediul social')
   if (data.capitalSocial == null || data.capitalSocial <= 0) missing.push('capitalul social')
+  else if (parteSocialaError(data.capitalSocial, data.valoareParteSociala)) missing.push('valoarea unei părți sociale')
   return missing
+}
+
+/** Datele de înregistrare încă lipsă ale unei firme în curs de înființare (listă goală dacă nu e în înființare),
+ * pentru eticheta „În înființare · lipsesc CUI și J”. */
+export function missingRegistrationFields(c: { inInfiintare?: boolean; codFiscal?: string; nrRegistrul?: string }): string[] {
+  if (!c.inInfiintare) return []
+  return [!c.codFiscal?.trim() && 'CUI', !c.nrRegistrul?.trim() && 'J'].filter((x): x is string => !!x)
+}
+
+/** Bifa „în înființare” se scoate singură când s-au completat atât CUI-ul, cât și J-ul — ca firma să nu rămână
+ * marcată la nesfârșit după înregistrarea la ONRC. `existing` = fișa salvată, pentru actualizări parțiale. */
+export function resolveInfiintare<T extends Partial<ClientInput>>(data: T, existing: Client | null): T {
+  const merged = { ...existing, ...data }
+  if (merged.inInfiintare && merged.codFiscal?.trim() && merged.nrRegistrul?.trim()) return { ...data, inInfiintare: false }
+  return data
 }
 
 /** Migrare la citire: documentele vechi au `sediuSocial` ca text liber —
@@ -271,7 +291,7 @@ export function useClienti(workspaceId: string | null) {
   const add = useCallback(async (workspaceId: string, rawData: ClientInput, uid: string) => {
     // CNP/serie CI nu ajung în documentul Firestore: se separă și se trimit criptate
     // către vault (vezi lib/pii.ts); în document rămân doar `pid` și variantele mascate.
-    const { data, vault } = sanitizeForSave(rawData, null)
+    const { data, vault } = sanitizeForSave(resolveInfiintare(rawData, null), null)
     const displayName = resolveDisplayName(data)
     const payload: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(data)) {
@@ -306,7 +326,7 @@ export function useClienti(workspaceId: string | null) {
 
   const update = useCallback(async (workspaceId: string, clientId: string, rawData: Partial<ClientInput>) => {
     const existing = clientiRef.current.find(c => c.id === clientId) ?? null
-    const { data, vault } = sanitizeForSave(rawData, existing)
+    const { data, vault } = sanitizeForSave(resolveInfiintare(rawData, existing), existing)
     const patch: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(data)) {
       patch[k] = v === undefined ? deleteField() : v
@@ -388,13 +408,14 @@ export const EMPTY_CLIENT: ClientInput = {
   subtipPF: undefined,
   titular: undefined,
   membriIF: undefined,
-  denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '',
+  denumire: '', formaJuridica: '', codFiscal: '', nrRegistrul: '', inInfiintare: false,
   sediuSocial: { ...EMPTY_ADRESA }, sediuSocialAnaf: null, sediuSocialAnafText: '',
   caenCod: '', caenDescriere: '', caenSecundare: [], puncteLucru: [], telefon: '', email: '',
   statutFiscal: '', platitorTva: false, periodaTva: '',
   tvaLaIncasare: false, inactivAnaf: false, splitTva: false, eFactura: false,
   administratoriAnaf: [],
   capitalSocial: null,
+  valoareParteSociala: VALOARE_PARTE_SOCIALA_DEFAULT,
   dataAnafActualizat: null, notite: '',
   asociati: [], administratori: [],
 }

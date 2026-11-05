@@ -41,7 +41,8 @@ import authz
 import ratelimit
 import local_extractor
 import azure_extractor
-from doc_filler import fill_docx, list_placeholders_in_docx, list_clauses_in_docx, list_repeat_groups_in_docx
+from doc_filler import (fill_docx, list_placeholders_in_docx, list_clauses_in_docx, list_repeat_groups_in_docx,
+                        list_repeat_group_fields_in_docx)
 import blanks
 import ai_suggest
 import template_safety
@@ -199,6 +200,10 @@ def extract():
                 fields["data_nasterii"] = dob
         elif cnp:
             fields["cnp"] = ""
+        # Județul e scris în adresă ("Jud.BH") — util mai ales pentru OCR-ul local,
+        # care nu are o etichetă separată de județ pe CI.
+        if not fields.get("judet") and fields.get("adresa"):
+            fields["judet"] = azure_extractor._extract_judet(fields["adresa"])
         return fields
 
     _empty = {"cnp":"","nume":"","prenume":"","serie_numar":"","data_nasterii":"",
@@ -240,6 +245,11 @@ def extract():
         print(f"[extract] Local OCR failed ({type(local_err).__name__})")
 
     best = local_fields if local_score > ai_score else ai_fields
+    # Scorul decide sursa principală, dar câmpurile goale se completează din cealaltă:
+    # altfel un CNP citit greșit de Azure (→ scor sub prag) făcea ca OCR-ul local să
+    # câștige și să arunce adresa/județul pe care Azure le citise corect.
+    other = ai_fields if best is local_fields else local_fields
+    best = best | {k: v for k, v in other.items() if v and not best.get(k)}
     # CNP validat local e mai sigur decât cel din Azure (verificare cu cifra de control)
     local_cnp = local_fields.get("cnp", "")
     if local_cnp and local_extractor._validate_cnp(local_cnp):
@@ -299,6 +309,7 @@ def _load_builtin_templates() -> dict[str, dict]:
                 "placeholders": list_placeholders_in_docx(file_bytes),
                 "clauses": list_clauses_in_docx(file_bytes),
                 "repeatGroups": list_repeat_groups_in_docx(file_bytes),
+                "repeatGroupFields": list_repeat_group_fields_in_docx(file_bytes),
             }
     return result
 
@@ -476,6 +487,7 @@ def get_placeholders():
             "placeholders": list_placeholders_in_docx(data),
             "clauses": list_clauses_in_docx(data),
             "repeatGroups": list_repeat_groups_in_docx(data),
+            "repeatGroupFields": list_repeat_group_fields_in_docx(data),
         })
     except template_safety.TemplateRejected as e:
         return jsonify({"error": e.code}), 400

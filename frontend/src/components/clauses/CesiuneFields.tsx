@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { Client, Persoana } from '../../types'
-import { parsePercent } from '../../lib/cota'
+import { parsePercent, valoareParteSociala } from '../../lib/cota'
 import { EMPTY_PERSOANA } from '../../lib/clienti'
 import type { ClientPatchProposal } from '../../lib/clauseFieldSpecs'
 
@@ -33,13 +33,13 @@ function today(): string {
 /** Scade cota cedentului, o adaugă/majorează pe cea a cesionarului — restul
  * asociaților rămân neschimbați. Rezultatul e mereu editabil manual după. */
 function computeStructura(
-  asociati: Persoana[], capitalSocial: number,
+  asociati: Persoana[], capitalSocial: number, valoareParte: number,
   cedentNume: string, cesionarNume: string, cesionarIsNew: boolean, nrPartiCedate: number,
 ): Record<string, string>[] {
-  const totalParti = capitalSocial / 10
+  const totalParti = capitalSocial / valoareParte
   const rows = asociati.map(a => ({
     nume: `${a.nume} ${a.prenume}`.trim(),
-    parti: Math.round(capitalSocial * parsePercent(a.cotaParticipare) / 100 / 10),
+    parti: Math.round(capitalSocial * parsePercent(a.cotaParticipare) / 100 / valoareParte),
   }))
   const cedentIdx = rows.findIndex(r => r.nume === cedentNume)
   if (cedentIdx >= 0) rows[cedentIdx].parti -= nrPartiCedate
@@ -55,7 +55,7 @@ function computeStructura(
   return rows.filter(r => r.parti > 0).map(r => ({
     NUME: r.nume,
     PARTI_SOCIALE: String(r.parti),
-    CAPITAL_SOCIAL: String(r.parti * 10),
+    CAPITAL_SOCIAL: String(r.parti * valoareParte),
     COTA_PARTICIPARE: totalParti > 0 ? String(+(r.parti / totalParti * 100).toFixed(2)) : '0',
   }))
 }
@@ -105,7 +105,7 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
     const capitalSocial = client?.capitalSocial ?? 0
     const nrParti = parseInt(fields.NR_PARTI_CEDATE ?? '0', 10) || 0
     const cesionarNume = cesionarMode === 'nou' ? `${nouNume} ${nouPrenume}`.trim() : (fields.CESIONAR_NUME ?? '')
-    onRows(computeStructura(asociati, capitalSocial, fields.CEDENT_NUME ?? '', cesionarNume, cesionarMode === 'nou', nrParti))
+    onRows(computeStructura(asociati, capitalSocial, valoareParteSociala(client), fields.CEDENT_NUME ?? '', cesionarNume, cesionarMode === 'nou', nrParti))
   }
 
   const updateRow = (i: number, patch: Record<string, string>) =>

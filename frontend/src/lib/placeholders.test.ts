@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, joinNames, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
-  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole,
+  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, HAND_FILL_BLANK,
 } from './placeholders'
 import type { Client, Persoana } from '../types'
 
@@ -19,6 +19,22 @@ describe('coduri CAEN pentru clauza „Actualizare cod CAEN REV3”', () => {
     expect(r['{{CAEN_PRINCIPAL_COD}}']).toBe('7020')
     expect(r['{{CAEN_SECUNDARE_COD}}']).toBe('4100, 4311, 7311')
     expect(r['{{CAEN_1}}']).toContain('Activități')            // formatul „cod - descriere” rămâne neschimbat
+  })
+
+  it('PFA/II/IF: blocul {{#CAEN_SECUNDARE}} primește activitățile secundare, fără asociați/administratori', () => {
+    const c = client({ tipClient: 'PF', caenSecundare: [{ cod: '4100', descriere: 'Construcții' }] })
+    const groups = buildRepeatGroups({ idFields: null, client: c as Client, scannedPersons: [] })
+    expect(groups.CAEN_SECUNDARE).toHaveLength(1)
+    expect(groups.CAEN_SECUNDARE[0].CAEN).toContain('4100')
+    expect(groups.ASOCIATI).toBeUndefined()
+    expect(checkReadiness(['{{CAEN}}'], build(c), groups).missing).toEqual([])
+  })
+
+  it('un rând CAEN secundar lăsat gol în fișă nu face câmpul să pară lipsă', () => {
+    const c = client({ caenSecundare: [{ cod: '4100', descriere: 'Construcții' }, { cod: '', descriere: '' }] })
+    const groups = buildRepeatGroups({ idFields: null, client: c as Client, scannedPersons: [] })
+    expect(groups.CAEN_SECUNDARE).toHaveLength(1)
+    expect(checkReadiness(['{{CAEN}}'], build(c), groups).missing).toEqual([])
   })
 
   it('fără CAEN secundare: „-”; fără CAEN principal: gol (rămâne de completat)', () => {
@@ -130,6 +146,24 @@ describe('SOCIETATE_SEDIU_FARA_JUDET — pentru șabloane cu județul cerut sepa
   it('fără sediu completat: gol, fără eroare', () => {
     const r = buildReplacements({ idFields: null, client: client({}) as Client, scannedPersons: [] })
     expect(r['{{SOCIETATE_SEDIU_FARA_JUDET}}']).toBe('')
+  })
+})
+
+describe('checkReadiness cu etichetele fiecărui bloc', () => {
+  const groups = {
+    ASOCIATI: [{ NUME: 'Pop', CETATENIA_ACORD: 'român' }],
+    ADMINISTRATORI: [{ NUME: 'Ionescu', CETATENIA_ACORD: '' }],
+  }
+  it('cetățenia cerută doar la asociați nu e raportată lipsă pentru un administrator fără cetățenie', () => {
+    const fields = { ASOCIATI: ['NUME', 'CETATENIA_ACORD'], ADMINISTRATORI: ['NUME'] }
+    expect(checkReadiness(['{{CETATENIA_ACORD}}'], {}, groups, fields).missing).toEqual([])
+  })
+  it('lipsa e raportată când cetățenia chiar e cerută în blocul administratorilor', () => {
+    const fields = { ASOCIATI: ['NUME'], ADMINISTRATORI: ['NUME', 'CETATENIA_ACORD'] }
+    expect(checkReadiness(['{{CETATENIA_ACORD}}'], {}, groups, fields).missing).toEqual(['{{CETATENIA_ACORD}}'])
+  })
+  it('fără etichetele blocurilor (șabloane salvate înainte) se verifică toate persoanele', () => {
+    expect(checkReadiness(['{{CETATENIA_ACORD}}'], {}, groups).missing).toEqual(['{{CETATENIA_ACORD}}'])
   })
 })
 
@@ -254,5 +288,45 @@ describe('roluri de persoană „noi” (comodant, reprezentant legal…) — î
     expect(isReprezentantRole('REPREZENTANT_LEGAL')).toBe(true)
     expect(isReprezentantRole('COMODANT')).toBe(false)
     expect(isReprezentantRole('ASOCIAT')).toBe(false)
+  })
+})
+
+describe('CUI și J pentru o firmă în curs de înființare', () => {
+  it('lipsa lor devine loc de completat de mână', () => {
+    const r = build(client({ inInfiintare: true, codFiscal: '', nrRegistrul: '' }))
+    expect(r['{{SOCIETATE_CIF}}']).toBe(HAND_FILL_BLANK)
+    expect(r['{{SOCIETATE_NR_REG}}']).toBe(HAND_FILL_BLANK)
+  })
+
+  it('o valoare deja completată se folosește normal', () => {
+    const r = build(client({ inInfiintare: true, codFiscal: 'RO123', nrRegistrul: '' }))
+    expect(r['{{SOCIETATE_CIF}}']).toBe('RO123')
+    expect(r['{{SOCIETATE_NR_REG}}']).toBe(HAND_FILL_BLANK)
+  })
+
+  it('fără bifă, lipsa rămâne goală (marcată mai departe ca „-”)', () => {
+    const r = build(client({ codFiscal: '', nrRegistrul: '' }))
+    expect(r['{{SOCIETATE_CIF}}']).toBe('')
+  })
+})
+
+describe('valoarea unei părți sociale', () => {
+  const asociat = { nume: 'POPESCU', prenume: 'ION', cotaParticipare: '100%' } as Persoana
+
+  it('implicit 10 lei: părțile sociale se calculează ca înainte', () => {
+    const r = build(client({ capitalSocial: 200, asociati: [asociat] }))
+    expect(r['{{VALOARE_PARTE_SOCIALA}}']).toBe('10')
+    expect(r['{{PARTI_SOCIALE_TOTALE}}']).toBe('20')
+    expect(r['{{PARTI_SOCIALE_ASOCIAT_1}}']).toBe('20')
+  })
+
+  it('cu 1 leu pe parte, numărul de părți urmează valoarea clientului, și în blocul asociaților', () => {
+    const c = client({ capitalSocial: 200, valoareParteSociala: 1, asociati: [asociat] })
+    const r = build(c)
+    expect(r['{{VALOARE_PARTE_SOCIALA}}']).toBe('1')
+    expect(r['{{PARTI_SOCIALE_TOTALE}}']).toBe('200')
+    expect(r['{{PARTI_SOCIALE_ASOCIAT_1}}']).toBe('200')
+    const groups = buildRepeatGroups({ idFields: null, client: c as Client, scannedPersons: [] })
+    expect(groups.ASOCIATI[0].PARTI_SOCIALE).toBe('200')
   })
 })

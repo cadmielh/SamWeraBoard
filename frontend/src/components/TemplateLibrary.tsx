@@ -127,7 +127,7 @@ const GUIDE_SECTIONS = [
       '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_JUDET}}', '{{SOCIETATE_FORMA_JURIDICA}}',
       '{{ASOCIATI_LISTA}} / {{ADMINISTRATORI_LISTA}} (numele pe o singură linie: „A, B și C”)',
       '{{CAMP_ORICE_NUME}} — câmp completat manual la generare (ex. {{CAMP_NR_HOTARARE}}); numele apare ca titlu al câmpului',
-      '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}',
+      '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}', '{{VALOARE_PARTE_SOCIALA}} (valoarea unei părți sociale, în lei; implicit 10)',
       '{{CAEN_1}} (activitate principală, format "cod - descriere")',
       '{{CAEN_DOMENIU}} (domeniul principal de activitate — grupa CAEN, 3 cifre, derivată automat din CAEN_1)',
       '{{CAEN_PRINCIPAL_COD}} (doar codul CAEN principal)', '{{CAEN_SECUNDARE_COD}} (codurile CAEN secundare, separate prin virgulă; „-” dacă nu există)',

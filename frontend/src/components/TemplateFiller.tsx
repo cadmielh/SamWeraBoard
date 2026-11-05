@@ -20,7 +20,7 @@ import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { applyTemplateOrder, builtinOrderKey, matchesTemplateSearch, ownOrderKey, visibleBuiltins } from '../lib/templateChanges'
 import { useApp } from '../AppContext'
-import { EMPTY_CLIENT, useClienti, type ClientInput } from '../lib/clienti'
+import { EMPTY_CLIENT, missingRegistrationFields, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
 import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
@@ -184,8 +184,23 @@ export default function TemplateFiller({
     isBuiltin?: boolean
   } | null>(null)
   // Singurul șablon de bază fără clauze care are nevoie de acest toggle azi —
-  // implicit "actualizare", cazul de utilizare mai frecvent.
-  const [actConstitutivMode, setActConstitutivMode] = useState<'infiintare' | 'actualizare'>('actualizare')
+  // implicit "actualizare", cazul de utilizare mai frecvent, sau "înființare" pentru o firmă marcată așa.
+  const defaultActMode = client?.inInfiintare ? 'infiintare' : 'actualizare'
+  const [actConstitutivMode, setActConstitutivMode] = useState<'infiintare' | 'actualizare'>(defaultActMode)
+  // La schimbarea clientului (sau a bifei lui), modul revine la cel implicit — ajustat în render, nu într-un efect.
+  const actModeKey = `${client?.id ?? ''}:${defaultActMode}`
+  const [actModeFor, setActModeFor] = useState(actModeKey)
+  if (actModeFor !== actModeKey) {
+    setActModeFor(actModeKey)
+    setActConstitutivMode(defaultActMode)
+  }
+
+  // Firmă în înființare: CUI-ul / J-ul lipsă ies în document ca loc de completat de mână — spunem asta explicit.
+  const lipsaInregistrare = client ? missingRegistrationFields(client) : []
+  const renderInfiintareNote = (placeholders?: string[]) =>
+    lipsaInregistrare.length > 0 && (placeholders ?? []).some(p => p === '{{SOCIETATE_CIF}}' || p === '{{SOCIETATE_NR_REG}}')
+      ? <div style={WARN_BOX}>ℹ️ Firma e în curs de înființare: {lipsaInregistrare.join(' și ')} vor rămâne în document ca loc de completat de mână.</div>
+      : null
 
   const listTemplates = useMemo(() => applyTemplateOrder(templates, t => ownOrderKey(t.id), templateOrder), [templates, templateOrder])
   // Căutarea filtrează doar ce se afișează în listă: selecția și generarea în lot rămân neschimbate.
@@ -227,11 +242,11 @@ export default function TemplateFiller({
   // avea un tag repetitiv ȘI unul „…LISTA”, dar o SINGURĂ listă de persoane aleasă, pentru amândouă). Nu se
   // salvează la fișa clientului — doar pentru acest document.
   const [customGroupPicks, setCustomGroupPicks] = useState<Record<string, Record<string, Persoana[]>>>({})
-  type TplWithRoles = { id: string; repeatGroups?: string[]; placeholders?: string[] }
+  type TplWithRoles = { id: string; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]>; placeholders?: string[] }
   // Un BuiltinTemplate n-are `id` (identificat prin `key`, vezi builtinKey) — formă minimă pentru
   // customGroupsFor/customListReplacementsFor/readinessPct, reconstruită altfel la fiecare apel.
   const builtinTplRef = (b: BuiltinTemplate): TplWithRoles =>
-    ({ id: builtinKey(b), repeatGroups: b.repeatGroups, placeholders: b.placeholders })
+    ({ id: builtinKey(b), repeatGroups: b.repeatGroups, repeatGroupFields: b.repeatGroupFields, placeholders: b.placeholders })
   // SEX/SEX_REF — la fel ca ASOCIATI/ADMINISTRATORI (buildRepeatGroups), pentru variantele „numit/ă" etc. din
   // clauza fiecărei persoane (vezi variants.py) — SEX_REF diferă per element, ca fiecare persoană din listă
   // să-și primească propriul sex, nu pe-al primeia din listă.
@@ -699,7 +714,7 @@ export default function TemplateFiller({
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
     if (tpl.clauses?.length || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl) || isBeneficiariRealiTemplate(tpl)))) { handleGenerateDocx(tpl); return }
 
-    const { missing } = checkReadiness(tpl.placeholders ?? [], { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) })
+    const { missing } = checkReadiness(tpl.placeholders ?? [], { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) }, tpl.repeatGroupFields)
     if (missing.length > 0) {
       setPendingGenerate({ tpl, missing })
     } else {
@@ -714,7 +729,7 @@ export default function TemplateFiller({
   const tryGenerateBuiltinSingle = (b: BuiltinTemplate) => {
     if (b.clauses.length > 0) { handleGenerateBuiltinDocx(b); return }
     const key = builtinKey(b)
-    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)) }, { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)) })
+    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)) }, { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)) }, b.repeatGroupFields)
     if (missing.length > 0) {
       setPendingGenerate({ tpl: b, missing, isBuiltin: true })
     } else {
@@ -724,7 +739,7 @@ export default function TemplateFiller({
 
   const tryBatchGenerate = () => {
     const targets = selectedTemplates
-    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], { ...repl(t.id), ...customListReplacementsFor(t) }, { ...repeatGroups, ...customGroupsFor(t) }).missing)
+    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], { ...repl(t.id), ...customListReplacementsFor(t) }, { ...repeatGroups, ...customGroupsFor(t) }, t.repeatGroupFields).missing)
     const uniqueMissing = [...new Set(allMissing)]
     if (uniqueMissing.length > 0) {
       // Show confirmation using the first template as representative (batch flag)
@@ -806,7 +821,7 @@ export default function TemplateFiller({
     if (!placeholders || placeholders.length === 0) return null
     const extraRepl = tpl ? customListReplacementsFor(tpl) : {}
     const extraGroups = tpl ? customGroupsFor(tpl) : {}
-    const { filled } = checkReadiness(placeholders, { ...(id ? repl(id) : replacements), ...extraRepl }, { ...repeatGroups, ...extraGroups })
+    const { filled } = checkReadiness(placeholders, { ...(id ? repl(id) : replacements), ...extraRepl }, { ...repeatGroups, ...extraGroups }, tpl?.repeatGroupFields)
     return Math.round((filled.length / placeholders.length) * 100)
   }
 
@@ -902,10 +917,10 @@ export default function TemplateFiller({
   // Șabloane cu clauze (Decizia Asociatului Unic, Hotărâre AGA și copiile lor): completarea = datele din afara clauzelor
   // (din client) + „cel puțin o clauză bifată” + câmpurile clauzelor bifate. Fără nicio clauză bifată încă, procentul
   // arată doar ce e deja completat din client.
-  const clauseCompletion = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[]) => {
+  const clauseCompletion = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[], groupFields?: Record<string, string[]>) => {
     const clausePh = new Set(clauses.flatMap(c => c.placeholders))
     const base = (placeholders ?? []).filter(ph => !clausePh.has(ph) && !INTERNAL_BUILTIN_FIELDS.has(ph.replace(/^\{\{|\}\}$/g, '')) && ph !== '{{ART_NR}}')
-    const { filled, missing } = checkReadiness(base, replacements, repeatGroups)
+    const { filled, missing } = checkReadiness(base, replacements, repeatGroups, groupFields)
     const cs = clauseState[id]
     const anySelected = !!cs && cs.selectedClauses.length > 0
     const cc = cs?.completion ?? { done: 0, total: 0, missing: [] as string[] }
@@ -920,18 +935,18 @@ export default function TemplateFiller({
       ],
     }
   }
-  const clausePct = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[]): number | null => {
-    const c = clauseCompletion(id, placeholders, clauses)
+  const clausePct = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[], groupFields?: Record<string, string[]>): number | null => {
+    const c = clauseCompletion(id, placeholders, clauses, groupFields)
     return c.total > 0 ? Math.round((c.done / c.total) * 100) : null
   }
 
   // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
   // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
-  const renderReadiness = (tpl: { id: string; placeholders?: string[]; repeatGroups?: string[] }) => {
+  const renderReadiness = (tpl: { id: string; placeholders?: string[]; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]> }) => {
     if (!tpl.placeholders || tpl.placeholders.length === 0) return null
     const mergedGroupsForReadiness = { ...repeatGroups, ...customGroupsFor(tpl) }
     const mergedReplForReadiness = { ...repl(tpl.id), ...customListReplacementsFor(tpl) }
-    const { filled, missing } = checkReadiness(tpl.placeholders, mergedReplForReadiness, mergedGroupsForReadiness)
+    const { filled, missing } = checkReadiness(tpl.placeholders, mergedReplForReadiness, mergedGroupsForReadiness, tpl.repeatGroupFields)
     const total = tpl.placeholders.length
     const pct = Math.round((filled.length / total) * 100)
     const isExpanded = expandedReadiness.has(tpl.id)
@@ -1086,7 +1101,7 @@ export default function TemplateFiller({
     const isBrx = b.key === BRX_KEY
     const mismatch = (isDeclaratie || isAnexa1 || isBrx) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = isDeclaratie ? declPct(key) : isAnexa1 ? anexa1Pct(key) : isBrx ? brxPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
+    const pct = isDeclaratie ? declPct(key) : isAnexa1 ? anexa1Pct(key) : isBrx ? brxPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses, b.repeatGroupFields) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
     return (
       <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}${mismatch ? ' tf-row--na' : ''}`}>
         <button
@@ -1123,7 +1138,7 @@ export default function TemplateFiller({
     const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
     const isAnexa1 = tpl.type === 'docx' && isAnexa1Template(tpl)
     const isBrx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)
-    const pct = isDecl ? declPct(tpl.id) : isAnexa1 ? anexa1Pct(tpl.id) : isBrx ? brxPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!) : readinessPct(tpl.placeholders, tpl.id, tpl)
+    const pct = isDecl ? declPct(tpl.id) : isAnexa1 ? anexa1Pct(tpl.id) : isBrx ? brxPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!, tpl.repeatGroupFields) : readinessPct(tpl.placeholders, tpl.id, tpl)
     return (
       <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}${asociatiMismatch ? ' tf-row--na' : ''}`}>
         {!hasClauses && !isDecl && !isAnexa1 && !isBrx && (
@@ -1199,11 +1214,12 @@ export default function TemplateFiller({
         {asociatiMismatch && (
           <div style={WARN_BOX}>⚠️ {tpl.name} {asociatiMismatch}</div>
         )}
+        {renderInfiintareNote(tpl.placeholders)}
 
         {!asociatiMismatch && isDecl && renderDeclaratieProgress(tpl.id)}
         {!asociatiMismatch && isAnexa1 && renderAnexa1Progress(tpl.id)}
         {!asociatiMismatch && isBrx && renderBrxProgress(tpl.id)}
-        {!asociatiMismatch && !isDecl && !isAnexa1 && !isBrx && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!), 'De completat înainte de generare')}
+        {!asociatiMismatch && !isDecl && !isAnexa1 && !isBrx && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!, tpl.repeatGroupFields), 'De completat înainte de generare')}
         {!asociatiMismatch && (isDecl ? (
           <DeclaratieActivitateFiller
             key={`${tpl.id}:${client?.id ?? 'none'}`}
@@ -1280,6 +1296,7 @@ export default function TemplateFiller({
 
         {mismatch && <div style={WARN_BOX}>⚠️ {b.name} {mismatch}</div>}
         {!mismatch && tipMsg && <div style={WARN_BOX}>⚠️ {tipMsg}</div>}
+        {renderInfiintareNote(b.placeholders)}
 
         {!mismatch && b.key === 'act_constitutiv' && (
           <div style={{ display: 'flex', gap: '.375rem' }}>
@@ -1303,7 +1320,7 @@ export default function TemplateFiller({
         {!mismatch && isDeclaratie && renderDeclaratieProgress(key)}
         {!mismatch && isAnexa1 && renderAnexa1Progress(key)}
         {!mismatch && isBrx && renderBrxProgress(key)}
-        {!mismatch && !isDeclaratie && !isAnexa1 && !isBrx && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses), 'De completat înainte de generare')}
+        {!mismatch && !isDeclaratie && !isAnexa1 && !isBrx && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses, b.repeatGroupFields), 'De completat înainte de generare')}
         {!mismatch && (isDeclaratie ? (
           <DeclaratieActivitateFiller
             key={client?.id ?? 'none'}
@@ -1333,7 +1350,7 @@ export default function TemplateFiller({
             onChange={v => setClauseState(prev => ({ ...prev, [key]: v }))}
           />
         ) : (
-          renderReadiness({ id: key, placeholders: builtinCheckablePlaceholders(b) })
+          renderReadiness({ id: key, placeholders: builtinCheckablePlaceholders(b), repeatGroupFields: b.repeatGroupFields })
         ))}
 
         {link && (
