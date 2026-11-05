@@ -900,6 +900,12 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
     return sorted(found)
 
 
+#  Blocuri completate automat din fișa clientului (vezi lib/placeholders.ts: buildRepeatGroups) — într-o clauză
+#  (ex. „capitalul revine {{#ASOCIATI}}{{COTA_PARTICIPARE}} către {{NUME}}{{/ASOCIATI}}”) etichetele lor nu se cer
+#  utilizatorului. Spre deosebire de blocurile proprii unei clauze (COD_CAEN_NOU, APORTURI…), completate din formular.
+_AUTO_FILLED_GROUPS = {"ASOCIATI", "ADMINISTRATORI", "MEMBRU_IF", "CAEN_SECUNDARE"}
+
+
 def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
     """
     Return [{"tag", "label", "placeholders"}] for each "Denumire: X" clause
@@ -907,8 +913,9 @@ def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
 
     `placeholders` are the unique {{X}} markers used only by that clause
     (excluding {{ART_NR}}, which is auto-numbered — never asked of the user
-    — and nested {{#TAG}}/{{/TAG}} repeat-block markers, which are
-    structural). Returns [] if the template has no clause-library section.
+    — nested {{#TAG}}/{{/TAG}} repeat-block markers, which are structural,
+    and the fields inside an auto-filled block, see _AUTO_FILLED_GROUPS).
+    Returns [] if the template has no clause-library section.
     """
     doc = Document(io.BytesIO(template_bytes))
     _, _, clauses = _parse_clause_library(doc)
@@ -919,8 +926,16 @@ def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
     result = []
     for c in clauses:
         found: set[str] = set()
+        open_tag = None
         for p in c["paragraphs"]:
             text = "".join(r.text for r in p.runs)
+            m = _REPEAT_GROUP_START_RE.match(text.strip())
+            if m:
+                open_tag = m.group(1)
+            elif open_tag and text.strip() == f"{{{{/{open_tag}}}}}":
+                open_tag = None
+            if open_tag in _AUTO_FILLED_GROUPS:
+                continue
             for match in pattern.findall(text):
                 if not marker_pattern.match(match) and match != _ART_NR_PLACEHOLDER:
                     found.add(match)

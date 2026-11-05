@@ -354,6 +354,32 @@ export function joinNames(persons: Persoana[]): string {
   return `${names.slice(0, -1).join(', ')} și ${names[names.length - 1]}`
 }
 
+const ROL_GENITIV: Record<'asociat' | 'administrator', [string, string]> = {
+  asociat: ['asociatului', 'asociaților'],
+  administrator: ['administratorului', 'administratorilor'],
+}
+
+/** Clauzele „Actualizare date asociat/administrator”: persoanele bifate → „asociatului X” / „asociaților X și Y”.
+ * Forma vine din numărul celor bifați, nu din numărul total al firmei (regula de acord din variants.py, care s-ar
+ * aplica unui „asociatului” scris direct în șablon). Masculinul e forma din modelul avocatului și pentru o femeie. */
+export function persoaneActualizate(persons: Persoana[], rol: 'asociat' | 'administrator'): { rol: string; nume: string } {
+  const [singular, plural] = ROL_GENITIV[rol]
+  return { rol: persons.length === 0 ? '' : persons.length === 1 ? singular : plural, nume: joinNames(persons) }
+}
+
+export type DurataTip = 'nedeterminata' | 'ani' | 'data'
+
+/** Clauzele de durată (societate, mandat): „nedeterminată” / „de 10 ani” / „de 25 de ani” / „până la data de …”.
+ * „de” înaintea lui „ani” de la 20 în sus (și la 100, 120…), ca în română; gol cât timp alegerea e incompletă. */
+export function durataText(tip: DurataTip, ani: string, data: string): string {
+  if (tip === 'nedeterminata') return 'nedeterminată'
+  if (tip === 'data') return data.trim() ? `până la data de ${data.trim()}` : ''
+  const n = Number(ani)
+  if (!Number.isInteger(n) || n <= 0) return ''
+  if (n === 1) return 'de un an'
+  return n % 100 === 0 || n % 100 >= 20 ? `de ${n} de ani` : `de ${n} ani`
+}
+
 /** Câmpurile unei persoane (NUME, PRENUME, CNP…), fără prefix de rol/poziție — forma pe care o așteaptă un
  * element dintr-un bloc repetitiv {{#ROL}} (vezi blanks.py: generic_person_tag) la completare, per element
  * din listă (vezi buildRepeatGroups mai jos și detectCustomPersonGroups, pentru roluri custom repetitive). */

@@ -12,7 +12,8 @@
  * cade automat pe randarea generică (un input text per placeholder găsit).
  */
 
-export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruClose' | 'majorareCapital' | 'majorareCapitalMulti' | 'identitateAsociat'
+export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruOpen' | 'punctLucruClose' | 'majorareCapital' | 'majorareCapitalMulti' | 'identitateAsociat'
+  | 'asociatiActualizati' | 'administratoriActualizati' | 'durataSocietate' | 'durataMandat'
 
 export interface ClauseFieldSpec {
   /** Placeholdere plate pe care widget-ul le completează direct. */
@@ -57,6 +58,11 @@ export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
     fields: ['ADMINISTRATOR_VECHI_NUME', 'ADMINISTRATOR_NOU_NUME', 'DURATA_MANDAT_ANI'],
     widget: 'administrator',
   },
+  // Doar adresa — contractul (tip, nr., dată) din Hotărârea AGA/Decizia de bază rămâne inputuri obișnuite sub widget
+  DESCHIDERE_PUNCT_DE_LUCRU: {
+    fields: ['PUNCT_LUCRU_NOU_ADRESA'],
+    widget: 'punctLucruOpen',
+  },
   INCHIDERE_PUNCT_DE_LUCRU: {
     fields: ['PUNCT_LUCRU_INCHIS_ADRESA'],
     widget: 'punctLucruClose',
@@ -68,6 +74,24 @@ export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
   MODIFICARE_DATE_IDENTIFICARE_ASOCIAT: {
     fields: ['ASOCIAT_MODIFICAT_NUME', 'ASOCIAT_MODIFICAT_PRENUME', 'ASOCIAT_MODIFICAT_SERIE_NUMAR'],
     widget: 'identitateAsociat',
+  },
+  // „Hotărâre - clauze” (șablonul avocatului): „Se actualizează datele {{ASOCIATI_ACTUALIZATI_ROL}} {{ASOCIATI_ACTUALIZATI}}.”
+  ACTUALIZARE_DATE_ASOCIAT: {
+    fields: ['ASOCIATI_ACTUALIZATI_ROL', 'ASOCIATI_ACTUALIZATI'],
+    widget: 'asociatiActualizati',
+  },
+  ACTUALIZARE_DATE_ADMINISTRATOR: {
+    fields: ['ADMINISTRATORI_ACTUALIZATI_ROL', 'ADMINISTRATORI_ACTUALIZATI'],
+    widget: 'administratoriActualizati',
+  },
+  // „… ca fiind {{DURATA_SOCIETATE}}.” — o singură clauză, varianta (nedeterminată / ani / dată) se alege în formular
+  DURATA_SOCIETATE: {
+    fields: ['DURATA_SOCIETATE'],
+    widget: 'durataSocietate',
+  },
+  DURATA_MANDAT_ADMINISTRATOR: {
+    fields: ['DURATA_MANDAT'],
+    widget: 'durataMandat',
   },
 }
 

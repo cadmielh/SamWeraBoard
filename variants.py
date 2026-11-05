@@ -69,6 +69,7 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("administratorul", "administratorii"): "administratori", ("administrator", "administratori"): "administratori",
     ("administratorului", "administratorilor"): "administratori",
     ("are", "au"): "asociati", ("este", "sunt"): "asociati", ("acesta", "acestia"): "asociati",
+    ("hotarasc", "hotaram"): "asociati",   # „în calitate de asociat unic/asociați, hotărăsc/hotărâm:”
     # Domeniul „comodanti” — numărul comodanților (proprietarii imobilului dat în comodat), independent de
     # numărul asociaților firmei (vezi contractul de comodat pentru sediul social). Perechile de mai jos sunt
     # vocabular specific, fără risc de coincidență cu alt domeniu existent — spre deosebire de „are/au” (deja

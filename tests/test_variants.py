@@ -124,6 +124,12 @@ def test_administrator_sau_administratori_si_verbe():
     assert resolve(t, {"asociati": 2, "administratori": 2})[0] == "Administratorii reprezintă societatea. Asociații îşi vor putea angaja un administrator."
 
 
+def test_hotarasc_sau_hotaram_dupa_numarul_asociatilor():
+    t = "în calitate de asociat unic/asociați, hotărăsc/hotărâm:"
+    assert resolve(t, {"asociati": 1})[0] == "în calitate de asociat unic, hotărăsc:"
+    assert resolve(t, {"asociati": 2})[0] == "în calitate de asociați, hotărâm:"
+
+
 def test_majuscule_complete_la_titluri():
     assert resolve("ASOCIAT UNIC/ASOCIAȚI:", {"asociati": 1})[0] == "ASOCIAT UNIC:"
     assert resolve("ASOCIAT UNIC/ASOCIAȚI:", {"asociati": 2})[0] == "ASOCIAȚI:"

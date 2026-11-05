@@ -57,6 +57,21 @@ def test_list_clauses_excludes_art_nr():
         assert "{{ART_NR}}" not in c["placeholders"]
 
 
+def test_list_clauses_skips_fields_of_auto_filled_blocks_but_not_clause_blocks():
+    tpl = [
+        "{{#CLAUZE}}",
+        "Denumire: LICHIDARE",
+        "Capitalul de {{CAPITAL_SOCIAL_TOTAL}} lei revine:",
+        "{{#ASOCIATI}}", "{{COTA_PARTICIPARE}} către {{NUME}} {{PRENUME}};", "{{/ASOCIATI}}",
+        "Denumire: ADAUGARE COD CAEN",
+        "{{#COD_CAEN_NOU}}", "{{CAEN}};", "{{/COD_CAEN_NOU}}",
+        "{{/CLAUZE}}",
+    ]
+    clauses = df.list_clauses_in_docx(_build_docx(tpl))
+    assert clauses[0]["placeholders"] == ["{{CAPITAL_SOCIAL_TOTAL}}"]
+    assert clauses[1]["placeholders"] == ["{{CAEN}}"]
+
+
 def test_list_clauses_empty_without_markers():
     assert df.list_clauses_in_docx(_build_docx(["Text simplu", "{{NUME}}"])) == []
 

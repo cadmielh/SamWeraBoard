@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildReplacements, buildRepeatGroups, checkReadiness, joinNames, isManualPlaceholder, manualLabel,
+  buildReplacements, buildRepeatGroups, checkReadiness, joinNames, persoaneActualizate, durataText, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
   detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, HAND_FILL_BLANK,
 } from './placeholders'
@@ -86,6 +86,29 @@ describe('etichete pentru șabloane importate din documente cu locuri libere', (
     expect(joinNames([])).toBe('')
     expect(joinNames([p({ nume: 'A', prenume: 'a' })])).toBe('A a')
     expect(joinNames([p({ nume: 'A' }), p({ nume: 'B' }), p({ nume: 'C' })])).toBe('A, B și C')
+  })
+
+  it('persoaneActualizate: forma după câte persoane sunt bifate, nu după câte are firma', () => {
+    expect(persoaneActualizate([], 'asociat')).toEqual({ rol: '', nume: '' })
+    expect(persoaneActualizate([p({ nume: 'CIUȘ', prenume: 'ADELINA-LARISA' })], 'asociat'))
+      .toEqual({ rol: 'asociatului', nume: 'CIUȘ ADELINA-LARISA' })
+    expect(persoaneActualizate([p({ nume: 'A', prenume: 'a' }), p({ nume: 'B', prenume: 'b' })], 'asociat'))
+      .toEqual({ rol: 'asociaților', nume: 'A a și B b' })
+    expect(persoaneActualizate([p({ nume: 'A', prenume: 'a' })], 'administrator').rol).toBe('administratorului')
+    expect(persoaneActualizate([p({ nume: 'A' }), p({ nume: 'B' })], 'administrator').rol).toBe('administratorilor')
+  })
+
+  it('durataText: nedeterminată, ani (cu „de” de la 20 în sus), dată; gol cât e incomplet', () => {
+    expect(durataText('nedeterminata', '', '')).toBe('nedeterminată')
+    expect(durataText('ani', '1', '')).toBe('de un an')
+    expect(durataText('ani', '10', '')).toBe('de 10 ani')
+    expect(durataText('ani', '19', '')).toBe('de 19 ani')
+    expect(durataText('ani', '20', '')).toBe('de 20 de ani')
+    expect(durataText('ani', '99', '')).toBe('de 99 de ani')
+    expect(durataText('ani', '101', '')).toBe('de 101 ani')
+    expect(durataText('ani', '', '')).toBe('')
+    expect(durataText('data', '', '31.12.2030')).toBe('până la data de 31.12.2030')
+    expect(durataText('data', '', ' ')).toBe('')
   })
 
   it('câmpuri manuale {{CAMP_…}}: recunoscute și cu titlu citibil', () => {

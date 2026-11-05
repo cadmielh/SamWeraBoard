@@ -242,6 +242,13 @@ export default function TemplateFiller({
   // avea un tag repetitiv ȘI unul „…LISTA”, dar o SINGURĂ listă de persoane aleasă, pentru amândouă). Nu se
   // salvează la fișa clientului — doar pentru acest document.
   const [customGroupPicks, setCustomGroupPicks] = useState<Record<string, Record<string, Persoana[]>>>({})
+  // Persoanele alese țin de firma curentă (ex. administratorul care semnează anexa) — la alt client se aleg din nou
+  const [picksForClient, setPicksForClient] = useState(client?.id)
+  if (picksForClient !== client?.id) {
+    setPicksForClient(client?.id)
+    setCustomPersonPicks({})
+    setCustomGroupPicks({})
+  }
   type TplWithRoles = { id: string; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]>; placeholders?: string[] }
   // Un BuiltinTemplate n-are `id` (identificat prin `key`, vezi builtinKey) — formă minimă pentru
   // customGroupsFor/customListReplacementsFor/readinessPct, reconstruită altfel la fiecare apel.
@@ -920,7 +927,8 @@ export default function TemplateFiller({
   const clauseCompletion = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[], groupFields?: Record<string, string[]>) => {
     const clausePh = new Set(clauses.flatMap(c => c.placeholders))
     const base = (placeholders ?? []).filter(ph => !clausePh.has(ph) && !INTERNAL_BUILTIN_FIELDS.has(ph.replace(/^\{\{|\}\}$/g, '')) && ph !== '{{ART_NR}}')
-    const { filled, missing } = checkReadiness(base, replacements, repeatGroups, groupFields)
+    // repl(id): cu persoanele alese pentru rolurile „noi" (ex. administratorul care semnează anexa)
+    const { filled, missing } = checkReadiness(base, repl(id), repeatGroups, groupFields)
     const cs = clauseState[id]
     const anySelected = !!cs && cs.selectedClauses.length > 0
     const cc = cs?.completion ?? { done: 0, total: 0, missing: [] as string[] }
@@ -939,6 +947,26 @@ export default function TemplateFiller({
     const c = clauseCompletion(id, placeholders, clauses, groupFields)
     return c.total > 0 ? Math.round((c.done / c.total) * 100) : null
   }
+
+  // Alegerea persoanelor pentru rolurile „noi" cu poziții fixe ({{ROL_N_CÂMP}}) — în renderReadiness și, la
+  // șabloanele cu clauze (care n-au renderReadiness), deasupra listei de clauze: ex. administratorul care semnează
+  // anexa unei hotărâri ({{REPREZENTANT_SOCIETATE_1_…}}).
+  const renderCustomPersonFields = (tplId: string, customRoles: { role: string; positions: number[] }[]) => customRoles.length > 0 && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
+      <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane</div>
+      {customRoles.flatMap(({ role, positions }) => positions.map(position => (
+        <CustomPersonField
+          key={`${role}_${position}`}
+          role={role} position={position}
+          existing={existingForCustomRole(role)}
+          value={customPersonPicks[tplId]?.[`${role}_${position}`] ?? null}
+          onChange={p => setCustomPersonPicks(prev => ({
+            ...prev, [tplId]: { ...prev[tplId], [`${role}_${position}`]: p },
+          }))}
+        />
+      )))}
+    </div>
+  )
 
   // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
   // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
@@ -996,22 +1024,7 @@ export default function TemplateFiller({
             })()}
           </div>
         )}
-        {customRoles.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
-            <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane</div>
-            {customRoles.flatMap(({ role, positions }) => positions.map(position => (
-              <CustomPersonField
-                key={`${role}_${position}`}
-                role={role} position={position}
-                existing={existingForCustomRole(role)}
-                value={customPersonPicks[tpl.id]?.[`${role}_${position}`] ?? null}
-                onChange={p => setCustomPersonPicks(prev => ({
-                  ...prev, [tpl.id]: { ...prev[tpl.id], [`${role}_${position}`]: p },
-                }))}
-              />
-            )))}
-          </div>
-        )}
+        {renderCustomPersonFields(tpl.id, customRoles)}
         {customGroups.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
             <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane (listă)</div>
@@ -1242,12 +1255,16 @@ export default function TemplateFiller({
             onChange={v => setBrxFormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
           />
         ) : hasClauses ? (
-          <ClauseSelector
-            clauses={tpl.clauses!}
-            client={client}
-            baseReplacements={replacements}
-            onChange={v => setClauseState(prev => ({ ...prev, [tpl.id]: v }))}
-          />
+          <>
+            {renderCustomPersonFields(tpl.id, detectCustomPersonRoles(tpl.placeholders ?? []))}
+            <ClauseSelector
+              key={`${tpl.id}:${client?.id ?? 'none'}`}
+              clauses={tpl.clauses!}
+              client={client}
+              baseReplacements={replacements}
+              onChange={v => setClauseState(prev => ({ ...prev, [tpl.id]: v }))}
+            />
+          </>
         ) : (
           renderReadiness(tpl)
         ))}
@@ -1344,6 +1361,7 @@ export default function TemplateFiller({
           />
         ) : b.clauses.length > 0 ? (
           <ClauseSelector
+            key={`${key}:${client?.id ?? 'none'}`}
             clauses={b.clauses}
             client={client}
             baseReplacements={replacements}

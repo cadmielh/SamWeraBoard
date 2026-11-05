@@ -9,9 +9,12 @@ import AdaugareCaenFields from './clauses/AdaugareCaenFields'
 import SchimbareCaenPrincipalFields from './clauses/SchimbareCaenPrincipalFields'
 import SchimbareAdministratorFields from './clauses/SchimbareAdministratorFields'
 import InchiderePunctLucruFields from './clauses/InchiderePunctLucruFields'
+import DeschiderePunctLucruFields from './clauses/DeschiderePunctLucruFields'
 import MajorareCapitalFields from './clauses/MajorareCapitalFields'
 import MajorareCapitalMultiFields from './clauses/MajorareCapitalMultiFields'
 import ModificareIdentitateAsociatFields from './clauses/ModificareIdentitateAsociatFields'
+import ActualizarePersoaneFields from './clauses/ActualizarePersoaneFields'
+import DurataFields from './clauses/DurataFields'
 
 export interface ClauseSelectorValue {
   selectedClauses: string[]
@@ -46,7 +49,8 @@ function computeInlinePatch(
   if (tag === 'SCHIMBARE_SEDIU_SOCIAL' && fields.SEDIU_NOU) {
     return { label: `Sediul social nou: ${fields.SEDIU_NOU}`, patch: { sediuSocial: parseAdresa(fields.SEDIU_NOU) } }
   }
-  if (tag === 'DESCHIDERE_PUNCT_DE_LUCRU' && fields.PUNCT_LUCRU_NOU_ADRESA) {
+  // Un punct ales din cele deja trecute în fișă nu se mai adaugă o dată — doar unul introdus manual
+  if (tag === 'DESCHIDERE_PUNCT_DE_LUCRU' && fields.PUNCT_LUCRU_NOU_ADRESA && !client?.puncteLucru?.includes(fields.PUNCT_LUCRU_NOU_ADRESA)) {
     return {
       label: `Adaugă punct de lucru: ${fields.PUNCT_LUCRU_NOU_ADRESA}`,
       patch: { puncteLucru: [...(client?.puncteLucru ?? []), fields.PUNCT_LUCRU_NOU_ADRESA] },
@@ -67,15 +71,24 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
   const [groupsByClause, setGroupsByClause] = useState<Record<string, Record<string, Record<string, string>[]>>>({})
   const [clientPatchByClause, setClientPatchByClause] = useState<Record<string, ClientPatchProposal | null>>({})
 
-  const toggle = (tag: string) => setSelected(prev => {
-    const next = new Set(prev)
-    if (next.has(tag)) next.delete(tag); else next.add(tag)
-    return next
-  })
+  // O clauză debifată își pierde datele: formularele ei țin alegerea în stare locală (bife, variantă de durată),
+  // pierdută la ascundere — valorile rămase ar ajunge în document fără să mai fie vizibile la o nouă bifare.
+  const forget = (tags: string[]) => {
+    const without = <T,>(prev: Record<string, T>) => Object.fromEntries(Object.entries(prev).filter(([t]) => !tags.includes(t)))
+    setFieldsByClause(without)
+    setGroupsByClause(without)
+    setClientPatchByClause(without)
+  }
+
+  const toggle = (tag: string) => {
+    const next = new Set(selected)
+    if (next.has(tag)) { next.delete(tag); forget([tag]) } else next.add(tag)
+    setSelected(next)
+  }
 
   const allSelected = clauses.length > 0 && clauses.every(c => selected.has(c.tag))
   const selectAll = () => setSelected(new Set(clauses.map(c => c.tag)))
-  const deselectAll = () => setSelected(new Set())
+  const deselectAll = () => { forget([...selected]); setSelected(new Set()) }
 
   const setField = (tag: string, key: string, value: string) =>
     setFieldsByClause(prev => ({ ...prev, [tag]: { ...prev[tag], [key]: value } }))
@@ -219,6 +232,18 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     onClientPatch={p => setClientPatch(c.tag, p)}
                   />
                 )}
+                {useWidget && spec.widget === 'asociatiActualizati' && (
+                  <ActualizarePersoaneFields client={client} rol="asociat" field="ASOCIATI_ACTUALIZATI" onField={(k, v) => setField(c.tag, k, v)} />
+                )}
+                {useWidget && spec.widget === 'administratoriActualizati' && (
+                  <ActualizarePersoaneFields client={client} rol="administrator" field="ADMINISTRATORI_ACTUALIZATI" onField={(k, v) => setField(c.tag, k, v)} />
+                )}
+                {useWidget && spec.widget === 'durataSocietate' && (
+                  <DurataFields tipuri={['nedeterminata', 'ani', 'data']} onChange={v => setField(c.tag, 'DURATA_SOCIETATE', v)} />
+                )}
+                {useWidget && spec.widget === 'durataMandat' && (
+                  <DurataFields tipuri={['ani', 'data']} onChange={v => setField(c.tag, 'DURATA_MANDAT', v)} />
+                )}
                 {useWidget && spec.widget === 'identitateAsociat' && (
                   <ModificareIdentitateAsociatFields
                     client={client}
@@ -227,10 +252,20 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     onClientPatch={p => setClientPatch(c.tag, p)}
                   />
                 )}
-                {!useWidget && (() => {
-                  const visible = c.placeholders.filter(ph => !AUTO_DATE_KEYS.has(ph.replace(/^\{\{|\}\}$/g, '')))
+                {useWidget && spec.widget === 'punctLucruOpen' && (
+                  <DeschiderePunctLucruFields
+                    client={client}
+                    value={fieldsByClause[c.tag]?.PUNCT_LUCRU_NOU_ADRESA ?? ''}
+                    onChange={v => setField(c.tag, 'PUNCT_LUCRU_NOU_ADRESA', v)}
+                  />
+                )}
+                {/* Un widget care acoperă doar o parte din clauză (ex. adresa punctului de lucru, dar nu și contractul
+                    din Hotărârea AGA de bază) — restul câmpurilor rămân inputuri obișnuite, sub el. */}
+                {(!useWidget || spec.widget === 'punctLucruOpen') && (() => {
+                  const skip = new Set([...AUTO_DATE_KEYS, ...(useWidget ? spec.fields : [])])
+                  const visible = c.placeholders.filter(ph => !skip.has(ph.replace(/^\{\{|\}\}$/g, '')))
                   if (visible.length === 0) {
-                    return <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Fără alte câmpuri de completat.</div>
+                    return useWidget ? null : <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Fără alte câmpuri de completat.</div>
                   }
                   return visible.map(ph => {
                     const key = ph.replace(/^\{\{|\}\}$/g, '')
