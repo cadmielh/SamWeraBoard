@@ -59,6 +59,14 @@ function formatCaen(cod?: string, descriere?: string): string {
   return descriere ? `${cod} - ${descriere}` : cod
 }
 
+/** Câmp de clauză ce ține codul CAEN principal — recunoscut după nume, în orice clauză și orice șablon, ca să primească
+ * lista CAEN (REV 3) în loc de text liber: 'full' = „cod - denumire” ({{CAEN_1}}), 'cod' = doar codul. */
+export function caenFieldKind(key: string): 'full' | 'cod' | null {
+  if (key === 'CAEN_1') return 'full'
+  if (key === 'CAEN_PRINCIPAL_COD') return 'cod'
+  return null
+}
+
 function persoanaToMap(p: Persoana, prefix: string): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, field] of Object.entries(PERSOANA_FIELD_MAP)) {

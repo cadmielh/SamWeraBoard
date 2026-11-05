@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Client, ClauseMeta } from '../types'
 import { findClauseSpec, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
-import { parsePlaceholder, isDateLabel } from '../lib/placeholders'
+import { parsePlaceholder, isDateLabel, caenFieldKind } from '../lib/placeholders'
 import { parseAdresa } from '../lib/adresa'
 import DateFieldInput from './DateFieldInput'
 import CesiuneFields from './clauses/CesiuneFields'
@@ -15,6 +15,8 @@ import MajorareCapitalMultiFields from './clauses/MajorareCapitalMultiFields'
 import ModificareIdentitateAsociatFields from './clauses/ModificareIdentitateAsociatFields'
 import ActualizarePersoaneFields from './clauses/ActualizarePersoaneFields'
 import DurataFields from './clauses/DurataFields'
+import CaenFieldInput from './clauses/CaenFieldInput'
+import { findCaenDescriere } from '../data/caen'
 
 export interface ClauseSelectorValue {
   selectedClauses: string[]
@@ -42,24 +44,35 @@ const AUTO_DATE_KEYS = new Set(['DATA_CURENTA', 'DATA_AZI', 'LUNA_AZI', 'AN_AZI'
 
 /** Clauze fără widget dedicat (sau al căror widget doar alege o valoare, ca
  * la închiderea unui punct de lucru) — patch-ul de client se calculează
- * direct din câmpurile plate, fără să treacă prin onClientPatch. */
+ * direct din câmpurile plate, fără să treacă prin onClientPatch. Se decide
+ * după câmpuri, nu după numele clauzei, ca să meargă și în șabloanele altor clienți. */
 function computeInlinePatch(
-  tag: string, fields: Record<string, string>, client: Partial<Client> | null | undefined,
+  fields: Record<string, string>, client: Partial<Client> | null | undefined,
 ): ClientPatchProposal | null {
-  if (tag === 'SCHIMBARE_SEDIU_SOCIAL' && fields.SEDIU_NOU) {
+  if (fields.SEDIU_NOU) {
     return { label: `Sediul social nou: ${fields.SEDIU_NOU}`, patch: { sediuSocial: parseAdresa(fields.SEDIU_NOU) } }
   }
   // Un punct ales din cele deja trecute în fișă nu se mai adaugă o dată — doar unul introdus manual
-  if (tag === 'DESCHIDERE_PUNCT_DE_LUCRU' && fields.PUNCT_LUCRU_NOU_ADRESA && !client?.puncteLucru?.includes(fields.PUNCT_LUCRU_NOU_ADRESA)) {
+  if (fields.PUNCT_LUCRU_NOU_ADRESA && !client?.puncteLucru?.includes(fields.PUNCT_LUCRU_NOU_ADRESA)) {
     return {
       label: `Adaugă punct de lucru: ${fields.PUNCT_LUCRU_NOU_ADRESA}`,
       patch: { puncteLucru: [...(client?.puncteLucru ?? []), fields.PUNCT_LUCRU_NOU_ADRESA] },
     }
   }
-  if (tag === 'INCHIDERE_PUNCT_DE_LUCRU' && fields.PUNCT_LUCRU_INCHIS_ADRESA) {
+  if (fields.PUNCT_LUCRU_INCHIS_ADRESA) {
     return {
       label: `Închide punct de lucru: ${fields.PUNCT_LUCRU_INCHIS_ADRESA}`,
       patch: { puncteLucru: (client?.puncteLucru ?? []).filter(p => p !== fields.PUNCT_LUCRU_INCHIS_ADRESA) },
+    }
+  }
+  // CAEN principal ales din listă în locul celui din fișă (ex. actualizarea la REV 3), în orice clauză
+  const caen = fields.CAEN_1 ?? fields.CAEN_PRINCIPAL_COD
+  const caenCod = caen?.split(' - ')[0].trim()
+  if (caenCod && caenCod !== client?.caenCod) {
+    const caenDescriere = findCaenDescriere(caenCod)
+    return {
+      label: `CAEN principal: ${caenDescriere ? `${caenCod} - ${caenDescriere}` : caenCod}`,
+      patch: { caenCod, caenDescriere },
     }
   }
   return null
@@ -132,7 +145,7 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
       for (const [groupName, rows] of Object.entries(groups)) {
         extraGroups[groupName] = rows
       }
-      const patch = clientPatchByClause[tag] ?? computeInlinePatch(tag, fields, client)
+      const patch = clientPatchByClause[tag] ?? computeInlinePatch(fields, client)
       if (patch) clientPatches[tag] = patch
       const clause = clauses.find(c => c.tag === tag)
       if (clause && !isClauseComplete(clause)) complete = false
@@ -272,6 +285,10 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     const auto = baseReplacements[ph]
                     const { field: label } = parsePlaceholder(ph)
                     const value = fieldsByClause[c.tag]?.[key] ?? auto ?? ''
+                    const caenKind = caenFieldKind(key)
+                    if (caenKind) {
+                      return <CaenFieldInput key={ph} label={label} kind={caenKind} value={value} onChange={v => setField(c.tag, key, v)} />
+                    }
                     return isDateLabel(label) ? (
                       <DateFieldInput key={ph} label={label} value={value} onChange={v => setField(c.tag, key, v)} />
                     ) : (

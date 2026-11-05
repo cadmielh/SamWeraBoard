@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, joinNames, persoaneActualizate, durataText, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
-  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, HAND_FILL_BLANK,
+  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, HAND_FILL_BLANK, caenFieldKind,
 } from './placeholders'
 import type { Client, Persoana } from '../types'
 
@@ -43,7 +43,16 @@ describe('coduri CAEN pentru clauza „Actualizare cod CAEN REV3”', () => {
   })
 })
 
-describe('CAEN_DOMENIU — „domeniul principal de activitate” (grupa CAEN, 3 cifre), derivată din codul principal', () => {
+describe('caenFieldKind — câmpurile de clauză care primesc lista CAEN', () => {
+  it('recunoaște activitatea principală (cod + denumire) și doar codul; restul rămân text', () => {
+    expect(caenFieldKind('CAEN_1')).toBe('full')
+    expect(caenFieldKind('CAEN_PRINCIPAL_COD')).toBe('cod')
+    expect(caenFieldKind('CAEN_SECUNDARE_COD')).toBeNull()
+    expect(caenFieldKind('SEDIU_NOU')).toBeNull()
+  })
+})
+
+describe('CAEN_DOMENIU —„domeniul principal de activitate” (grupa CAEN, 3 cifre), derivată din codul principal', () => {
   it('grupa (3 cifre) și denumirea ei oficială, derivate din clasa (4 cifre) aleasă de client', () => {
     const r = build(client({ caenCod: '7020', caenDescriere: 'Activități de consultanță pentru afaceri' }))
     expect(r['{{CAEN_DOMENIU}}']).toBe('702 - Activităţi de consultanţă în management')

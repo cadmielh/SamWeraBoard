@@ -110,7 +110,17 @@ export const CLAUSE_FIELD_SPEC_VARIANTS: Record<string, ClauseFieldSpec[]> = {
 /** Spec-ul cu widget dedicat potrivit clauzei din șablonul curent, sau null (→ randare generică). */
 export function findClauseSpec(tag: string, clausePlaceholders: string[]): ClauseFieldSpec | null {
   const candidates = [...(CLAUSE_FIELD_SPEC_VARIANTS[tag] ?? []), ...(CLAUSE_FIELD_SPECS[tag] ? [CLAUSE_FIELD_SPECS[tag]] : [])]
-  return candidates.find(s => specMatchesClause(s, clausePlaceholders)) ?? null
+  return candidates.find(s => specMatchesClause(s, clausePlaceholders)) ?? specByFields(clausePlaceholders)
+}
+
+/** Clauză cu alt nume decât cele cunoscute (șabloanele altor clienți): widget-ul se alege după câmpurile ei.
+ * Doar spec-uri cu câmpuri plate — unul cu listă scrie rândurile într-un bloc cu nume fix ({{#COD_CAEN_NOU}}),
+ * pe care șablonul altcuiva l-ar putea numi altfel. Dacă se potrivesc mai multe, niciunul (randare generică),
+ * ca să nu rămână câmpuri fără formular. */
+function specByFields(clausePlaceholders: string[]): ClauseFieldSpec | null {
+  const matches = Object.values(CLAUSE_FIELD_SPECS)
+    .filter(s => !s.groupName && s.fields.length > 0 && specMatchesClause(s, clausePlaceholders))
+  return matches.length === 1 ? matches[0] : null
 }
 
 /** True doar dacă toate câmpurile așteptate de spec chiar apar în lista de
