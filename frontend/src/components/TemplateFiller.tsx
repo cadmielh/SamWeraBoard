@@ -267,7 +267,7 @@ export default function TemplateFiller({
     const picks = customGroupPicks[tpl.id]
     if (!picks) return {}
     const out: Record<string, Record<string, string>[]> = {}
-    for (const { role, repeatTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])) {
+    for (const { role, repeatTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [], tpl.repeatGroupFields)) {
       const persons = picks[role]
       if (!repeatTag || !persons) continue
       out[repeatTag] = persons.map((p, i) => ({ ...persoanaToSingularMap(p), SEX: personSex(p) ?? '', SEX_REF: `${role}_${i + 1}` }))
@@ -280,7 +280,7 @@ export default function TemplateFiller({
     const picks = customGroupPicks[tpl.id]
     if (!picks) return {}
     const out: Record<string, string> = {}
-    for (const { role, listTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])) {
+    for (const { role, listTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [], tpl.repeatGroupFields)) {
       const persons = picks[role]
       if (!listTag || !persons) continue
       out[`{{${listTag}}}`] = joinNames(persons)
@@ -1085,7 +1085,7 @@ export default function TemplateFiller({
     const customRoles = detectCustomPersonRoles(tpl.placeholders)
     // Aceleași roluri noi, dar scrise fie ca bloc REPETITIV ({{#COMODANTI}}…), fie ca simplu câmp „…LISTA" —
     // câte persoane e nevoie, nu o singură poziție (vezi CustomPersonGroupField/detectCustomPersonGroups).
-    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])
+    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [], tpl.repeatGroupFields)
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
@@ -1312,7 +1312,7 @@ export default function TemplateFiller({
               const all = tpl.placeholders ?? []
               // Persoanele folosite doar în clauze se aleg în clauza lor (renderPersons), nu aici
               return renderTemplateInputs(tpl, all.filter(ph => isManualPlaceholder(ph) && !clausePh.has(ph)),
-                detectCustomPersonRoles(all.filter(ph => !clausePh.has(ph))), detectCustomPersonGroups(tpl.repeatGroups ?? [], all))
+                detectCustomPersonRoles(all.filter(ph => !clausePh.has(ph))), detectCustomPersonGroups(tpl.repeatGroups ?? [], all, tpl.repeatGroupFields))
             })()}
             <ClauseSelector
               renderPersons={phs => {

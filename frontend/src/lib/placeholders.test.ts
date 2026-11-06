@@ -327,6 +327,11 @@ describe('roluri de persoană „noi” (comodant, reprezentant legal…) — î
     ])
   })
 
+  it('detectCustomPersonGroups ignoră blocurile fără câmpuri de persoană (ex. COD_CAEN_NOU dintr-o clauză)', () => {
+    const groups = detectCustomPersonGroups(['COD_CAEN_NOU', 'CESIONARI'], [], { COD_CAEN_NOU: ['CAEN'], CESIONARI: ['NUME', 'CNP'] })
+    expect(groups).toEqual([{ role: 'CESIONAR', repeatTag: 'CESIONARI' }])
+  })
+
   it('detectCustomPersonGroups ignoră ASOCIATI_LISTA/ADMINISTRATORI_LISTA (completate automat din client, nu roluri custom)', () => {
     const groups = detectCustomPersonGroups([], ['{{ASOCIATI_LISTA}}', '{{ADMINISTRATORI_LISTA}}'])
     expect(groups).toEqual([])

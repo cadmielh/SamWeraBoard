@@ -217,10 +217,15 @@ export interface CustomPersonGroup {
  * de două ori (exact bug-ul redundant „listă dublă” corectat mai devreme pentru pozițiile fixe — aici e
  * varianta lui pentru blocuri repetitive/câmpuri „…LISTA”).
  */
-export function detectCustomPersonGroups(repeatGroups: string[], placeholders: string[] = []): CustomPersonGroup[] {
+export function detectCustomPersonGroups(
+  repeatGroups: string[], placeholders: string[] = [], groupFields?: Record<string, string[]>,
+): CustomPersonGroup[] {
   const byRole = new Map<string, CustomPersonGroup>()
   for (const tag of repeatGroups) {
     if (KNOWN_AUTO_GROUP_TAGS.has(tag)) continue
+    // Un bloc fără niciun câmp de persoană (ex. {{#COD_CAEN_NOU}}{{CAEN}}{{/COD_CAEN_NOU}} al unei clauze) nu e o listă de persoane
+    const fields = groupFields?.[tag]
+    if (fields && !fields.some(f => PERSOANA_FIELD_NAMES.has(f))) continue
     const role = singularOfCustomGroup(tag)
     byRole.set(role, { ...(byRole.get(role) ?? { role }), repeatTag: tag })
   }
