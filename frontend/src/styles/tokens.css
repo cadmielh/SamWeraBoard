@@ -859,6 +859,15 @@ body {
 .tl-card-body { display:flex; flex-direction:column; gap:.375rem; padding:.625rem .875rem .75rem; border-top:1px solid var(--s200); }
 .tf-list-label { font-size:.7rem; font-weight:700; color:var(--s500); letter-spacing:.06em; text-transform:uppercase; margin-top:.25rem; }
 .tf-rows { display:flex; flex-direction:column; gap:.375rem; }
+.tfolder { display:flex; align-items:center; gap:.375rem; min-width:0; }
+.tfolder-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:.4rem; padding:.3rem .25rem; background:none; border:none; cursor:pointer; font-family:var(--font); font-size:.82rem; font-weight:600; color:var(--s700); text-align:left; border-radius:var(--r-sm); }
+.tfolder-toggle:hover { background:var(--p50); color:var(--p700); }
+.tfolder-toggle:focus-visible { outline:2px solid var(--p500); outline-offset:-2px; }
+.tfolder-chevron { width:.75rem; color:var(--s400); transition:transform var(--t); }
+.tfolder-chevron--open { transform:rotate(90deg); }
+.tfolder-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tfolder-count { font-size:.7rem; font-weight:700; color:var(--s500); background:var(--s100); border-radius:999px; padding:.05rem .45rem; }
+.tfolder-items { display:flex; flex-direction:column; gap:.375rem; padding-left:.875rem; border-left:2px solid var(--s200); margin-left:.5rem; }
 .tf-row { display:flex; align-items:center; gap:.5rem; }
 .tf-row input[type="checkbox"] { flex-shrink:0; cursor:pointer; }
 .tf-row-main {

@@ -102,13 +102,17 @@ service cloud.firestore {
       allow delete: if false;
 
       // Adminul de workspace poate modifica doar numele, configurul de facturare, ce șabloane de bază sunt ascunse
-      // la generare și ordinea șabloanelor (preferințe de afișare, nu un control de acces).
+      // la generare, ordinea șabloanelor și folderele lor (preferințe de afișare, nu un control de acces).
       allow update: if isAdmin(wid) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig', 'hiddenBuiltins', 'templateOrder']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facturareConfig', 'hiddenBuiltins', 'templateOrder', 'templateFolders', 'templateFolderOf']) &&
         request.resource.data.get('hiddenBuiltins', []) is list &&
         request.resource.data.get('hiddenBuiltins', []).size() <= 50 &&
         request.resource.data.get('templateOrder', []) is list &&
-        request.resource.data.get('templateOrder', []).size() <= 500;
+        request.resource.data.get('templateOrder', []).size() <= 500 &&
+        request.resource.data.get('templateFolders', []) is list &&
+        request.resource.data.get('templateFolders', []).size() <= 100 &&
+        request.resource.data.get('templateFolderOf', {}) is map &&
+        request.resource.data.get('templateFolderOf', {}).size() <= 500;
       // Super adminul poate comuta doar feature flag-urile.
       allow update: if isSuperAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['features']);

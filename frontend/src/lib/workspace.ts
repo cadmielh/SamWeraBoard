@@ -8,6 +8,7 @@ import { apiJson } from './api'
 import { TOS_VERSION, DPA_VERSION } from './legal'
 import type { FacturareConfig, Workspace, WorkspaceRole } from '../types'
 import type { FeatureKey } from './features'
+import type { TemplateFolder } from './templateFolders'
 
 export interface PendingInvitation {
   id: string
@@ -41,6 +42,11 @@ export async function setBuiltinHidden(workspaceId: string, key: string, hidden:
 /** Ordinea șabloanelor pentru tot cabinetul (doar adminul, vezi firestore.rules); lista întreagă, scrisă dintr-o dată. */
 export async function setTemplateOrder(workspaceId: string, order: string[]): Promise<void> {
   await updateDoc(doc(db, 'workspaces', workspaceId), { templateOrder: order })
+}
+
+/** Folderele șabloanelor proprii și ce șablon e în fiecare (doar adminul, vezi firestore.rules) — scrise împreună. */
+export async function setTemplateFolders(workspaceId: string, folders: TemplateFolder[], folderOf: Record<string, string>): Promise<void> {
+  await updateDoc(doc(db, 'workspaces', workspaceId), { templateFolders: folders, templateFolderOf: folderOf })
 }
 
 /** Toate workspace-urile din aplicație — doar pentru super admini (vezi

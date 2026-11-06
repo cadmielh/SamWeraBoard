@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useEffect, useState, useRef, type ReactNode } from 'react'
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -17,7 +17,9 @@ import { createTemplate, detectPlaceholders, duplicateBuiltinTemplate, replaceTe
 import { assertWritable } from '../lib/billing'
 import { ensureDriveToken } from '../lib/driveAuth'
 import { pickGoogleDoc } from '../lib/picker'
-import { setBuiltinHidden, setTemplateOrder } from '../lib/workspace'
+import { setBuiltinHidden, setTemplateFolders, setTemplateOrder } from '../lib/workspace'
+import { groupByFolder, newFolderId, orderAfterGroupReorder, placeInFolder, removeFolder, type TemplateFolder } from '../lib/templateFolders'
+import TemplateFolderHeader from './TemplateFolderHeader'
 import { applyTemplateOrder, builtinOrderKey, deliveryLabel, diffTemplate, hasChanges, matchesTemplateSearch, ownOrderKey, type TemplateChanges } from '../lib/templateChanges'
 import TemplateSearchInput from './TemplateSearchInput'
 import { useApp } from '../AppContext'
@@ -127,7 +129,7 @@ const GUIDE_SECTIONS = [
       '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_JUDET}}', '{{SOCIETATE_FORMA_JURIDICA}}',
       '{{ASOCIATI_LISTA}} / {{ADMINISTRATORI_LISTA}} (numele pe o singură linie: „A, B și C”)',
       '{{CAMP_ORICE_NUME}} — câmp completat manual la generare (ex. {{CAMP_NR_HOTARARE}}); numele apare ca titlu al câmpului',
-      '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}', '{{VALOARE_PARTE_SOCIALA}} (valoarea unei părți sociale, în lei; implicit 10)',
+      '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}', '{{VALOARE_PARTE_SOCIALA}} (valoarea unei părți sociale, în lei; implicit 10)', '{{VALOARE_PARTE_SOCIALA_LITERE}} (aceeași valoare în litere: „zece”)',
       '{{CAEN_1}} (activitate principală, format "cod - descriere")',
       '{{CAEN_DOMENIU}} (domeniul principal de activitate — grupa CAEN, 3 cifre, derivată automat din CAEN_1)',
       '{{CAEN_PRINCIPAL_COD}} (doar codul CAEN principal)', '{{CAEN_SECUNDARE_COD}} (codurile CAEN secundare, separate prin virgulă; „-” dacă nu există)',
@@ -176,10 +178,11 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const [view, setView] = useState<View>('list')
   const [addTab, setAddTab] = useState<AddTab>('docx')
   const [saving, setSaving] = useState(false)
-  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [deleteConf, setDeleteConf] = useState<DocTemplate | null>(null)
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set())
   const { builtins, loading: builtinsLoading } = useBuiltinTemplates()
   const [duplicatingKey, setDuplicatingKey] = useState<string | null>(null)
-  const { activeWorkspace, userRole, canEdit, isSuperAdmin } = useApp()
+  const { activeWorkspace, userRole, canEdit, isSuperAdmin, toast } = useApp()
   const hiddenBuiltins = new Set(activeWorkspace?.hiddenBuiltins ?? [])
   const isWorkspaceAdmin = userRole === 'admin'
   const [togglingKey, setTogglingKey] = useState<string | null>(null)
@@ -198,7 +201,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
   const [localOrder, setLocalOrder] = useState<{ base: string[] | undefined; order: string[] } | null>(null)
   const order = localOrder && localOrder.base === savedOrder ? localOrder.order : savedOrder
   const orderedBuiltins = applyTemplateOrder(builtins, b => builtinOrderKey(b.key), order)
-  const orderedTemplates = applyTemplateOrder(templates, t => ownOrderKey(t.id), order)
+  const orderedTemplates = applyTemplateOrder(templates.filter(t => !pendingDeleteIds.has(t.id)), t => ownOrderKey(t.id), order)
   const shownBuiltins = orderedBuiltins.filter(b => matchesTemplateSearch(b.name, search))
   const shownTemplates = orderedTemplates.filter(t => matchesTemplateSearch(t.name, search))
   // Pe o listă filtrată, „mută mai sus” nu are un sens clar: reordonarea merge doar fără căutare.
@@ -217,6 +220,91 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
       onToast('Ordinea nu s-a putut salva. Doar administratorul cabinetului poate schimba ordinea șabloanelor.', 'err')
     }
   }
+
+  // Folderele șabloanelor proprii (Workspace.templateFolders/templateFolderOf), organizate de admin pentru tot cabinetul —
+  // ca la ordine, schimbarea se vede imediat și rămâne până sosește documentul cabinetului actualizat.
+  const savedFolders = activeWorkspace?.templateFolders
+  const savedFolderOf = activeWorkspace?.templateFolderOf
+  const [localFolders, setLocalFolders] = useState<{ base: [unknown, unknown]; folders: TemplateFolder[]; folderOf: Record<string, string> } | null>(null)
+  const localValid = !!localFolders && localFolders.base[0] === savedFolders && localFolders.base[1] === savedFolderOf
+  const storedFolders = localValid ? localFolders!.folders : (savedFolders ?? [])
+  const storedFolderOf = localValid ? localFolders!.folderOf : (savedFolderOf ?? {})
+  // Folderele în curs de ștergere (amânată, ca la șabloane) nu se mai arată, iar șabloanele lor apar fără folder
+  const [pendingFolderIds, setPendingFolderIds] = useState<Set<string>>(new Set())
+  const { folders, placement: folderOf } = [...pendingFolderIds].reduce(
+    (acc, id) => removeFolder(acc.folders, acc.placement, id), { folders: storedFolders, placement: storedFolderOf })
+  // Valorile curente, pentru o ștergere care se comite după câteva secunde (între timp pot apărea alte schimbări)
+  const storedRef = useRef({ folders: storedFolders, folderOf: storedFolderOf })
+  useEffect(() => { storedRef.current = { folders: storedFolders, folderOf: storedFolderOf } })
+  const ownKey = (t: DocTemplate) => ownOrderKey(t.id)
+  // La căutare, doar grupele cu rezultate
+  const ownGroups = groupByFolder(shownTemplates, ownKey, folders, folderOf).filter(g => !search.trim() || g.items.length > 0)
+  const [closedFolders, setClosedFolders] = useState<Set<string>>(new Set())
+  const toggleFolder = (id: string) => setClosedFolders(prev => {
+    const next = new Set(prev)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+  // Numele în editare: `id` null = folder nou
+  const [folderEdit, setFolderEdit] = useState<{ id: string | null; name: string } | null>(null)
+  // Enter și Escape doar scot focusul: numele se salvează într-un singur loc (onBlur), o singură dată
+  const folderEditCancelled = useRef(false)
+
+  const saveFolders = async (nextFolders: TemplateFolder[], placement: Record<string, string>) => {
+    if (!activeWorkspace) return
+    // Doar șabloanele care mai există: locul unui șablon șters nu rămâne în cabinet (regulile permit cel mult 500)
+    const live = new Set(templates.map(t => ownOrderKey(t.id)))
+    const nextFolderOf = Object.fromEntries(Object.entries(placement).filter(([k]) => live.has(k)))
+    setLocalFolders({ base: [savedFolders, savedFolderOf], folders: nextFolders, folderOf: nextFolderOf })
+    try {
+      await setTemplateFolders(activeWorkspace.id, nextFolders, nextFolderOf)
+    } catch {
+      setLocalFolders(null)
+      onToast('Folderele nu s-au putut salva. Doar administratorul cabinetului poate organiza șabloanele.', 'err')
+    }
+  }
+  const commitFolderEdit = () => {
+    const name = folderEdit?.name.trim()
+    if (folderEdit && name) {
+      void saveFolders(folderEdit.id
+        ? storedFolders.map(f => f.id === folderEdit.id ? { ...f, name } : f)
+        : [...storedFolders, { id: newFolderId(), name }], storedFolderOf)
+    }
+    setFolderEdit(null)
+  }
+  // Confirmare în aplicație, apoi ștergere amânată cu „Anulează” — ca la șabloane
+  const [deleteFolderConf, setDeleteFolderConf] = useState<TemplateFolder | null>(null)
+  const unhideFolder = (id: string) => setPendingFolderIds(prev => { const next = new Set(prev); next.delete(id); return next })
+  const confirmDeleteFolder = () => {
+    if (!deleteFolderConf) return
+    const { id, name } = deleteFolderConf
+    setPendingFolderIds(prev => new Set(prev).add(id))
+    setDeleteFolderConf(null)
+    toast(`Folderul „${name}” a fost șters`, 'ok', {
+      onExpire: async () => {
+        const r = removeFolder(storedRef.current.folders, storedRef.current.folderOf, id)
+        await saveFolders(r.folders, r.placement)
+        unhideFolder(id)
+      },
+      action: { label: 'Anulează', onClick: () => unhideFolder(id) },
+    })
+  }
+  // Reordonarea într-un folder: ordinea întreagă a șabloanelor proprii, cu grupa schimbată (fără căutare, deci nefiltrată)
+  const reorderInFolder = (folder: TemplateFolder | null, ids: string[]) =>
+    reorder('own', orderAfterGroupReorder(groupByFolder(orderedTemplates, ownKey, folders, folderOf), ownKey, folder, ids))
+
+  const folderNameInput = (
+    <input className="field-input" autoFocus style={{ flex: 1, minWidth: 0, fontSize: '.82rem', padding: '.25rem .5rem' }}
+      placeholder="Numele folderului" maxLength={60} value={folderEdit?.name ?? ''}
+      onChange={e => setFolderEdit(prev => prev && { ...prev, name: e.target.value })}
+      onKeyDown={e => {
+        if (e.key === 'Escape') folderEditCancelled.current = true
+        if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
+      }}
+      onBlur={() => {
+        if (folderEditCancelled.current) { folderEditCancelled.current = false; setFolderEdit(null) } else commitFolderEdit()
+      }} aria-label="Numele folderului" />
+  )
 
   // Editarea numelui, descrierii, tipului și numelui fișierului generat (direct în Firestore, validat de reguli).
   const [editTpl, setEditTpl] = useState<DocTemplate | null>(null)
@@ -353,15 +441,25 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
     }
   }
 
-  const handleRemove = async (id: string) => {
-    setRemovingId(id)
-    try {
-      await onRemove(id)
-    } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Eroare la ștergere', 'err')
-    } finally {
-      setRemovingId(null)
-    }
+  // Ștergere confirmată, apoi amânată (ca la clienți): șablonul dispare imediat din listă, dar se șterge abia când
+  // expiră notificarea — „Anulează” doar îl readuce, nimic n-a fost șters încă.
+  const unhide = (id: string) => setPendingDeleteIds(prev => { const next = new Set(prev); next.delete(id); return next })
+  const confirmRemove = () => {
+    if (!deleteConf) return
+    const { id, name } = deleteConf
+    setPendingDeleteIds(prev => new Set(prev).add(id))
+    setDeleteConf(null)
+    toast(`„${name}” a fost șters`, 'ok', {
+      onExpire: async () => {
+        try {
+          await onRemove(id)
+        } catch (err: unknown) {
+          unhide(id)
+          toast((err as Error).message ?? 'Eroare la ștergerea șablonului', 'err')
+        }
+      },
+      action: { label: 'Anulează', onClick: () => unhide(id) },
+    })
   }
 
   const handleDownload = (tpl: DocTemplate) => {
@@ -570,20 +668,30 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
               </SortableSection>
               )}
 
-              <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase', marginTop: '.375rem' }}>
-                Șabloanele mele
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '.375rem' }}>
+                <span style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Șabloanele mele</span>
+                {isWorkspaceAdmin && orderedTemplates.length > 0 && !folderEdit && (
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setFolderEdit({ id: null, name: '' })}
+                    title="Grupează șabloanele în foldere, pentru tot cabinetul">
+                    + Folder nou
+                  </button>
+                )}
               </div>
-              {templates.length === 0 && (
+              {folderEdit?.id === null && <div className="tfolder"><span aria-hidden>📁</span>{folderNameInput}</div>}
+              {orderedTemplates.length === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--s400)', fontSize: '.875rem', padding: '2rem 0' }}>
                   Niciun șablon adăugat.<br />
                   <button className="btn btn-outline-primary btn-sm" style={{ marginTop: '.75rem' }} onClick={() => setView('add')}>+ Adaugă primul șablon</button>
                 </div>
               )}
-              {templates.length > 0 && shownTemplates.length === 0 && (
+              {orderedTemplates.length > 0 && shownTemplates.length === 0 && (
                 <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Niciun șablon propriu nu se potrivește căutării.</div>
               )}
-              <SortableSection ids={shownTemplates.map(t => ownOrderKey(t.id))} onReorder={ids => void reorder('own', ids)}>
-              {shownTemplates.map(tpl => {
+              {ownGroups.map(g => {
+                const open = !g.folder || !!search.trim() || !closedFolders.has(g.folder.id)
+                const cards = (
+              <SortableSection ids={g.items.map(ownKey)} onReorder={ids => void reorderInFolder(g.folder, ids)}>
+              {g.items.map(tpl => {
                 const label = deliveryLabel(tpl, activeWorkspace?.members)
                 const newerSource = tpl.sourceKey && tpl.sourceVersion != null
                   ? builtins.find(b => b.key === tpl.sourceKey && b.version > tpl.sourceVersion!)
@@ -650,20 +758,54 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                           ✉ Trimite
                         </button>
                       )}
+                      {isWorkspaceAdmin && folders.length > 0 && (
+                        <select className="field-input" style={{ width: 'auto', fontSize: '.75rem', padding: '.15rem .4rem' }}
+                          value={folders.some(f => f.id === folderOf[ownKey(tpl)]) ? folderOf[ownKey(tpl)] : ''}
+                          onChange={e => void saveFolders(storedFolders, placeInFolder(storedFolderOf, ownKey(tpl), e.target.value || null))}
+                          title="Mută șablonul într-un folder" aria-label={`Folderul șablonului „${tpl.name}”`}>
+                          <option value="">📁 Fără folder</option>
+                          {folders.map(f => <option key={f.id} value={f.id}>📁 {f.name}</option>)}
+                        </select>
+                      )}
                       <span style={{ flex: 1 }} />
                       <button
-                        onClick={() => handleRemove(tpl.id)}
-                        disabled={removingId === tpl.id}
+                        onClick={() => setDeleteConf(tpl)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--r500)', padding: '.125rem .3rem', borderRadius: 4, display: 'inline-flex', alignItems: 'center' }}
                         title="Șterge" aria-label={`Șterge „${tpl.name}”`}
                       >
-                        {removingId === tpl.id ? <span className="spin" /> : <IconTrash />}
+                        <IconTrash />
                       </button>
                     </div>
                   </LibraryCard>
                 )
               })}
               </SortableSection>
+                )
+                if (!g.folder) return <div key="fara-folder" style={{ display: 'contents' }}>{cards}</div>
+                const f = g.folder
+                return (
+                  <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+                    {folderEdit?.id === f.id ? <div className="tfolder"><span aria-hidden>📁</span>{folderNameInput}</div> : (
+                      <TemplateFolderHeader name={f.name} count={g.items.length} open={open} onToggle={() => toggleFolder(f.id)}
+                        actions={isWorkspaceAdmin && (
+                          <>
+                            <button type="button" className="btn btn-ghost btn-xs" onClick={() => setFolderEdit({ id: f.id, name: f.name })}
+                              title="Redenumește folderul" aria-label={`Redenumește folderul „${f.name}”`}>✎</button>
+                            <button type="button" className="btn btn-ghost btn-xs" style={{ color: 'var(--r500)' }} onClick={() => setDeleteFolderConf(f)}
+                              title="Șterge folderul (șabloanele rămân)" aria-label={`Șterge folderul „${f.name}”`}><IconTrash /></button>
+                          </>
+                        )} />
+                    )}
+                    {open && (
+                      <div className="tfolder-items">
+                        {g.items.length === 0
+                          ? <div style={{ fontSize: '.78rem', color: 'var(--s400)', padding: '.25rem 0' }}>Gol — mută aici un șablon din cardul lui („Folder”).</div>
+                          : cards}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -907,6 +1049,43 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
 
         <input ref={replaceInputRef} type="file" accept=".docx" style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; if (f) void handleReplaceFileSelect(f); e.target.value = '' }} />
+
+        {deleteConf && (
+          <Modal onClose={() => setDeleteConf(null)} className="modal-box--sm" ariaLabel="Șterge șablonul">
+            <div className="modal-head">
+              <span className="modal-title">Șterge șablonul</span>
+              <button className="modal-close" onClick={() => setDeleteConf(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: 'var(--s600)', fontSize: '.9375rem' }}>
+                Ești sigur că vrei să ștergi <strong>{deleteConf.name}</strong>? Vei avea câteva secunde să anulezi.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setDeleteConf(null)}>Anulează</button>
+              <button className="btn" style={{ background: 'var(--r500)', color: '#fff' }} onClick={confirmRemove}>Șterge</button>
+            </div>
+          </Modal>
+        )}
+
+        {deleteFolderConf && (
+          <Modal onClose={() => setDeleteFolderConf(null)} className="modal-box--sm" ariaLabel="Șterge folderul">
+            <div className="modal-head">
+              <span className="modal-title">Șterge folderul</span>
+              <button className="modal-close" onClick={() => setDeleteFolderConf(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: 'var(--s600)', fontSize: '.9375rem' }}>
+                Ești sigur că vrei să ștergi folderul <strong>{deleteFolderConf.name}</strong>? Șabloanele din el nu se șterg, ajung
+                la „fără folder”. Vei avea câteva secunde să anulezi.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setDeleteFolderConf(null)}>Anulează</button>
+              <button className="btn" style={{ background: 'var(--r500)', color: '#fff' }} onClick={confirmDeleteFolder}>Șterge</button>
+            </div>
+          </Modal>
+        )}
 
         {deliverTpl && activeWorkspace && (
           <TemplateDeliveryModal

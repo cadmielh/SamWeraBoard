@@ -70,6 +70,11 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("administratorului", "administratorilor"): "administratori",
     ("are", "au"): "asociati", ("este", "sunt"): "asociati", ("acesta", "acestia"): "asociati",
     ("hotarasc", "hotaram"): "asociati",   # „în calitate de asociat unic/asociați, hotărăsc/hotărâm:”
+    ("hotaraste", "hotarasc"): "asociati",  # „dacă asociatul/asociații nu hotărăște/hotărăsc altfel”
+    # Actul asociatului unic vs. al adunării generale: „Decizia/Hotărârea Asociatului Unic/A.G.A.”, „DECID/HOTĂRÂM”,
+    # „declar/declarăm” (anexa cu contorul de caractere). Vocabular de act juridic, scris mereu cu „/” alături.
+    ("decizia", "hotararea"): "asociati", ("deciziei", "hotararii"): "asociati",
+    ("decid", "hotaram"): "asociati", ("declar", "declaram"): "asociati",
     # Domeniul „comodanti” — numărul comodanților (proprietarii imobilului dat în comodat), independent de
     # numărul asociaților firmei (vezi contractul de comodat pentru sediul social). Perechile de mai jos sunt
     # vocabular specific, fără risc de coincidență cu alt domeniu existent — spre deosebire de „are/au” (deja
@@ -78,6 +83,7 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("subsemnatul", "subsemnatii"): "comodanti", ("comodant", "comodanti"): "comodanti",
     ("imprumutator", "imprumutatori"): "comodanti", ("asigur", "asiguram"): "comodanti",
     ("dau", "dam"): "comodanti",
+    ("comodantul", "comodantii"): "comodanti", ("denumit", "denumiti"): "comodanti",   # „COMODANTUL/COMODANȚII, denumit/denumiți”
 }
 
 # Substantive de rol (asociat/administrator) la singular/plural, scrise O SINGURĂ formă, FĂRĂ „/” alături —
@@ -237,6 +243,11 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
                  fixed: tuple[str | None, str | None] | None = None) -> list[Choice]:
     sex_map: dict = ctx.get("sex") or {}
     tags = _person_tags(text, sex_map)
+    # Formele scrise explicit („condamnat/ă”) dintr-o frază fără etichete, într-un document despre O SINGURĂ persoană
+    # (ex. o declarație pe proprie răspundere): se acordă după ea (vezi doc_filler: sole_person). Doar perechile
+    # scrise explicit — nu și substantivele de rol singure (pasul 5), care pot fi text general.
+    sole = ctx.get("sole_person")
+    pair_tags = tags or ([(len(text), sole)] if sole is not None and sole in sex_map else [])
     taken: list[tuple[int, int]] = []
     out: list[Choice] = []
 
@@ -330,7 +341,7 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
             continue
         forms = _sex_form(a, b)
         if forms:
-            sx, person = _decide_sex(m.start(), a, tags, sex_map, fixed)
+            sx, person = _decide_sex(m.start(), a, pair_tags, sex_map, fixed)
             if sx in ("M", "F"):
                 add(Choice(m.start(), m.end(), _match_case(whole, forms[0 if sx == "M" else 1]), "sex", person))
             else:
@@ -349,11 +360,15 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
             masc, fem = w, w + "ă"
         else:
             continue
-        sx, person = _decide_sex(m.start(), w, tags, sex_map, fixed)
+        sx, person = _decide_sex(m.start(), w, pair_tags, sex_map, fixed)
         if sx in ("M", "F"):
             add(Choice(m.start(), m.end(), _match_case(m.group(0), masc if sx == "M" else fem), "sex", person))
         else:
             add(Choice(m.start(), m.end(), None, "sex", person))
+
+    # Pașii 4–5 schimbă cuvinte scrise O SINGURĂ dată, fără alternativă alături — doar în afara blocurilor și doar
+    # dacă șablonul nu cere acord strict explicit (marcajul {{ACORD_EXPLICIT}}, vezi doc_filler).
+    implicit = fixed is None and not ctx.get("explicit_only")
 
     # 4) substantive de rol la singular/plural, fără „/” alături (vezi _STANDALONE_ROLE_NUMBER) — ajustate după
     # numărul REAL de asociați/administratori ai clientului. DOAR în afara unui bloc {{#ROL}} (`fixed is None`)
@@ -363,7 +378,7 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
     # ÎNAINTEA pasului de sex de mai jos, dinadins: un cuvânt cu NUMĂRUL cunoscut (dar sexul necunoscut) tot
     # trebuie corectat — dacă sexul ar „ocupa” poziția primul (chiar nerezolvat, ca avertisment), numărul n-ar
     # mai apuca să încerce deloc aceeași poziție (vezi `free`/`taken` mai jos).
-    if fixed is None:
+    if implicit:
         for m in _NUMBER_WORD_RE.finditer(text):
             if not free(m.start(), m.end()):
                 continue
@@ -384,6 +399,7 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
 
     # 4b) „beneficiarul real (al)/beneficiarii reali (ai)”, fără „/” alături — aceeași idee ca pasul 4, dar
     # pentru fraza (+ articol opțional) din declarațiile privind beneficiarul real (vezi _BENEFICIAR_REAL_RE).
+    # „beneficiarul real (al)” e o frază precisă, nu text general — se acordă și cu {{ACORD_EXPLICIT}}.
     if fixed is None:
         for m in _BENEFICIAR_REAL_RE.finditer(text):
             if not free(m.start(), m.end()):
@@ -401,7 +417,7 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
 
     # 4c) „este/sunt” înaintea substantivului de rol (vezi _VERB_ROLE_RE) — domeniul e dat de rolul care
     # urmează imediat, nu de numărul scris efectiv în șablon (acela se corectează separat, la pasul 4/4b).
-    if fixed is None:
+    if implicit:
         for m in _VERB_ROLE_RE.finditer(text):
             if not free(m.start(), m.end()):
                 continue
@@ -418,6 +434,8 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
     # după sexul CONFIRMAT al persoanei, chiar dacă șablonul nu a scris explicit ambele forme. Poziția deja
     # „ocupată” de pasul 4 de mai sus (ex. cuvântul a devenit plural) e sărită automat, via `free`.
     for m in _SEX_WORD_RE.finditer(text):
+        if fixed is None and ctx.get("explicit_only"):
+            break     # text general, nu despre o persoană anume — vezi doc_filler.EXPLICIT_AGREEMENT_MARKER
         if not free(m.start(), m.end()):
             continue
         word = m.group(1)

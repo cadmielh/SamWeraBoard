@@ -23,7 +23,12 @@ export function useTemplates(workspaceId: string | null) {
     setLoading(true)
     const q = query(templatesCol(workspaceId), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q, snap => {
-      setTemplates(snap.docs.map(d => ({ ...d.data(), id: d.id } as DocTemplate)))
+      setTemplates(snap.docs.map(d => {
+        const t = { ...d.data(), id: d.id } as DocTemplate
+        // {{ACORD_EXPLICIT}} e un marcaj pentru server, nu un câmp — șabloanele importate înainte ca serverul să-l
+        // excludă din listă îl au totuși printre etichete
+        return t.placeholders ? { ...t, placeholders: t.placeholders.filter(ph => ph !== '{{ACORD_EXPLICIT}}') } : t
+      }))
       setLoading(false)
     }, () => setLoading(false))
     return unsub

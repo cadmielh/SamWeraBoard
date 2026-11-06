@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, joinNames, persoaneActualizate, durataText, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
-  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, HAND_FILL_BLANK, caenFieldKind,
+  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, customRolePool, HAND_FILL_BLANK, caenFieldKind,
 } from './placeholders'
 import type { Client, Persoana } from '../types'
 
@@ -10,6 +10,26 @@ const client = (over: Partial<Client>): Partial<Client> => ({
   tipClient: 'PJ', caenCod: '7020', caenDescriere: 'Activități de consultanță', caenSecundare: [], asociati: [], administratori: [], ...over,
 })
 const build = (c: Partial<Client>) => buildReplacements({ idFields: null, client: c as Client, scannedPersons: [] })
+
+describe('valoarea părții sociale în litere', () => {
+  it('din câmpul clientului, implicit 10', () => {
+    expect(build(client({}))['{{VALOARE_PARTE_SOCIALA_LITERE}}']).toBe('zece')
+    expect(build(client({ valoareParteSociala: 25 }))['{{VALOARE_PARTE_SOCIALA_LITERE}}']).toBe('douăzeci și cinci')
+  })
+})
+
+describe('tribunalul și EUID-ul societății', () => {
+  it('tribunalul e județul sediului; în București, fără sector', () => {
+    expect(build(client({ sediuSocial: { judet: 'Arad' } as Client['sediuSocial'] }))['{{SOCIETATE_TRIBUNAL}}']).toBe('Arad')
+    expect(build(client({ sediuSocial: { judet: 'București - Sector 1' } as Client['sediuSocial'] }))['{{SOCIETATE_TRIBUNAL}}']).toBe('București')
+  })
+
+  it('EUID = ROONRC. + numărul de înmatriculare; firmă în înființare → loc de completat de mână', () => {
+    expect(build(client({ nrRegistrul: 'J2/123/2020' }))['{{SOCIETATE_EUID}}']).toBe('ROONRC.J2/123/2020')
+    expect(build(client({ nrRegistrul: 'J2024 000123 123' }))['{{SOCIETATE_EUID}}']).toBe('ROONRC.J2024000123123')
+    expect(build(client({ nrRegistrul: '', inInfiintare: true }))['{{SOCIETATE_EUID}}']).toBe(HAND_FILL_BLANK)
+  })
+})
 
 describe('coduri CAEN pentru clauza „Actualizare cod CAEN REV3”', () => {
   it('principalul și secundarele apar doar ca coduri, pe o linie', () => {
@@ -35,6 +55,17 @@ describe('coduri CAEN pentru clauza „Actualizare cod CAEN REV3”', () => {
     const groups = buildRepeatGroups({ idFields: null, client: c as Client, scannedPersons: [] })
     expect(groups.CAEN_SECUNDARE).toHaveLength(1)
     expect(checkReadiness(['{{CAEN}}'], build(c), groups).missing).toEqual([])
+  })
+
+  it('codul și denumirea separat: principal, domeniu (grupa) și fiecare activitate secundară', () => {
+    const c = client({ caenSecundare: [{ cod: '7311', descriere: 'Activități ale agențiilor de publicitate' }] })
+    const r = build(c)
+    expect(r['{{CAEN_PRINCIPAL_DENUMIRE}}']).toBe('Activități de consultanță')
+    expect(r['{{CAEN_DOMENIU_COD}}']).toBe('702')
+    expect(r['{{CAEN_DOMENIU}}']).toBe(`702 - ${r['{{CAEN_DOMENIU_DENUMIRE}}']}`)
+    const groups = buildRepeatGroups({ idFields: null, client: c as Client, scannedPersons: [] })
+    expect(groups.CAEN_SECUNDARE[0]).toMatchObject({ COD: '7311', DENUMIRE: 'Activități ale agențiilor de publicitate' })
+    expect(checkReadiness(['{{COD}}', '{{DENUMIRE}}'], r, groups).missing).toEqual([])
   })
 
   it('fără CAEN secundare: „-”; fără CAEN principal: gol (rămâne de completat)', () => {
@@ -320,6 +351,14 @@ describe('roluri de persoană „noi” (comodant, reprezentant legal…) — î
     expect(isReprezentantRole('REPREZENTANT_LEGAL')).toBe(true)
     expect(isReprezentantRole('COMODANT')).toBe(false)
     expect(isReprezentantRole('ASOCIAT')).toBe(false)
+  })
+
+  it('customRolePool: „…_ADMINISTRATOR” și reprezentanții — administratori; „…_ASOCIAT” — asociați; restul — oricine', () => {
+    expect(customRolePool('DECLARANT_ADMINISTRATOR')).toBe('administratori')
+    expect(customRolePool('REPREZENTANT_SOCIETATE')).toBe('administratori')
+    expect(customRolePool('DECLARANT_ASOCIAT')).toBe('asociati')
+    expect(customRolePool('CESIONAR')).toBe('toti')
+    expect(customRolePool('COMODANT')).toBe('toti')
   })
 })
 

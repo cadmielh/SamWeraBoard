@@ -9,7 +9,7 @@ import type { User } from 'firebase/auth'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, detectCustomPersonGroups, persoanaToSingularMap,
-  isReprezentantRole, joinNames, isDateLabel, pairManualDateFields,
+  customRolePool, joinNames, isDateLabel, pairManualDateFields,
 } from '../lib/placeholders'
 import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
@@ -19,8 +19,10 @@ import { useTemplates, logDocGeneration } from '../lib/templates'
 import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { applyTemplateOrder, builtinOrderKey, matchesTemplateSearch, ownOrderKey, visibleBuiltins } from '../lib/templateChanges'
+import { groupByFolder } from '../lib/templateFolders'
+import TemplateFolderHeader from './TemplateFolderHeader'
 import { useApp } from '../AppContext'
-import { EMPTY_CLIENT, missingRegistrationFields, useClienti, type ClientInput } from '../lib/clienti'
+import { EMPTY_CLIENT, denumireExists, missingRegistrationFields, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
 import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
@@ -224,8 +226,12 @@ export default function TemplateFiller({
   // Un rol „REPREZENTANT_X” (vezi isReprezentantRole) e cine reprezintă o entitate — legal, administratorul
   // firmei — lista de ales se restrânge la administratori, nu toată lista de persoane cunoscute (cerință
   // utilizator: „ar trebui să fie picker între administrator”, nu orice persoană/asociat al firmei).
-  const existingForCustomRole = (role: string): Persoana[] =>
-    isReprezentantRole(role) ? (client?.administratori ?? []) : existingPersonsForCustomRoles
+  // Un rol „…_ASOCIAT” se alege doar dintre asociați, „…_ADMINISTRATOR” doar dintre administratori (vezi customRolePool).
+  const existingForCustomRole = (role: string): Persoana[] => {
+    const pool = customRolePool(role)
+    return pool === 'administratori' ? (client?.administratori ?? [])
+      : pool === 'asociati' ? (client?.asociati ?? []) : existingPersonsForCustomRoles
+  }
   const customPersonReplacementsFor = (id: string): Record<string, string> => {
     const picks = customPersonPicks[id]
     if (!picks) return {}
@@ -348,6 +354,25 @@ export default function TemplateFiller({
   })
   const deselectAllTemplates = () => setSelectedIds(prev => {
     const next = new Set(prev); selectableTemplates.forEach(t => next.delete(t.id)); return next
+  })
+
+  // Folderele stabilite de admin în biblioteca de șabloane (Workspace.templateFolders); la căutare, doar cele cu rezultate.
+  const ownGroups = groupByFolder(shownTemplates, t => ownOrderKey(t.id), activeWorkspace?.templateFolders, activeWorkspace?.templateFolderOf)
+    .filter(g => g.items.length > 0)
+  // Folderele închise se țin minte pe acest calculator, per cabinet (o comoditate — fără ele, toate sunt deschise).
+  const closedKey = `tf-closed-folders:${workspaceId}`
+  const [closedFolders, setClosedFolders] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(closedKey) ?? '[]') as string[]) } catch { return new Set() }
+  })
+  const toggleFolder = (id: string) => setClosedFolders(prev => {
+    const next = new Set(prev)
+    if (!next.delete(id)) next.add(id)
+    try { localStorage.setItem(closedKey, JSON.stringify([...next])) } catch { /* stocare indisponibilă: rămâne doar în pagină */ }
+    return next
+  })
+  const selectableIds = new Set(selectableTemplates.map(t => t.id))
+  const setFolderSelected = (ids: string[], on: boolean) => setSelectedIds(prev => {
+    const next = new Set(prev); ids.forEach(id => on ? next.add(id) : next.delete(id)); return next
   })
 
   const toggleSelect = (id: string) =>
@@ -669,6 +694,11 @@ export default function TemplateFiller({
       if (checkedPatchKeys.has(p.key)) Object.assign(merged, p.patch)
     }
     try {
+      // Denumirea e unică în cabinet (ca la formularul clientului): o denumire nouă deja folosită nu se aplică
+      if (merged.denumire && await denumireExists(workspaceId, merged.denumire, client.id)) {
+        onToast(`Există deja un client cu denumirea „${merged.denumire}” — denumirea nu s-a schimbat.`, 'err')
+        delete merged.denumire
+      }
       if (Object.keys(merged).length > 0) {
         await updateClient(workspaceId, client.id, merged)
         onToast('Profilul clientului a fost actualizat', 'ok')
@@ -954,10 +984,17 @@ export default function TemplateFiller({
   const renderCustomPersonFields = (tplId: string, customRoles: { role: string; positions: number[] }[]) => customRoles.length > 0 && (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
       <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane</div>
+      {renderCustomPersonInputs(tplId, customRoles)}
+    </div>
+  )
+  // Doar listele de alegere — și în interiorul unei clauze, pentru persoanele folosite numai acolo (alegerea e una
+  // singură per șablon: aceeași persoană în două clauze bifate se schimbă în amândouă).
+  const renderCustomPersonInputs = (tplId: string, customRoles: { role: string; positions: number[] }[]) => (
+    <>
       {customRoles.flatMap(({ role, positions }) => positions.map(position => (
         <CustomPersonField
           key={`${role}_${position}`}
-          role={role} position={position}
+          role={role} position={position} showPosition={positions.length > 1}
           existing={existingForCustomRole(role)}
           value={customPersonPicks[tplId]?.[`${role}_${position}`] ?? null}
           onChange={p => setCustomPersonPicks(prev => ({
@@ -965,32 +1002,18 @@ export default function TemplateFiller({
           }))}
         />
       )))}
-    </div>
+    </>
   )
 
-  // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
-  // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
-  const renderReadiness = (tpl: { id: string; placeholders?: string[]; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]> }) => {
-    if (!tpl.placeholders || tpl.placeholders.length === 0) return null
-    const mergedGroupsForReadiness = { ...repeatGroups, ...customGroupsFor(tpl) }
-    const mergedReplForReadiness = { ...repl(tpl.id), ...customListReplacementsFor(tpl) }
-    const { filled, missing } = checkReadiness(tpl.placeholders, mergedReplForReadiness, mergedGroupsForReadiness, tpl.repeatGroupFields)
-    const total = tpl.placeholders.length
-    const pct = Math.round((filled.length / total) * 100)
-    const isExpanded = expandedReadiness.has(tpl.id)
-    const grouped = missing.length > 0 ? groupMissingFields(missing) : {}
-    // {{CAMP_NR_HOTARARE}} etc.: câmpuri care nu vin din client, ci se scriu aici la generare
-    const manualFields = tpl.placeholders.filter(isManualPlaceholder)
-    // Roluri de persoană „noi" (comodant, reprezentant legal…) — nu se completează automat din client ca
-    // Asociat/Administrator, dar utilizatorul poate alege una dintre persoanele deja cunoscute la firmă sau
-    // adăuga una nouă (vezi CustomPersonField) — poziții FIXE ({{ROL_N_CÂMP}}).
-    const customRoles = detectCustomPersonRoles(tpl.placeholders)
-    // Aceleași roluri noi, dar scrise fie ca bloc REPETITIV ({{#COMODANTI}}…), fie ca simplu câmp „…LISTA" —
-    // câte persoane e nevoie, nu o singură poziție (vezi CustomPersonGroupField/detectCustomPersonGroups).
-    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+  // Câmpurile completate manual ({{CAMP_…}}) și persoanele cu rol propriu (poziții fixe sau listă) — la șabloanele fără
+  // clauze (renderReadiness) și deasupra clauzelor, la cele cu clauze.
+  const renderTemplateInputs = (
+    tpl: { id: string },
+    manualFields: string[],
+    customRoles: { role: string; positions: number[] }[],
+    customGroups: { role: string }[],
+  ) => (
+      <>
         {manualFields.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
             <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De completat manual</div>
@@ -1040,6 +1063,33 @@ export default function TemplateFiller({
             ))}
           </div>
         )}
+      </>
+  )
+
+  // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
+  // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
+  const renderReadiness = (tpl: { id: string; placeholders?: string[]; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]> }) => {
+    if (!tpl.placeholders || tpl.placeholders.length === 0) return null
+    const mergedGroupsForReadiness = { ...repeatGroups, ...customGroupsFor(tpl) }
+    const mergedReplForReadiness = { ...repl(tpl.id), ...customListReplacementsFor(tpl) }
+    const { filled, missing } = checkReadiness(tpl.placeholders, mergedReplForReadiness, mergedGroupsForReadiness, tpl.repeatGroupFields)
+    const total = tpl.placeholders.length
+    const pct = Math.round((filled.length / total) * 100)
+    const isExpanded = expandedReadiness.has(tpl.id)
+    const grouped = missing.length > 0 ? groupMissingFields(missing) : {}
+    // {{CAMP_NR_HOTARARE}} etc.: câmpuri care nu vin din client, ci se scriu aici la generare
+    const manualFields = tpl.placeholders.filter(isManualPlaceholder)
+    // Roluri de persoană „noi" (comodant, reprezentant legal…) — nu se completează automat din client ca
+    // Asociat/Administrator, dar utilizatorul poate alege una dintre persoanele deja cunoscute la firmă sau
+    // adăuga una nouă (vezi CustomPersonField) — poziții FIXE ({{ROL_N_CÂMP}}).
+    const customRoles = detectCustomPersonRoles(tpl.placeholders)
+    // Aceleași roluri noi, dar scrise fie ca bloc REPETITIV ({{#COMODANTI}}…), fie ca simplu câmp „…LISTA" —
+    // câte persoane e nevoie, nu o singură poziție (vezi CustomPersonGroupField/detectCustomPersonGroups).
+    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [])
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+        {renderTemplateInputs(tpl, manualFields, customRoles, customGroups)}
         {/* Progress bar row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
           <div style={{ flex: 1, height: 4, background: 'var(--s200)', borderRadius: 99, overflow: 'hidden' }}>
@@ -1256,12 +1306,24 @@ export default function TemplateFiller({
           />
         ) : hasClauses ? (
           <>
-            {renderCustomPersonFields(tpl.id, detectCustomPersonRoles(tpl.placeholders ?? []))}
+            {(() => {
+              // Câmpurile manuale din clauze se completează în clauza lor (ClauseSelector) — aici doar cele din afara clauzelor
+              const clausePh = new Set(tpl.clauses!.flatMap(c => c.placeholders))
+              const all = tpl.placeholders ?? []
+              // Persoanele folosite doar în clauze se aleg în clauza lor (renderPersons), nu aici
+              return renderTemplateInputs(tpl, all.filter(ph => isManualPlaceholder(ph) && !clausePh.has(ph)),
+                detectCustomPersonRoles(all.filter(ph => !clausePh.has(ph))), detectCustomPersonGroups(tpl.repeatGroups ?? [], all))
+            })()}
             <ClauseSelector
+              renderPersons={phs => {
+                const roles = detectCustomPersonRoles(phs)
+                return roles.length > 0 && renderCustomPersonInputs(tpl.id, roles)
+              }}
               key={`${tpl.id}:${client?.id ?? 'none'}`}
               clauses={tpl.clauses!}
               client={client}
-              baseReplacements={replacements}
+              // Cu persoanele alese în lista de deasupra (roluri proprii) — o clauză care le folosește e completă după alegere
+              baseReplacements={repl(tpl.id)}
               onChange={v => setClauseState(prev => ({ ...prev, [tpl.id]: v }))}
             />
           </>
@@ -1467,7 +1529,24 @@ export default function TemplateFiller({
                       </button>
                     )}
                   </div>
-                  <div className="tf-rows">{shownTemplates.map(renderTemplateRow)}</div>
+                  {ownGroups.map(g => {
+                    if (!g.folder) return <div key="fara-folder" className="tf-rows">{g.items.map(renderTemplateRow)}</div>
+                    const f = g.folder
+                    const open = !!tplSearch.trim() || !closedFolders.has(f.id)
+                    const selectable = g.items.filter(t => selectableIds.has(t.id)).map(t => t.id)
+                    const allOn = selectable.length > 0 && selectable.every(id => selectedIds.has(id))
+                    return (
+                      <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+                        <TemplateFolderHeader name={f.name} count={g.items.length} open={open} onToggle={() => toggleFolder(f.id)}
+                          actions={selectable.length > 1 && (
+                            <input type="checkbox" checked={allOn} onChange={() => setFolderSelected(selectable, !allOn)}
+                              title={allOn ? 'Deselectează tot din folder' : 'Include tot folderul în generarea în lot'}
+                              aria-label={`Selectează tot din folderul „${f.name}”`} />
+                          )} />
+                        {open && <div className="tf-rows tfolder-items">{g.items.map(renderTemplateRow)}</div>}
+                      </div>
+                    )
+                  })}
                 </>
               )}
 

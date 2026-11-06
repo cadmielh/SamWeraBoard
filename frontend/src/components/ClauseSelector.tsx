@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Client, ClauseMeta } from '../types'
 import { findClauseSpec, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
-import { parsePlaceholder, isDateLabel, caenFieldKind } from '../lib/placeholders'
+import { parsePlaceholder, isDateLabel, caenFieldKind, detectCustomPersonRoles } from '../lib/placeholders'
 import { parseAdresa } from '../lib/adresa'
 import DateFieldInput from './DateFieldInput'
 import CesiuneFields from './clauses/CesiuneFields'
@@ -35,6 +35,8 @@ interface Props {
   client?: Partial<Client> | null
   baseReplacements: Record<string, string>
   onChange: (value: ClauseSelectorValue) => void
+  /** Listele de alegere pentru persoanele cu rol propriu folosite în clauză ({{CEDENT_1_NUME}}…), date de părinte. */
+  renderPersons?: (clausePlaceholders: string[]) => ReactNode
 }
 
 const EMPTY_ROWS: Record<string, string>[] = []
@@ -66,6 +68,9 @@ function computeInlinePatch(
       patch: { puncteLucru: (client?.puncteLucru ?? []).filter(p => p !== fields.PUNCT_LUCRU_INCHIS_ADRESA) },
     }
   }
+  if (fields.DENUMIRE_NOUA?.trim()) {
+    return { label: `Denumirea nouă: ${fields.DENUMIRE_NOUA.trim()}`, patch: { denumire: fields.DENUMIRE_NOUA.trim() } }
+  }
   // CAEN principal ales din listă în locul celui din fișă (ex. actualizarea la REV 3), în orice clauză
   const caen = fields.CAEN_1 ?? fields.CAEN_PRINCIPAL_COD
   const caenCod = caen?.split(' - ')[0].trim()
@@ -79,7 +84,7 @@ function computeInlinePatch(
   return null
 }
 
-export default function ClauseSelector({ clauses, client, baseReplacements, onChange }: Props) {
+export default function ClauseSelector({ clauses, client, baseReplacements, onChange, renderPersons }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [fieldsByClause, setFieldsByClause] = useState<Record<string, Record<string, string>>>({})
   const [groupsByClause, setGroupsByClause] = useState<Record<string, Record<string, Record<string, string>[]>>>({})
@@ -131,6 +136,8 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
   }
   const isClauseComplete = (c: ClauseMeta): boolean => clauseChecks(c).every(x => x.ok)
 
+  // baseReplacements se reconstruiește la fiecare randare a părintelui — comparat după conținut (ex. o persoană aleasă)
+  const baseKey = JSON.stringify(baseReplacements)
   useEffect(() => {
     const extraReplacements: Record<string, string> = {}
     const extraGroups: Record<string, Record<string, string>[]> = {}
@@ -159,7 +166,7 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
     }
     onChange({ selectedClauses: [...selected], extraReplacements, extraGroups, clientPatches, isComplete: complete, completion })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, fieldsByClause, groupsByClause, clientPatchByClause, clauses, client])
+  }, [selected, fieldsByClause, groupsByClause, clientPatchByClause, clauses, client, baseKey])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
@@ -190,6 +197,7 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
 
             {isSelected && (
               <div style={{ padding: '.625rem .75rem', display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+                {renderPersons?.(c.placeholders)}
                 {useWidget && spec.widget === 'cesiune' && (
                   <CesiuneFields
                     client={client}
@@ -280,14 +288,18 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     din Hotărârea AGA de bază) — restul câmpurilor rămân inputuri obișnuite, sub el. */}
                 {(!useWidget || spec.widget === 'punctLucruOpen') && (() => {
                   const skip = new Set([...AUTO_DATE_KEYS, ...(useWidget ? spec.fields : [])])
-                  const visible = c.placeholders.filter(ph => !skip.has(ph.replace(/^\{\{|\}\}$/g, '')))
+                  // Persoanele cu rol propriu ({{CEDENT_1_NUME}}…) se aleg din listă (renderPersons, mai sus), nu se tastează aici
+                  const visible = c.placeholders.filter(ph => !skip.has(ph.replace(/^\{\{|\}\}$/g, '')) && detectCustomPersonRoles([ph]).length === 0)
                   if (visible.length === 0) {
-                    return useWidget ? null : <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Fără alte câmpuri de completat.</div>
+                    const hasPersons = c.placeholders.some(ph => detectCustomPersonRoles([ph]).length > 0)
+                    return useWidget || hasPersons ? null : <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Fără alte câmpuri de completat.</div>
                   }
                   return visible.map(ph => {
                     const key = ph.replace(/^\{\{|\}\}$/g, '')
                     const auto = baseReplacements[ph]
-                    const { field: label } = parsePlaceholder(ph)
+                    // Un câmp de clauză fără nume prietenos („NR_PARTI_CEDATE”) se arată ca „Nr parti cedate”
+                    const { field } = parsePlaceholder(ph)
+                    const label = field === key ? key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ') : field
                     const value = fieldsByClause[c.tag]?.[key] ?? auto ?? ''
                     const caenKind = caenFieldKind(key)
                     if (caenKind) {

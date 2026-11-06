@@ -130,6 +130,18 @@ def test_hotarasc_sau_hotaram_dupa_numarul_asociatilor():
     assert resolve(t, {"asociati": 2})[0] == "în calitate de asociați, hotărâm:"
 
 
+def test_decizia_asociatului_unic_sau_hotararea_aga():
+    t = "DECIZIA/HOTĂRÂREA ASOCIATULUI UNIC/A.G.A. — DECID/HOTĂRÂM; în baza Deciziei/Hotărârii, declar/declarăm"
+    assert resolve(t, {"asociati": 1})[0] == "DECIZIA ASOCIATULUI UNIC — DECID; în baza Deciziei, declar"
+    assert resolve(t, {"asociati": 2})[0] == "HOTĂRÂREA A.G.A. — HOTĂRÂM; în baza Hotărârii, declarăm"
+
+
+def test_comodantul_sau_comodantii_denumit_sau_denumiti():
+    t = "COMODANTUL/COMODANȚII, denumit/denumiți"
+    assert resolve(t, {"comodanti": 1})[0] == "COMODANTUL, denumit"
+    assert resolve(t, {"comodanti": 2, "asociati": 1})[0] == "COMODANȚII, denumiți"
+
+
 def test_majuscule_complete_la_titluri():
     assert resolve("ASOCIAT UNIC/ASOCIAȚI:", {"asociati": 1})[0] == "ASOCIAT UNIC:"
     assert resolve("ASOCIAT UNIC/ASOCIAȚI:", {"asociati": 2})[0] == "ASOCIAȚI:"
@@ -299,3 +311,9 @@ def test_ctx_din_client_este_validat():
     assert ctx == {"sex": {"ASOCIAT_1": None, "OK": "F"}, "asociati": None, "administratori": 2,
                    "comodanti": None, "tip": None}
     assert variants.sanitize_ctx("nu e dict") == {}
+
+
+def test_hotaraste_sau_hotarasc_dupa_numarul_asociatilor():
+    t = "dacă asociatul/asociații nu hotărăște/hotărăsc altfel"
+    assert resolve(t, {"asociati": 1})[0] == "dacă asociatul nu hotărăște altfel"
+    assert resolve(t, {"asociati": 2})[0] == "dacă asociații nu hotărăsc altfel"

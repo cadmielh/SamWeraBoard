@@ -56,6 +56,8 @@ def test_document_word_obisnuit_e_acceptat():
 
 def test_sabloanele_de_baza_sunt_acceptate():
     for f in (ROOT / "fisiere_template").glob("*.docx"):
+        if f.name.startswith("~$"):   # fișierul temporar al Word-ului pentru un document deschis
+            continue
         ts.validate_docx(f.read_bytes(), max_bytes=5 * 1024 * 1024)
 
 

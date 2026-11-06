@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 interface Props {
@@ -20,6 +20,10 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
   ).filter(el => el.offsetParent !== null)
 }
 
+// Modalele deschise, în ordinea deschiderii: doar cel de deasupra răspunde la Escape și Tab — altfel, la o confirmare
+// deschisă peste biblioteca de șabloane, Escape ar închide și biblioteca (ascultătorii stau toți pe `document`).
+const openModals: object[] = []
+
 /**
  * Backdrop + focus-trap + Escape-to-close comune tuturor modalelor din aplicație.
  * Randează în portal pe `document.body` ca să nu depindă de poziționarea/`transform`-ul
@@ -27,6 +31,11 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
  */
 export default function Modal({ onClose, children, className, ariaLabel, boxStyle, backdropStyle }: Props) {
   const boxRef = useRef<HTMLDivElement>(null)
+  const [token] = useState(() => ({}))
+  useEffect(() => {
+    openModals.push(token)
+    return () => { openModals.splice(openModals.indexOf(token), 1) }
+  }, [token])
   const previouslyFocused = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -38,6 +47,7 @@ export default function Modal({ onClose, children, className, ariaLabel, boxStyl
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (openModals[openModals.length - 1] !== token) return
       if (e.key === 'Escape') {
         e.stopPropagation()
         onClose()
@@ -57,7 +67,7 @@ export default function Modal({ onClose, children, className, ariaLabel, boxStyl
     }
     document.addEventListener('keydown', onKeyDown, true)
     return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [onClose])
+  }, [onClose, token])
 
   return createPortal(
     <div className="modal-backdrop" style={backdropStyle} onMouseDown={e => e.target === e.currentTarget && onClose()}>

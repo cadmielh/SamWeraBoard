@@ -318,3 +318,41 @@ def test_fill_docx_nested_repeat_group_inside_a_clause():
     out = df.fill_docx(template, {}, groups=groups, selected_clauses=["CESIUNE"])
     texts = [t for t in _read_paragraphs(out) if t.strip()]
     assert "Ionescu - 100%" in texts
+
+
+def test_acord_explicit_lasa_textul_general_la_singular():
+    """{{ACORD_EXPLICIT}}: „Asociatul care…” (text de lege, la singular general) nu se mai trece la plural; perechile
+    scrise cu „/” se acordă în continuare, iar marcajul dispare cu tot cu paragraful lui și nu e cerut ca un câmp."""
+    tpl = _build_docx(["{{ACORD_EXPLICIT}}", "Asociatul care contravine este răspunzător.",
+                       "Semnătura asociatului unic/asociaților, {{SOCIETATE_DENUMIRE}}"])
+    assert df.list_placeholders_in_docx(tpl) == ["{{SOCIETATE_DENUMIRE}}"]
+    out = _read_paragraphs(df.fill_docx(tpl, {"{{SOCIETATE_DENUMIRE}}": "ALFA SRL"}, variant_ctx={"asociati": 2}))
+    assert out == ["Asociatul care contravine este răspunzător.", "Semnătura asociaților, ALFA SRL"]
+
+
+def test_fara_marcaj_substantivul_de_rol_se_acorda_ca_inainte():
+    tpl = _build_docx(["Asociatul care contravine."])
+    assert _read_paragraphs(df.fill_docx(tpl, {}, variant_ctx={"asociati": 2})) == ["Asociații care contravine."]
+
+
+def test_persoana_unica_acorda_formele_din_frazele_fara_etichete():
+    """O declarație despre o singură persoană: „condamnat/ă” dintr-o frază fără etichete se acordă după ea."""
+    tpl = _build_docx(["Subsemnatul/Subsemnata {{DECLARANT_1_NUME}},", "Nu sunt condamnat/ă."])
+    ctx = {"sex": {"DECLARANT_1": "F", "ASOCIAT_1": "M"}, "asociati": 1}
+    out = _read_paragraphs(df.fill_docx(tpl, {"{{DECLARANT_1_NUME}}": "POPA ANA"}, variant_ctx=ctx))
+    assert out == ["Subsemnata POPA ANA,", "Nu sunt condamnată."]
+
+
+def test_mai_multe_persoane_fraza_fara_etichete_ramane_nerezolvata():
+    tpl = _build_docx(["{{CEDENT_1_NUME}} și {{CESIONAR_1_NUME}}", "Nu sunt condamnat/ă."])
+    ctx = {"sex": {"CEDENT_1": "F", "CESIONAR_1": "M"}}
+    out = _read_paragraphs(df.fill_docx(tpl, {"{{CEDENT_1_NUME}}": "A", "{{CESIONAR_1_NUME}}": "B"}, variant_ctx=ctx))
+    assert out[1] == "Nu sunt condamnat/ă."
+
+
+def test_persoane_de_acelasi_sex_acorda_frazele_fara_etichete():
+    """Declarant-administrator și declarant-asociat (de obicei aceeași persoană): același sex → se acordă."""
+    tpl = _build_docx(["{{DECLARANT_ADMINISTRATOR_1_NUME}} / {{DECLARANT_ASOCIAT_1_NUME}}", "Nu sunt incapabil/ă."])
+    ctx = {"sex": {"DECLARANT_ADMINISTRATOR_1": "F", "DECLARANT_ASOCIAT_1": "F"}}
+    repl = {"{{DECLARANT_ADMINISTRATOR_1_NUME}}": "A", "{{DECLARANT_ASOCIAT_1_NUME}}": "A"}
+    assert _read_paragraphs(df.fill_docx(tpl, repl, variant_ctx=ctx))[1] == "Nu sunt incapabilă."

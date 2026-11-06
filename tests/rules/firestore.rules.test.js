@@ -368,6 +368,14 @@ test('templateOrder: doar adminul îl schimbă, ca listă de cel mult 500', asyn
   await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateOrder: 'b:act_constitutiv' }))
   await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateOrder: Array.from({ length: 501 }, (_, i) => `t:${i}`) }))
 })
+test('templateFolders/templateFolderOf: doar adminul le schimbă, ca listă și hartă, cu limite', async () => {
+  const folders = [{ id: 'f1', name: 'Contracte' }]
+  await assertSucceeds(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateFolders: folders, templateFolderOf: { 't:t1': 'f1' } }))
+  await assertFails(updateDoc(doc(ctx(MEMBER), 'workspaces', W1), { templateFolders: folders, templateFolderOf: {} }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateFolders: 'Contracte' }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateFolderOf: ['t:t1'] }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { templateFolders: Array.from({ length: 101 }, (_, i) => ({ id: `f${i}`, name: 'x' })) }))
+})
 test('hiddenBuiltins: doar adminul îl schimbă, ca listă de cel mult 50', async () => {
   await assertSucceeds(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: ['act_constitutiv'] }))
   await assertFails(updateDoc(doc(ctx(MEMBER), 'workspaces', W1), { hiddenBuiltins: [] }))

@@ -28,7 +28,9 @@ sys.path.insert(0, str(ROOT))
 import doc_filler as df  # noqa: E402
 
 TEMPLATE_DIR = ROOT / "fisiere_template"
-CUSTOM_DIR = TEMPLATE_DIR / "SabloaneAvocatTavi" / "anonimizate"
+# Șabloanele pregătite pentru clienți (avocatul; Dorothea — Actus Consult), fiecare cu prefixul lui în numele fișierelor salvate
+CUSTOM_DIRS = {"client": TEMPLATE_DIR / "SabloaneAvocatTavi" / "anonimizate",
+               "dorothea": TEMPLATE_DIR / "Șabloane Dorothea - Actus Consult"}
 GOLDEN_DIR = TEMPLATE_DIR / ".golden"
 PAYLOADS = json.loads((ROOT / "tests" / "golden" / "payloads.json").read_text(encoding="utf-8"))
 UPDATE = os.environ.get("GOLDEN_UPDATE") == "1"
@@ -77,8 +79,10 @@ def _templates() -> list[tuple[str, Path, str]]:
                          if unicodedata.normalize("NFC", p.name) == unicodedata.normalize("NFC", e["filename"])), None)
             if path:
                 out.append((e["key"], path, e.get("tipTemplate") or "universal"))
-    for p in sorted(CUSTOM_DIR.glob("*.docx")) if CUSTOM_DIR.is_dir() else []:
-        out.append(("client_" + _slug(p.stem), p, "PJ"))
+    for prefix, folder in CUSTOM_DIRS.items():
+        # „~$…” = fișierul temporar al Word-ului pentru un document deschis, nu un șablon
+        for p in sorted(x for x in folder.glob("*.docx") if not x.name.startswith("~$")) if folder.is_dir() else []:
+            out.append((f"{prefix}_" + _slug(p.stem), p, "PJ"))
     return out
 
 

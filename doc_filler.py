@@ -734,6 +734,11 @@ def fill_docx(
     """
     doc = Document(io.BytesIO(template_bytes))
     ctx = variants.sanitize_ctx(variant_ctx) if variant_ctx is not None else None
+    # Marcajul {{ACORD_EXPLICIT}}: acordul automat doar unde șablonul scrie explicit ambele forme (vezi variants.py)
+    explicit_only = _strip_explicit_marker(doc)
+    if ctx is not None:
+        ctx["explicit_only"] = explicit_only
+        ctx["sole_person"] = _sole_person(doc, ctx)
 
     # Câte poziții numerotate are ȘABLONUL ORIGINAL (înainte de orice expandare) pentru fiecare prefix — dacă
     # clientul are mai multe persoane decât poziții scrise în șablon, cele în plus n-ar apărea nicăieri, fără
@@ -810,6 +815,46 @@ def _resolve_variants(doc: Document, ctx: dict, replacements: dict[str, str], wa
                 run(cell.paragraphs)
     for part in _header_footer_parts(doc):
         run(part.paragraphs)
+
+
+# Un șablon cu mult text de lege la singular general („Asociatul care…”, „Administratorul răspunde…”) cere ca
+# „asociatul”/„administratorul” scrise singure să NU se treacă automat la plural/feminin: marcajul {{ACORD_EXPLICIT}},
+# oriunde în document, lasă acordul doar perechilor „a/b” scrise explicit și blocurilor repetitive. Marcajul nu e un
+# câmp de completat (vezi list_placeholders_in_docx) și dispare din document, cu tot cu paragraful lui, dacă rămâne gol.
+EXPLICIT_AGREEMENT_MARKER = "{{ACORD_EXPLICIT}}"
+
+
+def _strip_explicit_marker(doc: Document) -> bool:
+    found = False
+    for p in _all_paragraphs(doc):
+        text = "".join(r.text for r in p.runs)
+        if EXPLICIT_AGREEMENT_MARKER not in text:
+            continue
+        found = True
+        i = text.index(EXPLICIT_AGREEMENT_MARKER)
+        variants._replace_span(p, i, i + len(EXPLICIT_AGREEMENT_MARKER), "")
+        if not "".join(r.text for r in p.runs).strip() and p._p.getparent() is not None:
+            p._p.getparent().remove(p._p)
+    return found
+
+
+def _sole_person(doc: Document, ctx: dict) -> str | None:
+    """O persoană după care se acordă formele „condamnat/ă” din frazele fără etichete: documentul se referă la o
+    singură persoană (ex. o declarație pe proprie răspundere) sau la mai multe, toate de același sex cunoscut (ex.
+    aceeași persoană aleasă ca declarant-administrator și declarant-asociat) — fără blocuri repetitive de persoane.
+    `None` altfel: cu persoane de sexe diferite, o frază fără etichete nu spune despre care e vorba."""
+    sex_map = ctx.get("sex") or {}
+    persons: set[str] = set()
+    for p in _all_paragraphs(doc):
+        text = "".join(r.text for r in p.runs)
+        m = _REPEAT_GROUP_START_RE.match(text.strip())
+        if m and m.group(1) not in ("CLAUZE", "CAEN_SECUNDARE", "COD_CAEN_NOU"):
+            return None
+        persons.update(prefix for _, prefix in variants._person_tags(text, sex_map))
+    if len(persons) == 1:
+        return persons.pop()
+    sexes = {sex_map.get(p) for p in persons}
+    return min(persons) if len(sexes) == 1 and sexes <= {"M", "F"} else None
 
 
 _REPEAT_GROUP_START_RE = re.compile(r"^\{\{#([A-Z][A-Z0-9_]*)\}\}$")
@@ -890,7 +935,7 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
         for p in paragraphs:
             text = "".join(r.text for r in p.runs)
             for match in pattern.findall(text):
-                if not marker_pattern.match(match):
+                if not marker_pattern.match(match) and match != EXPLICIT_AGREEMENT_MARKER:
                     found.add(match)
 
     scan_paragraphs(doc.paragraphs)

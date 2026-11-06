@@ -6,6 +6,7 @@ import { formatAdresa, splitSerieNumar } from './adresa'
 import { personSex } from './sex'
 import { cetatenieAcord, cetatenieText } from './cetatenie'
 import { findCaenGrupaDescriere } from '../data/caenGrupe'
+import { numarInLitere } from './numarInLitere'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -166,6 +167,15 @@ const KNOWN_AUTO_GROUP_TAGS = new Set(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF'
  * care n-au de regulă calitatea de a reprezenta. */
 export const isReprezentantRole = (role: string): boolean => role.startsWith('REPREZENTANT_')
 
+/** Dintre cine se alege persoana unui rol propriu: reprezentantul unei entități sau un rol „…_ADMINISTRATOR”
+ * (ex. DECLARANT_ADMINISTRATOR) — administratorii firmei; un rol „…_ASOCIAT” (ex. DECLARANT_ASOCIAT) — asociații;
+ * altfel oricine e deja cunoscut la firmă (comodant, cesionar…). Regulă după numele rolului, pentru orice șablon. */
+export function customRolePool(role: string): 'administratori' | 'asociati' | 'toti' {
+  if (isReprezentantRole(role) || role.endsWith('_ADMINISTRATOR')) return 'administratori'
+  if (role.endsWith('_ASOCIAT')) return 'asociati'
+  return 'toti'
+}
+
 /** „COMODANTI” → „COMODANT”, „REPREZENTANT_COMODATARI_LISTA” → „REPREZENTANT_COMODATAR” — inversul
  * pluralizării generice din blanks.py (_ROLE_PLURAL.get(role, role+"I")), plus convenția „_LISTA” (vezi
  * blanks.py: _role_list_field — un câmp SIMPLU, {{ROL_LISTA}}, cu toate numele îmbinate pe-o linie, cu
@@ -256,6 +266,11 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     // Pentru șabloane care cer județul separat („sediul în ……, jud. ……”) — fără județ, ca să nu apară de două ori.
     out['{{SOCIETATE_SEDIU_FARA_JUDET}}'] = client.sediuSocial ? formatAdresa(client.sediuSocial, { includeJudet: false }) : ''
     out['{{SOCIETATE_JUDET}}'] = client.sediuSocial?.judet ?? ''
+    // Tribunalul / ORC-ul de pe lângă el: județul sediului, iar în București orașul, fără sector („București - Sector 1”).
+    out['{{SOCIETATE_TRIBUNAL}}'] = (client.sediuSocial?.judet ?? '').replace(/\s*-\s*sector\s*\d+\s*$/i, '')
+    // EUID = „ROONRC.” + numărul de ordine din registrul comerțului (J12/345/2020 sau J2024000123123).
+    const nrReg = client.nrRegistrul?.trim().replace(/\s+/g, '')
+    out['{{SOCIETATE_EUID}}'] = nrReg ? `ROONRC.${nrReg}` : deCompletat
     out['{{SOCIETATE_FORMA_JURIDICA}}'] = client.formaJuridica ?? ''
 
     const valoareParte = valoareParteSociala(client)
@@ -264,6 +279,8 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
       out['{{PARTI_SOCIALE_TOTALE}}'] = formatNumber(client.capitalSocial / valoareParte)
     }
     out['{{VALOARE_PARTE_SOCIALA}}'] = formatNumber(valoareParte)
+    // Aceeași valoare în litere, pentru „{{VALOARE_PARTE_SOCIALA}} ({{VALOARE_PARTE_SOCIALA_LITERE}}) lei” → „10 (zece) lei”
+    out['{{VALOARE_PARTE_SOCIALA_LITERE}}'] = numarInLitere(valoareParte)
 
     // CAEN_1 = activitate principală (unică — fără prefix numeric). Activitățile
     // secundare (număr nelimitat) se pun în blocul repetitiv {{#CAEN_SECUNDARE}}.
@@ -273,6 +290,11 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     // însăși) — unele șabloane cer amândouă („Domeniul principal... 620 ... Activitatea principală... 6201...”).
     const caenGrupaCod = client.caenCod ? client.caenCod.slice(0, 3) : ''
     out['{{CAEN_DOMENIU}}'] = formatCaen(caenGrupaCod, findCaenGrupaDescriere(client.caenCod ?? ''))
+    // Codul și denumirea separat, pentru acte care le scriu în fraze diferite („Cod CAEN 7020 și denumirea activității …”,
+    // „domeniul principal este …, căruia îi corespunde grupa CAEN 702”).
+    out['{{CAEN_DOMENIU_COD}}'] = caenGrupaCod
+    out['{{CAEN_DOMENIU_DENUMIRE}}'] = findCaenGrupaDescriere(client.caenCod ?? '')
+    out['{{CAEN_PRINCIPAL_DENUMIRE}}'] = client.caenDescriere ?? ''
     // Doar codurile (fără denumire), pentru clauza „Actualizare cod CAEN REV3”: principal + secundarele pe o singură linie.
     out['{{CAEN_PRINCIPAL_COD}}'] = client.caenCod ?? ''
     const codSecundare = (client.caenSecundare ?? []).map(c => c.cod).filter(Boolean)
@@ -424,18 +446,21 @@ export function persoanaToSingularMap(p: Persoana, opts: { capitalSocialTotal?: 
  * CNP… + INDEX per persoană) și {{#CAEN_SECUNDARE}} (câte un {{CAEN}} per
  * activitate secundară) — multiplicate de backend o dată per element din listă.
  */
+// Un rând {{#CAEN_SECUNDARE}}: „cod - denumire” ({{CAEN}}) și separat ({{COD}}, {{DENUMIRE}}).
+const caenRow = (c: { cod: string; descriere: string }) => ({ CAEN: formatCaen(c.cod, c.descriere), COD: c.cod, DENUMIRE: c.descriere ?? '' })
+
 export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Record<string, Record<string, string>[]> {
   // Un rând lăsat gol în fișa clientului nu e o activitate: ar ieși un rând gol în document și câmpul ar apărea ca lipsă.
   const caenSecundare = (client?.caenSecundare ?? []).filter(c => c.cod?.trim())
   // PFA/II/IF n-au asociați sau administratori, dar au activități CAEN secundare.
-  if (client?.tipClient === 'PF') return { CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })) }
+  if (client?.tipClient === 'PF') return { CAEN_SECUNDARE: caenSecundare.map(caenRow) }
   const asociati = resolvePersons(client, scannedPersons, 'asociat')
   const admini = resolvePersons(client, scannedPersons, 'administrator')
   return {
     // SEX / SEX_REF: sexul fiecărei persoane, folosit de server la variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
     ASOCIATI: asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, valoareParte: valoareParteSociala(client), includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` })),
     ADMINISTRATORI: admini.map((p, i) => ({ ...persoanaToSingularMap(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` })),
-    CAEN_SECUNDARE: caenSecundare.map(c => ({ CAEN: formatCaen(c.cod, c.descriere) })),
+    CAEN_SECUNDARE: caenSecundare.map(caenRow),
   }
 }
 
@@ -447,7 +472,7 @@ export interface ReadinessResult {
 // SERIE_ACT/NR_ACT: calculate separat (splitSerieNumar), nu vin din PERSOANA_FIELD_MAP — trebuie adăugate explicit,
 // altfel checkReadiness nu le recunoaște ca fiind câmpuri per-persoană dintr-un {{#ASOCIATI}}/{{#ADMINISTRATORI}}
 // și le raportează mereu ca lipsă, chiar și cu Serie & Nr. CI completat la toate persoanele.
-const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD'])
+const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'COD', 'DENUMIRE', 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD'])
 
 /** `groupFields` (etichetele din fiecare bloc al șablonului, vezi list_repeat_group_fields_in_docx): un câmp
  * per-persoană se verifică doar la elementele blocurilor care îl conțin. Fără el (șabloane salvate înainte),
@@ -558,11 +583,17 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
   if (inner === 'CAEN_DOMENIU') return { group: 'Societate', field: 'Domeniul principal de activitate (grupa CAEN)' }
   if (inner === 'CAEN') return { group: 'Societate', field: 'Activitate secundară (CAEN)' }
   if (inner === 'CAEN_PRINCIPAL_COD') return { group: 'Societate', field: 'Cod CAEN principal' }
+  if (inner === 'SOCIETATE_TRIBUNAL') return { group: 'Societate', field: 'Tribunalul (județul sediului)' }
+  if (inner === 'SOCIETATE_EUID') return { group: 'Societate', field: 'EUID' }
+  if (inner === 'CAEN_PRINCIPAL_DENUMIRE') return { group: 'Societate', field: 'Denumirea activității principale' }
+  if (inner === 'CAEN_DOMENIU_COD') return { group: 'Societate', field: 'Grupa CAEN a domeniului principal' }
+  if (inner === 'CAEN_DOMENIU_DENUMIRE') return { group: 'Societate', field: 'Domeniul principal de activitate' }
   if (inner === 'CAEN_SECUNDARE_COD') return { group: 'Societate', field: 'Coduri CAEN secundare' }
 
   if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
   if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }
   if (inner === 'VALOARE_PARTE_SOCIALA') return { group: 'Societate', field: 'Valoarea unei părți sociale' }
+  if (inner === 'VALOARE_PARTE_SOCIALA_LITERE') return { group: 'Societate', field: 'Valoarea unei părți sociale, în litere' }
   if (inner === 'DATA_CURENTA') return { group: 'Date automate', field: 'Data curentă' }
 
   const soc = inner.match(/^SOCIETATE_(.+)$/)

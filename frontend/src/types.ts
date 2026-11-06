@@ -273,6 +273,9 @@ export interface Workspace {
   hiddenBuiltins?: string[]
   /** Ordinea șabloanelor din bibliotecă și de la generare, stabilită de admin: `b:<cheie>` (de bază), `t:<id>` (proprii). */
   templateOrder?: string[]
+  /** Folderele șabloanelor proprii (vezi lib/templateFolders.ts) și folderul fiecăruia, după cheia din templateOrder. */
+  templateFolders?: import('./lib/templateFolders').TemplateFolder[]
+  templateFolderOf?: Record<string, string>
   createdAt: string | null
 }
 

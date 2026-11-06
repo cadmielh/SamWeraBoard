@@ -8,12 +8,18 @@
    "{{SOCIETATE_SEDIU}}": "Cluj, Cluj-Napoca, Str. Memorandumului, nr. 1, ap. 3",
    "{{SOCIETATE_SEDIU_FARA_JUDET}}": "Cluj-Napoca, Str. Memorandumului, nr. 1, ap. 3",
    "{{SOCIETATE_JUDET}}": "Cluj",
+   "{{SOCIETATE_TRIBUNAL}}": "Cluj",
+   "{{SOCIETATE_EUID}}": "ROONRC.J12/345/2020",
    "{{SOCIETATE_FORMA_JURIDICA}}": "SRL",
    "{{CAPITAL_SOCIAL_TOTAL}}": "200",
    "{{PARTI_SOCIALE_TOTALE}}": "20",
    "{{VALOARE_PARTE_SOCIALA}}": "10",
+   "{{VALOARE_PARTE_SOCIALA_LITERE}}": "zece",
    "{{CAEN_1}}": "6201 - Activități de realizare a soft-ului la comandă",
    "{{CAEN_DOMENIU}}": "620 - Activităţi de servicii în tehnologia informaţiei",
+   "{{CAEN_DOMENIU_COD}}": "620",
+   "{{CAEN_DOMENIU_DENUMIRE}}": "Activităţi de servicii în tehnologia informaţiei",
+   "{{CAEN_PRINCIPAL_DENUMIRE}}": "Activități de realizare a soft-ului la comandă",
    "{{CAEN_PRINCIPAL_COD}}": "6201",
    "{{CAEN_SECUNDARE_COD}}": "6202, 7022",
    "{{ASOCIAT_1_NUME}}": "POPA",
@@ -126,10 +132,14 @@
    ],
    "CAEN_SECUNDARE": [
     {
-     "CAEN": "6202 - Activități de consultanță în tehnologia informației"
+     "CAEN": "6202 - Activități de consultanță în tehnologia informației",
+     "COD": "6202",
+     "DENUMIRE": "Activități de consultanță în tehnologia informației"
     },
     {
-     "CAEN": "7022 - Activități de consultanță pentru afaceri și management"
+     "CAEN": "7022 - Activități de consultanță pentru afaceri și management",
+     "COD": "7022",
+     "DENUMIRE": "Activități de consultanță pentru afaceri și management"
     }
    ]
   },
@@ -153,12 +163,18 @@
    "{{SOCIETATE_SEDIU}}": "București - Sector 1, București, Calea Victoriei, nr. 100",
    "{{SOCIETATE_SEDIU_FARA_JUDET}}": "București, Calea Victoriei, nr. 100",
    "{{SOCIETATE_JUDET}}": "București - Sector 1",
+   "{{SOCIETATE_TRIBUNAL}}": "București",
+   "{{SOCIETATE_EUID}}": "ROONRC.J12/345/2020",
    "{{SOCIETATE_FORMA_JURIDICA}}": "SRL",
    "{{CAPITAL_SOCIAL_TOTAL}}": "1.000",
    "{{PARTI_SOCIALE_TOTALE}}": "100",
    "{{VALOARE_PARTE_SOCIALA}}": "10",
+   "{{VALOARE_PARTE_SOCIALA_LITERE}}": "zece",
    "{{CAEN_1}}": "6201 - Activități de realizare a soft-ului la comandă",
    "{{CAEN_DOMENIU}}": "620 - Activităţi de servicii în tehnologia informaţiei",
+   "{{CAEN_DOMENIU_COD}}": "620",
+   "{{CAEN_DOMENIU_DENUMIRE}}": "Activităţi de servicii în tehnologia informaţiei",
+   "{{CAEN_PRINCIPAL_DENUMIRE}}": "Activități de realizare a soft-ului la comandă",
    "{{CAEN_PRINCIPAL_COD}}": "6201",
    "{{CAEN_SECUNDARE_COD}}": "6202, 7022",
    "{{ASOCIAT_1_NUME}}": "IONESCU",
@@ -350,10 +366,14 @@
    ],
    "CAEN_SECUNDARE": [
     {
-     "CAEN": "6202 - Activități de consultanță în tehnologia informației"
+     "CAEN": "6202 - Activități de consultanță în tehnologia informației",
+     "COD": "6202",
+     "DENUMIRE": "Activități de consultanță în tehnologia informației"
     },
     {
-     "CAEN": "7022 - Activități de consultanță pentru afaceri și management"
+     "CAEN": "7022 - Activități de consultanță pentru afaceri și management",
+     "COD": "7022",
+     "DENUMIRE": "Activități de consultanță pentru afaceri și management"
     }
    ]
   },
@@ -392,10 +412,16 @@
    "{{SOCIETATE_SEDIU}}": "Cluj, Cluj-Napoca, Str. Lalelelor, nr. 4",
    "{{SOCIETATE_SEDIU_FARA_JUDET}}": "Cluj-Napoca, Str. Lalelelor, nr. 4",
    "{{SOCIETATE_JUDET}}": "Cluj",
+   "{{SOCIETATE_TRIBUNAL}}": "Cluj",
+   "{{SOCIETATE_EUID}}": "ROONRC.F12/678/2021",
    "{{SOCIETATE_FORMA_JURIDICA}}": "II",
    "{{VALOARE_PARTE_SOCIALA}}": "10",
+   "{{VALOARE_PARTE_SOCIALA_LITERE}}": "zece",
    "{{CAEN_1}}": "9602 - Coafură și alte activități de înfrumusețare",
    "{{CAEN_DOMENIU}}": "960 - Alte activităţi de servicii",
+   "{{CAEN_DOMENIU_COD}}": "960",
+   "{{CAEN_DOMENIU_DENUMIRE}}": "Alte activităţi de servicii",
+   "{{CAEN_PRINCIPAL_DENUMIRE}}": "Coafură și alte activități de înfrumusețare",
    "{{CAEN_PRINCIPAL_COD}}": "9602",
    "{{CAEN_SECUNDARE_COD}}": "-",
    "{{DATA_AZI}}": "16.03.2026",

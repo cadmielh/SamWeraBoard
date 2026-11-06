@@ -8,6 +8,8 @@ interface Props {
   role: string
   /** Poziția (1, 2, …) — mai multe persoane cu același rol în același șablon. */
   position: number
+  /** Numărul poziției în titlu („Comodant 2”) — doar când rolul are mai multe poziții. */
+  showPosition?: boolean
   /** Persoanele deja cunoscute la firma curentă (asociați + administratori) — vezi TemplateFiller. */
   existing: Persoana[]
   value: Persoana | null
@@ -31,14 +33,14 @@ const ADD_NEW_VALUE = '__add_new__'
  * client, dar poate fi ORICARE dintre persoanele deja cunoscute acolo (adesea chiar unul dintre ei), sau o
  * persoană complet nouă, introdusă manual (fără să se salveze la fișa clientului — doar pentru acest document).
  */
-export default function CustomPersonField({ role, position, existing, value, onChange }: Props) {
+export default function CustomPersonField({ role, position, showPosition = true, existing, value, onChange }: Props) {
   const [adding, setAdding] = useState(false)
   const selectedIdx = value ? existing.indexOf(value) : -1
   const selectValue = selectedIdx >= 0 ? String(selectedIdx) : value ? CURRENT_NEW_VALUE : ''
 
   return (
     <div className="field">
-      <label className="field-label" htmlFor={`custom-person-${role}-${position}`}>{roleLabel(role)} {position}</label>
+      <label className="field-label" htmlFor={`custom-person-${role}-${position}`}>{roleLabel(role)}{showPosition ? ` ${position}` : ''}</label>
       <select
         id={`custom-person-${role}-${position}`}
         className="field-input"
