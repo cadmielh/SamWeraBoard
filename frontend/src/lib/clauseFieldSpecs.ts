@@ -115,6 +115,13 @@ export const CLAUSE_FIELD_SPEC_VARIANTS: Record<string, ClauseFieldSpec[]> = {
   }],
 }
 
+/** Blocurile repetitive completate de widget-ul unei clauze (aporturi, lichidare, CAEN nou…) — se completează în clauza lor,
+ * nu se cer separat ca listă de persoane (vezi detectCustomPersonGroups). */
+export const CLAUSE_WIDGET_GROUPS: ReadonlySet<string> = new Set(
+  [...Object.values(CLAUSE_FIELD_SPECS), ...Object.values(CLAUSE_FIELD_SPEC_VARIANTS).flat()]
+    .flatMap(s => s.groupName ? [s.groupName] : []),
+)
+
 /** Spec-ul cu widget dedicat potrivit clauzei din șablonul curent, sau null (→ randare generică). */
 export function findClauseSpec(tag: string, clausePlaceholders: string[]): ClauseFieldSpec | null {
   const candidates = [...(CLAUSE_FIELD_SPEC_VARIANTS[tag] ?? []), ...(CLAUSE_FIELD_SPECS[tag] ? [CLAUSE_FIELD_SPECS[tag]] : [])]

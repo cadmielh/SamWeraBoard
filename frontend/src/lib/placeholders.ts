@@ -7,6 +7,7 @@ import { personSex } from './sex'
 import { cetatenieAcord, cetatenieText } from './cetatenie'
 import { findCaenGrupaDescriere } from '../data/caenGrupe'
 import { numarInLitere } from './numarInLitere'
+import { CLAUSE_WIDGET_GROUPS } from './clauseFieldSpecs'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -222,7 +223,7 @@ export function detectCustomPersonGroups(
 ): CustomPersonGroup[] {
   const byRole = new Map<string, CustomPersonGroup>()
   for (const tag of repeatGroups) {
-    if (KNOWN_AUTO_GROUP_TAGS.has(tag)) continue
+    if (KNOWN_AUTO_GROUP_TAGS.has(tag) || CLAUSE_WIDGET_GROUPS.has(tag)) continue
     // Un bloc fără niciun câmp de persoană (ex. {{#COD_CAEN_NOU}}{{CAEN}}{{/COD_CAEN_NOU}} al unei clauze) nu e o listă de persoane
     const fields = groupFields?.[tag]
     if (fields && !fields.some(f => PERSOANA_FIELD_NAMES.has(f))) continue

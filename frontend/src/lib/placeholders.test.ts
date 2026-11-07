@@ -332,6 +332,12 @@ describe('roluri de persoană „noi” (comodant, reprezentant legal…) — î
     expect(groups).toEqual([{ role: 'CESIONAR', repeatTag: 'CESIONARI' }])
   })
 
+  it('detectCustomPersonGroups ignoră blocurile completate de widget-ul unei clauze (aporturi, lichidare), chiar cu câmpuri de persoană', () => {
+    const groups = detectCustomPersonGroups(['APORTURI', 'LICHIDARE_ASOCIATI', 'STRUCTURA_REZULTATA'], [],
+      { APORTURI: ['NUME', 'APORT'], LICHIDARE_ASOCIATI: ['NUME', 'COTA_PARTICIPARE'], STRUCTURA_REZULTATA: ['NUME'] })
+    expect(groups).toEqual([])
+  })
+
   it('detectCustomPersonGroups ignoră ASOCIATI_LISTA/ADMINISTRATORI_LISTA (completate automat din client, nu roluri custom)', () => {
     const groups = detectCustomPersonGroups([], ['{{ASOCIATI_LISTA}}', '{{ADMINISTRATORI_LISTA}}'])
     expect(groups).toEqual([])
