@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import { ensureDriveToken, getDriveToken } from '../lib/driveAuth'
@@ -9,7 +9,9 @@ import type { User } from 'firebase/auth'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, detectCustomPersonGroups, persoanaToSingularMap,
-  customRolePool, joinNames, isDateLabel, pairManualDateFields,
+  customRolePool, joinNames, isDateLabel, pairManualDateFields, cuMandatDinFisa,
+  visibleManualPlaceholders, MOD_EXERCITARE_MANDATE, MOD_EXERCITARE_OPTIUNI,
+  ACTUALIZARE_GROUP, actualizareGroups, withoutActualizareFields, defaultActMode, type ActMode,
 } from '../lib/placeholders'
 import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
@@ -57,12 +59,7 @@ interface Props {
 }
 
 
-// Placeholdere completate intern (ex. {{SUBTITLU_ACTUALIZARE}}, injectat abia
-// la generare, în funcție de toggle-ul Înființare/Actualizare) — niciodată
-// tastate de user, deci nu trebuie verificate ca "necompletate".
-const INTERNAL_BUILTIN_FIELDS = new Set(['SUBTITLU_ACTUALIZARE'])
-const builtinCheckablePlaceholders = (b: BuiltinTemplate): string[] =>
-  b.placeholders.filter(ph => !INTERNAL_BUILTIN_FIELDS.has(ph.replace(/^\{\{|\}\}$/g, '')))
+const builtinCheckablePlaceholders = (b: BuiltinTemplate): string[] => b.placeholders
 
 const builtinKey = (b: BuiltinTemplate) => `builtin:${b.key}`
 
@@ -97,7 +94,7 @@ export default function TemplateFiller({
   const anexa1FormRef = useRef<Anexa1FillerHandle>(null)
   const [brxFormState, setBrxFormState] = useState<Record<string, BrxFormValue & { forClient?: string }>>({})
   const brxFormRef = useRef<BrxFillerHandle>(null)
-  const [pendingClientPatches, setPendingClientPatches] = useState<{ key: string; label: string; patch: Partial<ClientInput> }[] | null>(null)
+  const [pendingClientPatches, setPendingClientPatches] = useState<(ClientPatchProposal & { key: string })[] | null>(null)
   const [checkedPatchKeys, setCheckedPatchKeys] = useState<Set<string>>(new Set())
   // Șablonul afișat momentan în panoul din dreapta — 'builtin:<key>' pentru
   // șabloanele de bază, sau tpl.id pentru cele din bibliotecă.
@@ -185,16 +182,16 @@ export default function TemplateFiller({
     batchTargets?: DocTemplate[]
     isBuiltin?: boolean
   } | null>(null)
-  // Singurul șablon de bază fără clauze care are nevoie de acest toggle azi —
-  // implicit "actualizare", cazul de utilizare mai frecvent, sau "înființare" pentru o firmă marcată așa.
-  const defaultActMode = client?.inInfiintare ? 'infiintare' : 'actualizare'
-  const [actConstitutivMode, setActConstitutivMode] = useState<'infiintare' | 'actualizare'>(defaultActMode)
+  // Înființare/Actualizare — pentru orice șablon cu bloc {{#ACTUALIZARE}} (vezi actualizareGroups), o singură
+  // alegere per client, implicit după CUI (vezi defaultActMode).
+  const actModeImplicit = defaultActMode(client)
+  const [actMode, setActMode] = useState<ActMode>(actModeImplicit)
   // La schimbarea clientului (sau a bifei lui), modul revine la cel implicit — ajustat în render, nu într-un efect.
-  const actModeKey = `${client?.id ?? ''}:${defaultActMode}`
+  const actModeKey = `${client?.id ?? ''}:${actModeImplicit}`
   const [actModeFor, setActModeFor] = useState(actModeKey)
   if (actModeFor !== actModeKey) {
     setActModeFor(actModeKey)
-    setActConstitutivMode(defaultActMode)
+    setActMode(actModeImplicit)
   }
 
   // Firmă în înființare: CUI-ul / J-ul lipsă ies în document ca loc de completat de mână — spunem asta explicit.
@@ -264,9 +261,9 @@ export default function TemplateFiller({
   // clauza fiecărei persoane (vezi variants.py) — SEX_REF diferă per element, ca fiecare persoană din listă
   // să-și primească propriul sex, nu pe-al primeia din listă.
   const customGroupsFor = (tpl: TplWithRoles): Record<string, Record<string, string>[]> => {
+    const out: Record<string, Record<string, string>[]> = actualizareGroups(tpl.repeatGroups, actMode)
     const picks = customGroupPicks[tpl.id]
-    if (!picks) return {}
-    const out: Record<string, Record<string, string>[]> = {}
+    if (!picks) return out
     for (const { role, repeatTag } of detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [], tpl.repeatGroupFields)) {
       const persons = picks[role]
       if (!repeatTag || !persons) continue
@@ -288,6 +285,29 @@ export default function TemplateFiller({
     return out
   }
   const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...customPersonReplacementsFor(id) })
+  // Etichetele cerute pentru alegerile curente — ex. modul de exercitare a mandatelor doar de la 2 reprezentanți legali
+  // și câmpurile din blocul {{#ACTUALIZARE}} (numărul/data hotărârii) doar la actualizare
+  const groupFieldsOf = (id: string) => (listTemplates.find(t => t.id === id) ?? builtins.find(b => builtinKey(b) === id))?.repeatGroupFields
+  const shownPh = (id: string, phs: string[] = []) =>
+    withoutActualizareFields(visibleManualPlaceholders(phs, customGroupPicks[id]), groupFieldsOf(id), actMode)
+  const renderActModeToggle = (repeatGroups?: string[]) => repeatGroups?.includes(ACTUALIZARE_GROUP) && (
+    <div style={{ display: 'flex', gap: '.375rem' }}>
+      <button
+        type="button"
+        className={`btn btn-sm ${actMode === 'infiintare' ? 'btn-primary' : 'btn-outline-primary'}`}
+        onClick={() => setActMode('infiintare')}
+      >
+        🆕 Înființare
+      </button>
+      <button
+        type="button"
+        className={`btn btn-sm ${actMode === 'actualizare' ? 'btn-primary' : 'btn-outline-primary'}`}
+        onClick={() => setActMode('actualizare')}
+      >
+        🔄 Actualizare
+      </button>
+    </div>
+  )
 
   // Variantele „a/b” din document (sex, număr, categorie) le alege serverul; aici pregătim contextul din valorile finale.
   // `customGroups` (persoanele alese pentru un rol custom, ex. COMODANT) e opțional — doar șabloanele cu
@@ -504,15 +524,6 @@ export default function TemplateFiller({
       const mergedReplacements = { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)), ...(cs?.extraReplacements ?? {}) }
       const mergedGroups = { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)), ...(cs?.extraGroups ?? {}) }
 
-      if (b.key === 'act_constitutiv') {
-        // Placeholder gol ar fi eliminat de backend (nu se trimit câmpuri
-        // goale) și ar rămâne vizibil literal în document — un singur spațiu
-        // se substituie normal și randează ca linie goală.
-        mergedReplacements['{{SUBTITLU_ACTUALIZARE}}'] = actConstitutivMode === 'actualizare'
-          ? `- actualizat la ${replacements['{{DATA_AZI}}']} -`
-          : ' '
-      }
-
       const marked = withOptionalFieldMarks(b.placeholders ?? [], mergedReplacements, mergedGroups)
       const { ctx: variantCtx, labels: variantLabels } = variantsFor(marked, customGroupPicks[key])
       const result = await fillDocxFromBuiltinTemplate(b.key, marked, driveTarget(), outputName, mergedGroups, cs?.selectedClauses, undefined, variantCtx)
@@ -691,7 +702,7 @@ export default function TemplateFiller({
     if (!pendingClientPatches || !client?.id || !workspaceId) { setPendingClientPatches(null); return }
     const merged: Partial<ClientInput> = {}
     for (const p of pendingClientPatches) {
-      if (checkedPatchKeys.has(p.key)) Object.assign(merged, p.patch)
+      if (checkedPatchKeys.has(p.key)) Object.assign(merged, p.update ? p.update({ ...client, ...merged }) : p.patch)
     }
     try {
       // Denumirea e unică în cabinet (ca la formularul clientului): o denumire nouă deja folosită nu se aplică
@@ -751,7 +762,7 @@ export default function TemplateFiller({
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
     if (tpl.clauses?.length || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl) || isBeneficiariRealiTemplate(tpl)))) { handleGenerateDocx(tpl); return }
 
-    const { missing } = checkReadiness(tpl.placeholders ?? [], { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) }, tpl.repeatGroupFields)
+    const { missing } = checkReadiness(shownPh(tpl.id, tpl.placeholders), { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) }, tpl.repeatGroupFields)
     if (missing.length > 0) {
       setPendingGenerate({ tpl, missing })
     } else {
@@ -766,7 +777,7 @@ export default function TemplateFiller({
   const tryGenerateBuiltinSingle = (b: BuiltinTemplate) => {
     if (b.clauses.length > 0) { handleGenerateBuiltinDocx(b); return }
     const key = builtinKey(b)
-    const { missing } = checkReadiness(builtinCheckablePlaceholders(b), { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)) }, { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)) }, b.repeatGroupFields)
+    const { missing } = checkReadiness(shownPh(key, builtinCheckablePlaceholders(b)), { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)) }, { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)) }, b.repeatGroupFields)
     if (missing.length > 0) {
       setPendingGenerate({ tpl: b, missing, isBuiltin: true })
     } else {
@@ -776,7 +787,7 @@ export default function TemplateFiller({
 
   const tryBatchGenerate = () => {
     const targets = selectedTemplates
-    const allMissing = targets.flatMap(t => checkReadiness(t.placeholders ?? [], { ...repl(t.id), ...customListReplacementsFor(t) }, { ...repeatGroups, ...customGroupsFor(t) }, t.repeatGroupFields).missing)
+    const allMissing = targets.flatMap(t => checkReadiness(shownPh(t.id, t.placeholders), { ...repl(t.id), ...customListReplacementsFor(t) }, { ...repeatGroups, ...customGroupsFor(t) }, t.repeatGroupFields).missing)
     const uniqueMissing = [...new Set(allMissing)]
     if (uniqueMissing.length > 0) {
       // Show confirmation using the first template as representative (batch flag)
@@ -838,7 +849,7 @@ export default function TemplateFiller({
       ...EMPTY_CLIENT,
       ...(client ?? {}),
       asociati,
-      administratori: admini,
+      administratori: admini.map(p => cuMandatDinFisa(p, client?.administratori ?? [])),
     } as Client
   }
 
@@ -858,8 +869,9 @@ export default function TemplateFiller({
     if (!placeholders || placeholders.length === 0) return null
     const extraRepl = tpl ? customListReplacementsFor(tpl) : {}
     const extraGroups = tpl ? customGroupsFor(tpl) : {}
-    const { filled } = checkReadiness(placeholders, { ...(id ? repl(id) : replacements), ...extraRepl }, { ...repeatGroups, ...extraGroups }, tpl?.repeatGroupFields)
-    return Math.round((filled.length / placeholders.length) * 100)
+    const phs = id ? shownPh(id, placeholders) : placeholders
+    const { filled } = checkReadiness(phs, { ...(id ? repl(id) : replacements), ...extraRepl }, { ...repeatGroups, ...extraGroups }, tpl?.repeatGroupFields)
+    return Math.round((filled.length / phs.length) * 100)
   }
 
   // Declarația: procentul vine din formularul dedicat (câmpurile obligatorii), nu din etichetele șablonului. Apare după
@@ -956,7 +968,7 @@ export default function TemplateFiller({
   // arată doar ce e deja completat din client.
   const clauseCompletion = (id: string, placeholders: string[] | undefined, clauses: ClauseMeta[], groupFields?: Record<string, string[]>) => {
     const clausePh = new Set(clauses.flatMap(c => c.placeholders))
-    const base = (placeholders ?? []).filter(ph => !clausePh.has(ph) && !INTERNAL_BUILTIN_FIELDS.has(ph.replace(/^\{\{|\}\}$/g, '')) && ph !== '{{ART_NR}}')
+    const base = shownPh(id, (placeholders ?? []).filter(ph => !clausePh.has(ph) && ph !== '{{ART_NR}}'))
     // repl(id): cu persoanele alese pentru rolurile „noi" (ex. administratorul care semnează anexa)
     const { filled, missing } = checkReadiness(base, repl(id), repeatGroups, groupFields)
     const cs = clauseState[id]
@@ -1012,39 +1024,38 @@ export default function TemplateFiller({
     manualFields: string[],
     customRoles: { role: string; positions: number[] }[],
     customGroups: { role: string }[],
-  ) => (
+  ) => {
+    const manualValue = (ph: string) => manualValues[tpl.id]?.[ph] ?? ''
+    const setManualValue = (ph: string, v: string) => setManualValues(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [ph]: v } }))
+    const renderManualField = (ph: string, style?: CSSProperties) => {
+      const label = manualLabel(ph)
+      const inputId = `manual-${tpl.id}-${ph}`
+      return isDateLabel(label) ? (
+        <DateFieldInput key={ph} id={inputId} label={label} value={manualValue(ph)} onChange={v => setManualValue(ph, v)} style={style} />
+      ) : (
+        <div className="field" key={ph} style={style}>
+          <label className="field-label" htmlFor={inputId}>{label}</label>
+          <input id={inputId} className="field-input" value={manualValue(ph)} onChange={e => setManualValue(ph, e.target.value)} />
+        </div>
+      )
+    }
+    // Modul de exercitare a mandatelor stă sub lista reprezentanților legali: decizia vine abia după ce se vede că
+    // sunt cel puțin doi (shownPh îl scoate din `manualFields` sub 2 — vezi visibleManualPlaceholders).
+    const showModExercitare = manualFields.includes(MOD_EXERCITARE_MANDATE)
+    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE)
+    const { pairs, rest } = pairManualDateFields(otherManualFields)
+    return (
       <>
-        {manualFields.length > 0 && (
+        {otherManualFields.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
             <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De completat manual</div>
-            {(() => {
-              const renderManualField = (ph: string, style?: CSSProperties) => {
-                const label = manualLabel(ph)
-                const value = manualValues[tpl.id]?.[ph] ?? ''
-                const setValue = (v: string) => setManualValues(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [ph]: v } }))
-                const inputId = `manual-${tpl.id}-${ph}`
-                return isDateLabel(label) ? (
-                  <DateFieldInput key={ph} id={inputId} label={label} value={value} onChange={setValue} style={style} />
-                ) : (
-                  <div className="field" key={ph} style={style}>
-                    <label className="field-label" htmlFor={inputId}>{label}</label>
-                    <input id={inputId} className="field-input" value={value} onChange={e => setValue(e.target.value)} />
-                  </div>
-                )
-              }
-              const { pairs, rest } = pairManualDateFields(manualFields)
-              return (
-                <>
-                  {pairs.map(([nr, data]) => (
-                    <div key={nr} className="tf-manual-pair">
-                      {renderManualField(nr)}
-                      {renderManualField(data)}
-                    </div>
-                  ))}
-                  {rest.map(ph => renderManualField(ph))}
-                </>
-              )
-            })()}
+            {pairs.map(([nr, data]) => (
+              <div key={nr} className="tf-manual-pair">
+                {renderManualField(nr)}
+                {renderManualField(data)}
+              </div>
+            ))}
+            {rest.map(ph => renderManualField(ph))}
           </div>
         )}
         {renderCustomPersonFields(tpl.id, customRoles)}
@@ -1052,19 +1063,32 @@ export default function TemplateFiller({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
             <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Persoane (listă)</div>
             {customGroups.map(({ role }) => (
-              <CustomPersonGroupField
-                key={role} tag={role} role={role}
-                existing={existingForCustomRole(role)}
-                value={customGroupPicks[tpl.id]?.[role] ?? []}
-                onChange={persons => setCustomGroupPicks(prev => ({
-                  ...prev, [tpl.id]: { ...prev[tpl.id], [role]: persons },
-                }))}
-              />
+              <Fragment key={role}>
+                <CustomPersonGroupField
+                  tag={role} role={role}
+                  existing={existingForCustomRole(role)}
+                  value={customGroupPicks[tpl.id]?.[role] ?? []}
+                  onChange={persons => setCustomGroupPicks(prev => ({
+                    ...prev, [tpl.id]: { ...prev[tpl.id], [role]: persons },
+                  }))}
+                />
+                {role === 'REPREZENTANT_LEGAL' && showModExercitare && (
+                  <div className="field">
+                    <label className="field-label" htmlFor={`manual-${tpl.id}-mod-exercitare`}>Reprezentanții legali își exercită mandatele</label>
+                    <select id={`manual-${tpl.id}-mod-exercitare`} className="field-input"
+                      value={manualValue(MOD_EXERCITARE_MANDATE)} onChange={e => setManualValue(MOD_EXERCITARE_MANDATE, e.target.value)}>
+                      <option value="">— alege —</option>
+                      {MOD_EXERCITARE_OPTIUNI.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                )}
+              </Fragment>
             ))}
           </div>
         )}
       </>
-  )
+    )
+  }
 
   // Generic — folosit atât pentru DocTemplate (șabloane proprii), cât și
   // pentru BuiltinTemplate (șabloane de bază fără clauze, ex. Act Constitutiv).
@@ -1072,13 +1096,14 @@ export default function TemplateFiller({
     if (!tpl.placeholders || tpl.placeholders.length === 0) return null
     const mergedGroupsForReadiness = { ...repeatGroups, ...customGroupsFor(tpl) }
     const mergedReplForReadiness = { ...repl(tpl.id), ...customListReplacementsFor(tpl) }
-    const { filled, missing } = checkReadiness(tpl.placeholders, mergedReplForReadiness, mergedGroupsForReadiness, tpl.repeatGroupFields)
-    const total = tpl.placeholders.length
+    const placeholders = shownPh(tpl.id, tpl.placeholders)
+    const { filled, missing } = checkReadiness(placeholders, mergedReplForReadiness, mergedGroupsForReadiness, tpl.repeatGroupFields)
+    const total = placeholders.length
     const pct = Math.round((filled.length / total) * 100)
     const isExpanded = expandedReadiness.has(tpl.id)
     const grouped = missing.length > 0 ? groupMissingFields(missing) : {}
-    // {{CAMP_NR_HOTARARE}} etc.: câmpuri care nu vin din client, ci se scriu aici la generare
-    const manualFields = tpl.placeholders.filter(isManualPlaceholder)
+    // {{CAMP_NUMAR_HOTARARE}} etc.: câmpuri care nu vin din client, ci se scriu aici la generare
+    const manualFields = placeholders.filter(isManualPlaceholder)
     // Roluri de persoană „noi" (comodant, reprezentant legal…) — nu se completează automat din client ca
     // Asociat/Administrator, dar utilizatorul poate alege una dintre persoanele deja cunoscute la firmă sau
     // adăuga una nouă (vezi CustomPersonField) — poziții FIXE ({{ROL_N_CÂMP}}).
@@ -1278,6 +1303,7 @@ export default function TemplateFiller({
           <div style={WARN_BOX}>⚠️ {tpl.name} {asociatiMismatch}</div>
         )}
         {renderInfiintareNote(tpl.placeholders)}
+        {!asociatiMismatch && renderActModeToggle(tpl.repeatGroups)}
 
         {!asociatiMismatch && isDecl && renderDeclaratieProgress(tpl.id)}
         {!asociatiMismatch && isAnexa1 && renderAnexa1Progress(tpl.id)}
@@ -1311,7 +1337,7 @@ export default function TemplateFiller({
               const clausePh = new Set(tpl.clauses!.flatMap(c => c.placeholders))
               const all = tpl.placeholders ?? []
               // Persoanele folosite doar în clauze se aleg în clauza lor (renderPersons), nu aici
-              return renderTemplateInputs(tpl, all.filter(ph => isManualPlaceholder(ph) && !clausePh.has(ph)),
+              return renderTemplateInputs(tpl, shownPh(tpl.id, all.filter(ph => isManualPlaceholder(ph) && !clausePh.has(ph))),
                 detectCustomPersonRoles(all.filter(ph => !clausePh.has(ph))), detectCustomPersonGroups(tpl.repeatGroups ?? [], all, tpl.repeatGroupFields))
             })()}
             <ClauseSelector
@@ -1377,24 +1403,7 @@ export default function TemplateFiller({
         {!mismatch && tipMsg && <div style={WARN_BOX}>⚠️ {tipMsg}</div>}
         {renderInfiintareNote(b.placeholders)}
 
-        {!mismatch && b.key === 'act_constitutiv' && (
-          <div style={{ display: 'flex', gap: '.375rem' }}>
-            <button
-              type="button"
-              className={`btn btn-sm ${actConstitutivMode === 'infiintare' ? 'btn-primary' : 'btn-outline-primary'}`}
-              onClick={() => setActConstitutivMode('infiintare')}
-            >
-              🆕 Înființare
-            </button>
-            <button
-              type="button"
-              className={`btn btn-sm ${actConstitutivMode === 'actualizare' ? 'btn-primary' : 'btn-outline-primary'}`}
-              onClick={() => setActConstitutivMode('actualizare')}
-            >
-              🔄 Actualizare
-            </button>
-          </div>
-        )}
+        {!mismatch && renderActModeToggle(b.repeatGroups)}
 
         {!mismatch && isDeclaratie && renderDeclaratieProgress(key)}
         {!mismatch && isAnexa1 && renderAnexa1Progress(key)}
@@ -1466,7 +1475,7 @@ export default function TemplateFiller({
             <button className="btn btn-ghost btn-sm" onClick={onBack}>← Înapoi</button>
             {hasScannedPersonsNoClient && !clientSaved && (
               <button className="btn btn-success btn-sm" onClick={() => setShowSaveClient(true)}>
-                💾 Salvează ca client
+                💾 Salvare client
               </button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => setShowLibrary(true)}>📁 Șabloane</button>
@@ -1728,7 +1737,7 @@ export default function TemplateFiller({
         >
           <div style={{ padding: '1.125rem 1.25rem', borderBottom: '1px solid var(--s200)' }}>
             <div style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--s800)' }}>
-              💾 Salvezi această entitate ca client?
+              💾 Salvezi această entitate în lista de clienți?
             </div>
           </div>
           <div style={{ padding: '1rem 1.25rem' }}>

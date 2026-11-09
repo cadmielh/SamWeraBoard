@@ -281,6 +281,8 @@ export interface AnafResult {
   eFactura?: boolean | null
   // Strict informativ — API-ul nu oferă CNP/CI, nu se poate mapa pe Persoana
   administratoriAnaf?: { nume: string; rol: string }[]
+  // Data înregistrării (ISO, „2002-01-23”) — lipsește din răspuns când ANAF nu o întoarce
+  dataInregistrare?: string
 }
 
 export async function fetchAnafCompany(cif: string): Promise<AnafResult> {

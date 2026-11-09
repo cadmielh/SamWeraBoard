@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clientMatchesQuery, missingCompanyFields, missingRegistrationFields, resolveInfiintare, EMPTY_CLIENT, type ClientInput } from './clienti'
+import { clientMatchesQuery, missingCompanyFields, missingRegistrationFields, resolveInfiintare, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from './clienti'
 import type { Client } from '../types'
 
 const client = (over: Partial<Client>): Client => ({
@@ -83,5 +83,20 @@ describe('valoarea părții sociale la salvarea firmei', () => {
 
   it('cu 1 leu pe parte, orice capital întreg e valid', () => {
     expect(missingCompanyFields({ ...firma, valoareParteSociala: 1 })).toEqual([])
+  })
+})
+
+describe('ieșirea din înființare confirmă începutul mandatelor „din prezent”', () => {
+  const admin = (dataNumire: string) => ({ ...EMPTY_PERSOANA, nume: 'POPA', mandat: { durata: { tip: 'nedeterminata' as const, ani: '', data: '' }, inceput: 'aprobare' as const, dataNumire } })
+  it('cu data înmatriculării: mandatele fără dată o primesc', () => {
+    const out = resolveInfiintare({ ...EMPTY_CLIENT, inInfiintare: true, codFiscal: 'RO1', nrRegistrul: 'J1', dataInmatricularii: '15.06.2026', administratori: [admin(''), admin('01.01.2026')] }, null)
+    expect(out.inInfiintare).toBe(false)
+    expect(out.administratori?.map(a => a.mandat?.dataNumire)).toEqual(['15.06.2026', '01.01.2026'])
+  })
+  it('fără data înmatriculării sau încă în înființare: mandatele rămân în așteptare', () => {
+    const fara = resolveInfiintare({ ...EMPTY_CLIENT, inInfiintare: true, codFiscal: 'RO1', nrRegistrul: 'J1', administratori: [admin('')] }, null)
+    expect(fara.administratori?.[0].mandat?.dataNumire).toBe('')
+    const inca = resolveInfiintare({ ...EMPTY_CLIENT, inInfiintare: true, dataInmatricularii: '15.06.2026', administratori: [admin('')] }, null)
+    expect(inca.administratori?.[0].mandat?.dataNumire).toBe('')
   })
 })

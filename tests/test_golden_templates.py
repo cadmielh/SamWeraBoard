@@ -53,6 +53,8 @@ CLAUSE_FIELDS = {
     "ASOCIATI_ACTUALIZATI_ROL": "asociatului", "ASOCIATI_ACTUALIZATI": "POPA ANA",
     "ADMINISTRATORI_ACTUALIZATI_ROL": "administratorului", "ADMINISTRATORI_ACTUALIZATI": "POPA ANA",
     "DURATA_SOCIETATE": "nelimitată", "DURATA_MANDAT": "de 4 ani",
+    "ADMINISTRATORI_MANDAT_ROL": "administratorului", "ADMINISTRATORI_MANDAT": "POPA ANA",
+    "DURATA_MANDAT_NOU_TEXT": "pe o perioadă de 4 ani",
 }
 CLAUSE_GROUPS = {
     "COD_CAEN_NOU": [{"CAEN": "7311 - Activități ale agențiilor de publicitate"}],
@@ -113,6 +115,8 @@ def _fill(template: bytes, payload: dict) -> str:
             if key in CLAUSE_FIELDS and ph not in replacements:
                 replacements[ph] = CLAUSE_FIELDS[key]
     groups = {**payload["groups"], **CLAUSE_GROUPS}
+    # Blocul {{#ACTUALIZARE}} (doar la actualizare, nu la înființare): ca în aplicație pentru o firmă existentă
+    groups.setdefault("ACTUALIZARE", [{}])
     # Listele de persoane cu rol propriu (ex. COMODANTI): asociații clientului, ca alegere fixă
     for tag in df.list_repeat_groups_in_docx(template):
         groups.setdefault(tag, payload["groups"].get("ASOCIATI", []))

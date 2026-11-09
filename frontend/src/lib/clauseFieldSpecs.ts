@@ -13,7 +13,7 @@
  */
 
 export type ClauseWidget = 'cesiune' | 'caenList' | 'caenSingle' | 'administrator' | 'punctLucruOpen' | 'punctLucruClose' | 'majorareCapital' | 'majorareCapitalMulti' | 'identitateAsociat'
-  | 'asociatiActualizati' | 'administratoriActualizati' | 'durataSocietate' | 'durataMandat' | 'lichidareAsociati'
+  | 'asociatiActualizati' | 'administratoriActualizati' | 'durataSocietate' | 'durataMandat' | 'lichidareAsociati' | 'mandatNou'
 
 export interface ClauseFieldSpec {
   /** Placeholdere plate pe care widget-ul le completează direct. */
@@ -33,6 +33,10 @@ export interface ClientPatchProposal {
   label: string
   /** Aplicat via useClienti().update(workspaceId, client.id, patch). */
   patch: Partial<import('./clienti').ClientInput>
+  /** În locul lui `patch`, când două clauze pot atinge aceeași listă (ex. schimbarea administratorului și durata
+   * mandatului, ambele pe `administratori`): se calculează peste fișa rezultată din propunerile aplicate înaintea lui,
+   * ca a doua să nu o anuleze pe prima. `patch` rămâne varianta calculată din fișa de la început. */
+  update?: (current: Partial<import('./clienti').ClientInput>) => Partial<import('./clienti').ClientInput>
 }
 
 export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
@@ -93,6 +97,12 @@ export const CLAUSE_FIELD_SPECS: Record<string, ClauseFieldSpec> = {
     fields: ['DURATA_MANDAT'],
     widget: 'durataMandat',
   },
+  // Numirea unui administrator ales din listă (rol propriu, ex. {{ADMINISTRATOR_NUMIT_1_NUME}}): doar durata noului mandat,
+  // aleasă în clauză — nu cea a administratorilor de acum, din fișă („…și administrare, {{DURATA_MANDAT_TEXT}}.”)
+  NUMIRE_ADMINISTRATOR: {
+    fields: ['DURATA_MANDAT_TEXT'],
+    widget: 'mandatNou',
+  },
   // „… care urmează să revină: {{#LICHIDARE_ASOCIATI}}{{COTA_PARTICIPARE}} către {{NUME}};{{/LICHIDARE_ASOCIATI}}” —
   // asociații bifați, cu cota editabilă (nu blocul {{#ASOCIATI}}, care i-ar lua pe toți, cu cota din fișă)
   MOD_DE_LICHIDARE: {
@@ -113,6 +123,21 @@ export const CLAUSE_FIELD_SPEC_VARIANTS: Record<string, ClauseFieldSpec[]> = {
     groupFields: ['NUME', 'APORT', 'PARTI_APORT', 'COTA_PARTICIPARE'],
     widget: 'majorareCapitalMulti',
   }],
+  // Durata ca frază întreagă („…numit administrator {{DURATA_MANDAT_NOU_TEXT}}”) — poate fi și nedeterminată, spre deosebire
+  // de „pe o durată de {{DURATA_MANDAT_ANI}} de ani” din șabloanele mai vechi (copiile lor rămân pe spec-ul de bază).
+  // Etichetă proprie, nu {{DURATA_MANDAT_TEXT}}: valorile clauzelor sunt comune documentului, iar clauza „Durata mandat
+  // administrator” din același act poate stabili altă durată pentru ceilalți administratori.
+  SCHIMBARE_ADMINISTRATOR: [{
+    fields: ['ADMINISTRATOR_VECHI_NUME', 'ADMINISTRATOR_NOU_NUME', 'DURATA_MANDAT_NOU_TEXT'],
+    widget: 'administrator',
+  }],
+  DURATA_SOCIETATE: [{ fields: ['DURATA_SOCIETATE_TEXT'], widget: 'durataSocietate' }],
+  DURATA_MANDAT_ADMINISTRATOR: [
+    { fields: ['DURATA_MANDAT_TEXT'], widget: 'durataMandat' },
+    // Șablonul avocatului: „durata mandatului {{ADMINISTRATORI_MANDAT_ROL}} {{ADMINISTRATORI_MANDAT}} ca fiind {{DURATA_MANDAT}}”
+    // — doar administratorii bifați în clauză, cu rolul acordat după câți sunt (ca la „Actualizare date administrator”)
+    { fields: ['DURATA_MANDAT', 'ADMINISTRATORI_MANDAT_ROL', 'ADMINISTRATORI_MANDAT'], widget: 'durataMandat' },
+  ],
 }
 
 /** Blocurile repetitive completate de widget-ul unei clauze (aporturi, lichidare, CAEN nou…) — se completează în clauza lor,

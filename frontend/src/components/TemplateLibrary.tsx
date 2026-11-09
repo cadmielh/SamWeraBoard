@@ -128,7 +128,8 @@ const GUIDE_SECTIONS = [
     items: [
       '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_JUDET}}', '{{SOCIETATE_FORMA_JURIDICA}}',
       '{{ASOCIATI_LISTA}} / {{ADMINISTRATORI_LISTA}} (numele pe o singură linie: „A, B și C”)',
-      '{{CAMP_ORICE_NUME}} — câmp completat manual la generare (ex. {{CAMP_NR_HOTARARE}}); numele apare ca titlu al câmpului',
+      '{{CAMP_ORICE_NUME}} — câmp completat manual la generare; numele apare ca titlu al câmpului',
+      '{{CAMP_NUMAR_HOTARARE}} + {{CAMP_DATA_HOTARARE}} — numărul și data unui document apar alăturate în formular: prefixele NUMAR_ și DATA_, cu același sufix (ex. {{CAMP_NUMAR_CONTRACT}} / {{CAMP_DATA_CONTRACT}})',
       '{{CAPITAL_SOCIAL_TOTAL}}', '{{PARTI_SOCIALE_TOTALE}}', '{{VALOARE_PARTE_SOCIALA}} (valoarea unei părți sociale, în lei; implicit 10)', '{{VALOARE_PARTE_SOCIALA_LITERE}} (aceeași valoare în litere: „zece”)',
       '{{CAEN_1}} (activitate principală, format "cod - descriere")',
       '{{CAEN_DOMENIU}} (domeniul principal de activitate — grupa CAEN, 3 cifre, derivată automat din CAEN_1)',

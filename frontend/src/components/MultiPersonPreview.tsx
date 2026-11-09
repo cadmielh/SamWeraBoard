@@ -6,6 +6,9 @@ import { equalShare, sumCota, isCotaTotalValid, VALOARE_PARTE_SOCIALA_DEFAULT } 
 import PersonScanModal from './PersonScanModal'
 import CompanyInfoForm, { type CompanyData, type CompanyInfoFormHandle } from './CompanyInfoForm'
 import IconTrash from './IconTrash'
+import MandatFields from './MandatFields'
+import { durataFraza, type Mandat } from '../lib/durata'
+import { isIncompleteOrInvalidRoDate } from '../lib/dates'
 
 interface Props {
   client: Client
@@ -31,7 +34,29 @@ function companyDataFromClient(client: Client): CompanyData {
     puncteLucru: client.puncteLucru ?? [],
     capitalSocial: client.capitalSocial,
     valoareParteSociala: client.valoareParteSociala ?? VALOARE_PARTE_SOCIALA_DEFAULT,
+    ...(client.durataSocietate ? { durataSocietate: client.durataSocietate } : {}),
+    ...(client.dataInmatricularii ? { dataInmatricularii: client.dataInmatricularii } : {}),
   }
+}
+
+const mandatInvalid = (m?: Mandat) => !!m && (isIncompleteOrInvalidRoDate(m.dataNumire)
+  || (m.durata.tip === 'data' && isIncompleteOrInvalidRoDate(m.durata.data)))
+
+/** Mandatul pe cardul administratorului: un rând de rezumat; alegerea se deschide la cerere, ca acel card să rămână compact. */
+function MandatInline({ value, onChange, formaJuridica }: { value?: Mandat; onChange: (m: Mandat) => void; formaJuridica?: string }) {
+  const [open, setOpen] = useState(!value)
+  const rezumat = value ? durataFraza(value.durata) : ''
+  return (
+    <div style={{ paddingLeft: '.25rem', display: 'flex', flexDirection: 'column', gap: '.375rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', fontSize: '.775rem', color: 'var(--s500)' }}>
+        <span>Mandat: <strong style={{ color: rezumat ? 'var(--s700)' : 'var(--y700)' }}>{rezumat || 'necompletat'}</strong>
+          {value && rezumat && <>{value.inceput === 'aprobare' ? ', din prezent' : value.dataNumire ? `, de la ${value.dataNumire}` : ''}</>}
+        </span>
+        <button type="button" className="btn btn-ghost btn-xs" onClick={() => setOpen(o => !o)}>{open ? 'Gata' : 'Modifică'}</button>
+      </div>
+      {open && <MandatFields value={value} onChange={onChange} formaJuridica={formaJuridica} />}
+    </div>
+  )
 }
 
 function completenessScore(p: Persoana): number {
@@ -41,7 +66,7 @@ function completenessScore(p: Persoana): number {
 
 function PersonCard({
   persoana, role, index,
-  onUpdate, onCotaChange, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onRemove, atMin, onToast,
+  onUpdate, onCotaChange, onMoveUp, onMoveDown, canMoveUp, canMoveDown, onRemove, atMin, onToast, extra,
 }: {
   persoana: Persoana
   role: 'asociat' | 'administrator'
@@ -55,6 +80,8 @@ function PersonCard({
   onRemove: () => void
   atMin: boolean
   onToast: (msg: string, type: ToastItem['type']) => void
+  /** Sub date, pe cardul unui administrator: mandatul lui. */
+  extra?: React.ReactNode
 }) {
   const [scanMode, setScanMode] = useState<'scan' | 'manual' | null>(null)
   const score = completenessScore(persoana)
@@ -135,6 +162,8 @@ function PersonCard({
               .join(', ')}
           </div>
         )}
+
+        {extra}
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
@@ -231,6 +260,10 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
     const missingFromCompany = companyFormRef.current?.scrollToFirstMissing() ?? []
     if (missingFromCompany.length > 0) {
       onToast(`Completează: ${missingFromCompany.join(', ')}.`, 'err')
+      return
+    }
+    if (admini.some(a => mandatInvalid(a.mandat))) {
+      onToast('Completează: datele mandatului administratorului.', 'err')
       return
     }
     if (!hasMinPeople || !cotaValid) {
@@ -351,6 +384,10 @@ export default forwardRef<MultiPersonPreviewHandle, Props>(function MultiPersonP
             onRemove={() => removeAdministrator(i)}
             atMin={adminAtMin}
             onToast={onToast}
+            extra={
+              <MandatInline value={p.mandat} formaJuridica={companyData.formaJuridica}
+                onChange={mandat => setAdmini(prev => prev.map((x, idx) => idx === i ? { ...x, mandat } : x))} />
+            }
           />
         ))}
       </section>

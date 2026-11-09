@@ -12,6 +12,8 @@ import { sumCota, isCotaTotalValid, valoareParteSociala } from '../lib/cota'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
+import TermenBadge from './TermenBadge'
+import { durataFraza, stareDurataSocietate, stareMandat, termenText, termeneUrgente } from '../lib/durata'
 
 interface Props {
   client: Client
@@ -140,7 +142,8 @@ function CaenSecundareList({ items }: { items: { cod: string; descriere: string 
   )
 }
 
-function PersoanaCard({ p, pii, onReveal }: { p: Persoana; pii: PiiMap | null; onReveal: () => void }) {
+/** `showMandat`: pe cardul unui administrator — durata mandatului și starea lui. */
+function PersoanaCard({ p, pii, onReveal, showMandat }: { p: Persoana; pii: PiiMap | null; onReveal: () => void; showMandat?: boolean }) {
   // Valorile reale vin din vault doar după „Arată” (cerere auditată); implicit se văd cele mascate.
   const entry = p.pid && pii ? pii[p.pid] : undefined
   const cnp = entry?.cnp ?? p.cnp
@@ -190,6 +193,17 @@ function PersoanaCard({ p, pii, onReveal }: { p: Persoana; pii: PiiMap | null; o
           )}
         </div>
       )}
+      {showMandat && (
+        <div className="cv2-persoana-details">
+          <div className="cv2-detail-row">
+            <span className="cv2-detail-label">Mandat</span>
+            <span className="cv2-detail-value" style={{ display: 'flex', flexWrap: 'wrap', gap: '.375rem', alignItems: 'center' }}>
+              {p.mandat ? durataFraza(p.mandat.durata) || 'necompletat' : 'necompletat'}
+              {p.mandat && p.mandat.durata.tip !== 'nedeterminata' && <TermenBadge stare={stareMandat(p.mandat)} />}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -201,6 +215,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
   const isIF = isPF && client.subtipPF === 'IF'
   const hasAnaf = !!client.dataAnafActualizat
   const missingCompany = isPF ? [] : missingCompanyFields(client)
+  const urgente = termeneUrgente(client)
   const cotaTotal = sumCota(client.asociati.map(a => a.cotaParticipare))
   const cotaValid = isCotaTotalValid(client.asociati.map(a => a.cotaParticipare))
 
@@ -275,6 +290,12 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
             {missingRegistrationFields(client).length > 0 && (
               <span className="badge badge-infiintare" title="Firma e în curs de înființare: completează CUI-ul și J-ul după înregistrarea la ONRC.">
                 În înființare · lipsesc {missingRegistrationFields(client).join(' și ')}
+              </span>
+            )}
+            {urgente.length > 0 && (
+              <span className={`badge badge-termen-${urgente.some(t => t.stare.stare === 'expirat') ? 'expirat' : 'curand'}`}
+                title={urgente.map(t => `${t.titlu}: ${termenText(t.stare)}`).join('\n')}>
+                {urgente.length === 1 ? `${urgente[0].titlu}: ${termenText(urgente[0].stare).toLowerCase()}` : `⏳ ${urgente.length} termene de urmărit`}
               </span>
             )}
             {missingCompany.length > 0 && (
@@ -354,6 +375,15 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                   <InfoRow label="Capital social" value={client.capitalSocial != null ? `${client.capitalSocial.toLocaleString('ro-RO')} lei` : undefined} />
                   <InfoRow label="Părți sociale" value={client.capitalSocial != null ? (client.capitalSocial / valoareParteSociala(client)).toLocaleString('ro-RO') : undefined} />
                   <InfoRow label="Valoare parte socială" value={`${valoareParteSociala(client).toLocaleString('ro-RO')} lei`} />
+                </div>
+              )}
+              {!isPF && (
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <InfoRow label="Data înmatriculării" value={client.dataInmatricularii} />
+                  <InfoRow label="Durata societății" value={durataFraza(client.durataSocietate) || undefined} />
+                  {client.durataSocietate && client.durataSocietate.tip !== 'nedeterminata' && (
+                    <TermenBadge stare={stareDurataSocietate(client.durataSocietate, client.dataInmatricularii)} />
+                  )}
                 </div>
               )}
             </div>
@@ -454,7 +484,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                 </div>
                 {client.administratori.length > 0
                   ? <div className="cv2-persons-list">
-                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} />)}
+                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} showMandat />)}
                     </div>
                   : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
                 }

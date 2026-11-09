@@ -229,6 +229,30 @@ def test_numar_de_exemplare_devine_camp_manual_cu_eticheta_curata():
     assert exemplare[0]["tag"] == "{{CAMP_NUMAR_DE_EXEMPLARE}}"
 
 
+# ── număr + dată ale aceluiași document: perechea CAMP_NUMAR_X / CAMP_DATA_X, alăturată în formular ──────────
+@pytest.mark.parametrize("line, x", [
+    ("Conform Hotărârii nr. …… din data de ……, asociatul decide:", "HOTARARE"),
+    ("Nr. hotărâre: …… Data hotărârii: ……", "HOTARARE"),
+    ("Nr. contract …… / Data contractului ……", "CONTRACT"),
+    ("Decizia nr. …… / ……", "DECIZIE"),
+])
+def test_numarul_si_data_aceluiasi_document_formeaza_pereche(line, x):
+    manual = [f for f in blanks.analyze(make_doc([line])) if f["scope"] == "manual"]
+    assert [f["tag"] for f in manual] == [f"{{{{CAMP_NUMAR_{x}}}}}", f"{{{{CAMP_DATA_{x}}}}}"]
+
+
+def test_nr_devine_numar_si_fara_pereche():
+    assert blanks.manual_tag("Nr. CF") == "{{CAMP_NUMAR_CF}}"
+    assert blanks.manual_tag("Număr de pagini") == "{{CAMP_NUMAR_DE_PAGINI}}"
+    assert blanks.manual_tag("Nrcrt") == "{{CAMP_NRCRT}}"     # doar cuvântul „Nr” întreg
+
+
+def test_numar_si_data_ale_unor_lucruri_diferite_nu_se_imperecheaza():
+    found = blanks.analyze(make_doc(["Nr. contract …… Data predării ……"]))
+    tags = [f["tag"] for f in found if f["scope"] == "manual"]
+    assert tags[0] == "{{CAMP_NUMAR_CONTRACT}}" and "{{CAMP_DATA_CONTRACT}}" not in tags
+
+
 # ── puncte literale rămase lipite de o elipsă incompletă („….,”, „….. jud”) ──────────────────────────────────
 def test_punctele_ramase_dupa_elipsa_nu_apar_in_documentul_completat():
     """Documentul real al avocatului are des „….,” / „….. jud” — autorul a tastat mai multe puncte decât a

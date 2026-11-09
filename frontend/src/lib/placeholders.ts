@@ -8,6 +8,7 @@ import { cetatenieAcord, cetatenieText } from './cetatenie'
 import { findCaenGrupaDescriere } from '../data/caenGrupe'
 import { numarInLitere } from './numarInLitere'
 import { CLAUSE_WIDGET_GROUPS } from './clauseFieldSpecs'
+import { dataExpirare, durataAni, durataComuna, durataFraza, durataScurta, durateEgale, inceputMandat, type Durata } from './durata'
 
 const PERSOANA_FIELD_MAP: Record<string, keyof Persoana> = {
   NUME: 'nume',
@@ -86,6 +87,22 @@ function persoanaToMap(p: Persoana, prefix: string): Record<string, string> {
   return out
 }
 
+/** Mandatul unui administrator, fără prefix: DURATA_MANDAT („de 4 ani”), DURATA_MANDAT_TEXT („pe o perioadă de 4 ani”),
+ * DATA_NUMIRE, DATA_EXPIRARE_MANDAT. La un mandat „din prezent”, datele care se află abia la aprobarea dosarului la
+ * ONRC rămân loc de completat de mână — la fel ca CUI-ul și J-ul unei firme în înființare. */
+function mandatFields(p: Persoana): Record<string, string> {
+  const m = p.mandat
+  if (!m) return { DURATA_MANDAT: '', DURATA_MANDAT_TEXT: '', DATA_NUMIRE: '', DATA_EXPIRARE_MANDAT: '' }
+  const inceput = inceputMandat(m)
+  const deCompletat = m.inceput === 'aprobare' ? HAND_FILL_BLANK : ''
+  return {
+    DURATA_MANDAT: durataScurta(m.durata),
+    DURATA_MANDAT_TEXT: durataFraza(m.durata),
+    DATA_NUMIRE: inceput || deCompletat,
+    DATA_EXPIRARE_MANDAT: dataExpirare(m.durata, inceput) || (m.durata.tip === 'ani' ? deCompletat : ''),
+  }
+}
+
 function idFieldsToSingleMap(f: IDFields): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, field] of Object.entries(ID_FIELD_MAP)) {
@@ -121,6 +138,13 @@ export interface BuildOptions {
   scannedPersons?: ScannedPerson[]
 }
 
+/** Scanarea aduce doar datele din CI — mandatul unui administrator rămâne cel din fișă (aceeași persoană: CNP sau nume). */
+export function cuMandatDinFisa(p: Persoana, fisa: Persoana[]): Persoana {
+  const nume = `${p.nume} ${p.prenume}`.trim()
+  const dinFisa = fisa.find(c => (p.cnp && c.cnp === p.cnp) || (nume && `${c.nume} ${c.prenume}`.trim() === nume))
+  return dinFisa?.mandat ? { ...p, mandat: dinFisa.mandat } : p
+}
+
 export function resolvePersons(
   client: Partial<Client> | null | undefined,
   scannedPersons: ScannedPerson[] | undefined,
@@ -128,7 +152,7 @@ export function resolvePersons(
 ): Persoana[] {
   const clientList = role === 'asociat' ? (client?.asociati ?? []) : (client?.administratori ?? [])
   const scanned = (scannedPersons ?? []).filter(p => p.role === role)
-  return scanned.length > 0 ? scanned.map(scannedToPersoana) : clientList
+  return scanned.length > 0 ? scanned.map(sp => cuMandatDinFisa(scannedToPersoana(sp), clientList)) : clientList
 }
 
 const KNOWN_AUTO_ROLES = new Set(['ASOCIAT', 'ADMINISTRATOR', 'MEMBRU_IF'])
@@ -159,7 +183,26 @@ export function detectCustomPersonRoles(placeholders: string[]): { role: string;
 
 // Formă de plural a tag-urilor de bloc repetitiv deja completate automat din client (vezi buildRepeatGroups
 // mai jos) — restul găsite de list_repeat_groups_in_docx (backend) sunt roluri CUSTOM (ex. COMODANTI).
-const KNOWN_AUTO_GROUP_TAGS = new Set(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF', 'CAEN_SECUNDARE'])
+const KNOWN_AUTO_GROUP_TAGS = new Set(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF', 'CAEN_SECUNDARE', 'ACTUALIZARE'])
+
+/** Bloc {{#ACTUALIZARE}}…{{/ACTUALIZARE}}: text care apare doar la actualizarea unui act, nu la înființare (ex.
+ * „ADAPTAT HOTĂRÂRII NR. … DIN …”, „- actualizat la … -”). Nu e o listă de persoane: se trimite cu un element gol
+ * (păstrat) sau cu niciunul (șters cu totul, cu rând cu tot — vezi doc_filler._expand_repeat_blocks). */
+export const ACTUALIZARE_GROUP = 'ACTUALIZARE'
+export type ActMode = 'infiintare' | 'actualizare'
+/** Implicit după CUI: o firmă cu CUI e deja înmatriculată (CUI-ul și J-ul se primesc împreună), deci actul ei e o
+ * actualizare — chiar dacă bifa „în înființare” a rămas pusă; fără CUI, înființare. Fără client ales: actualizare. */
+export const defaultActMode = (client?: { codFiscal?: string } | null): ActMode =>
+  client && !client.codFiscal?.trim() ? 'infiintare' : 'actualizare'
+export const actualizareGroups = (repeatGroups: string[] | undefined, mode: ActMode): Record<string, Record<string, string>[]> =>
+  repeatGroups?.includes(ACTUALIZARE_GROUP) ? { [ACTUALIZARE_GROUP]: mode === 'actualizare' ? [{}] : [] } : {}
+
+/** Câmpurile din blocul {{#ACTUALIZARE}} (ex. numărul și data hotărârii) — nu se cer la înființare. */
+export function withoutActualizareFields(placeholders: string[], groupFields: Record<string, string[]> | undefined, mode: ActMode): string[] {
+  const doarLaActualizare = mode === 'infiintare' ? groupFields?.[ACTUALIZARE_GROUP] : undefined
+  if (!doarLaActualizare?.length) return placeholders
+  return placeholders.filter(ph => !doarLaActualizare.includes(ph.replace(/^\{\{|\}\}$/g, '')))
+}
 
 /** „REPREZENTANT_COMODATAR” → true — un rol construit generic de blanks.py (vezi _role_override/entity_roles)
  * pentru cine REPREZINTĂ o parte care e o entitate (societate), nu o persoană directă — legal, reprezentantul
@@ -323,10 +366,28 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     })
     adminiToUse.forEach((p, i) => {
       Object.assign(out, persoanaToMap(p, `ADMINISTRATOR_${i + 1}`))
+      for (const [k, v] of Object.entries(mandatFields(p))) out[`{{ADMINISTRATOR_${i + 1}_${k}}}`] = v
     })
     // Numele pe o singură linie, pentru fraze de tipul „în calitate de asociați X și Y au drepturile…”
     out['{{ASOCIATI_LISTA}}'] = joinNames(asociatiToUse)
     out['{{ADMINISTRATORI_LISTA}}'] = joinNames(adminiToUse)
+
+    // Durata mandatului ca frază unică („Mandatul administratorilor este …”) — doar dacă e aceeași la toți; altfel
+    // rămâne gol (apare la „lipsește”), iar șablonul trebuie să o scrie per administrator, în {{#ADMINISTRATORI}}.
+    const mandatComun = durataComuna(adminiToUse)
+    out['{{DURATA_MANDAT}}'] = durataScurta(mandatComun)
+    out['{{DURATA_MANDAT_TEXT}}'] = durataFraza(mandatComun)
+    out['{{DURATA_MANDAT_ANI}}'] = durataAni(mandatComun)
+
+    // Durata societății curge de la înmatriculare. Necompletată (clienții dinainte) = gol, nu o valoare presupusă.
+    const durata = client?.durataSocietate
+    const ani = durataAni(durata)
+    out['{{DURATA_SOCIETATE}}'] = durataScurta(durata)
+    out['{{DURATA_SOCIETATE_TEXT}}'] = durataFraza(durata)
+    out['{{DURATA_SOCIETATE_ANI}}'] = ani
+    out['{{DURATA_SOCIETATE_ANI_LITERE}}'] = ani ? numarInLitere(Number(ani)) : ''
+    out['{{DURATA_SOCIETATE_DATA_EXPIRARE}}'] = dataExpirare(durata, client?.dataInmatricularii ?? '')
+      || (ani && client?.inInfiintare ? HAND_FILL_BLANK : '')
   }
 
   // Membri familie IF
@@ -341,10 +402,21 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
   return out
 }
 
-/** Câmp completat manual la generare: {{CAMP_ORICE_NUME}} (ex. {{CAMP_NR_HOTARARE}}). */
+/** Câmp completat manual la generare: {{CAMP_ORICE_NUME}} (ex. {{CAMP_NUMAR_HOTARARE}}). */
 export const isManualPlaceholder = (ph: string): boolean => /^\{\{CAMP_[A-Z0-9_]+\}\}$/.test(ph)
 
-/** Titlul afișat pentru un câmp manual: {{CAMP_NR_HOTARARE}} → „Nr hotarare”. */
+/** Cum își exercită mandatele reprezentanții legali (Art.19 din actul avocatului) — are sens doar de la 2
+ * reprezentanți aleși; la unul singur, serverul scoate câmpul din frază (variants.py: _REPREZENTANT_MANDAT_RE). */
+export const MOD_EXERCITARE_MANDATE = '{{CAMP_MOD_EXERCITARE_MANDATE}}'
+export const MOD_EXERCITARE_OPTIUNI = ['separat', 'împreună'] as const
+
+/** Câmpurile manuale de cerut pentru alegerile curente — fără modul de exercitare sub 2 reprezentanți legali. */
+export function visibleManualPlaceholders(placeholders: string[], picks?: Record<string, Persoana[]>): string[] {
+  const reprezentanti = picks?.REPREZENTANT_LEGAL?.length ?? 0
+  return reprezentanti >= 2 ? placeholders : placeholders.filter(ph => ph !== MOD_EXERCITARE_MANDATE)
+}
+
+/** Titlul afișat pentru un câmp manual: {{CAMP_NUMAR_HOTARARE}} → „Numar hotarare”. */
 export function manualLabel(ph: string): string {
   const words = ph.replace(/^\{\{CAMP_|\}\}$/g, '').toLowerCase().replace(/_/g, ' ').trim()
   return words ? words[0].toUpperCase() + words.slice(1) : 'Valoare'
@@ -403,17 +475,25 @@ export function persoaneActualizate(persons: Persoana[], rol: 'asociat' | 'admin
   return { rol: persons.length === 0 ? '' : persons.length === 1 ? singular : plural, nume: joinNames(persons) }
 }
 
-export type DurataTip = 'nedeterminata' | 'ani' | 'data'
-
-/** Clauzele de durată (societate, mandat): „nedeterminată” / „de 10 ani” / „de 25 de ani” / „până la data de …”.
- * „de” înaintea lui „ani” de la 20 în sus (și la 100, 120…), ca în română; gol cât timp alegerea e incompletă. */
-export function durataText(tip: DurataTip, ani: string, data: string): string {
-  if (tip === 'nedeterminata') return 'nedeterminată'
-  if (tip === 'data') return data.trim() ? `până la data de ${data.trim()}` : ''
-  const n = Number(ani)
-  if (!Number.isInteger(n) || n <= 0) return ''
-  if (n === 1) return 'de un an'
-  return n % 100 === 0 || n % 100 >= 20 ? `de ${n} de ani` : `de ${n} ani`
+/** Clauza „Durata mandatului” cu durate diferite, pe tag-urile existente ale frazei „durata mandatului {{ADMINISTRATORI_MANDAT_ROL}}
+ * {{ADMINISTRATORI_MANDAT}} ca fiind {{DURATA_MANDAT}}”: administratorii cu aceeași durată se grupează (în ordinea în care apar);
+ * primul grup ocupă rolul și numele, iar restul frazei continuă în durată — „de 4 ani, a mandatului administratorului B ca fiind
+ * de 2 ani, respectiv a mandatului administratorului C ca fiind nedeterminată”. Cu o singură durată: exact ca persoaneActualizate. */
+export function mandateActualizate(alegeri: { persoana: Persoana; durata: Durata }[]): { rol: string; nume: string; durata: string } {
+  const grupuri: { durata: Durata; persoane: Persoana[] }[] = []
+  for (const { persoana, durata } of alegeri) {
+    const g = grupuri.find(x => durateEgale(x.durata, durata))
+    if (g) g.persoane.push(persoana); else grupuri.push({ durata, persoane: [persoana] })
+  }
+  if (grupuri.length === 0) return { rol: '', nume: '', durata: '' }
+  const [primul, ...rest] = grupuri
+  const { rol, nume } = persoaneActualizate(primul.persoane, 'administrator')
+  const parti = rest.map(g => {
+    const p = persoaneActualizate(g.persoane, 'administrator')
+    return `${g.persoane.length === 1 ? 'a mandatului' : 'a mandatelor'} ${p.rol} ${p.nume} ca fiind ${durataScurta(g.durata)}`
+  })
+  const continuare = parti.length === 0 ? '' : `, ${[...parti.slice(0, -1), `respectiv ${parti[parti.length - 1]}`].join(', ')}`
+  return { rol, nume, durata: durataScurta(primul.durata) + continuare }
 }
 
 /** Câmpurile unei persoane (NUME, PRENUME, CNP…), fără prefix de rol/poziție — forma pe care o așteaptă un
@@ -465,7 +545,7 @@ export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Rec
   return {
     // SEX / SEX_REF: sexul fiecărei persoane, folosit de server la variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
     ASOCIATI: asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, valoareParte: valoareParteSociala(client), includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` })),
-    ADMINISTRATORI: admini.map((p, i) => ({ ...persoanaToSingularMap(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` })),
+    ADMINISTRATORI: admini.map((p, i) => ({ ...persoanaToSingularMap(p), ...mandatFields(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` })),
     CAEN_SECUNDARE: caenSecundare.map(caenRow),
   }
 }
@@ -478,7 +558,8 @@ export interface ReadinessResult {
 // SERIE_ACT/NR_ACT: calculate separat (splitSerieNumar), nu vin din PERSOANA_FIELD_MAP — trebuie adăugate explicit,
 // altfel checkReadiness nu le recunoaște ca fiind câmpuri per-persoană dintr-un {{#ASOCIATI}}/{{#ADMINISTRATORI}}
 // și le raportează mereu ca lipsă, chiar și cu Serie & Nr. CI completat la toate persoanele.
-const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'COD', 'DENUMIRE', 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD'])
+const SINGULAR_KEYS = new Set([...Object.keys(PERSOANA_FIELD_MAP), 'CAPITAL_SOCIAL', 'PARTI_SOCIALE', 'CAEN', 'COD', 'DENUMIRE', 'SERIE_ACT', 'NR_ACT', 'SERIE', 'CETATENIA_ACORD',
+  'DURATA_MANDAT', 'DURATA_MANDAT_TEXT', 'DATA_NUMIRE', 'DATA_EXPIRARE_MANDAT'])
 
 /** `groupFields` (etichetele din fiecare bloc al șablonului, vezi list_repeat_group_fields_in_docx): un câmp
  * per-persoană se verifică doar la elementele blocurilor care îl conțin. Fără el (șabloane salvate înainte),
@@ -558,6 +639,26 @@ const FRIENDLY_FIELD: Record<string, string> = {
   TIP_CONTRACT_PUNCT_LUCRU: 'Tip contract (ex. comodat)',
   CONTRACT_PUNCT_LUCRU_NR: 'Nr. contract punct de lucru',
   CONTRACT_PUNCT_LUCRU_DATA: 'Data contract punct de lucru',
+  DURATA_MANDAT: 'Durata mandatului',
+  DURATA_MANDAT_TEXT: 'Durata mandatului',
+  DATA_NUMIRE: 'Data numirii',
+  DATA_EXPIRARE_MANDAT: 'Data expirării mandatului',
+}
+
+const DURATA_LABELS: Record<string, { group: string; field: string }> = {
+  DURATA_SOCIETATE: { group: 'Societate', field: 'Durata societății' },
+  DURATA_SOCIETATE_TEXT: { group: 'Societate', field: 'Durata societății' },
+  DURATA_SOCIETATE_ANI: { group: 'Societate', field: 'Durata societății (număr de ani)' },
+  DURATA_SOCIETATE_ANI_LITERE: { group: 'Societate', field: 'Durata societății (ani, în litere)' },
+  DURATA_SOCIETATE_DATA_EXPIRARE: { group: 'Societate', field: 'Data expirării duratei societății' },
+  // Aceeași etichetă și pentru forma comună, și pentru cea din {{#ADMINISTRATORI}}: lipsește fie la un administrator, fie
+  // (forma comună) diferă între ei — în ambele cazuri se rezolvă din mandatele administratorilor
+  DURATA_MANDAT: { group: 'Administratori', field: 'Durata mandatului' },
+  DURATA_MANDAT_TEXT: { group: 'Administratori', field: 'Durata mandatului' },
+  DURATA_MANDAT_ANI: { group: 'Administratori', field: 'Durata mandatului (număr de ani)' },
+  DURATA_MANDAT_NOU_TEXT: { group: 'Administratori', field: 'Durata mandatului noului administrator' },
+  DATA_NUMIRE: { group: 'Administratori', field: 'Data numirii' },
+  DATA_EXPIRARE_MANDAT: { group: 'Administratori', field: 'Data expirării mandatului' },
 }
 
 /** „REPREZENTANT_LEGAL” → „Reprezentant legal”, „COMODANT” → „Comodant” — etichetă prietenoasă pentru un rol
@@ -585,6 +686,7 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
   const partiAsoc = inner.match(/^PARTI_SOCIALE_ASOCIAT_(\d+)$/)
   if (partiAsoc) return { group: `Asociat ${partiAsoc[1]}`, field: 'Părți sociale' }
 
+  if (DURATA_LABELS[inner]) return DURATA_LABELS[inner]
   if (inner === 'CAEN_1') return { group: 'Societate', field: 'Activitate principală (CAEN)' }
   if (inner === 'CAEN_DOMENIU') return { group: 'Societate', field: 'Domeniul principal de activitate (grupa CAEN)' }
   if (inner === 'CAEN') return { group: 'Societate', field: 'Activitate secundară (CAEN)' }

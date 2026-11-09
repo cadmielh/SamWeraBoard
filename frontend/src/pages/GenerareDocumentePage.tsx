@@ -38,6 +38,7 @@ function scannedPersonsToClientInitial(persons: ScannedPerson[]): Client {
     ...EMPTY_CLIENT,
     tipClient: 'PJ',
     asociati: persons.filter(p => p.role === 'asociat').map(p => toPersoana(p, 'Asociat')),
+    // Administratori noi: mandatul implicit, ca la adăugarea din formular („din prezent”, data vine la aprobarea dosarului)
     administratori: persons.filter(p => p.role === 'administrator').map(p => toPersoana(p, 'Administrator')),
   } as Client
 }

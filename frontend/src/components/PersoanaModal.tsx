@@ -11,25 +11,44 @@ import MiniOCR from './MiniOCR'
 import Modal from './Modal'
 import Combobox from './Combobox'
 import DateFieldInput from './DateFieldInput'
+import MandatFields from './MandatFields'
+import { CAMPURI_BULETIN, campuriSchimbate, mesajCompletare } from '../lib/campuriAuto'
 
 interface Props {
   initial: Persoana | null
   prefill?: Partial<Persoana>
   calitateDefault: string
   showCota?: boolean
+  /** Doar la administratori: forma juridică, de care depind variantele mandatului (la SA, mereu pe durată determinată). */
+  mandatContext?: { formaJuridica?: string }
   onSave: (p: Persoana) => void
   onClose: () => void
 }
 
 const CALITATI = ['Asociat', 'Administrator', 'Asociat și Administrator', 'Cenzor', 'Acționar', 'Fondator', 'Altul']
 
-export default function PersoanaModal({ initial, prefill, calitateDefault, showCota = true, onSave, onClose }: Props) {
-  const [p, setP] = useState<Persoana>(initial ?? { ...EMPTY_PERSOANA, calitate: calitateDefault, ...prefill })
+export default function PersoanaModal({ initial, prefill, calitateDefault, showCota = true, mandatContext, onSave, onClose }: Props) {
+  // Mandatul nu se precompletează: îl alege doar cine folosește șabloane cu durata mandatului.
+  const [p, setP] = useState<Persoana>(() => initial ?? {
+    ...EMPTY_PERSOANA, calitate: calitateDefault, ...prefill,
+    ...(mandatContext && prefill?.mandat ? { mandat: prefill.mandat } : {}),
+  })
 
-  const set = (key: keyof Persoana, val: string) => setP(prev => ({ ...prev, [key]: val }))
+  // Câmpurile completate din buletinul scanat: evidențiate până le editează utilizatorul (citirea OCR poate greși)
+  const [dinBuletin, setDinBuletin] = useState<ReadonlySet<string>>(new Set())
+  // Doar câmpul însuși (chenarul de introducere), fără etichetă sau fundal pe tot blocul
+  const hl = (key: string) => dinBuletin.has(key) ? ' auto-field' : ''
 
-  const handleExtracted = (fields: IDFields) => {
-    setP(prev => ({
+  const set = (key: keyof Persoana, val: string) => {
+    setP(prev => ({ ...prev, [key]: val }))
+    setDinBuletin(prev => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev); next.delete(key); return next
+    })
+  }
+
+  const handleExtracted = (fields: IDFields): string => {
+    const merge = (prev: Persoana): Persoana => ({
       ...prev,
       cnp: fields.cnp || prev.cnp,
       nume: fields.nume || prev.nume,
@@ -43,7 +62,11 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
       emisa_de: fields.emisa_de || prev.emisa_de,
       valabila_de_la: fields.valabila_de_la || prev.valabila_de_la,
       valabila_pana_la: fields.valabila_pana_la || prev.valabila_pana_la,
-    }))
+    })
+    const schimbate = campuriSchimbate(p, merge(p), CAMPURI_BULETIN)
+    setP(merge)
+    setDinBuletin(new Set(schimbate))
+    return mesajCompletare(schimbate.length, 'buletin')
   }
 
   const cnpTrimmed = p.cnp.trim()
@@ -55,7 +78,9 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
   const hasInvalidEditedDate = DATE_FIELDS.some(
     f => p[f] !== (initial?.[f] ?? '') && isIncompleteOrInvalidRoDate(p[f]),
   )
-  const canSave = !!(p.nume.trim() || cnpTrimmed) && !cnpError && !hasInvalidEditedDate
+  const mandatInvalid = !!p.mandat && (isIncompleteOrInvalidRoDate(p.mandat.dataNumire)
+    || (p.mandat.durata.tip === 'data' && isIncompleteOrInvalidRoDate(p.mandat.durata.data)))
+  const canSave = !!(p.nume.trim() || cnpTrimmed) && !cnpError && !hasInvalidEditedDate && !mandatInvalid
   const autoSex = sexFromCnp(p.cnp)
 
   const title = initial
@@ -90,7 +115,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               </div>
             )}
 
-            <div className="field">
+            <div className={`field${hl('cnp')}`}>
               <label className="field-label">CNP</label>
               <input
                 className="field-input"
@@ -103,27 +128,28 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
               />
               {cnpError && <span className="field-error">{cnpError}</span>}
             </div>
-            <div className="field">
+            <div className={`field${hl('serie_numar')}`}>
               <label className="field-label">Serie / Număr buletin</label>
               <input className="field-input" placeholder="ex: MX 123456" value={p.serie_numar} onChange={e => set('serie_numar', e.target.value)} />
             </div>
 
-            <div className="field">
+            <div className={`field${hl('nume')}`}>
               <label className="field-label">Nume</label>
               <input className="field-input" value={p.nume} onChange={e => set('nume', e.target.value)} />
             </div>
-            <div className="field">
+            <div className={`field${hl('prenume')}`}>
               <label className="field-label">Prenume</label>
               <input className="field-input" value={p.prenume} onChange={e => set('prenume', e.target.value)} />
             </div>
 
-            <DateFieldInput label="Data nașterii" value={p.data_nasterii} onChange={v => set('data_nasterii', v)} showToday={false} />
-            <div className="field">
+            <DateFieldInput label="Data nașterii" value={p.data_nasterii} onChange={v => set('data_nasterii', v)} showToday={false}
+              className={hl('data_nasterii').trim() || undefined} />
+            <div className={`field${hl('locul_nasterii')}`}>
               <label className="field-label">Locul nașterii</label>
               <input className="field-input" value={p.locul_nasterii} onChange={e => set('locul_nasterii', e.target.value)} />
             </div>
 
-            <div className="field">
+            <div className={`field${hl('cetatenia')}`}>
               <label className="field-label">Cetățenia</label>
               <Combobox value={p.cetatenia} options={CETATENII} onChange={val => set('cetatenia', val)} placeholder="Cetățenia" />
             </div>
@@ -146,24 +172,33 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
                 </select>
               </div>
             ) : null}
-            <div className="field">
+            <div className={`field${hl('judet')}`}>
               <label className="field-label">Județ / Sector</label>
               <Combobox value={p.judet} options={JUDETE_ROMANIA} onChange={val => set('judet', val)} placeholder="Județ / Sector" />
             </div>
 
-            <div className="field full">
+            <div className={`field full${hl('adresa')}`}>
               <label className="field-label">Adresa</label>
               <input className="field-input" value={p.adresa} onChange={e => set('adresa', e.target.value)} />
             </div>
 
-            <DateFieldInput label="Valabil de la" value={p.valabila_de_la} onChange={v => set('valabila_de_la', v)} showToday={false} />
-            <DateFieldInput label="Valabil până la" value={p.valabila_pana_la} onChange={v => set('valabila_pana_la', v)} showToday={false} />
+            <DateFieldInput label="Valabil de la" value={p.valabila_de_la} onChange={v => set('valabila_de_la', v)} showToday={false}
+              className={hl('valabila_de_la').trim() || undefined} />
+            <DateFieldInput label="Valabil până la" value={p.valabila_pana_la} onChange={v => set('valabila_pana_la', v)} showToday={false}
+              className={hl('valabila_pana_la').trim() || undefined} />
 
-            <div className="field">
+            <div className={`field${hl('emisa_de')}`}>
               <label className="field-label">Emis de</label>
               <input className="field-input" value={p.emisa_de} onChange={e => set('emisa_de', e.target.value)} />
             </div>
           </div>
+
+          {mandatContext && (
+            <fieldset style={{ border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.75rem 1rem 1rem', marginTop: '1rem' }}>
+              <legend style={{ fontSize: '.8125rem', fontWeight: 700, color: 'var(--s700)', padding: '0 .375rem' }}>Mandat de administrator</legend>
+              <MandatFields value={p.mandat} onChange={mandat => setP(prev => ({ ...prev, mandat }))} {...mandatContext} />
+            </fieldset>
+          )}
         </div>
 
         <div className="modal-footer">

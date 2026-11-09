@@ -3,6 +3,7 @@
 Frontend-ul trimite „-” pentru câmpurile necompletate (vezi withEmptyFieldMarks); serverul exclude valorile goale
 din înlocuire, deci o valoare goală ar lăsa eticheta în text. Testul folosește șablonul real din registru.
 """
+import pytest
 import io
 import re
 import sys
@@ -44,7 +45,7 @@ def _payload(fill_empty: bool) -> tuple[dict[str, str], dict]:
         "CAEN_TERTI": [],
         "SEDII_SECUNDARE": [
             {"NR_CRT": "1", "ADRESA": "Str. Exemplu 1", "CAEN": "4711", "CAEN_DESC": "Comerț"},
-            {"NR_CRT": "", "ADRESA": "", "CAEN": "4719", "CAEN_DESC": "Alt comerț"},
+            {"NR_CRT": "", "ADRESA": "", "CAEN": "4712", "CAEN_DESC": "Alt comerț"},
         ],
     }
     return values, rows
@@ -62,11 +63,12 @@ def test_dash_leaves_no_raw_tags_and_keeps_blank_row_cells():
     out = fill_docx(TEMPLATE.read_bytes(), _flat_replacements(values), None, None, rows)
     text = _all_text(out)
     assert not re.search(r"\{\{[^}]*\}\}", text), re.findall(r"\{\{[^}]*\}\}", text)
-    assert "Str. Exemplu 1" in text and "4719" in text        # rândurile tabelului s-au completat
+    assert "Str. Exemplu 1" in text and "4712" in text        # rândurile tabelului s-au completat
 
 
 def test_act_constitutiv_durata_societatii_fara_data_inmatricularii():
-    """Art. „Durata societății”: 99 de ani, fără „începând cu data înmatriculării” (formularea cerută de proprietar)."""
+    """Art. „Durata societății”: 99 de ani, fără „începând cu data înmatriculării” (formularea cerută de proprietar).
+    Șabloanele de bază rămân la versiunea din producție — vezi fisiere_template/_sabloane-viitoare pentru varianta cu durata aleasă."""
     text = _all_text((TEMPLATE.parent / "Act Constitutiv.docx").read_bytes())
     assert "Durata de funcţionare a societăţii este pe o perioadă de 99 de ani." in text
     assert "perioada de 99 de ani, începând cu data înmatriculării" not in text
@@ -80,6 +82,33 @@ def test_clauzele_de_durata_fara_perioada_nelimitata():
         assert "Se aprobă modificarea duratei societății într-o perioadă de 99 de ani." in text, name
         assert "Se aprobă modificarea duratei mandatului de administrator într-o perioadă de 99 de ani." in text, name
         assert "dintr-o perioadă nelimitată" not in text, name
+
+
+# ── varianta neadoptată încă (fisiere_template/_sabloane-viitoare): durata societății și mandatul alese în formular ──────────
+VIITOARE = Path(__file__).resolve().parent.parent / "fisiere_template" / "_sabloane-viitoare"
+
+
+@pytest.mark.skipif(not VIITOARE.exists(), reason="varianta viitoare a șabloanelor de bază nu e în acest checkout")
+def test_sabloane_viitoare_act_constitutiv_cu_durata_din_fisa():
+    """Mandatul pe rândul fiecărui administrator, durata societății din fișă — nu „99 de ani” scris în text."""
+    text = _all_text((VIITOARE / "Act Constitutiv.docx").read_bytes())
+    assert "Societatea funcţionează {{DURATA_SOCIETATE_TEXT}}." in text
+    assert "numit/ă administrator {{DURATA_MANDAT_TEXT}}." in text
+    assert "începând cu data înmatriculării" not in text
+    assert "99 de ani" not in text
+
+
+@pytest.mark.skipif(not VIITOARE.exists(), reason="varianta viitoare a șabloanelor de bază nu e în acest checkout")
+def test_sabloane_viitoare_clauzele_de_durata_din_formular():
+    """Clauzele de durată și numirea noului administrator: durata aleasă în formular, fără „începând cu data prezentei …”."""
+    for name in ("Decizia Asociatului Unic.docx", "Hotărârea AGA.docx"):
+        text = _all_text((VIITOARE / name).read_bytes())
+        assert "Se aprobă modificarea duratei societății, care va funcționa {{DURATA_SOCIETATE_TEXT}}." in text, name
+        assert "Se aprobă modificarea duratei mandatului de administrator, mandatul fiind stabilit {{DURATA_MANDAT_TEXT}}." in text, name
+        # Etichetă proprie: clauza „Durata mandat administrator” din același act poate avea altă durată
+        assert "este numit/ă administrator al societății {{DURATA_MANDAT_NOU_TEXT}}, cu puteri" in text, name
+        assert "începând cu data prezentei" not in text, name
+        assert "99 de ani" not in text and "DURATA_MANDAT_ANI" not in text, name
 
 
 def test_clauza_actualizare_caen_rev3_cu_data_de_azi_si_liste_de_coduri():

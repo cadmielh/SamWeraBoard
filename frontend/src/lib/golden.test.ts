@@ -36,25 +36,30 @@ const elena = persoana({
 
 const firma = (over: Partial<Client>): Partial<Client> => ({
   id: 'golden', tipClient: 'PJ', formaJuridica: 'SRL', codFiscal: '12345678', nrRegistrul: 'J12/345/2020',
-  caenCod: '6201', caenDescriere: 'Activități de realizare a soft-ului la comandă',
-  caenSecundare: [{ cod: '6202', descriere: 'Activități de consultanță în tehnologia informației' }, { cod: '7022', descriere: 'Activități de consultanță pentru afaceri și management' }],
+  caenCod: '6210', caenDescriere: 'Activităţi de realizare a soft-ului la comandă (software orientat client)',
+  caenSecundare: [{ cod: '6220', descriere: 'Activităţi de consultanţă în tehnologia informaţiei și de management (gestiune şi exploatare) a mijloacelor de calcul' }, { cod: '7020', descriere: 'Activităţi de consultanţă în afaceri și management' }],
   puncteLucru: [], capitalSocial: 200, valoareParteSociala: 10, ...over,
 })
 
 const CLIENTI: Record<string, Partial<Client>> = {
   pj_asociat_unic: firma({
     denumire: 'ALFA SOFT SRL', sediuSocial: parseAdresa('Jud. Cluj, Mun. Cluj-Napoca, Str. Memorandumului nr. 1, ap. 3'),
-    asociati: [ana], administratori: [{ ...ana, calitate: 'Administrator', cotaParticipare: '' }],
+    durataSocietate: { tip: 'nedeterminata', ani: '', data: '' }, dataInmatricularii: '15.06.2020',
+    asociati: [ana], administratori: [{ ...ana, calitate: 'Administrator', cotaParticipare: '', mandat: { durata: { tip: 'nedeterminata', ani: '', data: '' }, inceput: 'aprobare', dataNumire: '15.06.2020' } }],
   }),
   pj_doi_asociati: firma({
     denumire: 'BETA CONSULT SRL', sediuSocial: parseAdresa('Mun. București, Sector 1, Calea Victoriei nr. 100'),
     capitalSocial: 1000, puncteLucru: ['Mun. București, Sector 2, Str. Viitorului nr. 5'],
-    asociati: [mihai, elena], administratori: [{ ...mihai, calitate: 'Administrator', cotaParticipare: '' }, { ...elena, calitate: 'Administrator', cotaParticipare: '' }],
+    durataSocietate: { tip: 'ani', ani: '10', data: '' }, dataInmatricularii: '01.09.2020',
+    asociati: [mihai, elena], administratori: [
+      { ...mihai, calitate: 'Administrator', cotaParticipare: '', mandat: { durata: { tip: 'ani', ani: '4', data: '' }, inceput: 'aprobare', dataNumire: '01.09.2020' } },
+      { ...elena, calitate: 'Administrator', cotaParticipare: '', mandat: { durata: { tip: 'ani', ani: '4', data: '' }, inceput: 'data', dataNumire: '10.01.2025' } },
+    ],
   }),
   pf_ii: {
     id: 'golden', tipClient: 'PF', subtipPF: 'II', denumire: 'POPA ANA ÎNTREPRINDERE INDIVIDUALĂ', formaJuridica: 'II',
     codFiscal: '87654321', nrRegistrul: 'F12/678/2021', sediuSocial: parseAdresa('Jud. Cluj, Mun. Cluj-Napoca, Str. Lalelelor nr. 4'),
-    caenCod: '9602', caenDescriere: 'Coafură și alte activități de înfrumusețare', caenSecundare: [], puncteLucru: [],
+    caenCod: '9621', caenDescriere: 'Activități de coafură şi frizerie', caenSecundare: [], puncteLucru: [],
     titular: { ...ana, calitate: 'Titular', cotaParticipare: '' },
   },
 }

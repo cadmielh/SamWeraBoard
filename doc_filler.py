@@ -160,7 +160,8 @@ def _merge_leading_terminal_punctuation(last_par: Paragraph, next_par: Paragraph
 
 
 def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]],
-                          variant_ctx: dict | None = None, variant_warnings: set | None = None) -> None:
+                          variant_ctx: dict | None = None, variant_warnings: set | None = None,
+                          replacements: dict[str, str] | None = None) -> None:
     """
     Expand {{#TAG}} ... {{/TAG}} paragraph ranges into one copy of the enclosed
     paragraphs per item in groups[TAG], substituting singular placeholders (e.g.
@@ -171,16 +172,21 @@ def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]]
     span across cells). The original marker paragraphs and the template block
     are removed afterwards. Tags with no matching group, or malformed (missing
     end tag), are left as-is.
+
+    `replacements` (valorile globale ale documentului) — doar pentru acordul variantelor din rânduri, alături de
+    valorile persoanei: rândurile nu mai trec prin acordul general (vezi _BLOCK_ROW_ATTR), iar o pereche ca
+    „județ/sector” lângă {{SOCIETATE_JUDET}} are nevoie de valoarea de-acolo.
     """
-    _expand_repeat_blocks_in(doc, groups, variant_ctx, variant_warnings)
+    _expand_repeat_blocks_in(doc, groups, variant_ctx, variant_warnings, replacements)
     for table in _iter_all_tables(doc):
         for row in table.rows:
             for cell in row.cells:
-                _expand_repeat_blocks_in(cell, groups, variant_ctx, variant_warnings)
+                _expand_repeat_blocks_in(cell, groups, variant_ctx, variant_warnings, replacements)
 
 
 def _expand_repeat_blocks_in(container, groups: dict[str, list[dict[str, str]]],
-                             variant_ctx: dict | None = None, variant_warnings: set | None = None) -> None:
+                             variant_ctx: dict | None = None, variant_warnings: set | None = None,
+                             replacements: dict[str, str] | None = None) -> None:
     """Core of _expand_repeat_blocks, over any object exposing `.paragraphs` (a Document or a table cell)."""
     for tag, items in groups.items():
         start_marker = f"{{{{#{tag}}}}}"
@@ -213,9 +219,11 @@ def _expand_repeat_blocks_in(container, groups: dict[str, list[dict[str, str]]],
                     anchor.addprevious(clone)
                     clone_par = Paragraph(clone, bp._parent)
                     last_clone_par = clone_par
+                    # Rândul e despre O SINGURĂ persoană — acordat aici, cu sexul ei; vezi _BLOCK_ROW_ATTR.
+                    clone.set(_BLOCK_ROW_ATTR, "1")
                     changed = False
                     if variant_ctx is not None:
-                        choices = variants.resolve_paragraph(clone_par, variant_ctx, {}, fixed)
+                        choices = variants.resolve_paragraph(clone_par, variant_ctx, {**(replacements or {}), **item_replacements}, fixed)
                         if variant_warnings is not None:
                             variant_warnings |= variants.unresolved_persons(choices)
                         changed = any(c.text is not None for c in choices)
@@ -478,6 +486,10 @@ _PROTECT_ATTR = "swbProtected"
 # Același motiv ca mai sus — marcaj pentru un paragraf în care s-a înlocuit efectiv ceva
 # (etichetă sau variantă a/b), verificat de _fix_dash_fill_tails; vezi acolo de ce contează.
 _CHANGED_ATTR = "swbFillChanged"
+# Același motiv — un rând generat dintr-un bloc {{#ROL}}, deja acordat la expandare pentru persoana lui. Trecerea
+# generală (_resolve_variants) îl sare: altfel „Asociatului IONESCU MIHAI” devenea „Asociaților IONESCU MIHAI”
+# doar fiindcă firma are mai mulți asociați în total (pasul 4 din variants.find_choices nu știe de bloc).
+_BLOCK_ROW_ATTR = "swbBlockRow"
 
 
 def _protected_numbered_paragraphs(all_paragraphs, max_idx: dict[str, int]) -> dict[str, str]:
@@ -510,8 +522,9 @@ def _strip_protect_markers(all_paragraphs) -> None:
 
 def _strip_changed_markers(all_paragraphs) -> None:
     for p in all_paragraphs:
-        if p._p.get(_CHANGED_ATTR) is not None:
-            del p._p.attrib[_CHANGED_ATTR]
+        for attr in (_CHANGED_ATTR, _BLOCK_ROW_ATTR):
+            if p._p.get(attr) is not None:
+                del p._p.attrib[attr]
 
 
 def _all_paragraphs(doc: Document) -> list:
@@ -692,6 +705,13 @@ def _fix_dash_fill_tails(doc: Document) -> None:
             if tab_pos is None or tab_pos <= 0:
                 continue
             _strip_run_range(runs, m.start())
+            # Un tab-stop propriu anulează tab-urile implicite din stânga lui — un tab rămas în textul
+            # paragrafului (în șabloane e mereu unul rătăcit, în mijlocul frazei: „vor fi⇥îndeplinite”) ar sări
+            # direct la tab-stop-ul dreapta de la margine, iar textul de după el ar curge aliniat la dreapta,
+            # DINCOLO de margine, în afara paginii. Devine un spațiu obișnuit.
+            for run in runs:
+                if "\t" in run.text:
+                    run.text = run.text.replace("\t", " ")
             _append_dash_leader_tab(paragraph, tab_pos)
 
 
@@ -752,7 +772,7 @@ def fill_docx(
                 capacity_warnings.add(_capacity_note_missing(prefix, max(template_max), have))
 
     if groups:
-        _expand_repeat_blocks(doc, groups, ctx, variant_warnings)
+        _expand_repeat_blocks(doc, groups, ctx, variant_warnings, replacements)
 
     _expand_repeat_table_rows(doc, row_groups)
 
@@ -800,6 +820,8 @@ def fill_docx(
 def _resolve_variants(doc: Document, ctx: dict, replacements: dict[str, str], warnings: set | None) -> None:
     def run(paragraphs) -> None:
         for p in paragraphs:
+            if p._p.get(_BLOCK_ROW_ATTR) is not None:
+                continue
             ch = variants.resolve_paragraph(p, ctx, replacements)
             if warnings is not None:
                 warnings.update(variants.unresolved_persons(ch))

@@ -11,6 +11,7 @@ import type { Client, Persoana } from '../types'
 import { EMPTY_ADRESA, formatAdresa, parseAdresa, type AdresaStructurata } from './adresa'
 import { sanitizeForSave, savePii, deleteClientOnServer } from './pii'
 import { VALOARE_PARTE_SOCIALA_DEFAULT, parteSocialaError } from './cota'
+import { confirmaAprobarea } from './durata'
 
 export type ClientInput = Omit<Client, 'id' | 'denumireLower' | 'createdAt' | 'createdBy'>
 
@@ -50,11 +51,18 @@ export function missingRegistrationFields(c: { inInfiintare?: boolean; codFiscal
 }
 
 /** Bifa „în înființare” se scoate singură când s-au completat atât CUI-ul, cât și J-ul — ca firma să nu rămână
- * marcată la nesfârșit după înregistrarea la ONRC. `existing` = fișa salvată, pentru actualizări parțiale. */
+ * marcată la nesfârșit după înregistrarea la ONRC. `existing` = fișa salvată, pentru actualizări parțiale.
+ * Dosarul de înființare e aprobat: data înmatriculării, dacă e completată, devine începutul mandatelor „din prezent”
+ * încă fără dată (ale primilor administratori). */
 export function resolveInfiintare<T extends Partial<ClientInput>>(data: T, existing: Client | null): T {
   const merged = { ...existing, ...data }
-  if (merged.inInfiintare && merged.codFiscal?.trim() && merged.nrRegistrul?.trim()) return { ...data, inInfiintare: false }
-  return data
+  if (!(merged.inInfiintare && merged.codFiscal?.trim() && merged.nrRegistrul?.trim())) return data
+  const out = { ...data, inInfiintare: false }
+  if (merged.dataInmatricularii && merged.administratori) {
+    const admini = confirmaAprobarea(merged.administratori, merged.dataInmatricularii)
+    if (admini.some((p, i) => p !== merged.administratori![i])) out.administratori = admini
+  }
+  return out
 }
 
 /** Migrare la citire: documentele vechi au `sediuSocial` ca text liber —
@@ -416,6 +424,7 @@ export const EMPTY_CLIENT: ClientInput = {
   administratoriAnaf: [],
   capitalSocial: null,
   valoareParteSociala: VALOARE_PARTE_SOCIALA_DEFAULT,
+  // Doar clienții noi o au preselectată — cei de dinainte rămân fără, ca documentele să nu presupună o durată
   dataAnafActualizat: null, notite: '',
   asociati: [], administratori: [],
 }

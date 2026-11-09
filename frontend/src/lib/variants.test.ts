@@ -19,6 +19,11 @@ describe('buildVariantContext', () => {
     administratori: [person({ nume: 'Popescu', prenume: 'Ion', cnp: '1900101123456' })],
   })
 
+  it('reprezentanții legali aleși pentru {{REPREZENTANT_LEGALI_LISTA}} sunt numărați sub domeniul serverului', () => {
+    const { ctx } = buildVariantContext({ client: c, replacements: {}, customGroups: { REPREZENTANT_LEGAL: [person({}), person({})] } })
+    expect(ctx.reprezentant_legali).toBe(2)   // variants.py: sanitize_ctx / _REPREZENTANT_PHRASE
+  })
+
   it('sexul fiecărei persoane, numărul de asociați/administratori și tipul clientului', () => {
     const { ctx } = buildVariantContext({ client: c, replacements: {} })
     expect(ctx.sex).toMatchObject({ ASOCIAT_1: 'M', ASOCIAT_2: 'F', ASOCIAT_3: 'M', ASOCIAT_4: null, ADMINISTRATOR_1: 'M' })

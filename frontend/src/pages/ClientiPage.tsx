@@ -4,6 +4,7 @@ import type { Client } from '../types'
 import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
 import { useClienti, fetchAllClienti, missingRegistrationFields } from '../lib/clienti'
+import { termenText, termeneUrgente } from '../lib/durata'
 import { usePositionedDropdown } from '../lib/usePositionedDropdown'
 import { formatAdresa } from '../lib/adresa'
 import { toDateSafe, formatDateRo } from '../lib/dates'
@@ -120,6 +121,21 @@ function renderCellContent(c: Client, key: string): React.ReactNode {
   const tip = inferTipClient(c)
   const isPF = tip === 'PF'
   switch (key) {
+    case 'denumire': {
+      // Mandat / durata societății care expiră în curând sau a expirat — semnalat discret lângă nume
+      const urgente = termeneUrgente(c)
+      if (urgente.length === 0) return getColValue(c, key)
+      const expirat = urgente.some(t => t.stare.stare === 'expirat')
+      return (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '.375rem', minWidth: 0 }}>
+          <span className={`badge badge-termen-${expirat ? 'expirat' : 'curand'}`} style={{ flexShrink: 0, padding: '.05rem .35rem' }}
+            title={urgente.map(t => `${t.titlu}: ${termenText(t.stare)}`).join('\n')} aria-label="Termene de urmărit">
+            {expirat ? '⚠' : '⏳'}
+          </span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{getColValue(c, key)}</span>
+        </span>
+      )
+    }
     case 'formaJuridica': {
       const v = getColValue(c, 'formaJuridica')
       if (!v) return null

@@ -50,3 +50,38 @@ describe('findClauseSpec — mod de lichidare', () => {
     expect(widget('MOD_DE_LICHIDARE', ['CAPITAL_SOCIAL_TOTAL'])).toBeNull()
   })
 })
+
+describe('clauzele de durată din șabloanele de bază', () => {
+  it('durata societății / a mandatului ca frază întreagă → widget-urile de durată', () => {
+    expect(findClauseSpec('DURATA_SOCIETATE', ['{{DURATA_SOCIETATE_TEXT}}'])?.widget).toBe('durataSocietate')
+    expect(findClauseSpec('DURATA_MANDAT_ADMINISTRATOR', ['{{DURATA_MANDAT_TEXT}}'])?.widget).toBe('durataMandat')
+    // Șablonul avocatului: forma scurtă, „ca fiind {{DURATA_SOCIETATE}}”
+    expect(findClauseSpec('DURATA_SOCIETATE', ['{{DURATA_SOCIETATE}}'])?.widget).toBe('durataSocietate')
+  })
+
+  it('schimbarea administratorului: varianta cu frază și cea veche, cu ani (copiile de dinainte ale șabloanelor)', () => {
+    const nou = findClauseSpec('SCHIMBARE_ADMINISTRATOR', ['{{ADMINISTRATOR_NOU_NUME}}', '{{ADMINISTRATOR_VECHI_NUME}}', '{{DURATA_MANDAT_NOU_TEXT}}'])
+    expect(nou?.widget).toBe('administrator')
+    expect(nou?.fields).toContain('DURATA_MANDAT_NOU_TEXT')
+    const vechi = findClauseSpec('SCHIMBARE_ADMINISTRATOR', ['{{ADMINISTRATOR_NOU_NUME}}', '{{ADMINISTRATOR_VECHI_NUME}}', '{{DURATA_MANDAT_ANI}}'])
+    expect(vechi?.fields).toContain('DURATA_MANDAT_ANI')
+  })
+})
+
+describe('clauza de mandat din șablonul avocatului', () => {
+  it('cu numele administratorilor bifați → widget-ul de mandat, care le completează și pe ele', () => {
+    const spec = findClauseSpec('DURATA_MANDAT_ADMINISTRATOR', ph('ADMINISTRATORI_MANDAT', 'ADMINISTRATORI_MANDAT_ROL', 'DURATA_MANDAT'))
+    expect(spec?.widget).toBe('durataMandat')
+    expect(spec?.fields).toEqual(['DURATA_MANDAT', 'ADMINISTRATORI_MANDAT_ROL', 'ADMINISTRATORI_MANDAT'])
+  })
+})
+
+describe('numirea unui administrator (șablonul Dorotheei)', () => {
+  it('durata noului mandat se alege în clauză, nu se ia din fișă', () => {
+    const tags = ['ADMINISTRATOR_NUMIT_1_NUME', 'ADMINISTRATOR_NUMIT_1_PRENUME', 'DURATA_MANDAT_TEXT']
+    expect(widget('NUMIRE_ADMINISTRATOR', tags)).toBe('mandatNou')
+    // Clauzele de bază cu {{DURATA_MANDAT_TEXT}} își păstrează widget-ul (potrivire după nume, înaintea celei după câmpuri)
+    expect(widget('DURATA_MANDAT_ADMINISTRATOR', ['DURATA_MANDAT_TEXT'])).toBe('durataMandat')
+    expect(widget('SCHIMBARE_ADMINISTRATOR', ['ADMINISTRATOR_NOU_NUME', 'ADMINISTRATOR_VECHI_NUME', 'DURATA_MANDAT_NOU_TEXT'])).toBe('administrator')
+  })
+})

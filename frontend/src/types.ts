@@ -1,5 +1,6 @@
 import type { AdresaStructurata } from './lib/adresa'
 import type { FeatureKey } from './lib/features'
+import type { Durata, Mandat } from './lib/durata'
 
 export interface ToastItem {
   id: string
@@ -117,6 +118,8 @@ export interface Persoana {
   serieMasked?: string
   /** Doar în memorie (nu se persistă): `cnp`/`serie_numar` au fost aduse din vault. */
   piiLoaded?: boolean
+  /** Doar la administratori: durata și începutul mandatului (vezi lib/durata.ts). Lipsă = necompletat. */
+  mandat?: Mandat
 }
 
 export interface CaenActivitate {
@@ -171,6 +174,11 @@ export interface Client {
   // Strict informativ, din ANAF — nu înlocuiește lista structurată `administratori`
   administratoriAnaf: { nume: string; rol: string }[]
   capitalSocial: number | null
+  // Durata societății din actul constitutiv; lipsă = necompletată (clienții dinainte), nu se presupune nimic în documente.
+  durataSocietate?: Durata
+  // Data înmatriculării la ONRC (zz.ll.aaaa) — din ANAF sau confirmată de utilizator la ieșirea din „în înființare”.
+  // Momentul de la care curg durata societății și mandatele primilor administratori.
+  dataInmatricularii?: string
   // Valoarea nominală a unei părți sociale, în lei (întreg ≥ 1). Lipsă = 10 lei (vezi lib/cota.ts valoareParteSociala).
   valoareParteSociala?: number | null
   dataAnafActualizat: string | null

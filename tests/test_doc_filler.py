@@ -190,10 +190,10 @@ def test_expand_repeat_table_rows_clones_once_per_item():
         ["{{CAEN}} - {{CAEN_DESC}}"],
         ["{{/CAEN_SEDIU}}"],
     ])
-    row_groups = {"CAEN_SEDIU": [{"CAEN": "6201", "CAEN_DESC": "Activități IT"}, {"CAEN": "6202", "CAEN_DESC": "Consultanță IT"}]}
+    row_groups = {"CAEN_SEDIU": [{"CAEN": "6210", "CAEN_DESC": "Activități IT"}, {"CAEN": "6220", "CAEN_DESC": "Consultanță IT"}]}
     out = df.fill_docx(template, {}, row_groups=row_groups)
     rows = _read_table_rows(out)
-    assert rows == [["6201 - Activități IT"], ["6202 - Consultanță IT"]]
+    assert rows == [["6210 - Activități IT"], ["6220 - Consultanță IT"]]
 
 
 def test_expand_repeat_table_rows_numbers_index_per_item():
@@ -241,13 +241,13 @@ def test_expand_repeat_table_rows_works_inside_nested_table():
         ["{{CAEN}}"],
         ["{{/CAEN_SEDIU}}"],
     ])
-    row_groups = {"CAEN_SEDIU": [{"CAEN": "6201"}, {"CAEN": "6202"}, {"CAEN": "6203"}]}
+    row_groups = {"CAEN_SEDIU": [{"CAEN": "6210"}, {"CAEN": "6220"}, {"CAEN": "6290"}]}
     out = df.fill_docx(template, {}, row_groups=row_groups)
     doc = Document(io.BytesIO(out))
     outer_cell = doc.tables[0].cell(0, 0)
     nested = outer_cell.tables[0]
     rows = [[cell.text for cell in df._row_distinct_cells(row)] for row in nested.rows]
-    assert rows == [["6201"], ["6202"], ["6203"]]
+    assert rows == [["6210"], ["6220"], ["6290"]]
 
 
 def test_flat_replacement_reaches_nested_table_cells():
@@ -356,3 +356,41 @@ def test_persoane_de_acelasi_sex_acorda_frazele_fara_etichete():
     ctx = {"sex": {"DECLARANT_ADMINISTRATOR_1": "F", "DECLARANT_ASOCIAT_1": "F"}}
     repl = {"{{DECLARANT_ADMINISTRATOR_1_NUME}}": "A", "{{DECLARANT_ASOCIAT_1_NUME}}": "A"}
     assert _read_paragraphs(df.fill_docx(tpl, repl, variant_ctx=ctx))[1] == "Nu sunt incapabilă."
+
+
+def test_tab_ratacit_in_paragraf_cu_liniuta_de_umplere_devine_spatiu():
+    """Un tab în mijlocul frazei („vor fi⇥îndeplinite”, din șablonul avocatului) + tab-stop-ul dreapta cu leader de
+    la margine (vezi _fix_dash_fill_tails): tab-ul din mijloc ar sări la margine și textul de după el ar ieși din
+    pagină. Devine spațiu; tab-ul de leader rămâne singurul, la final."""
+    d = Document()
+    d.add_paragraph("Atribuţiile vor fi\tîndeplinite de {{NUME}}.------------------")
+    b = io.BytesIO(); d.save(b)
+    out = df.fill_docx(b.getvalue(), {"{{NUME}}": "POPA ANA"})
+    p = Document(io.BytesIO(out)).paragraphs[0]
+    assert p.text == "Atribuţiile vor fi îndeplinite de POPA ANA.\t"
+    assert len(p.paragraph_format.tab_stops) == 1
+
+
+def test_rand_din_bloc_ramane_la_singular_cand_firma_are_mai_multi_asociati():
+    """„Asociatului {{NUME}}” dintr-un bloc {{#ASOCIATI}} e despre O SINGURĂ persoană: trecerea generală de variante
+    (după numărul total de asociați) nu-l mai face „Asociaților IONESCU”; sexul fiecăruia se aplică în continuare."""
+    d = Document()
+    for t in ("{{#ASOCIATI}}", "Asociatului {{NUME}} îi revin {{PARTI}} părți sociale.", "{{/ASOCIATI}}"):
+        d.add_paragraph(t)
+    b = io.BytesIO(); d.save(b)
+    groups = {"ASOCIATI": [{"NUME": "IONESCU", "PARTI": "60", "SEX": "M"}, {"NUME": "DUMITRU", "PARTI": "40", "SEX": "F"}]}
+    out = df.fill_docx(b.getvalue(), {}, groups, variant_ctx={"sex": {}, "asociati": 2, "tip": "PJ"})
+    assert [p.text for p in Document(io.BytesIO(out)).paragraphs] == [
+        "Asociatului IONESCU îi revin 60 părți sociale.", "Asociatei DUMITRU îi revin 40 părți sociale."]
+
+
+def test_rand_din_bloc_vede_si_valorile_globale_la_acord():
+    """Rândurile din blocuri se acordă doar la expandare (vezi _BLOCK_ROW_ATTR), deci acolo trebuie să vadă și valorile
+    globale: „județ/sector” lângă {{SOCIETATE_JUDET}} se alege după sediul firmei, ca în restul documentului."""
+    d = Document()
+    for t in ("{{#ASOCIATI}}", "{{NUME}}, sediul firmei în județ/sector {{SOCIETATE_JUDET}}", "{{/ASOCIATI}}"):
+        d.add_paragraph(t)
+    b = io.BytesIO(); d.save(b)
+    out = df.fill_docx(b.getvalue(), {"{{SOCIETATE_JUDET}}": "București - Sector 1"}, {"ASOCIATI": [{"NUME": "POPA", "SEX": "F"}]},
+                       variant_ctx={"sex": {}, "asociati": 1, "tip": "PJ"})
+    assert Document(io.BytesIO(out)).paragraphs[0].text == "POPA, sediul firmei în sector București - Sector 1"

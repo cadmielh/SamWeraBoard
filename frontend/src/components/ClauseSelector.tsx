@@ -14,7 +14,7 @@ import MajorareCapitalFields from './clauses/MajorareCapitalFields'
 import MajorareCapitalMultiFields from './clauses/MajorareCapitalMultiFields'
 import ModificareIdentitateAsociatFields from './clauses/ModificareIdentitateAsociatFields'
 import ActualizarePersoaneFields from './clauses/ActualizarePersoaneFields'
-import DurataFields from './clauses/DurataFields'
+import { DurataMandatClauseFields, DurataSocietateClauseFields, MandatNouClauseFields } from './clauses/DurataClauseFields'
 import CaenFieldInput from './clauses/CaenFieldInput'
 import LichidareAsociatiFields from './clauses/LichidareAsociatiFields'
 import { findCaenDescriere } from '../data/caen'
@@ -105,6 +105,9 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
     setSelected(next)
   }
 
+  // Data documentului (hotărârea/decizia) — de la ea curg mandatele stabilite prin clauze
+  const dataDocument = baseReplacements['{{DATA_CURENTA}}'] ?? ''
+
   const allSelected = clauses.length > 0 && clauses.every(c => selected.has(c.tag))
   const selectAll = () => setSelected(new Set(clauses.map(c => c.tag)))
   const deselectAll = () => { forget([...selected]); setSelected(new Set()) }
@@ -122,11 +125,14 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
   const clauseChecks = (c: ClauseMeta): { label: string; ok: boolean }[] => {
     const spec = findClauseSpec(c.tag, c.placeholders)
     const groupFieldSet = new Set(spec?.groupFields ?? [])
+    // Câmpurile completate de widget nu se iau din fișă: {{DURATA_SOCIETATE}} are și valoarea actuală a clientului,
+    // dar clauza cere noua durată — altfel ar părea completă și ar repeta în hotărâre durata de acum.
+    const widgetFields = new Set(spec?.fields ?? [])
     const checks = c.placeholders
       .filter(ph => !groupFieldSet.has(ph.replace(/^\{\{|\}\}$/g, ''))) // câmpurile din listă se verifică separat, ca grup
       .map(ph => {
         const key = ph.replace(/^\{\{|\}\}$/g, '')
-        const v = fieldsByClause[c.tag]?.[key] ?? baseReplacements[ph]
+        const v = fieldsByClause[c.tag]?.[key] ?? (widgetFields.has(key) ? undefined : baseReplacements[ph])
         return { label: ph, ok: !!v && v.trim() !== '' }
       })
     if (spec?.groupName) {
@@ -229,6 +235,8 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     fields={fieldsByClause[c.tag] ?? {}}
                     onField={(k, v) => setField(c.tag, k, v)}
                     onClientPatch={p => setClientPatch(c.tag, p)}
+                    durataCompleta={spec.fields.includes('DURATA_MANDAT_NOU_TEXT')}
+                    dataDocument={dataDocument}
                   />
                 )}
                 {useWidget && spec.widget === 'punctLucruClose' && (
@@ -261,10 +269,14 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                   <ActualizarePersoaneFields client={client} rol="administrator" field="ADMINISTRATORI_ACTUALIZATI" onField={(k, v) => setField(c.tag, k, v)} />
                 )}
                 {useWidget && spec.widget === 'durataSocietate' && (
-                  <DurataFields tipuri={['nedeterminata', 'ani', 'data']} onChange={v => setField(c.tag, 'DURATA_SOCIETATE', v)} />
+                  <DurataSocietateClauseFields client={client} onField={(k, v) => setField(c.tag, k, v)} onClientPatch={p => setClientPatch(c.tag, p)} />
                 )}
                 {useWidget && spec.widget === 'durataMandat' && (
-                  <DurataFields tipuri={['ani', 'data']} onChange={v => setField(c.tag, 'DURATA_MANDAT', v)} />
+                  <DurataMandatClauseFields client={client} dataDocument={dataDocument} cuNume={spec.fields.includes('ADMINISTRATORI_MANDAT')}
+                    onField={(k, v) => setField(c.tag, k, v)} onClientPatch={p => setClientPatch(c.tag, p)} />
+                )}
+                {useWidget && spec.widget === 'mandatNou' && (
+                  <MandatNouClauseFields client={client} dataDocument={dataDocument} onField={(k, v) => setField(c.tag, k, v)} />
                 )}
                 {useWidget && spec.widget === 'lichidareAsociati' && (
                   <LichidareAsociatiFields client={client} onRows={rows => setGroup(c.tag, spec.groupName!, rows)} />
@@ -285,8 +297,9 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                   />
                 )}
                 {/* Un widget care acoperă doar o parte din clauză (ex. adresa punctului de lucru, dar nu și contractul
-                    din Hotărârea AGA de bază) — restul câmpurilor rămân inputuri obișnuite, sub el. */}
-                {(!useWidget || spec.widget === 'punctLucruOpen') && (() => {
+                    din Hotărârea AGA de bază; durata mandatului unei numiri, potrivită și după câmpuri, în clauze
+                    cu alte câmpuri ale lor) — restul câmpurilor rămân inputuri obișnuite, sub el. */}
+                {(!useWidget || spec.widget === 'punctLucruOpen' || spec.widget === 'mandatNou') && (() => {
                   const skip = new Set([...AUTO_DATE_KEYS, ...(useWidget ? spec.fields : [])])
                   // Persoanele cu rol propriu ({{CEDENT_1_NUME}}…) se aleg din listă (renderPersons, mai sus), nu se tastează aici
                   const visible = c.placeholders.filter(ph => !skip.has(ph.replace(/^\{\{|\}\}$/g, '')) && detectCustomPersonRoles([ph]).length === 0)

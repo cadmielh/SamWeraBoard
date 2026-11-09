@@ -565,6 +565,11 @@ body {
 .badge-split-tva { background:var(--a100); color:var(--a800); }
 .badge-infiintare { background:var(--o50); color:var(--o700); border:1px solid var(--o200); }
 .badge-efactura { background:var(--g50); color:var(--g600); }
+/* Câmpuri completate automat (din ANAF, din buletin): doar chenarul lor, până le editează utilizatorul (vezi lib/campuriAuto.ts) */
+.auto-field .field-input { background:var(--b50); border-color:var(--b400); }
+/* Termene juridice (mandat administrator, durata societății) — vezi TermenBadge */
+.badge-termen-curand { background:var(--y50); color:var(--y800); border:1px solid var(--y200); }
+.badge-termen-expirat { background:var(--r50); color:var(--r600); border:1px solid var(--r200); }
 
 /* ── Modals ── */
 .modal-backdrop { position:fixed; inset:0; background:var(--backdrop); z-index:200; display:flex; align-items:flex-start; justify-content:center; padding:2.5rem 1rem; overflow-y:auto; animation:fadeIn .15s; }

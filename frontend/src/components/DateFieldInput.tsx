@@ -15,6 +15,8 @@ interface Props {
    * redactării) — nu la datele persoanei (naștere, valabilitate CI) sau alte date „neutre”
    * (admiterea unui dosar, termenul unei sarcini), unde nu are legătură cu ziua curentă. */
   showToday?: boolean
+  /** Clasă în plus pe învelișul câmpului (ex. `auto-field`, câmp completat automat). */
+  className?: string
 }
 
 /**
@@ -44,7 +46,7 @@ interface Props {
  * ștergerea era cea care „nu făcea ce trebuie"), în timp ce `keydown` e universal și comportamentul
  * lui e complet sub controlul nostru.
  */
-export default function DateFieldInput({ id, label, value, onChange, style, showToday = true }: Props) {
+export default function DateFieldInput({ id, label, value, onChange, style, showToday = true, className }: Props) {
   const textRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLInputElement>(null)
   const pendingCaretRef = useRef<number | null>(null)
@@ -160,7 +162,7 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
   }
 
   return (
-    <div className="field" style={style}>
+    <div className={className ? `field ${className}` : 'field'} style={style}>
       {label && <label className="field-label" htmlFor={id}>{label}</label>}
       <div className="field-with-btn">
         <div style={{ position: 'relative', flex: 1 }}>

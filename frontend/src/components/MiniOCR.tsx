@@ -4,7 +4,8 @@ import { extractFile } from '../lib/api'
 import { useApp } from '../AppContext'
 
 interface Props {
-  onExtracted: (fields: IDFields) => void
+  /** Poate întoarce mesajul de confirmare (ex. câte câmpuri s-au completat); altfel, mesajul generic. */
+  onExtracted: (fields: IDFields) => string | void
   onDrivePick?: () => void
 }
 
@@ -18,8 +19,7 @@ export default function MiniOCR({ onExtracted, onDrivePick }: Props) {
     setLoading(true)
     try {
       const fields = await extractFile(file)
-      onExtracted(fields)
-      toast('Câmpuri extrase cu succes', 'ok')
+      toast(onExtracted(fields) || 'Câmpuri extrase cu succes', 'ok')
     } catch (e: unknown) {
       toast((e as Error).message ?? 'Extragere eșuată', 'err')
     } finally {

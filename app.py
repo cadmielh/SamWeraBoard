@@ -857,6 +857,9 @@ def anaf_company():
     result.update(_optional_fields(
         administratoriAnaf=admin_list,
         caenSecundare=caen_secundare,
+        # „2002-01-23” — data înregistrării (la persoane juridice, a înmatriculării la ONRC, când primesc și CUI-ul):
+        # de la ea curg durata societății și mandatele primilor administratori.
+        dataInregistrare=dg.get("data_inregistrare") or "",
     ))
 
     return jsonify(result)

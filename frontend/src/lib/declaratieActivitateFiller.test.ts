@@ -11,7 +11,7 @@ describe('withEmptyFieldMarks', () => {
   })
 
   it('nu atinge câmpurile din tabelele repetitive: celulele lor goale rămân goale', () => {
-    const rows = { SEDII_SECUNDARE: [{ NR_CRT: '1', ADRESA: 'Str. X', CAEN: '4711' }, { NR_CRT: '', ADRESA: '', CAEN: '4719' }] }
+    const rows = { SEDII_SECUNDARE: [{ NR_CRT: '1', ADRESA: 'Str. X', CAEN: '4711' }, { NR_CRT: '', ADRESA: '', CAEN: '4712' }] }
     const out = withEmptyFieldMarks(PH, {}, rows)
     for (const k of ['{{CAEN}}', '{{ADRESA}}', '{{NR_CRT}}']) expect(out[k]).toBeUndefined()
     expect(out['{{SEDIU_ET}}']).toBe(EMPTY_FIELD_MARK)

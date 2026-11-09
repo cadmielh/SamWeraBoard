@@ -69,6 +69,9 @@ _NUMBER_TOKENS = {  # (singular, plural) → domeniul numărului
     ("administratorul", "administratorii"): "administratori", ("administrator", "administratori"): "administratori",
     ("administratorului", "administratorilor"): "administratori",
     ("are", "au"): "asociati", ("este", "sunt"): "asociati", ("acesta", "acestia"): "asociati",
+    # Fondatorii unei societăți sunt asociații ei: „Fondatorul/Fondatorii își asumă răspunderea…” (art. 6 din Legea 31/1990)
+    ("fondatorul", "fondatorii"): "asociati", ("fondatorului", "fondatorilor"): "asociati",
+    ("fondator", "fondatori"): "asociati",
     ("hotarasc", "hotaram"): "asociati",   # „în calitate de asociat unic/asociați, hotărăsc/hotărâm:”
     ("hotaraste", "hotarasc"): "asociati",  # „dacă asociatul/asociații nu hotărăște/hotărăsc altfel”
     # Actul asociatului unic vs. al adunării generale: „Decizia/Hotărârea Asociatului Unic/A.G.A.”, „DECID/HOTĂRÂM”,
@@ -154,6 +157,16 @@ _PROPRIETAR_AL_RE = re.compile(
 # după numărul asociaților firmei în loc de numărul comodanților.
 _COMODANT_VERB_RE = re.compile(
     r"(?<!\w)(Comodantul)\s*/\s*(Comodanții)\s+(are)\s*/\s*(au)(?!\w)", re.IGNORECASE)
+
+# Reprezentanții legali aleși pentru {{REPREZENTANT_LEGALI_LISTA}} (domeniul „reprezentant_legali” — numele
+# rolului custom REPREZENTANT_LEGAL + „i”, ca în VariantContext din frontend). Fraze întregi, ancorate, ca la
+# comodant: „va/vor” e deja legat de asociați în _NUMBER_TOKENS, iar „mandatul/mandatele” poate fi și despre
+# administratori — aici doar lângă eticheta reprezentantului. La singular, câmpul {{CAMP_…}} de după „mandatele”
+# (modul de exercitare: separat/împreună — n-are sens pentru o singură persoană) dispare odată cu pluralul.
+_REPREZENTANT_PHRASE = re.compile(
+    r"(?<!\w)(reprezentantul\s+legal(?:\s+al)?)\s*/\s*(reprezentan[țţt]ii\s+legali(?:\s+ai)?)(?!\w)", re.IGNORECASE)
+_REPREZENTANT_VERB_RE = re.compile(r"(?<!\w)(va)\s*/\s*(vor)(?=\s+fi\s+\{\{REPREZENTANT_LEGAL)", re.IGNORECASE)
+_REPREZENTANT_MANDAT_RE = re.compile(r"(?<!\w)(mandatul)\s*/\s*(mandatele)((?:\s*\{\{CAMP_[A-Z0-9_]+\}\})?)", re.IGNORECASE)
 
 _PAIR = re.compile(rf"(?<![\w/])({_WORD})\s*/\s*({_WORD})(?![\w]|\s*/)")
 _PAREN = re.compile(rf"(?<!\w)({_WORD})\((ă|a)\)")
@@ -303,6 +316,21 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
         chosen = None if i is None else _match_case(
             m.group(0), f"{m.group(1)} {m.group(3)}" if i == 0 else f"{m.group(2)} {m.group(4)}")
         add(Choice(m.start(), m.end(), chosen, "number"))
+
+    # 1d) reprezentanții legali (vezi _REPREZENTANT_PHRASE) — tot înaintea perechilor generice.
+    if "{{REPREZENTANT_LEGAL" in text:
+        i_rep = by_count(ctx.get("reprezentant_legali"))
+        for rx in (_REPREZENTANT_PHRASE, _REPREZENTANT_VERB_RE, _REPREZENTANT_MANDAT_RE):
+            for m in rx.finditer(text):
+                if not free(m.start(), m.end()):
+                    continue
+                if i_rep is None:
+                    chosen = None
+                elif rx is _REPREZENTANT_MANDAT_RE:
+                    chosen = m.group(1) if i_rep == 0 else m.group(2) + m.group(3)
+                else:
+                    chosen = _match_case(m.group(0), m.group(1 + i_rep))
+                add(Choice(m.start(), m.end(), chosen, "number"))
 
     # 2) perechi „a/b”
     for m in _PAIR.finditer(text):
@@ -514,4 +542,5 @@ def sanitize_ctx(raw) -> dict:
         return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 1000 else None
     tip = raw.get("tip")
     return {"sex": sex, "asociati": cnt(raw.get("asociati")), "administratori": cnt(raw.get("administratori")),
-            "comodanti": cnt(raw.get("comodanti")), "tip": tip if tip in ("PJ", "PF") else None}
+            "comodanti": cnt(raw.get("comodanti")),
+            "reprezentant_legali": cnt(raw.get("reprezentant_legali")), "tip": tip if tip in ("PJ", "PF") else None}

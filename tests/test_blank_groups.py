@@ -428,7 +428,7 @@ def test_lista_scalabila_functioneaza_la_1_2_si_3_persoane():
 def test_actul_constitutiv_real_recunoaste_lista_de_asociati():
     """Documentare a unui caz real: p31 („În calitate de asociati …… si …… au drepturile”) — devenea poziții
     fixe (2 locuri, fără loc pentru un al treilea asociat); acum devine ASOCIATI_LISTA."""
-    raw = (Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate" / "ACTUL CONSTITUTIV.docx")
+    raw = (Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "ACTUL CONSTITUTIV_anonimizat, cu spații.docx")
     if not raw.exists():
         return
     found = blanks.analyze(raw.read_bytes())
@@ -578,7 +578,7 @@ def test_actul_constitutiv_real_recunoaste_sectiunea_caen_completa():
     """Documentul are acum două forme, ambele recunoscute: „Domeniul principal de activitate este: ……” (loc
     liber simplu, fără indiciu → {{CAEN_DOMENIU}}, grupa) și „Activitatea principală este: …(CAEN PRINCIPAL)……”
     / „…(CAEN SECUNDARE)……….” (cu indiciu explicit din paranteze, scris de utilizator) — vezi _resolve_hint."""
-    raw = Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "anonimizate" / "ACTUL CONSTITUTIV.docx"
+    raw = Path(__file__).resolve().parent.parent / "fisiere_template" / "SabloaneAvocatTavi" / "ACTUL CONSTITUTIV_anonimizat, cu spații.docx"
     if not raw.exists():
         return
     data = raw.read_bytes()

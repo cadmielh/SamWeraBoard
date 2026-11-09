@@ -6,7 +6,8 @@ import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { equalShare, sumCota, isCotaTotalValid, parteSocialaError, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
 import { useApp } from '../AppContext'
-import { formatDateRo } from '../lib/dates'
+import { formatDateRo, isIncompleteOrInvalidRoDate, isoDateToRo } from '../lib/dates'
+import type { Mandat } from '../lib/durata'
 import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet } from '../lib/adresa'
 import CAENCombobox from './CAENCombobox'
 import PersoanaModal from './PersoanaModal'
@@ -16,6 +17,9 @@ import IconPencil from './IconPencil'
 import SediuSocialFields from './SediuSocialFields'
 import InfiintareCheckbox, { INFIINTARE_PLACEHOLDER } from './InfiintareCheckbox'
 import CapitalSocialFields from './CapitalSocialFields'
+import { campuriSchimbate, mesajCompletare } from '../lib/campuriAuto'
+import MandatFields from './MandatFields'
+import DurataSocietateField, { DataInmatriculariiField } from './DurataSocietateField'
 
 interface Props {
   initial: Client | null
@@ -80,6 +84,8 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
       administratoriAnaf: initial.administratoriAnaf ?? [],
       capitalSocial: initial.capitalSocial ?? null,
       valoareParteSociala: initial.valoareParteSociala ?? VALOARE_PARTE_SOCIALA_DEFAULT,
+      ...(initial.durataSocietate ? { durataSocietate: initial.durataSocietate } : {}),
+      ...(initial.dataInmatricularii ? { dataInmatricularii: initial.dataInmatricularii } : {}),
       dataAnafActualizat: initial.dataAnafActualizat,
       notite: initial.notite,
       asociati: [...initial.asociati],
@@ -107,9 +113,19 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
   const capitalSocialRef = useRef<HTMLInputElement>(null)
   const valoareParteRef = useRef<HTMLInputElement>(null)
 
-  const set = (key: keyof ClientInput, val: unknown) => setForm(prev => ({ ...prev, [key]: val }))
-  const setSediu = (patch: Partial<ClientInput['sediuSocial']>) =>
+  // Câmpurile completate din ANAF la ultima preluare: chenarul lor evidențiat până le editează utilizatorul
+  const [dinAnaf, setDinAnaf] = useState<ReadonlySet<string>>(new Set())
+  const verificat = (key: string) => setDinAnaf(prev => {
+    if (!prev.has(key)) return prev
+    const next = new Set(prev); next.delete(key); return next
+  })
+  const hl = (key: string) => dinAnaf.has(key) ? ' auto-field' : ''
+
+  const set = (key: keyof ClientInput, val: unknown) => { setForm(prev => ({ ...prev, [key]: val })); verificat(key) }
+  const setSediu = (patch: Partial<ClientInput['sediuSocial']>) => {
     setForm(prev => ({ ...prev, sediuSocial: { ...prev.sediuSocial, ...patch } }))
+    verificat('sediuSocial')
+  }
 
   const isEditing = !!initial
   const isPF = form.tipClient === 'PF'
@@ -128,11 +144,18 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
   // Activă doar când bifa chiar are sens (există exact un asociat unic)
   const hideAdminSection = !!soleAsociat && adminSameAsSoleAsociat
 
+  // Mandatul nu e o dată de identitate: rămâne al administratorului când datele lui se copiază dintr-un asociat.
+  const mandatOf = (admin: Persoana | undefined): { mandat?: Mandat } =>
+    admin?.mandat ? { mandat: admin.mandat } : {}
+  const mandatContext = { formaJuridica: form.formaJuridica }
+  // CUI și J completate la o firmă în înființare: la salvare iese din înființare (resolveInfiintare) — e momentul datei înmatriculării
+  const iesireDinInfiintare = !!form.inInfiintare && !!form.codFiscal.trim() && !!form.nrRegistrul.trim()
+
   const toggleAdminSameAsSoleAsociat = (checked: boolean) => {
     if (!soleAsociat) return
     setAdminSameAsSoleAsociat(checked)
     if (checked) {
-      set('administratori', [{ ...soleAsociat, calitate: 'Administrator', cotaParticipare: '' }])
+      set('administratori', [{ ...soleAsociat, calitate: 'Administrator', cotaParticipare: '', ...mandatOf(form.administratori[0]) }])
     }
   }
 
@@ -178,7 +201,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     try {
       const result = await fetchAnafCompany(form.codFiscal)
       if (!result.found) { toast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
-      setForm(prev => {
+      const merge = (prev: ClientInput): ClientInput => {
         const c = result.adresaSediuComponente
         const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)
         const dinDetalii = c?.detaliiAdresa ? parseAdresa(c.detaliiAdresa) : null
@@ -238,10 +261,14 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
         splitTva: result.splitTva ?? prev.splitTva,
         eFactura: result.eFactura ?? prev.eFactura,
         administratoriAnaf: result.administratoriAnaf ?? prev.administratoriAnaf,
+        ...(result.dataInregistrare && isoDateToRo(result.dataInregistrare) ? { dataInmatricularii: isoDateToRo(result.dataInregistrare) } : {}),
         dataAnafActualizat: new Date().toISOString(),
         }
-      })
-      toast('Date preluate de la ANAF', 'ok')
+      }
+      const schimbate = campuriSchimbate(form, merge(form))
+      setForm(merge)
+      setDinAnaf(new Set(schimbate))
+      toast(mesajCompletare(schimbate.length), 'ok')
     } catch (e: unknown) {
       toast((e as Error).message ?? 'Eroare ANAF', 'err')
     } finally {
@@ -281,6 +308,12 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
       { invalid: !formatAdresa(form.sediuSocial).trim(), ref: sediuSocialRef, message: 'sediul social' },
       { invalid: form.capitalSocial == null || form.capitalSocial <= 0, ref: capitalSocialRef, message: 'capitalul social' },
       { invalid: !!parteSocialaError(form.capitalSocial, form.valoareParteSociala), ref: valoareParteRef, message: 'valoarea unei părți sociale' },
+      { invalid: isIncompleteOrInvalidRoDate(form.dataInmatricularii ?? ''), ref: nrRegistrulRef, message: 'data înmatriculării validă' },
+      {
+        invalid: form.administratori.some(a => a.mandat && (isIncompleteOrInvalidRoDate(a.mandat.dataNumire)
+          || (a.mandat.durata.tip === 'data' && isIncompleteOrInvalidRoDate(a.mandat.durata.data)))),
+        ref: asociatiSectionRef, message: 'datele mandatului administratorului',
+      },
     ] : [
       { invalid: !!cifError, ref: codFiscalRef, message: 'CIF valid' },
     ]),
@@ -386,7 +419,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     const chooseAsociat = (a: Persoana) => {
       if (isLinking) {
         const arr = [...form.administratori]
-        arr[targetIndex] = { ...a, calitate: 'Administrator', cotaParticipare: '' }
+        arr[targetIndex] = { ...a, calitate: 'Administrator', cotaParticipare: '', ...mandatOf(arr[targetIndex]) }
         set('administratori', arr)
         setAdminPicker(false)
       } else {
@@ -505,6 +538,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
         prefill={prefill}
         calitateDefault={calitateDefault}
         showCota={showCota}
+        mandatContext={personaModal.type === 'administratori' ? mandatContext : undefined}
         onSave={savePersoana}
         onClose={() => setPersonaModal(null)}
       />
@@ -604,6 +638,15 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
                 </label>
               )}
 
+              {/* Secțiunea Administratori e ascunsă (e asociatul unic) — mandatul se alege aici */}
+              {hideAdminSection && form.administratori[0] && (
+                <div style={{ marginTop: '.75rem', paddingLeft: '1.4rem' }}>
+                  <div className="field-label" style={{ marginBottom: '.25rem' }}>Mandatul administratorului</div>
+                  <MandatFields value={form.administratori[0].mandat} {...mandatContext}
+                    onChange={mandat => set('administratori', [{ ...form.administratori[0], mandat }, ...form.administratori.slice(1)])} />
+                </div>
+              )}
+
               {!hideAdminSection && (
                 <PersonSection title="Administratori" persons={form.administratori}
                   minCount={1}
@@ -674,7 +717,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
               {/* Denumire + forma juridică pe același rând (forma, îngustă, doar la PJ) */}
               <div className={`full ${isPF ? '' : 'form-row-denumire'}`}>
                 {/* Denumire firmă */}
-                <div className="field">
+                <div className={`field${hl('denumire')}`}>
                   <label className="field-label">
                     Denumire <span style={{ color: 'var(--r500)' }}>*</span>
                   </label>
@@ -688,7 +731,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
 
                 {/* Forma juridică — doar PJ */}
                 {!isPF && (
-                  <div className="field">
+                  <div className={`field${hl('formaJuridica')}`}>
                     <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
                     <select ref={formaJuridicaRef} className="field-input" value={form.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
                       <option value="">— selectați —</option>
@@ -700,11 +743,12 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
 
               {/* Firmă în curs de înființare — CUI-ul și J-ul nu există încă */}
               <div className="field full">
-                <InfiintareCheckbox checked={!!form.inInfiintare} onChange={v => set('inInfiintare', v)} />
+                <InfiintareCheckbox checked={!!form.inInfiintare}
+                  onChange={v => set('inInfiintare', v)} />
               </div>
 
               {/* Nr. registrul comerțului */}
-              <div className="field">
+              <div className={`field${hl('nrRegistrul')}`}>
                 <label className="field-label">Nr. registrul comerțului {!isPF && !form.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
                 <input ref={nrRegistrulRef} className="field-input" placeholder={form.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: J40/123/2020'} value={form.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
               </div>
@@ -716,26 +760,31 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
                   <input ref={codFiscalRef} className="field-input" placeholder={form.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: RO12345678'}
                     value={form.codFiscal} onChange={e => set('codFiscal', e.target.value)}
                     aria-invalid={!!cifError} />
-                  {!form.inInfiintare && (
-                    <button type="button" className="btn btn-outline-primary btn-sm"
-                      onClick={preiaAnaf} disabled={!form.codFiscal.trim() || anafLoading}
-                      title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-                      {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
-                    </button>
-                  )}
+                  {/* Vizibil și în înființare: imediat după înregistrare, ANAF aduce J-ul și data înmatriculării */}
+                  <button type="button" className="btn btn-outline-primary btn-sm"
+                    onClick={preiaAnaf} disabled={!form.codFiscal.trim() || anafLoading}
+                    title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+                    {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
+                  </button>
                 </div>
                 {cifError && <span className="field-error">{cifError}</span>}
               </div>
 
+              {!isPF && (
+                <DataInmatriculariiField value={form.dataInmatricularii ?? ''} inInfiintare={form.inInfiintare} laIesire={iesireDinInfiintare}
+                  dinAnaf={dinAnaf.has('dataInmatricularii')}
+                  onChange={v => set('dataInmatricularii', v)} />
+              )}
+
               {/* CAEN */}
-              <div className="field full">
+              <div className={`field full${hl('caenCod')}`}>
                 <label className="field-label">Activitate principală (CAEN)</label>
                 <CAENCombobox value={form.caenCod} descriere={form.caenDescriere || findCaenDescriere(form.caenCod)}
                   onChange={(cod, desc) => { set('caenCod', cod); set('caenDescriere', desc) }} />
               </div>
 
               {/* CAEN secundare — opțional, nelimitat (PJ și PF/PFA-II-IF au coduri CAEN) */}
-              <div className="field full">
+              <div className={`field full${hl('caenSecundare')}`}>
                 <label className="field-label">Activități secundare (CAEN)</label>
                 {form.caenSecundare.map((a, i) => (
                   <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
@@ -757,7 +806,13 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
                   capitalRef={capitalSocialRef} valoareParteRef={valoareParteRef} />
               )}
 
-              {/* Sediu */}
+              {!isPF && (
+                <DurataSocietateField value={form.durataSocietate} dataInmatricularii={form.dataInmatricularii}
+                  onChange={d => set('durataSocietate', d)} />
+              )}
+
+              {/* Sediu — toate subcâmpurile evidențiate împreună; cele care diferă au deja indicația „ANAF: …” */}
+              <div className={`full${hl('sediuSocial')}`}>
               <SediuSocialFields
                 value={form.sediuSocial}
                 onChange={setSediu}
@@ -769,11 +824,12 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
                 legacyRaw={legacyRaw}
                 firstFieldRef={sediuSocialRef}
                 extraHeaderAction={!isPF && form.asociati.length > 0 && (
-                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
-                    📍 Folosește adresa unui asociat
-                  </button>
-                )}
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
+                      📍 Folosește adresa unui asociat
+                    </button>
+                  )}
               />
+              </div>
 
               {/* Puncte de lucru — opțional, nelimitat */}
               <div className="field full">
@@ -797,7 +853,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
 
           {/* ── Câmpuri comune (telefon, email, notițe) ── */}
           <div className="form-grid" style={{ marginTop: '1rem' }}>
-            <div className="field">
+            <div className={`field${hl('telefon')}`}>
               <label className="field-label">Telefon</label>
               <input className="field-input" type="tel" placeholder="07xx xxx xxx" value={form.telefon} onChange={e => set('telefon', e.target.value)} />
             </div>

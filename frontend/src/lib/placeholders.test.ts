@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildReplacements, buildRepeatGroups, checkReadiness, joinNames, persoaneActualizate, durataText, isManualPlaceholder, manualLabel,
+  buildReplacements, buildRepeatGroups, checkReadiness, joinNames, persoaneActualizate, mandateActualizate, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
+  visibleManualPlaceholders, MOD_EXERCITARE_MANDATE,
+  actualizareGroups, withoutActualizareFields, defaultActMode,
   detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, customRolePool, HAND_FILL_BLANK, caenFieldKind,
 } from './placeholders'
 import type { Client, Persoana } from '../types'
+import { CAEN_CODES } from '../data/caen'
+import { findCaenGrupaDescriere } from '../data/caenGrupe'
 
 const client = (over: Partial<Client>): Partial<Client> => ({
   tipClient: 'PJ', caenCod: '7020', caenDescriere: 'Activități de consultanță', caenSecundare: [], asociati: [], administratori: [], ...over,
@@ -86,7 +90,7 @@ describe('caenFieldKind — câmpurile de clauză care primesc lista CAEN', () =
 describe('CAEN_DOMENIU —„domeniul principal de activitate” (grupa CAEN, 3 cifre), derivată din codul principal', () => {
   it('grupa (3 cifre) și denumirea ei oficială, derivate din clasa (4 cifre) aleasă de client', () => {
     const r = build(client({ caenCod: '7020', caenDescriere: 'Activități de consultanță pentru afaceri' }))
-    expect(r['{{CAEN_DOMENIU}}']).toBe('702 - Activităţi de consultanţă în management')
+    expect(r['{{CAEN_DOMENIU}}']).toBe('702 - Activităţi de consultanţă în afaceri şi management')
     expect(r['{{CAEN_1}}']).toBe('7020 - Activități de consultanță pentru afaceri')   // clasa rămâne distinctă
   })
 
@@ -97,6 +101,11 @@ describe('CAEN_DOMENIU —„domeniul principal de activitate” (grupa CAEN, 3 
 
   it('fără CAEN principal completat: gol, fără eroare', () => {
     expect(build(client({ caenCod: '' }))['{{CAEN_DOMENIU}}']).toBe('')
+  })
+
+  it('fiecare cod din lista CAEN are grupa lui (aceeași revizie — Rev.3), ca domeniul să nu ajungă de completat manual', () => {
+    expect(CAEN_CODES.filter(c => !findCaenGrupaDescriere(c.cod)).map(c => c.cod)).toEqual([])
+    expect(build(client({ caenCod: '6210' }))['{{CAEN_DOMENIU_DENUMIRE}}']).toBe('Activităţi de programare')
   })
 })
 
@@ -128,6 +137,32 @@ describe('etichete pentru șabloane importate din documente cu locuri libere', (
     expect(joinNames([p({ nume: 'A' }), p({ nume: 'B' }), p({ nume: 'C' })])).toBe('A, B și C')
   })
 
+  describe('mandateActualizate: clauza „Durata mandatului” cu durate diferite, pe tag-urile frazei avocatului', () => {
+    const ani = (n: number) => ({ tip: 'ani' as const, ani: String(n), data: '' })
+    const nedet = { tip: 'nedeterminata' as const, ani: '', data: '' }
+    const fraza = (r: { rol: string; nume: string; durata: string }) => `durata mandatului ${r.rol} ${r.nume} ca fiind ${r.durata}.`
+    const A = p({ nume: 'POP', prenume: 'ION' }), B = p({ nume: 'DAN', prenume: 'VASILE' }), C = p({ nume: 'RUS', prenume: 'ANA' })
+
+    it('aceeași durată: ca până acum — toți într-un singur grup', () => {
+      expect(fraza(mandateActualizate([{ persoana: A, durata: ani(4) }, { persoana: B, durata: ani(4) }])))
+        .toBe('durata mandatului administratorilor POP ION și DAN VASILE ca fiind de 4 ani.')
+    })
+    it('două durate: „respectiv” înaintea celei de-a doua', () => {
+      expect(fraza(mandateActualizate([{ persoana: A, durata: ani(4) }, { persoana: C, durata: nedet }])))
+        .toBe('durata mandatului administratorului POP ION ca fiind de 4 ani, respectiv a mandatului administratorului RUS ANA ca fiind nedeterminată.')
+    })
+    it('trei durate, iar cei cu aceeași durată grupați („a mandatelor administratorilor”)', () => {
+      const D = p({ nume: 'ENE', prenume: 'MARIA' })
+      expect(fraza(mandateActualizate([
+        { persoana: A, durata: ani(4) }, { persoana: B, durata: ani(2) }, { persoana: C, durata: nedet }, { persoana: D, durata: ani(2) },
+      ]))).toBe('durata mandatului administratorului POP ION ca fiind de 4 ani, a mandatelor administratorilor DAN VASILE și ENE MARIA '
+        + 'ca fiind de 2 ani, respectiv a mandatului administratorului RUS ANA ca fiind nedeterminată.')
+    })
+    it('niciun administrator: totul gol', () => {
+      expect(mandateActualizate([])).toEqual({ rol: '', nume: '', durata: '' })
+    })
+  })
+
   it('persoaneActualizate: forma după câte persoane sunt bifate, nu după câte are firma', () => {
     expect(persoaneActualizate([], 'asociat')).toEqual({ rol: '', nume: '' })
     expect(persoaneActualizate([p({ nume: 'CIUȘ', prenume: 'ADELINA-LARISA' })], 'asociat'))
@@ -138,18 +173,6 @@ describe('etichete pentru șabloane importate din documente cu locuri libere', (
     expect(persoaneActualizate([p({ nume: 'A' }), p({ nume: 'B' })], 'administrator').rol).toBe('administratorilor')
   })
 
-  it('durataText: nedeterminată, ani (cu „de” de la 20 în sus), dată; gol cât e incomplet', () => {
-    expect(durataText('nedeterminata', '', '')).toBe('nedeterminată')
-    expect(durataText('ani', '1', '')).toBe('de un an')
-    expect(durataText('ani', '10', '')).toBe('de 10 ani')
-    expect(durataText('ani', '19', '')).toBe('de 19 ani')
-    expect(durataText('ani', '20', '')).toBe('de 20 de ani')
-    expect(durataText('ani', '99', '')).toBe('de 99 de ani')
-    expect(durataText('ani', '101', '')).toBe('de 101 ani')
-    expect(durataText('ani', '', '')).toBe('')
-    expect(durataText('data', '', '31.12.2030')).toBe('până la data de 31.12.2030')
-    expect(durataText('data', '', ' ')).toBe('')
-  })
 
   it('câmpuri manuale {{CAMP_…}}: recunoscute și cu titlu citibil', () => {
     expect(isManualPlaceholder('{{CAMP_NR_HOTARARE}}')).toBe(true)
@@ -314,6 +337,38 @@ describe('roluri de persoană „noi” (comodant, reprezentant legal…) — î
     ])
   })
 
+  it('înființare/actualizare implicit după CUI, nu după bifa „în înființare”', () => {
+    expect(defaultActMode({ codFiscal: '' })).toBe('infiintare')
+    expect(defaultActMode({ codFiscal: 'RO123' })).toBe('actualizare')     // bifa rămasă nu mai contează
+    expect(defaultActMode(null)).toBe('actualizare')                      // fără client ales
+  })
+
+  it('blocul {{#ACTUALIZARE}} se păstrează la actualizare și dispare la înființare, cu câmpurile lui cu tot', () => {
+    expect(actualizareGroups(['ASOCIATI', 'ACTUALIZARE'], 'actualizare')).toEqual({ ACTUALIZARE: [{}] })
+    expect(actualizareGroups(['ASOCIATI', 'ACTUALIZARE'], 'infiintare')).toEqual({ ACTUALIZARE: [] })
+    expect(actualizareGroups(['ASOCIATI'], 'infiintare')).toEqual({})                 // șablon fără bloc: nimic trimis
+    const phs = ['{{SOCIETATE_DENUMIRE}}', '{{CAMP_NUMAR_HOTARARE}}', '{{CAMP_DATA_HOTARARE}}']
+    const fields = { ACTUALIZARE: ['CAMP_NUMAR_HOTARARE', 'CAMP_DATA_HOTARARE'] }
+    expect(withoutActualizareFields(phs, fields, 'infiintare')).toEqual(['{{SOCIETATE_DENUMIRE}}'])
+    expect(withoutActualizareFields(phs, fields, 'actualizare')).toEqual(phs)
+    expect(detectCustomPersonGroups(['ACTUALIZARE'])).toEqual([])                     // nu e o listă de persoane
+  })
+
+  it('modul de exercitare a mandatelor se cere doar de la 2 reprezentanți legali aleși', () => {
+    const phs = ['{{CAMP_NUMAR_HOTARARE}}', MOD_EXERCITARE_MANDATE]
+    const rep = (n: number) => ({ REPREZENTANT_LEGAL: Array.from({ length: n }, () => ({}) as Persoana) })
+    expect(visibleManualPlaceholders(phs)).toEqual(['{{CAMP_NUMAR_HOTARARE}}'])
+    expect(visibleManualPlaceholders(phs, rep(1))).toEqual(['{{CAMP_NUMAR_HOTARARE}}'])
+    expect(visibleManualPlaceholders(phs, rep(2))).toEqual(phs)
+  })
+
+  it('{{REPREZENTANT_LEGALI_LISTA}} (Art.19 din actul avocatului) e rolul REPREZENTANT_LEGAL, ales dintre administratori', () => {
+    expect(detectCustomPersonGroups([], ['{{REPREZENTANT_LEGALI_LISTA}}'])).toEqual([
+      { role: 'REPREZENTANT_LEGAL', listTag: 'REPREZENTANT_LEGALI_LISTA' },
+    ])
+    expect(customRolePool('REPREZENTANT_LEGAL')).toBe('administratori')
+  })
+
   it('detectCustomPersonGroups combină sub ACELAȘI rol tag-ul repetitiv (semnătură) și cel „_LISTA” (mențiune îmbinată din identitate, placeholder simplu)', () => {
     // bug real, raportat de utilizator: fără gruparea pe rol, cele două tag-uri ale ACELUIAȘI reprezentant
     // (mențiunea din identitate, placeholder simplu „…LISTA” + linia „Prin administrator”, bloc repetitiv)
@@ -410,5 +465,71 @@ describe('valoarea unei părți sociale', () => {
     expect(r['{{PARTI_SOCIALE_ASOCIAT_1}}']).toBe('200')
     const groups = buildRepeatGroups({ idFields: null, client: c as Client, scannedPersons: [] })
     expect(groups.ASOCIATI[0].PARTI_SOCIALE).toBe('200')
+  })
+})
+
+describe('durata societății și mandatele administratorilor', () => {
+  const admin = (nume: string, mandat?: Persoana['mandat']): Persoana => ({
+    calitate: 'Administrator', cotaParticipare: '', cnp: '', nume, prenume: 'Ion', serie_numar: '', data_nasterii: '',
+    locul_nasterii: '', cetatenia: '', adresa: '', judet: '', emisa_de: '', valabila_de_la: '', valabila_pana_la: '',
+    ...(mandat ? { mandat } : {}),
+  })
+  const patruAni = { tip: 'ani' as const, ani: '4', data: '' }
+
+  it('clientul de dinainte, fără durată salvată: tag-urile rămân goale (apar la „lipsește”), nu „99 de ani”', () => {
+    const r = build(client({ administratori: [admin('POPA')] }))
+    expect(r['{{DURATA_SOCIETATE_TEXT}}']).toBe('')
+    expect(r['{{DURATA_MANDAT_TEXT}}']).toBe('')
+    expect(r['{{ADMINISTRATOR_1_DURATA_MANDAT}}']).toBe('')
+  })
+
+  it('durata societății: formele scurtă, frază, ani, în litere, expirare de la înmatriculare', () => {
+    const r = build(client({ durataSocietate: { tip: 'ani', ani: '10', data: '' }, dataInmatricularii: '01.02.2027' }))
+    expect(r['{{DURATA_SOCIETATE}}']).toBe('de 10 ani')
+    expect(r['{{DURATA_SOCIETATE_TEXT}}']).toBe('pe o perioadă de 10 ani')
+    expect(r['{{DURATA_SOCIETATE_ANI}}']).toBe('10')
+    expect(r['{{DURATA_SOCIETATE_ANI_LITERE}}']).toBe('zece')
+    expect(r['{{DURATA_SOCIETATE_DATA_EXPIRARE}}']).toBe('01.02.2037')
+    expect(build(client({ durataSocietate: { tip: 'nedeterminata', ani: '', data: '' } }))['{{DURATA_SOCIETATE_TEXT}}']).toBe('pe durată nedeterminată')
+  })
+
+  it('firmă în înființare: datele care se află la înmatriculare rămân loc de completat de mână', () => {
+    const r = build(client({
+      inInfiintare: true, durataSocietate: { tip: 'ani', ani: '10', data: '' },
+      administratori: [admin('POPA', { durata: patruAni, inceput: 'aprobare', dataNumire: '' })],
+    }))
+    expect(r['{{DURATA_SOCIETATE_DATA_EXPIRARE}}']).toBe(HAND_FILL_BLANK)
+    expect(r['{{ADMINISTRATOR_1_DATA_NUMIRE}}']).toBe(HAND_FILL_BLANK)
+    expect(r['{{ADMINISTRATOR_1_DATA_EXPIRARE_MANDAT}}']).toBe(HAND_FILL_BLANK)
+    expect(r['{{ADMINISTRATOR_1_DURATA_MANDAT_TEXT}}']).toBe('pe o perioadă de 4 ani')
+  })
+
+  it('mandat comun doar dacă e același la toți; per administrator mereu, și în {{#ADMINISTRATORI}}', () => {
+    const c = client({
+      dataInmatricularii: '10.03.2027',
+      administratori: [
+        admin('POPA', { durata: patruAni, inceput: 'aprobare', dataNumire: '10.03.2027' }),
+        admin('VASILE', { durata: patruAni, inceput: 'data', dataNumire: '07.11.2026' }),
+      ],
+    })
+    const r = build(c)
+    expect(r['{{DURATA_MANDAT}}']).toBe('de 4 ani')
+    expect(r['{{DURATA_MANDAT_ANI}}']).toBe('4')
+    expect(r['{{ADMINISTRATOR_1_DATA_EXPIRARE_MANDAT}}']).toBe('10.03.2031')
+    expect(r['{{ADMINISTRATOR_2_DATA_NUMIRE}}']).toBe('07.11.2026')
+    const rows = buildRepeatGroups({ client: c as Client }).ADMINISTRATORI
+    expect(rows.map(x => x.DATA_EXPIRARE_MANDAT)).toEqual(['10.03.2031', '07.11.2030'])
+
+    const diferite = build({ ...c, administratori: [c.administratori![0], admin('DAN', { durata: { tip: 'nedeterminata', ani: '', data: '' }, inceput: 'data', dataNumire: '' })] })
+    expect(diferite['{{DURATA_MANDAT_TEXT}}']).toBe('')
+    expect(diferite['{{ADMINISTRATOR_2_DURATA_MANDAT_TEXT}}']).toBe('pe durată nedeterminată')
+  })
+
+  it('etichete prietenoase în lista „lipsește”', () => {
+    expect(groupMissingFields(['{{DURATA_SOCIETATE_TEXT}}', '{{DURATA_MANDAT_TEXT}}', '{{ADMINISTRATOR_2_DATA_NUMIRE}}'])).toEqual({
+      Societate: ['Durata societății'],
+      Administratori: ['Durata mandatului'],
+      'Administrator 2': ['Data numirii'],
+    })
   })
 })

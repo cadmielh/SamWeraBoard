@@ -124,6 +124,15 @@ def test_administrator_sau_administratori_si_verbe():
     assert resolve(t, {"asociati": 2, "administratori": 2})[0] == "Administratorii reprezintă societatea. Asociații îşi vor putea angaja un administrator."
 
 
+def test_fondatorul_sau_fondatorii_dupa_numarul_asociatilor():
+    """Actul constitutiv: „Fondatorul/Fondatorii își asumă răspunderea…” — fondatorii sunt asociații societății."""
+    t = "Art. 13.2. — Fondatorul/Fondatorii își asumă răspunderea. Răspunderea fondatorului/fondatorilor e solidară."
+    assert resolve(t, {"asociati": 1})[0] == "Art. 13.2. — Fondatorul își asumă răspunderea. Răspunderea fondatorului e solidară."
+    assert resolve(t, {"asociati": 2})[0] == "Art. 13.2. — Fondatorii își asumă răspunderea. Răspunderea fondatorilor e solidară."
+    # Număr necunoscut: nu se ghicește, alternativa rămâne
+    assert "Fondatorul/Fondatorii" in resolve(t, {})[0]
+
+
 def test_hotarasc_sau_hotaram_dupa_numarul_asociatilor():
     t = "în calitate de asociat unic/asociați, hotărăsc/hotărâm:"
     assert resolve(t, {"asociati": 1})[0] == "în calitate de asociat unic, hotărăsc:"
@@ -309,7 +318,7 @@ def test_declaratia_reala_social_profesional_si_forme_de_sex():
 def test_ctx_din_client_este_validat():
     ctx = variants.sanitize_ctx({"sex": {"ASOCIAT_1": "x", "bad key!": "M", "OK": "F"}, "asociati": "3", "administratori": 2, "tip": "??"})
     assert ctx == {"sex": {"ASOCIAT_1": None, "OK": "F"}, "asociati": None, "administratori": 2,
-                   "comodanti": None, "tip": None}
+                   "comodanti": None, "reprezentant_legali": None, "tip": None}
     assert variants.sanitize_ctx("nu e dict") == {}
 
 
@@ -317,3 +326,18 @@ def test_hotaraste_sau_hotarasc_dupa_numarul_asociatilor():
     t = "dacă asociatul/asociații nu hotărăște/hotărăsc altfel"
     assert resolve(t, {"asociati": 1})[0] == "dacă asociatul nu hotărăște altfel"
     assert resolve(t, {"asociati": 2})[0] == "dacă asociații nu hotărăsc altfel"
+
+
+def test_reprezentantii_legali_dupa_numarul_celor_alesi():
+    """Art.19 din actul avocatului: „va/vor” și „mandatul/mandatele” se acordă după reprezentanții aleși, nu după
+    asociați; la singular dispare și câmpul cu modul de exercitare (separat/împreună), fără sens pentru o persoană."""
+    t = ("Reprezentantul legal al/Reprezentanții legali ai acestei societăți va/vor fi {{REPREZENTANT_LEGALI_LISTA}}, "
+         "care își exercită mandatul/mandatele {{CAMP_MOD_EXERCITARE_MANDATE}}.")
+    assert resolve(t, {"reprezentant_legali": 1, "asociati": 2})[0] == (
+        "Reprezentantul legal al acestei societăți va fi {{REPREZENTANT_LEGALI_LISTA}}, care își exercită mandatul.")
+    assert resolve(t, {"reprezentant_legali": 2, "asociati": 1})[0] == (
+        "Reprezentanții legali ai acestei societăți vor fi {{REPREZENTANT_LEGALI_LISTA}}, "
+        "care își exercită mandatele {{CAMP_MOD_EXERCITARE_MANDATE}}.")
+    assert resolve(t, {"asociati": 1})[0] == t                    # nimeni ales: rămân ambele variante
+    # „va/vor” fără reprezentant alături rămâne al asociaților
+    assert resolve("Asociatul/Asociații va/vor decide.", {"reprezentant_legali": 2, "asociati": 1})[0] == "Asociatul va decide."

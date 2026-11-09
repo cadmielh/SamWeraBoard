@@ -10,7 +10,11 @@ import IconTrash from './IconTrash'
 import SediuSocialFields from './SediuSocialFields'
 import InfiintareCheckbox, { INFIINTARE_PLACEHOLDER } from './InfiintareCheckbox'
 import CapitalSocialFields from './CapitalSocialFields'
+import DurataSocietateField, { DataInmatriculariiField } from './DurataSocietateField'
+import { campuriSchimbate, mesajCompletare } from '../lib/campuriAuto'
+import type { Durata } from '../lib/durata'
 import { parteSocialaError } from '../lib/cota'
+import { isoDateToRo } from '../lib/dates'
 
 export interface CompanyData {
   denumire: string
@@ -25,6 +29,8 @@ export interface CompanyData {
   puncteLucru: string[]
   capitalSocial: number | null
   valoareParteSociala?: number | null
+  durataSocietate?: Durata
+  dataInmatricularii?: string
 }
 
 interface Props {
@@ -62,8 +68,16 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
   const capitalSocialRef = useRef<HTMLInputElement>(null)
   const valoareParteRef = useRef<HTMLInputElement>(null)
 
-  const set = <K extends keyof CompanyData>(key: K, val: CompanyData[K]) => onChange({ [key]: val } as Partial<CompanyData>)
-  const setSediu = (patch: Partial<AdresaStructurata>) => onChange({ sediuSocial: { ...value.sediuSocial, ...patch } })
+  // Câmpurile completate din ANAF la ultima preluare: chenarul lor evidențiat până le editează utilizatorul (ca în ClientModal)
+  const [dinAnaf, setDinAnaf] = useState<ReadonlySet<string>>(new Set())
+  const verificat = (key: string) => setDinAnaf(prev => {
+    if (!prev.has(key)) return prev
+    const next = new Set(prev); next.delete(key); return next
+  })
+  const hl = (key: string) => dinAnaf.has(key) ? ' auto-field' : ''
+
+  const set = <K extends keyof CompanyData>(key: K, val: CompanyData[K]) => { onChange({ [key]: val } as Partial<CompanyData>); verificat(key) }
+  const setSediu = (patch: Partial<AdresaStructurata>) => { onChange({ sediuSocial: { ...value.sediuSocial, ...patch } }); verificat('sediuSocial') }
 
   const cifTrimmed = value.codFiscal.trim()
   const cifError = cifTrimmed && !/^(RO)?\d{2,10}$/i.test(cifTrimmed)
@@ -121,7 +135,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
       setAnafSnapshot(sediuNou)
       setAnafSyncedAt(new Date().toISOString())
       setAnafRawText(result.adresa || null)
-      onChange({
+      const patch: Partial<CompanyData> = {
         denumire: result.denumire || value.denumire,
         formaJuridica: result.formaJuridica || value.formaJuridica,
         sediuSocial: sediuNou,
@@ -131,8 +145,12 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         caenSecundare: result.caenSecundare
           ? result.caenSecundare.map(cod => ({ cod, descriere: findCaenDescriere(cod) }))
           : value.caenSecundare,
-      })
-      onToast('Date preluate de la ANAF', 'ok')
+        ...(isoDateToRo(result.dataInregistrare ?? '') ? { dataInmatricularii: isoDateToRo(result.dataInregistrare ?? '') } : {}),
+      }
+      const schimbate = campuriSchimbate(value, { ...value, ...patch })
+      onChange(patch)
+      setDinAnaf(new Set(schimbate))
+      onToast(mesajCompletare(schimbate.length), 'ok')
     } catch (e: unknown) {
       onToast((e as Error).message ?? 'Eroare ANAF', 'err')
     } finally {
@@ -200,12 +218,12 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
     <div className="form-grid">
       {/* Denumire + forma juridică (îngustă) pe același rând */}
       <div className="full form-row-denumire">
-        <div className="field">
+        <div className={`field${hl('denumire')}`}>
           <label className="field-label">Denumire <span style={{ color: 'var(--r500)' }}>*</span></label>
           <input ref={denumireRef} className="field-input" value={value.denumire} onChange={e => set('denumire', e.target.value)} placeholder="Denumirea firmei" />
         </div>
 
-        <div className="field">
+        <div className={`field${hl('formaJuridica')}`}>
           <label className="field-label">Forma juridică <span style={{ color: 'var(--r500)' }}>*</span></label>
           <select ref={formaJuridicaRef} className="field-input" value={value.formaJuridica} onChange={e => set('formaJuridica', e.target.value)}>
             <option value="">— selectați —</option>
@@ -218,7 +236,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         <InfiintareCheckbox checked={!!value.inInfiintare} onChange={v => set('inInfiintare', v)} />
       </div>
 
-      <div className="field">
+      <div className={`field${hl('nrRegistrul')}`}>
         <label className="field-label">Nr. registrul comerțului {!value.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
         <input ref={nrRegistrulRef} className="field-input" placeholder={value.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: J40/123/2020'} value={value.nrRegistrul} onChange={e => set('nrRegistrul', e.target.value)} />
       </div>
@@ -229,24 +247,27 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
           <input ref={codFiscalRef} className="field-input" placeholder={value.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: RO12345678'}
             value={value.codFiscal} onChange={e => set('codFiscal', e.target.value)}
             aria-invalid={!!cifError} />
-          {!value.inInfiintare && (
-            <button type="button" className="btn btn-outline-primary btn-sm"
-              onClick={preiaAnaf} disabled={!value.codFiscal.trim() || anafLoading}
-              title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-              {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
-            </button>
-          )}
+          {/* Vizibil și în înființare: imediat după înregistrare, ANAF aduce J-ul și data înmatriculării */}
+          <button type="button" className="btn btn-outline-primary btn-sm"
+            onClick={preiaAnaf} disabled={!value.codFiscal.trim() || anafLoading}
+            title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+            {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
+          </button>
         </div>
         {cifError && <span className="field-error">{cifError}</span>}
       </div>
 
-      <div className="field full">
+      <DataInmatriculariiField value={value.dataInmatricularii ?? ''} inInfiintare={value.inInfiintare} dinAnaf={dinAnaf.has('dataInmatricularii')}
+        laIesire={!!value.inInfiintare && !!value.codFiscal.trim() && !!value.nrRegistrul.trim()}
+        onChange={v => set('dataInmatricularii', v)} />
+
+      <div className={`field full${hl('caenCod')}`}>
         <label className="field-label">Activitate principală (CAEN)</label>
         <CAENCombobox value={value.caenCod} descriere={value.caenDescriere || findCaenDescriere(value.caenCod)}
-          onChange={(cod, desc) => onChange({ caenCod: cod, caenDescriere: desc })} />
+          onChange={(cod, desc) => { onChange({ caenCod: cod, caenDescriere: desc }); verificat('caenCod') }} />
       </div>
 
-      <div className="field full">
+      <div className={`field full${hl('caenSecundare')}`}>
         <label className="field-label">Activități secundare (CAEN)</label>
         {value.caenSecundare.map((a, i) => (
           <div key={i} style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginBottom: '.375rem' }}>
@@ -259,6 +280,8 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         <button type="button" className="btn btn-ghost btn-xs" onClick={addCaenSecundar}>+ Adaugă activitate secundară</button>
       </div>
 
+      {/* Sediu — toate subcâmpurile evidențiate împreună; cele care diferă au deja indicația „ANAF: …” */}
+      <div className={`full${hl('sediuSocial')}`}>
       <SediuSocialFields
         value={value.sediuSocial}
         onChange={setSediu}
@@ -269,11 +292,12 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         anafRawText={anafRawText}
         firstFieldRef={sediuSocialRef}
         extraHeaderAction={asociati.length > 0 && (
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
-            📍 Folosește adresa unui asociat
-          </button>
-        )}
+            <button type="button" className="btn btn-ghost btn-xs" onClick={() => setSediuPicker(true)}>
+              📍 Folosește adresa unui asociat
+            </button>
+          )}
       />
+      </div>
 
       <div className="field full">
         <label className="field-label">Puncte de lucru</label>
@@ -291,6 +315,8 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
         capitalSocial={value.capitalSocial} valoareParte={value.valoareParteSociala}
         onCapital={v => set('capitalSocial', v)} onValoareParte={v => set('valoareParteSociala', v)}
         capitalRef={capitalSocialRef} valoareParteRef={valoareParteRef} />
+      <DurataSocietateField value={value.durataSocietate} dataInmatricularii={value.dataInmatricularii}
+        onChange={d => set('durataSocietate', d)} />
     </div>
   )
 })

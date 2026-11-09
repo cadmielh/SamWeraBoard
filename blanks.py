@@ -111,7 +111,45 @@ def person_tag(role: str, n: int, field: str) -> str:
 
 def manual_tag(label: str) -> str:
     words = re.sub(r"[^A-Z0-9]+", "_", _norm(label).upper()).strip("_")
+    # „Nr. …” → CAMP_NUMAR_…: forma pe care formularul o împerechează cu CAMP_DATA_… (vezi _pair_number_date)
+    words = re.sub(r"^NR(?=_|$)", "NUMAR", words)
     return "{{" + _MANUAL_PREFIX + (words[:40] or "VALOARE") + "}}"
+
+
+def _nominativ(word: str) -> str:
+    """„HOTARARII”/„HOTARAREA” → „HOTARARE”, „CONTRACTULUI”/„CONTRACTUL” → „CONTRACT”, „DECIZIEI”/„DECIZIA” → „DECIZIE”:
+    același document, oricum ar fi articulat în text — ca numărul și data lui să primească același sufix."""
+    for end, repl in (("ULUI", ""), ("IEI", "IE"), ("RII", "RE"), ("IA", "IE"), ("EA", "E"), ("UL", "")):
+        if word.endswith(end) and len(word) - len(end) >= 3:
+            return word[: len(word) - len(end)] + repl
+    return word
+
+
+_NR_INAINTE_RE = re.compile(r"([a-z]{3,})\s+(?:nr|numar)\.?\s*:?\s*$")          # „Hotărârea nr. ……”
+_DIN_INTRE_RE = re.compile(r"^[\s.,:;/…-]*(?:din|/)(?:\s+data)?(?:\s+de)?[\s.:…]*$")  # „…… din (data de) ……”
+_NR_X_INAINTE_RE = re.compile(r"(?:nr|numar)\.?\s+([a-z]{3,})\s*:?\s*$")         # „Nr. hotărâre: ……”
+_DATA_X_INTRE_RE = re.compile(r"^[\s.,:;/…-]*data\s+([a-z]{3,})\s*:?\s*$")         # „…… Data hotărârii: ……”
+
+
+def _pair_number_date(out: list[dict], par_texts: list[str]) -> None:
+    """Numărul și data aceluiași document, unul după altul în paragraf („Hotărârea nr. …… din ……”, „Nr. contract ……
+    Data contractului ……”), primesc perechea CAMP_NUMAR_X / CAMP_DATA_X — formularul le afișează alăturate (vezi
+    pairManualDateFields în frontend). Doar două câmpuri manuale consecutive; orice altceva rămâne cum l-a propus suggest()."""
+    for a, b in zip(out, out[1:]):
+        if a.get("scope") != "manual" or b.get("scope") != "manual" or a.get("paragraph") != b.get("paragraph"):
+            continue
+        text = par_texts[a["paragraph"]]
+        raw_before = text[max(0, a["start"] - 60):a["start"]]
+        before, between = _norm(raw_before), _norm(text[a["end"]:b["start"]])
+        m, d = _NR_INAINTE_RE.search(before), _DIN_INTRE_RE.match(between)
+        if not (m and d and m.group(1) not in ("din", "data", "cu", "la", "si", "sub")):
+            m, d = _NR_X_INAINTE_RE.search(before), _DATA_X_INTRE_RE.match(between)
+            if not (m and d and _nominativ(m.group(1).upper()) == _nominativ(d.group(1).upper())):
+                continue
+        x = _nominativ(m.group(1).upper())
+        word = raw_before[m.start(1):m.end(1)].lower()   # _norm păstrează lungimea la diacriticele românești
+        a.update(tag="{{" + _MANUAL_PREFIX + "NUMAR_" + x + "}}", label=f"Număr {word}")
+        b.update(tag="{{" + _MANUAL_PREFIX + "DATA_" + x + "}}", label=f"Data {word}")
 
 
 def _paragraphs(doc):
@@ -886,6 +924,7 @@ def analyze(docx_bytes: bytes) -> list[dict]:
                     continue
             _finalize_blank(out, s, pi, m.start(), blank_end, before, after, prev_pars=prev_pars, next_pars=next_pars)
             list_entry, list_role = (s, s["role"]) if is_mention else (None, None)
+    _pair_number_date(out, all_par_texts)
     return out
 
 
