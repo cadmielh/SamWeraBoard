@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Client, ClauseMeta } from '../types'
 import { findClauseSpec, type ClientPatchProposal } from '../lib/clauseFieldSpecs'
-import { parsePlaceholder, isDateLabel, caenFieldKind, detectCustomPersonRoles } from '../lib/placeholders'
+import { parsePlaceholder, isDateLabel, caenFieldKind, detectCustomPersonRoles, isFisaFirmaField } from '../lib/placeholders'
 import { parseAdresa } from '../lib/adresa'
 import DateFieldInput from './DateFieldInput'
 import CesiuneFields from './clauses/CesiuneFields'
@@ -307,12 +307,26 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     const hasPersons = c.placeholders.some(ph => detectCustomPersonRoles([ph]).length > 0)
                     return useWidget || hasPersons ? null : <div style={{ fontSize: '.8rem', color: 'var(--s400)' }}>Fără alte câmpuri de completat.</div>
                   }
-                  return visible.map(ph => {
-                    const key = ph.replace(/^\{\{|\}\}$/g, '')
-                    const auto = baseReplacements[ph]
+                  // Valorile din fișa firmei (capitalul actual, sediul actual…) se arată primele, ca informație — nu se
+                  // completează în clauză; doar dacă lipsesc din fișă rămân rubrici (vezi isFisaFirmaField).
+                  const keyOf = (ph: string) => ph.replace(/^\{\{|\}\}$/g, '')
+                  const labelOf = (ph: string) => {
                     // Un câmp de clauză fără nume prietenos („NR_PARTI_CEDATE”) se arată ca „Nr parti cedate”
+                    const key = keyOf(ph)
                     const { field } = parsePlaceholder(ph)
-                    const label = field === key ? key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ') : field
+                    return field === key ? key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ') : field
+                  }
+                  const dinFisa = visible.filter(ph => isFisaFirmaField(keyOf(ph)) && !!baseReplacements[ph]?.trim())
+                  return [
+                    ...dinFisa.map(ph => (
+                      <div key={ph} style={{ fontSize: '.85rem', color: 'var(--s400)' }}>
+                        {labelOf(ph)}: <strong>{baseReplacements[ph]}</strong> (din fișa clientului)
+                      </div>
+                    )),
+                    ...visible.filter(ph => !dinFisa.includes(ph)).map(ph => {
+                    const key = keyOf(ph)
+                    const auto = baseReplacements[ph]
+                    const label = labelOf(ph)
                     const value = fieldsByClause[c.tag]?.[key] ?? auto ?? ''
                     const caenKind = caenFieldKind(key)
                     if (caenKind) {
@@ -330,7 +344,8 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                         />
                       </div>
                     )
-                  })
+                  }),
+                  ]
                 })()}
               </div>
             )}

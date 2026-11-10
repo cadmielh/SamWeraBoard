@@ -97,7 +97,7 @@ Ordinea verificărilor:
 1. `require_super_admin()`, deci doar sesiune Google și `isSuperAdmin` citit din bază.
 2. `require_role(principal, source, "member")`. Sursa trebuie să fie un cabinet al tău, ca rolul de super admin să nu poată muta șabloane între cabinete străine.
 3. `ratelimit` cu acțiune nouă `template_delivery`: 30 pe oră per utilizator.
-4. Ținta: `valid_wid`, există, nu e `pendingDeletion`, are DPA acceptat (`consent_ok`), diferă de sursă. Răspunsul e 404 generic dacă nu există. Ținta trebuie să aibă și abonament: funcție nouă `billing.has_paid_access(ws)`, adevărată pentru `hasSubscription` sau `compUntil` în viitor. Altfel, 409 `subscription_required`. Probele fără abonament sunt refuzate. `quota_tier` nu se poate refolosi, pentru că întoarce `standard` și pentru un cabinet expirat.
+4. Ținta: `valid_wid`, există, nu e `pendingDeletion`, are DPA acceptat (`consent_ok`), diferă de sursă. Răspunsul e 404 generic dacă nu există. Ținta trebuie să aibă acces activ: `billing.has_full_access(ws)` (probă activă, abonament sau acces gratuit; din 10 nov 2026, la cererea utilizatorului, și probele). Altfel (mod citire), 409 `target_subscription_required`.
 5. `confirmName` e identic cu numele cabinetului țintă, verificat pe server.
 6. Sursa e .docx cu `fileBase64`. Google Docs și Drive sunt respinse.
 7. `sourceKey`, dacă e trimis, trebuie să existe în `registry.json`. Blueprintul nou citește cheile direct din fișier, ca să evite importul circular cu `app.py`.

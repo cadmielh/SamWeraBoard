@@ -260,7 +260,7 @@ def test_doar_super_adminul_in_sesiune_google_membru_al_sursei(env):
     assert from_foreign.status_code == 403                          # nu e membru al cabinetului sursă
 
 
-def test_tinta_trebuie_confirmata_valida_si_cu_abonament(env):
+def test_tinta_trebuie_confirmata_valida_si_cu_acces_activ(env):
     c, db = env
     add_tpl(db)
     assert deliver(c, confirmName="Cabinet client srl").get_json()["error"] == "confirm_mismatch"
@@ -270,8 +270,10 @@ def test_tinta_trebuie_confirmata_valida_si_cu_abonament(env):
     assert deliver(c, sourceTemplateId="lipsa").status_code == 404
 
     ws = db.collection("workspaces").document(DST)
-    ws.update({"billing": access(sub=False)})                        # perioadă de probă
+    ws.update({"billing": access(days=-1, sub=False)})               # probă expirată: mod citire
     assert deliver(c).get_json()["error"] == "target_subscription_required"
+    ws.update({"billing": access(sub=False)})                        # perioadă de probă
+    assert deliver(c, dryRun=True).status_code == 200
     ws.update({"billing": access(sub=False, comp=True)})             # acces gratuit acordat
     assert deliver(c, dryRun=True).status_code == 200
     ws.update({"consent": {"tos": "veche", "dpa": "veche"}})

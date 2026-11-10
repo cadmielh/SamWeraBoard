@@ -5,7 +5,7 @@ descrierea, tipul și numele fișierului generat. Șabloanele .docx (`fileBase64
 `updatedAt/By` și `delivery` se scriu DOAR de aici (Admin SDK), după `template_safety.validate_docx` și cu
 etichetele recalculate pe server, deci niciodată din ce trimite clientul.
 
-Livrarea (super admin): copiază un șablon din cabinetul super adminului într-un cabinet client cu abonament.
+Livrarea (super admin): copiază un șablon din cabinetul super adminului într-un cabinet client cu acces activ (probă, abonament sau acces gratuit).
 Nu întoarce niciodată conținut din cabinetul țintă și nu poate suprascrie un șablon existent.
 """
 from __future__ import annotations
@@ -243,7 +243,8 @@ def deliver_template(target: str):
         return _err("confirm_mismatch", 400)
     if not authz.consent_ok(ws):
         return _err("target_consent_required", 409)
-    if not billing.has_paid_access(ws):
+    # Probă activă, abonament sau acces gratuit; nu și în modul citire (probă/abonament expirat)
+    if not billing.has_full_access(ws):
         return _err("target_subscription_required", 409)
 
     snap = _templates(source).document(source_tid).get()

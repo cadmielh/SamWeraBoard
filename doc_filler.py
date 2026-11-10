@@ -130,6 +130,19 @@ def _header_footer_parts(doc: Document):
 
 _LEADING_TERMINAL_RE = re.compile(r"^([.;])\s*")
 
+# Paragraf dintr-un bloc {{#TAG}}…{{/TAG}} care începe cu {{SEPARATOR}} (ex. „{{SEPARATOR}}și”): apare doar ÎNTRE
+# elemente, nu și după ultimul — „și” pe rând separat între persoane. Marcajul se șterge din text.
+SEPARATOR_MARKER = "{{SEPARATOR}}"
+
+
+def _end_marker_punct(text: str, end_marker: str) -> str | None:
+    """„{{/TAG}}” → „”; „{{/TAG}}.” sau „{{/TAG}};” → semnul, pus după ultimul element (punctul doar după ultima
+    persoană, rândurile dinainte rămân fără, urmate de „și”); altfel None — nu e marcajul de final."""
+    if not text.startswith(end_marker):
+        return None
+    rest = text[len(end_marker):].strip()
+    return rest if rest in ("", ".", ";") else None
+
 
 def _merge_leading_terminal_punctuation(last_par: Paragraph, next_par: Paragraph) -> None:
     """Un paragraf care, imediat după {{/TAG}}, începe DOAR cu un „.”/„;” de final (fără alt text înainte) —
@@ -151,12 +164,23 @@ def _merge_leading_terminal_punctuation(last_par: Paragraph, next_par: Paragraph
         first_run.text = rest
     else:
         first_run._r.getparent().remove(first_run._r)
+    _append_punctuation(last_par, punct)
+
+
+def _append_punctuation(last_par: Paragraph, punct: str) -> None:
     run = last_par.add_run(punct)
     template_run = next((r for r in reversed(last_par.runs[:-1]) if r.text), None)
     if template_run is not None:
         rpr = template_run._r.find(qn('w:rPr'))
         if rpr is not None:
             run._r.insert(0, copy.deepcopy(rpr))
+
+
+def _strip_leading_marker(paragraph: Paragraph, marker: str) -> None:
+    text = "".join(r.text for r in paragraph.runs)
+    i = text.find(marker)
+    if i >= 0:
+        variants._replace_span(paragraph, i, i + len(marker), "")
 
 
 def _expand_repeat_blocks(doc: Document, groups: dict[str, list[dict[str, str]]],
@@ -198,11 +222,13 @@ def _expand_repeat_blocks_in(container, groups: dict[str, list[dict[str, str]]],
             if start_idx is None:
                 break
             end_idx = next(
-                (i for i in range(start_idx + 1, len(paragraphs)) if _para_text(paragraphs[i]) == end_marker),
+                (i for i in range(start_idx + 1, len(paragraphs))
+                 if _end_marker_punct(_para_text(paragraphs[i]), end_marker) is not None),
                 None,
             )
             if end_idx is None:
                 break  # no matching end tag — leave the stray start marker as-is
+            end_punct = _end_marker_punct(_para_text(paragraphs[end_idx]), end_marker)
 
             block_paragraphs = paragraphs[start_idx + 1:end_idx]
             anchor = paragraphs[end_idx]._p
@@ -215,9 +241,15 @@ def _expand_repeat_blocks_in(container, groups: dict[str, list[dict[str, str]]],
                 # Sexul persoanei din acest element (SEX / SEX_REF) decide variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
                 fixed = (person.get("SEX") or None, person.get("SEX_REF") or None)
                 for bp in block_paragraphs:
+                    is_separator = _para_text(bp).startswith(SEPARATOR_MARKER)
+                    if is_separator and i == len(items):
+                        continue
                     clone = copy.deepcopy(bp._p)
                     anchor.addprevious(clone)
                     clone_par = Paragraph(clone, bp._parent)
+                    if is_separator:
+                        _strip_leading_marker(clone_par, SEPARATOR_MARKER)
+                        continue
                     last_clone_par = clone_par
                     # Rândul e despre O SINGURĂ persoană — acordat aici, cu sexul ei; vezi _BLOCK_ROW_ATTR.
                     clone.set(_BLOCK_ROW_ATTR, "1")
@@ -238,7 +270,9 @@ def _expand_repeat_blocks_in(container, groups: dict[str, list[dict[str, str]]],
                     if changed:
                         clone.set(_CHANGED_ATTR, "1")
 
-            if last_clone_par is not None and suffix_par is not None:
+            if last_clone_par is not None and end_punct:
+                _append_punctuation(last_clone_par, end_punct)
+            elif last_clone_par is not None and suffix_par is not None:
                 _merge_leading_terminal_punctuation(last_clone_par, suffix_par)
 
             # Remove the original template block + both markers
@@ -427,6 +461,40 @@ def _expand_clause_library(doc: Document, selected_tags: list[str] | None) -> No
 
     delete_paragraph(start_p)
     delete_paragraph(end_p)
+    _expand_clause_conditionals(doc, selected)
+
+
+# {{#CLAUZA_<TAG>}}…{{/CLAUZA_<TAG>}}, oriunde în afara bibliotecii de clauze: textul care ține de o clauză, dar stă în
+# alt loc din document (ex. semnătura cesionarului, sub hotărâri, doar când e bifată cesiunea) — păstrat fără marcaje
+# dacă clauza TAG e bifată, șters cu totul altfel. Câmpurile lui se cer în clauza respectivă (vezi list_clauses_in_docx).
+_CLAUSE_CONDITIONAL_RE = re.compile(r"^\{\{#CLAUZA_([A-Z0-9_]+)\}\}$")
+
+
+def _clause_conditional_blocks(paragraphs) -> list[tuple[str, list]]:
+    """[(tag, [marcaj început, …conținut…, marcaj final])] — blocurile {{#CLAUZA_TAG}} complete, în ordine."""
+    blocks = []
+    open_tag, current = None, []
+    for p in paragraphs:
+        text = _para_text(p)
+        m = _CLAUSE_CONDITIONAL_RE.match(text)
+        if open_tag is None and m:
+            open_tag, current = m.group(1), [p]
+        elif open_tag is not None:
+            current.append(p)
+            if text == f"{{{{/CLAUZA_{open_tag}}}}}":
+                blocks.append((open_tag, current))
+                open_tag = None
+    return blocks
+
+
+def _expand_clause_conditionals(doc: Document, selected: set[str]) -> None:
+    containers = [doc.paragraphs] + [cell.paragraphs for table in _iter_all_tables(doc)
+                                     for row in table.rows for cell in _row_distinct_cells(row)]
+    for paragraphs in containers:
+        for tag, block in _clause_conditional_blocks(paragraphs):
+            for p in (block if tag not in selected else (block[0], block[-1])):
+                if p._p.getparent() is not None:
+                    p._p.getparent().remove(p._p)
 
 
 def _max_numbered_index(replacements: dict[str, str]) -> dict[str, int]:
@@ -759,6 +827,10 @@ def fill_docx(
     if ctx is not None:
         ctx["explicit_only"] = explicit_only
         ctx["sole_person"] = _sole_person(doc, ctx)
+        # „beneficiarul real … este/sunt” se acordă cu persoanele din blocurile de beneficiari reali, nu cu toți
+        # asociații — doar în șabloanele care le au (vezi BENEFICIARI_REALI_GROUPS).
+        if groups and BENEFICIARI_REALI_GROUPS & set(list_repeat_groups_in_doc(doc)):
+            ctx["beneficiari_reali"] = sum(len(groups.get(g) or []) for g in BENEFICIARI_REALI_GROUPS)
 
     # Câte poziții numerotate are ȘABLONUL ORIGINAL (înainte de orice expandare) pentru fiecare prefix — dacă
     # clientul are mai multe persoane decât poziții scrise în șablon, cele în plus n-ar apărea nicăieri, fără
@@ -893,14 +965,17 @@ def list_repeat_groups_in_docx(template_bytes: bytes) -> list[str]:
     TemplateFiller.tsx: detectCustomPersonGroups) — list_placeholders_in_docx alone can't see these, since
     it deliberately excludes {{#TAG}}/{{/TAG}} markers as purely structural.
     """
-    doc = Document(io.BytesIO(template_bytes))
+    return list_repeat_groups_in_doc(Document(io.BytesIO(template_bytes)))
+
+
+def list_repeat_groups_in_doc(doc: Document) -> list[str]:
     found: set[str] = set()
 
     def scan(paragraphs):
         for p in paragraphs:
             text = "".join(r.text for r in p.runs).strip()
             m = _REPEAT_GROUP_START_RE.match(text)
-            if m and m.group(1) != "CLAUZE":
+            if m and m.group(1) != "CLAUZE" and not m.group(1).startswith("CLAUZA_"):
                 found.add(m.group(1))
 
     scan(doc.paragraphs)
@@ -925,13 +1000,13 @@ def list_repeat_group_fields_in_docx(template_bytes: bytes) -> dict[str, list[st
         open_tag = None
         for text in texts:
             m = _REPEAT_GROUP_START_RE.match(text)
-            if m and m.group(1) != "CLAUZE":
+            if m and m.group(1) != "CLAUZE" and not m.group(1).startswith("CLAUZA_"):
                 open_tag = m.group(1)
                 fields.setdefault(open_tag, set())
-            elif open_tag and text == f"{{{{/{open_tag}}}}}":
+            elif open_tag and _end_marker_punct(text, f"{{{{/{open_tag}}}}}") is not None:
                 open_tag = None
             elif open_tag:
-                fields[open_tag].update(_FIELD_RE.findall(text))
+                fields[open_tag].update(f for f in _FIELD_RE.findall(text) if f != "SEPARATOR")
 
     scan(_para_text(p) for p in doc.paragraphs)
     for table in _iter_all_tables(doc):
@@ -957,7 +1032,7 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
         for p in paragraphs:
             text = "".join(r.text for r in p.runs)
             for match in pattern.findall(text):
-                if not marker_pattern.match(match) and match != EXPLICIT_AGREEMENT_MARKER:
+                if not marker_pattern.match(match) and match not in (EXPLICIT_AGREEMENT_MARKER, SEPARATOR_MARKER):
                     found.add(match)
 
     scan_paragraphs(doc.paragraphs)
@@ -972,7 +1047,12 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
 #  Blocuri completate automat din fișa clientului (vezi lib/placeholders.ts: buildRepeatGroups) — într-o clauză
 #  (ex. „capitalul revine {{#ASOCIATI}}{{COTA_PARTICIPARE}} către {{NUME}}{{/ASOCIATI}}”) etichetele lor nu se cer
 #  utilizatorului. Spre deosebire de blocurile proprii unei clauze (COD_CAEN_NOU, APORTURI…), completate din formular.
-_AUTO_FILLED_GROUPS = {"ASOCIATI", "ADMINISTRATORI", "MEMBRU_IF", "CAEN_SECUNDARE"}
+#  Beneficiarii reali din actul constitutiv (Legea 129/2019, art. 4 alin. (2) lit. a)): asociații cu peste 25% din
+#  capital ({{#BR_ASOCIATI}}) sau, dacă nu e niciunul, administratorii ({{#BR_ADMINISTRATORI}}). BR_DIRECT/
+#  BR_CONDUCERE (un element gol sau niciunul) păstrează textul modalității de control potrivite cazului.
+BENEFICIARI_REALI_GROUPS = {"BR_ASOCIATI", "BR_ADMINISTRATORI"}
+_AUTO_FILLED_GROUPS = {"ASOCIATI", "ADMINISTRATORI", "MEMBRU_IF", "CAEN_SECUNDARE",
+                       *BENEFICIARI_REALI_GROUPS, "BR_DIRECT", "BR_CONDUCERE"}
 
 
 def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
@@ -988,6 +1068,7 @@ def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
     """
     doc = Document(io.BytesIO(template_bytes))
     _, _, clauses = _parse_clause_library(doc)
+    conditionals = _clause_conditional_blocks(_all_paragraphs(doc))
 
     pattern = re.compile(r"\{\{[^}]+\}\}")
     marker_pattern = re.compile(r"^\{\{[#/]")
@@ -1008,5 +1089,9 @@ def list_clauses_in_docx(template_bytes: bytes) -> list[dict]:
             for match in pattern.findall(text):
                 if not marker_pattern.match(match) and match != _ART_NR_PLACEHOLDER:
                     found.add(match)
+        for tag, block in conditionals:
+            if tag == c["tag"]:
+                for p in block[1:-1]:
+                    found.update(m for m in pattern.findall("".join(r.text for r in p.runs)) if not marker_pattern.match(m))
         result.append({"tag": c["tag"], "label": c["label"], "placeholders": sorted(found)})
     return result

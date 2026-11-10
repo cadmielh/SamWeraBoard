@@ -11,7 +11,7 @@ import {
   detectCustomPersonRoles, customPersonReplacements, detectCustomPersonGroups, persoanaToSingularMap,
   customRolePool, joinNames, isDateLabel, pairManualDateFields, cuMandatDinFisa,
   visibleManualPlaceholders, MOD_EXERCITARE_MANDATE, MOD_EXERCITARE_OPTIUNI,
-  ACTUALIZARE_GROUP, actualizareGroups, withoutActualizareFields, defaultActMode, type ActMode,
+  ACTUALIZARE_GROUP, actualizareGroups, withoutActualizareFields, defaultActMode, type ActMode, activeClauses, withDenumireActualizata,
 } from '../lib/placeholders'
 import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
@@ -290,6 +290,8 @@ export default function TemplateFiller({
   const groupFieldsOf = (id: string) => (listTemplates.find(t => t.id === id) ?? builtins.find(b => builtinKey(b) === id))?.repeatGroupFields
   const shownPh = (id: string, phs: string[] = []) =>
     withoutActualizareFields(visibleManualPlaceholders(phs, customGroupPicks[id]), groupFieldsOf(id), actMode)
+  // La înființare, un șablon cu toate clauzele în blocul {{#ACTUALIZARE}} se tratează ca unul fără clauze (vezi activeClauses).
+  const hasActiveClauses = (tpl: DocTemplate) => activeClauses(tpl.clauses, tpl.repeatGroupFields, actMode).length > 0
   const renderActModeToggle = (repeatGroups?: string[]) => repeatGroups?.includes(ACTUALIZARE_GROUP) && (
     <div style={{ display: 'flex', gap: '.375rem' }}>
       <button
@@ -460,8 +462,8 @@ export default function TemplateFiller({
     setLoading(tpl.id, true)
     try {
       const outputName = resolveOutputName(tpl)
-      const cs = clauseState[tpl.id]
-      let mergedReplacements = { ...repl(tpl.id), ...customListReplacementsFor(tpl), ...(cs?.extraReplacements ?? {}) }
+      const cs = hasActiveClauses(tpl) ? clauseState[tpl.id] : undefined
+      let mergedReplacements = withDenumireActualizata({ ...repl(tpl.id), ...customListReplacementsFor(tpl), ...(cs?.extraReplacements ?? {}) })
       const mergedGroups = { ...repeatGroups, ...customGroupsFor(tpl), ...(cs?.extraGroups ?? {}), ...(brx?.groups ?? {}) }
       let rowGroups: Record<string, Record<string, string>[]> | undefined
       if (decl) {
@@ -521,7 +523,7 @@ export default function TemplateFiller({
       const cs = clauseState[key]
       // Copie proprie, mereu — "replacements" e obiectul partajat de toate
       // șabloanele randate în același pas, nu trebuie mutat direct.
-      const mergedReplacements = { ...repl(key), ...customListReplacementsFor(builtinTplRef(b)), ...(cs?.extraReplacements ?? {}) }
+      const mergedReplacements = withDenumireActualizata({ ...repl(key), ...customListReplacementsFor(builtinTplRef(b)), ...(cs?.extraReplacements ?? {}) })
       const mergedGroups = { ...repeatGroups, ...customGroupsFor(builtinTplRef(b)), ...(cs?.extraGroups ?? {}) }
 
       const marked = withOptionalFieldMarks(b.placeholders ?? [], mergedReplacements, mergedGroups)
@@ -760,7 +762,7 @@ export default function TemplateFiller({
     // Șabloanele cu clauze au propria verificare de completitudine în
     // ClauseSelector (butonul Generează e dezactivat până e completă) —
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
-    if (tpl.clauses?.length || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl) || isBeneficiariRealiTemplate(tpl)))) { handleGenerateDocx(tpl); return }
+    if (hasActiveClauses(tpl) || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl) || isBeneficiariRealiTemplate(tpl)))) { handleGenerateDocx(tpl); return }
 
     const { missing } = checkReadiness(shownPh(tpl.id, tpl.placeholders), { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) }, tpl.repeatGroupFields)
     if (missing.length > 0) {
@@ -1107,10 +1109,11 @@ export default function TemplateFiller({
     // Roluri de persoană „noi" (comodant, reprezentant legal…) — nu se completează automat din client ca
     // Asociat/Administrator, dar utilizatorul poate alege una dintre persoanele deja cunoscute la firmă sau
     // adăuga una nouă (vezi CustomPersonField) — poziții FIXE ({{ROL_N_CÂMP}}).
-    const customRoles = detectCustomPersonRoles(tpl.placeholders)
+    // Din `placeholders` (cele cerute în modul ales): la înființare, persoanele din blocul {{#ACTUALIZARE}} nu se cer.
+    const customRoles = detectCustomPersonRoles(placeholders)
     // Aceleași roluri noi, dar scrise fie ca bloc REPETITIV ({{#COMODANTI}}…), fie ca simplu câmp „…LISTA" —
     // câte persoane e nevoie, nu o singură poziție (vezi CustomPersonGroupField/detectCustomPersonGroups).
-    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], tpl.placeholders ?? [], tpl.repeatGroupFields)
+    const customGroups = detectCustomPersonGroups(tpl.repeatGroups ?? [], placeholders, tpl.repeatGroupFields)
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
@@ -1218,7 +1221,7 @@ export default function TemplateFiller({
 
   const renderTemplateRow = (tpl: DocTemplate) => {
     const isActive = effectiveActiveKey === tpl.id
-    const hasClauses = !!tpl.clauses?.length
+    const hasClauses = hasActiveClauses(tpl)
     const isSelected = selectedIds.has(tpl.id)
     const link = generatedLinks[tpl.id]
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
@@ -1266,7 +1269,7 @@ export default function TemplateFiller({
   const renderTemplateDetail = (tpl: DocTemplate) => {
     const isLoading = loadingIds.has(tpl.id)
     const link = generatedLinks[tpl.id]
-    const hasClauses = !!tpl.clauses?.length
+    const hasClauses = hasActiveClauses(tpl)
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const isSelected = selectedIds.has(tpl.id)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)

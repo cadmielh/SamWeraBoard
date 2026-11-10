@@ -394,3 +394,76 @@ def test_rand_din_bloc_vede_si_valorile_globale_la_acord():
     out = df.fill_docx(b.getvalue(), {"{{SOCIETATE_JUDET}}": "București - Sector 1"}, {"ASOCIATI": [{"NUME": "POPA", "SEX": "F"}]},
                        variant_ctx={"sex": {}, "asociati": 1, "tip": "PJ"})
     assert Document(io.BytesIO(out)).paragraphs[0].text == "POPA, sediul firmei în sector București - Sector 1"
+
+
+# ── {{SEPARATOR}} între elementele unui bloc și beneficiarii reali (AC Dorothea) ──
+
+def test_separator_apare_doar_intre_elemente():
+    tpl = _build_docx(["{{#ASOCIATI}}", "{{NUME}}.", "{{SEPARATOR}}și", "{{/ASOCIATI}}", "Final"])
+    out = df.fill_docx(tpl, {}, {"ASOCIATI": [{"NUME": "A"}, {"NUME": "B"}, {"NUME": "C"}]})
+    assert _read_paragraphs(out) == ["A.", "și", "B.", "și", "C.", "Final"]
+
+
+def test_separator_nu_e_camp_de_completat():
+    tpl = _build_docx(["{{#ASOCIATI}}", "{{NUME}}", "{{SEPARATOR}}și", "{{/ASOCIATI}}"])
+    assert df.list_placeholders_in_docx(tpl) == ["{{NUME}}"]
+    assert df.list_repeat_group_fields_in_docx(tpl) == {"ASOCIATI": ["NUME"]}
+
+
+def test_beneficiarul_real_se_acorda_cu_numarul_beneficiarilor():
+    tpl = _build_docx(["Beneficiarul real al societății este/sunt:",
+                       "{{#BR_ASOCIATI}}", "{{NUME}}", "{{/BR_ASOCIATI}}"])
+    groups = {"ASOCIATI": [{"NUME": "A"}, {"NUME": "B"}], "BR_ASOCIATI": [{"NUME": "A"}]}
+    ctx = {"sex": {}, "asociati": 2, "administratori": 1, "tip": "PJ"}
+    assert _read_paragraphs(df.fill_docx(tpl, {}, groups, variant_ctx=ctx))[0] == "Beneficiarul real al societății este:"
+
+
+def test_beneficiarul_real_fara_blocuri_br_ramane_dupa_asociati():
+    tpl = _build_docx(["Beneficiarul real al societății este/sunt:", "{{#ASOCIATI}}", "{{NUME}}", "{{/ASOCIATI}}"])
+    groups = {"ASOCIATI": [{"NUME": "A"}, {"NUME": "B"}], "BR_ASOCIATI": [{"NUME": "A"}]}
+    ctx = {"sex": {}, "asociati": 2, "administratori": 1, "tip": "PJ"}
+    assert _read_paragraphs(df.fill_docx(tpl, {}, groups, variant_ctx=ctx))[0] == "Beneficiarii reali ai societății sunt:"
+
+
+def test_punct_dupa_marcajul_de_final_doar_la_ultima_persoana():
+    tpl = _build_docx(["{{#ASOCIATI}}", "{{NUME}}", "{{SEPARATOR}}și", "{{/ASOCIATI}}.", "Final"])
+    out = df.fill_docx(tpl, {}, {"ASOCIATI": [{"NUME": "A"}, {"NUME": "B"}]})
+    assert _read_paragraphs(out) == ["A", "și", "B.", "Final"]
+    assert df.list_repeat_group_fields_in_docx(tpl) == {"ASOCIATI": ["NUME"]}
+
+
+def test_bloc_actualizare_cu_clauze_dispare_la_infiintare():
+    tpl = _build_docx(["Titlu", "{{#ACTUALIZARE}}", "Respectiv:", "{{#CLAUZE}}", "Denumire: A",
+                       "— text {{CAMP_A}};", "{{/CLAUZE}}", "{{/ACTUALIZARE}}", "Final"])
+    assert _read_paragraphs(df.fill_docx(tpl, {}, {"ACTUALIZARE": []})) == ["Titlu", "Final"]
+    out = _read_paragraphs(df.fill_docx(tpl, {"{{CAMP_A}}": "x"}, {"ACTUALIZARE": [{}]}, ["A"]))
+    assert out == ["Titlu", "Respectiv:", "— text x;", "Final"]
+
+
+CLAUZA_TEMPLATE = ["{{#CLAUZE}}", "Denumire: CESIUNE", "Art. {{ART_NR}} Cesiune către {{CESIONAR}}.",
+                   "Denumire: ALTA", "Art. {{ART_NR}} Alta.", "{{/CLAUZE}}",
+                   "{{#CLAUZA_CESIUNE}}", "Cesionar", "{{CESIONAR}} ____", "{{/CLAUZA_CESIUNE}}", "Semnătura asociaților"]
+
+
+def test_bloc_clauza_apare_doar_cu_clauza_bifata():
+    tpl = _build_docx(CLAUZA_TEMPLATE)
+    cu = _read_paragraphs(df.fill_docx(tpl, {"{{CESIONAR}}": "POPA"}, None, ["CESIUNE"]))
+    assert cu == ["Art. 1 Cesiune către POPA.", "Cesionar", "POPA ____", "Semnătura asociaților"]
+    fara = _read_paragraphs(df.fill_docx(tpl, {}, None, ["ALTA"]))
+    assert fara == ["Art. 1 Alta.", "Semnătura asociaților"]
+
+
+def test_bloc_clauza_nu_e_grup_iar_campurile_lui_tin_de_clauza():
+    tpl = _build_docx(CLAUZA_TEMPLATE[:6] + ["{{#CLAUZA_ALTA}}", "{{SEMNATAR}}", "{{/CLAUZA_ALTA}}"])
+    assert df.list_repeat_groups_in_docx(tpl) == []
+    clauses = {c["tag"]: c["placeholders"] for c in df.list_clauses_in_docx(tpl)}
+    assert clauses == {"CESIUNE": ["{{CESIONAR}}"], "ALTA": ["{{SEMNATAR}}"]}
+
+
+def test_beneficiarii_reali_cu_denumirea_intre_ei_si_verb():
+    tpl = _build_docx(["declar că beneficiarii reali ai societății comerciale {{SOCIETATE_DENUMIRE}} este/sunt:",
+                       "{{#BR_ASOCIATI}}", "{{NUME}}", "{{/BR_ASOCIATI}}"])
+    groups = {"ASOCIATI": [{"NUME": "A"}, {"NUME": "B"}], "BR_ASOCIATI": [{"NUME": "A"}]}
+    ctx = {"sex": {}, "asociati": 2, "administratori": 1, "tip": "PJ"}
+    out = _read_paragraphs(df.fill_docx(tpl, {"{{SOCIETATE_DENUMIRE}}": "BETA SRL"}, groups, variant_ctx=ctx))
+    assert out[0] == "declar că beneficiarul real al societății comerciale BETA SRL este:"

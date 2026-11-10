@@ -96,7 +96,7 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
     case "target_consent_required":
       return "Cabinetul ales nu a acceptat versiunea curentă a termenilor și a DPA.";
     case "target_subscription_required":
-      return "Cabinetul ales nu are abonament activ: șabloanele pregătite sunt o facilitate pentru abonați.";
+      return "Cabinetul ales e în modul citire (perioada de probă sau abonamentul a expirat): șabloanele se trimit doar cabinetelor în probă, cu abonament sau cu acces gratuit.";
     case "invalid_source_key":
       return "Formularul dedicat ales nu există.";
     case "name_required":

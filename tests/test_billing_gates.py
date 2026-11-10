@@ -45,7 +45,7 @@ UNGATED = {
     ("POST", "/billing/sync"), ("POST", "/billing/webhook"),
     ("GET", "/admin/billing/overview"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
     ("POST", "/admin/workspaces/<wid>/billing/comp"), ("POST", "/admin/workspaces/<wid>/billing/sync"),
-    # super admin: livrarea cere abonament la cabinetul ȚINTĂ (billing.has_paid_access), nu la cel al apelantului
+    # super admin: livrarea cere acces activ la cabinetul ȚINTĂ (billing.has_full_access), nu la cel al apelantului
     ("POST", "/admin/workspaces/<target>/templates"), ("GET", "/admin/workspaces/<wid>/delivered-templates"),
     ("DELETE", "/admin/workspaces/<wid>/templates/<tid>"),
 }

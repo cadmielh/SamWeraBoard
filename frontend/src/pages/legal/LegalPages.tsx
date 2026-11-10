@@ -32,8 +32,8 @@ export function TermeniPage() {
       <P>Dacă folosiți funcțiile Google Drive (alegerea unui act sau a unui șablon, salvarea documentelor generate), fișierele alese sau create rămân în contul Google al utilizatorului și sunt supuse termenilor Google. Furnizorul are acces doar la fișierul pe care îl alegeți pentru prelucrare, nu la restul Drive-ului.</P>
       <H>4. Șabloane pregătite de Furnizor</H>
       <UL>
-        <li>Cabinetele cu abonament activ pot cere Furnizorului să le pregătească în aplicație propriile documente ca șabloane (marcarea câmpurilor completate
-          automat și a articolelor opționale). Pregătirea este o facilitate pentru abonați; în funcție de numărul și complexitatea șabloanelor, serviciul poate fi
+        <li>Cabinetele cu abonament activ sau în perioada de probă pot cere Furnizorului să le pregătească în aplicație propriile documente ca șabloane (marcarea câmpurilor completate
+          automat și a articolelor opționale). Pregătirea este o facilitate pentru abonați și pentru cabinetele în perioada de probă; în funcție de numărul și complexitatea șabloanelor, serviciul poate fi
           contracost, iar detaliile (preț, termen, număr de documente) se stabilesc la cerere, înainte de începerea lucrului.</li>
         <li>Cabinetul trimite documentele goale sau anonimizate, fără date personale ale clienților săi, cu locurile pentru datele preluate din aplicație marcate clar. Trimiterea unui
           document constituie instrucțiunea Cabinetului de a-l prelucra în acest scop. Dacă un document conține totuși date personale, Furnizorul îl prelucrează
@@ -42,7 +42,7 @@ export function TermeniPage() {
           copii ale documentului.</li>
         <li>Pregătirea este un serviciu tehnic: Furnizorul nu verifică și nu garantează conținutul juridic al documentelor. Cabinetul răspunde de conținutul
           șabloanelor, de verificarea documentelor generate din ele și de actualizarea lor la schimbările legislative.</li>
-        <li>La încetarea abonamentului, șabloanele livrate rămân în spațiul de lucru, în același regim ca restul datelor (punctul 8).</li>
+        <li>La încetarea abonamentului sau a perioadei de probă, șabloanele livrate rămân în spațiul de lucru, în același regim ca restul datelor (punctul 8).</li>
       </UL>
       <H>5. Datele clienților Cabinetului</H>
       <P>Pentru datele personale ale clienților introduse în aplicație (inclusiv CNP și date din acte de identitate), Cabinetul este operator, iar

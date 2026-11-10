@@ -4,7 +4,7 @@ import {
   detectCustomPersonRoles, customPersonReplacements, roleLabel, groupMissingFields,
   visibleManualPlaceholders, MOD_EXERCITARE_MANDATE,
   actualizareGroups, withoutActualizareFields, defaultActMode,
-  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, customRolePool, HAND_FILL_BLANK, caenFieldKind,
+  detectCustomPersonGroups, persoanaToSingularMap, isReprezentantRole, customRolePool, HAND_FILL_BLANK, caenFieldKind, beneficiariRealiGroups, activeClauses, withDenumireActualizata,
 } from './placeholders'
 import type { Client, Persoana } from '../types'
 import { CAEN_CODES } from '../data/caen'
@@ -531,5 +531,49 @@ describe('durata societății și mandatele administratorilor', () => {
       Administratori: ['Durata mandatului'],
       'Administrator 2': ['Data numirii'],
     })
+  })
+})
+
+describe('beneficiarii reali din actul constitutiv (peste 25%)', () => {
+  const as = (NUME: string, COTA_PARTICIPARE: string) => ({ NUME, COTA_PARTICIPARE })
+  const admin = [{ NUME: 'ADM' }]
+
+  it('doar asociații cu strict peste 25%, controlul direct', () => {
+    const g = beneficiariRealiGroups([as('A', '50%'), as('B', '25%'), as('C', '25%')], admin)
+    expect(g.BR_ASOCIATI.map(a => a.NUME)).toEqual(['A'])
+    expect(g).toMatchObject({ BR_ADMINISTRATORI: [], BR_DIRECT: [{}], BR_CONDUCERE: [] })
+  })
+
+  it('niciun asociat peste 25%: administratorii, prin conducerea de nivel superior', () => {
+    const g = beneficiariRealiGroups(['A', 'B', 'C', 'D'].map(n => as(n, '25%')), admin)
+    expect(g).toEqual({ BR_ASOCIATI: [], BR_ADMINISTRATORI: admin, BR_DIRECT: [], BR_CONDUCERE: [{}] })
+  })
+
+  it('o cotă necompletată: rămân toți asociații (cota apare ca lipsă)', () => {
+    const g = beneficiariRealiGroups([as('A', '10%'), as('B', '')], admin)
+    expect(g.BR_ASOCIATI.map(a => a.NUME)).toEqual(['A', 'B'])
+    expect(g.BR_DIRECT).toEqual([{}])
+  })
+})
+
+describe('clauzele din blocul {{#ACTUALIZARE}}', () => {
+  const clauses = [{ placeholders: ['{{SEDIU_NOU}}'] }, { placeholders: [] }]
+  it('dispar la înființare când toate câmpurile lor sunt în bloc', () => {
+    expect(activeClauses(clauses, { ACTUALIZARE: ['SEDIU_NOU', 'CAMP_NUMAR_HOTARARE'] }, 'infiintare')).toEqual([])
+    expect(activeClauses(clauses, { ACTUALIZARE: ['SEDIU_NOU'] }, 'actualizare')).toBe(clauses)
+  })
+  it('rămân când clauzele sunt în afara blocului sau nu au câmpuri', () => {
+    expect(activeClauses(clauses, { ACTUALIZARE: ['CAMP_NUMAR_HOTARARE'] }, 'infiintare')).toBe(clauses)
+    expect(activeClauses([{ placeholders: [] }], { ACTUALIZARE: ['X'] }, 'infiintare')).toHaveLength(1)
+  })
+})
+
+describe('denumirea din actul constitutiv rescris', () => {
+  const r = { '{{SOCIETATE_DENUMIRE}}': 'VECHE SRL', '{{SOCIETATE_DENUMIRE_ACTUALIZATA}}': 'VECHE SRL' }
+  it('cea nouă, când e bifată schimbarea denumirii', () => {
+    expect(withDenumireActualizata({ ...r, '{{DENUMIRE_NOUA}}': ' NOUA SRL ' })).toMatchObject({ '{{SOCIETATE_DENUMIRE}}': 'VECHE SRL', '{{SOCIETATE_DENUMIRE_ACTUALIZATA}}': 'NOUA SRL' })
+  })
+  it('altfel, cea din fișă', () => {
+    expect(withDenumireActualizata(r)).toBe(r)
   })
 })

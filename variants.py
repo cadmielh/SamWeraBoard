@@ -118,6 +118,10 @@ _NUMBER_WORD_RE = re.compile(rf"(?<!\w)({_WORD})(?!\w)")
 _BENEFICIAR_REAL_RE = re.compile(
     r"(?<!\w)(beneficiarul)\s+(real)(?:\s+(al))?(?!\w)"
     r"|(?<!\w)(beneficiarii)\s+(reali)(?:\s+(ai))?(?!\w)", re.IGNORECASE)
+# „beneficiarul real al societății (comerciale {{SOCIETATE_DENUMIRE}}) este/sunt” — perechea de verbe (grupurile 1-2),
+# ancorată de fraza dinainte; între ele, cel mult câteva cuvinte fără „/” (denumirea societății, încă etichetă aici).
+_BENEFICIAR_VERB_RE = re.compile(
+    r"(?<!\w)beneficiar(?:ul|ii)\s+reali?(?:\s+[^\s/]+){0,5}?\s+(este)\s*/\s*(sunt)(?!\w)", re.IGNORECASE)
 
 # „este/sunt” imediat ÎNAINTEA substantivului de rol („sunt asociații ……”, „este asociatul ……”) — spre
 # deosebire de un „este/sunt” oarecare (vezi avertismentul de la _STANDALONE_ROLE_NUMBER despre verbe prea
@@ -332,6 +336,15 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
                     chosen = _match_case(m.group(0), m.group(1 + i_rep))
                 add(Choice(m.start(), m.end(), chosen, "number"))
 
+    # 1e) „beneficiarul real al societății este/sunt” — numărul beneficiarilor reali (vezi _BENEFICIAR_VERB_RE),
+    # doar în șabloanele cu blocuri de beneficiari reali; altfel „este/sunt” rămâne la perechea generică (asociați).
+    if ctx.get("beneficiari_reali") is not None:
+        i_br = by_count(ctx.get("beneficiari_reali"))
+        for m in _BENEFICIAR_VERB_RE.finditer(text):
+            if i_br is None or not free(m.start(1), m.end(2)):
+                continue
+            add(Choice(m.start(1), m.end(2), _match_case(m.group(1), ("este", "sunt")[i_br]), "number"))
+
     # 2) perechi „a/b”
     for m in _PAIR.finditer(text):
         if not free(m.start(), m.end()):
@@ -434,7 +447,8 @@ def find_choices(text: str, ctx: dict, replacements: dict[str, str],
                 continue
             is_singular_written = m.group(1) is not None
             has_article = (m.group(3) if is_singular_written else m.group(6)) is not None
-            i = by_count(ctx.get("asociati"))
+            br = ctx.get("beneficiari_reali")
+            i = by_count(br if br is not None else ctx.get("asociati"))
             if i is None or (i == 0) == is_singular_written:
                 continue      # număr necunoscut, sau deja forma corectă — nimic de schimbat
             if i == 0:

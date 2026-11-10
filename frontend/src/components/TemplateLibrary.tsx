@@ -126,7 +126,7 @@ const GUIDE_SECTIONS = [
   {
     title: 'Entitate / Societate',
     items: [
-      '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_JUDET}}', '{{SOCIETATE_FORMA_JURIDICA}}',
+      '{{SOCIETATE_DENUMIRE}}', '{{SOCIETATE_DENUMIRE_ACTUALIZATA}}', '{{SOCIETATE_CIF}}', '{{SOCIETATE_NR_REG}}', '{{SOCIETATE_SEDIU}}', '{{SOCIETATE_JUDET}}', '{{SOCIETATE_FORMA_JURIDICA}}',
       '{{ASOCIATI_LISTA}} / {{ADMINISTRATORI_LISTA}} (numele pe o singură linie: „A, B și C”)',
       '{{CAMP_ORICE_NUME}} — câmp completat manual la generare; numele apare ca titlu al câmpului',
       '{{CAMP_NUMAR_HOTARARE}} + {{CAMP_DATA_HOTARARE}} — numărul și data unui document apar alăturate în formular: prefixele NUMAR_ și DATA_, cu același sufix (ex. {{CAMP_NUMAR_CONTRACT}} / {{CAMP_DATA_CONTRACT}})',
@@ -160,6 +160,10 @@ const GUIDE_SECTIONS = [
       '{{INDEX}} — numărul de ordine (1, 2, 3…) în cadrul blocului',
       '{{CAPITAL_SOCIAL}}, {{PARTI_SOCIALE}} — doar în {{#ASOCIATI}}, calculate din cota asociatului',
       '{{#CAEN_SECUNDARE}} {{CAEN}} {{/CAEN_SECUNDARE}} — un rând per activitate secundară CAEN (nelimitat); dacă nu există niciuna, tot blocul dispare din document',
+      '{{SEPARATOR}}și — rând în interiorul blocului care apare doar ÎNTRE elemente (ex. „și” între persoane), nu și după ultimul',
+      '{{/ASOCIATI}}. — punctul (sau „;”) după marcajul de final se pune doar după ultimul element',
+      '{{#BR_ASOCIATI}} ... {{/BR_ASOCIATI}} — beneficiarii reali: asociații cu peste 25%; dacă nu e niciunul, {{#BR_ADMINISTRATORI}} ... {{/BR_ADMINISTRATORI}} (administratorii). {{#BR_DIRECT}} / {{#BR_CONDUCERE}} — textul modalității de control potrivit cazului',
+      '{{#CLAUZA_CESIUNE_PARTI_SOCIALE}} ... {{/CLAUZA_CESIUNE_PARTI_SOCIALE}} — text în afara listei de clauze care apare doar când clauza respectivă e bifată (ex. semnătura cesionarului); după CLAUZA_ vine numele clauzei, cu majuscule și „_” în loc de spații',
     ],
   },
   {

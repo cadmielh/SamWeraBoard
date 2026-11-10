@@ -3,6 +3,7 @@
   "tip": "PJ",
   "replacements": {
    "{{SOCIETATE_DENUMIRE}}": "ALFA SOFT SRL",
+   "{{SOCIETATE_DENUMIRE_ACTUALIZATA}}": "ALFA SOFT SRL",
    "{{SOCIETATE_CIF}}": "12345678",
    "{{SOCIETATE_NR_REG}}": "J12/345/2020",
    "{{SOCIETATE_SEDIU}}": "Cluj, Cluj-Napoca, Str. Memorandumului, nr. 1, ap. 3",
@@ -12,6 +13,7 @@
    "{{SOCIETATE_EUID}}": "ROONRC.J12/345/2020",
    "{{SOCIETATE_FORMA_JURIDICA}}": "SRL",
    "{{CAPITAL_SOCIAL_TOTAL}}": "200",
+   "{{CAPITAL_SOCIAL_ACTUAL}}": "200",
    "{{PARTI_SOCIALE_TOTALE}}": "20",
    "{{VALOARE_PARTE_SOCIALA}}": "10",
    "{{VALOARE_PARTE_SOCIALA_LITERE}}": "zece",
@@ -157,7 +159,37 @@
      "COD": "7020",
      "DENUMIRE": "Activităţi de consultanţă în afaceri și management"
     }
-   ]
+   ],
+   "BR_ASOCIATI": [
+    {
+     "NUME": "POPA",
+     "PRENUME": "ANA",
+     "CNP": "2900315123456",
+     "ADRESA": "Mun. Cluj-Napoca, Str. Lalelelor nr. 4, ap. 2",
+     "JUDET": "Cluj",
+     "DATA_NASTERII": "15.03.1990",
+     "LOCUL_NASTERII": "Mun. Cluj-Napoca, jud. Cluj",
+     "CETATENIA": "română",
+     "SERIE_NUMAR": "XB 123456",
+     "EMISA_DE": "SPCLEP Cluj-Napoca",
+     "VALABILA_DE_LA": "10.01.2020",
+     "VALABILA_PANA_LA": "15.03.2030",
+     "COTA_PARTICIPARE": "100%",
+     "SERIE_ACT": "XB",
+     "NR_ACT": "123456",
+     "SERIE": "XB",
+     "CETATENIA_ACORD": "română",
+     "CAPITAL_SOCIAL": "200",
+     "PARTI_SOCIALE": "20",
+     "SEX": "F",
+     "SEX_REF": "ASOCIAT_1"
+    }
+   ],
+   "BR_ADMINISTRATORI": [],
+   "BR_DIRECT": [
+    {}
+   ],
+   "BR_CONDUCERE": []
   },
   "ctx": {
    "sex": {
@@ -174,6 +206,7 @@
   "tip": "PJ",
   "replacements": {
    "{{SOCIETATE_DENUMIRE}}": "BETA CONSULT SRL",
+   "{{SOCIETATE_DENUMIRE_ACTUALIZATA}}": "BETA CONSULT SRL",
    "{{SOCIETATE_CIF}}": "12345678",
    "{{SOCIETATE_NR_REG}}": "J12/345/2020",
    "{{SOCIETATE_SEDIU}}": "București - Sector 1, București, Calea Victoriei, nr. 100",
@@ -183,6 +216,7 @@
    "{{SOCIETATE_EUID}}": "ROONRC.J12/345/2020",
    "{{SOCIETATE_FORMA_JURIDICA}}": "SRL",
    "{{CAPITAL_SOCIAL_TOTAL}}": "1.000",
+   "{{CAPITAL_SOCIAL_ACTUAL}}": "1.000",
    "{{PARTI_SOCIALE_TOTALE}}": "100",
    "{{VALOARE_PARTE_SOCIALA}}": "10",
    "{{VALOARE_PARTE_SOCIALA_LITERE}}": "zece",
@@ -415,7 +449,60 @@
      "COD": "7020",
      "DENUMIRE": "Activităţi de consultanţă în afaceri și management"
     }
-   ]
+   ],
+   "BR_ASOCIATI": [
+    {
+     "NUME": "IONESCU",
+     "PRENUME": "MIHAI",
+     "CNP": "1850720123457",
+     "ADRESA": "Mun. București, Sector 3, Bd. Unirii nr. 20",
+     "JUDET": "București",
+     "DATA_NASTERII": "20.07.1985",
+     "LOCUL_NASTERII": "Mun. București, Sector 3",
+     "CETATENIA": "română",
+     "SERIE_NUMAR": "RX 654321",
+     "EMISA_DE": "SPCEP Sector 3",
+     "VALABILA_DE_LA": "01.02.2021",
+     "VALABILA_PANA_LA": "20.07.2031",
+     "COTA_PARTICIPARE": "60%",
+     "SERIE_ACT": "RX",
+     "NR_ACT": "654321",
+     "SERIE": "RX",
+     "CETATENIA_ACORD": "român",
+     "CAPITAL_SOCIAL": "600",
+     "PARTI_SOCIALE": "60",
+     "SEX": "M",
+     "SEX_REF": "ASOCIAT_1"
+    },
+    {
+     "NUME": "DUMITRU",
+     "PRENUME": "ELENA",
+     "CNP": "2920210123458",
+     "ADRESA": "Or. Voluntari, Str. Pădurii nr. 7",
+     "JUDET": "Ilfov",
+     "DATA_NASTERII": "10.02.1992",
+     "LOCUL_NASTERII": "Or. Voluntari, jud. Ilfov",
+     "CETATENIA": "română",
+     "SERIE_NUMAR": "IF 112233",
+     "EMISA_DE": "SPCLEP Voluntari",
+     "VALABILA_DE_LA": "05.05.2022",
+     "VALABILA_PANA_LA": "10.02.2032",
+     "COTA_PARTICIPARE": "40%",
+     "SERIE_ACT": "IF",
+     "NR_ACT": "112233",
+     "SERIE": "IF",
+     "CETATENIA_ACORD": "română",
+     "CAPITAL_SOCIAL": "400",
+     "PARTI_SOCIALE": "40",
+     "SEX": "F",
+     "SEX_REF": "ASOCIAT_2"
+    }
+   ],
+   "BR_ADMINISTRATORI": [],
+   "BR_DIRECT": [
+    {}
+   ],
+   "BR_CONDUCERE": []
   },
   "ctx": {
    "sex": {
@@ -447,6 +534,7 @@
    "{{VALABILA_PANA_LA}}": "15.03.2030",
    "{{CETATENIA_ACORD}}": "română",
    "{{SOCIETATE_DENUMIRE}}": "POPA ANA ÎNTREPRINDERE INDIVIDUALĂ",
+   "{{SOCIETATE_DENUMIRE_ACTUALIZATA}}": "POPA ANA ÎNTREPRINDERE INDIVIDUALĂ",
    "{{SOCIETATE_CIF}}": "87654321",
    "{{SOCIETATE_NR_REG}}": "F12/678/2021",
    "{{SOCIETATE_SEDIU}}": "Cluj, Cluj-Napoca, Str. Lalelelor, nr. 4",

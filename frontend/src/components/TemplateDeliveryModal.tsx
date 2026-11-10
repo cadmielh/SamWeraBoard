@@ -86,8 +86,8 @@ export default function TemplateDeliveryModal({ template, sourceWorkspaceId, bui
       </div>
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '.875rem' }}>
         <p style={{ fontSize: '.8rem', color: 'var(--s500)', margin: 0 }}>
-          Cabinetul primește o copie, fără autorul și titlul din proprietățile documentului. Doar cabinetele cu abonament
-          pot primi șabloane, iar o livrare nu suprascrie niciodată un șablon existent.
+          Cabinetul primește o copie, fără autorul și titlul din proprietățile documentului. Doar cabinetele în perioada de probă, cu abonament
+          sau cu acces gratuit pot primi șabloane, iar o livrare nu suprascrie niciodată un șablon existent.
         </p>
 
         <div className="field">

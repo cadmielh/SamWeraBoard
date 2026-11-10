@@ -183,7 +183,8 @@ export function detectCustomPersonRoles(placeholders: string[]): { role: string;
 
 // Formă de plural a tag-urilor de bloc repetitiv deja completate automat din client (vezi buildRepeatGroups
 // mai jos) — restul găsite de list_repeat_groups_in_docx (backend) sunt roluri CUSTOM (ex. COMODANTI).
-const KNOWN_AUTO_GROUP_TAGS = new Set(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF', 'CAEN_SECUNDARE', 'ACTUALIZARE'])
+const KNOWN_AUTO_GROUP_TAGS = new Set(['ASOCIATI', 'ADMINISTRATORI', 'MEMBRU_IF', 'CAEN_SECUNDARE', 'ACTUALIZARE',
+  'BR_ASOCIATI', 'BR_ADMINISTRATORI', 'BR_DIRECT', 'BR_CONDUCERE'])
 
 /** Bloc {{#ACTUALIZARE}}…{{/ACTUALIZARE}}: text care apare doar la actualizarea unui act, nu la înființare (ex.
  * „ADAPTAT HOTĂRÂRII NR. … DIN …”, „- actualizat la … -”). Nu e o listă de persoane: se trimite cu un element gol
@@ -202,6 +203,29 @@ export function withoutActualizareFields(placeholders: string[], groupFields: Re
   const doarLaActualizare = mode === 'infiintare' ? groupFields?.[ACTUALIZARE_GROUP] : undefined
   if (!doarLaActualizare?.length) return placeholders
   return placeholders.filter(ph => !doarLaActualizare.includes(ph.replace(/^\{\{|\}\}$/g, '')))
+}
+
+/** {{SOCIETATE_DENUMIRE_ACTUALIZATA}}: denumirea nouă din clauza „Schimbare denumire” ({{DENUMIRE_NOUA}}), dacă e bifată
+ * și completată; altfel cea din fișă. Fișa are încă denumirea veche la generare ({{SOCIETATE_DENUMIRE}} rămâne cea veche). */
+export function withDenumireActualizata(r: Record<string, string>): Record<string, string> {
+  const noua = r['{{DENUMIRE_NOUA}}']?.trim()
+  return noua ? { ...r, '{{SOCIETATE_DENUMIRE_ACTUALIZATA}}': noua } : r
+}
+
+/** Câmp luat din fișa firmei (denumire, sediu, capital actual…): într-o clauză se arată ca informație, nu ca rubrică
+ * de completat — clauza cere doar ce e nou. Fără valoare în fișă, rămâne rubrică (vezi ClauseSelector). */
+const FISA_FIRMA_KEYS = new Set(['CAPITAL_SOCIAL_TOTAL', 'CAPITAL_SOCIAL_ACTUAL', 'PARTI_SOCIALE_TOTALE', 'VALOARE_PARTE_SOCIALA', 'VALOARE_PARTE_SOCIALA_LITERE'])
+export const isFisaFirmaField = (key: string): boolean => key.startsWith('SOCIETATE_') || FISA_FIRMA_KEYS.has(key)
+
+/** Clauzele care contează pentru modul ales: la înființare, nicio clauză dacă toată lista de clauze stă în blocul
+ * {{#ACTUALIZARE}} (ex. „…se actualizează și rescrie…, respectiv: {{#CLAUZE}}…” din AC-ul Dorotheei) — ar dispărea
+ * oricum din document, iar o clauză bifată și incompletă ar bloca generarea. Recunoscut după câmpurile clauzelor,
+ * toate în blocul ACTUALIZARE; clauzele fără niciun câmp nu se pot verifica așa și rămân afișate. */
+export function activeClauses<C extends { placeholders: string[] }>(clauses: C[] | undefined, groupFields: Record<string, string[]> | undefined, mode: ActMode): C[] {
+  if (!clauses?.length || mode !== 'infiintare') return clauses ?? []
+  const doarLaActualizare = new Set(groupFields?.[ACTUALIZARE_GROUP] ?? [])
+  const fields = clauses.flatMap(c => c.placeholders).map(ph => ph.replace(/^\{\{|\}\}$/g, ''))
+  return fields.length > 0 && fields.every(f => doarLaActualizare.has(f)) ? [] : clauses
 }
 
 /** „REPREZENTANT_COMODATAR” → true — un rol construit generic de blanks.py (vezi _role_override/entity_roles)
@@ -307,6 +331,8 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
   // Câmpuri societate din client
   if (client) {
     out['{{SOCIETATE_DENUMIRE}}'] = client.denumire ?? ''
+    // Denumirea de după hotărâre (actul constitutiv rescris): cea nouă, dacă e bifată schimbarea — vezi withDenumireActualizata
+    out['{{SOCIETATE_DENUMIRE_ACTUALIZATA}}'] = client.denumire ?? ''
     // Firmă în înființare: CUI-ul și J-ul nu există încă — loc de completat de mână, nu „-” sau etichetă rămasă.
     const deCompletat = client.inInfiintare ? HAND_FILL_BLANK : ''
     out['{{SOCIETATE_CIF}}'] = client.codFiscal?.trim() || deCompletat
@@ -325,6 +351,8 @@ export function buildReplacements({ idFields, client, scannedPersons }: BuildOpt
     const valoareParte = valoareParteSociala(client)
     if (client.capitalSocial != null) {
       out['{{CAPITAL_SOCIAL_TOTAL}}'] = formatNumber(client.capitalSocial)
+      // Același capital, numit „actual” în clauzele de majorare (de la capitalul actual la cel nou)
+      out['{{CAPITAL_SOCIAL_ACTUAL}}'] = formatNumber(client.capitalSocial)
       out['{{PARTI_SOCIALE_TOTALE}}'] = formatNumber(client.capitalSocial / valoareParte)
     }
     out['{{VALOARE_PARTE_SOCIALA}}'] = formatNumber(valoareParte)
@@ -542,11 +570,30 @@ export function buildRepeatGroups({ client, scannedPersons }: BuildOptions): Rec
   if (client?.tipClient === 'PF') return { CAEN_SECUNDARE: caenSecundare.map(caenRow) }
   const asociati = resolvePersons(client, scannedPersons, 'asociat')
   const admini = resolvePersons(client, scannedPersons, 'administrator')
+  // SEX / SEX_REF: sexul fiecărei persoane, folosit de server la variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
+  const asociatiRows = asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, valoareParte: valoareParteSociala(client), includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` }))
+  const adminRows = admini.map((p, i) => ({ ...persoanaToSingularMap(p), ...mandatFields(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` }))
   return {
-    // SEX / SEX_REF: sexul fiecărei persoane, folosit de server la variantele „numit/ă”, „Domnul/Doamna” din blocul ei.
-    ASOCIATI: asociati.map((p, i) => ({ ...persoanaToSingularMap(p, { capitalSocialTotal: client?.capitalSocial ?? null, valoareParte: valoareParteSociala(client), includeCota: true }), SEX: personSex(p) ?? '', SEX_REF: `ASOCIAT_${i + 1}` })),
-    ADMINISTRATORI: admini.map((p, i) => ({ ...persoanaToSingularMap(p), ...mandatFields(p), SEX: personSex(p) ?? '', SEX_REF: `ADMINISTRATOR_${i + 1}` })),
+    ASOCIATI: asociatiRows,
+    ADMINISTRATORI: adminRows,
     CAEN_SECUNDARE: caenSecundare.map(caenRow),
+    ...beneficiariRealiGroups(asociatiRows, adminRows),
+  }
+}
+
+/** Blocurile {{#BR_…}} din actul constitutiv (vezi doc_filler.BENEFICIARI_REALI_GROUPS): beneficiari reali sunt asociații
+ * cu peste 25% din capital (Legea 129/2019, art. 4 alin. (2) lit. a) pct. 1); dacă nu e niciunul, administratorii
+ * (conducerea de nivel superior, pct. 2). O cotă necompletată nu se poate compara: rămân toți asociații, iar cota
+ * apare ca lipsă la verificare. BR_DIRECT/BR_CONDUCERE păstrează (un element gol) sau șterg textul modalității de control. */
+export function beneficiariRealiGroups(asociati: Record<string, string>[], admini: Record<string, string>[]): Record<string, Record<string, string>[]> {
+  const cotaLipsa = asociati.some(a => !(a.COTA_PARTICIPARE ?? '').trim())
+  const peste25 = cotaLipsa ? asociati : asociati.filter(a => parsePercent(a.COTA_PARTICIPARE) > 25)
+  const conducere = peste25.length === 0
+  return {
+    BR_ASOCIATI: peste25,
+    BR_ADMINISTRATORI: conducere ? admini : [],
+    BR_DIRECT: conducere ? [] : [{}],
+    BR_CONDUCERE: conducere ? [{}] : [],
   }
 }
 
@@ -699,6 +746,7 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
   if (inner === 'CAEN_SECUNDARE_COD') return { group: 'Societate', field: 'Coduri CAEN secundare' }
 
   if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
+  if (inner === 'CAPITAL_SOCIAL_ACTUAL') return { group: 'Societate', field: 'Capital social actual' }
   if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }
   if (inner === 'VALOARE_PARTE_SOCIALA') return { group: 'Societate', field: 'Valoarea unei părți sociale' }
   if (inner === 'VALOARE_PARTE_SOCIALA_LITERE') return { group: 'Societate', field: 'Valoarea unei părți sociale, în litere' }
