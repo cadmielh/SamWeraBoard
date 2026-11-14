@@ -728,6 +728,17 @@ def _append_dash_leader_tab(paragraph, tab_pos) -> None:
             run._r.insert(0, copy.deepcopy(rpr))
 
 
+def _collapse_double_percent(doc: Document) -> None:
+    """„{{PROCENT_CEDAT}}%” cu valoarea „60%” → „60%”, nu „60%%”: un procent poate fi scris în șablon cu sau fără „%”
+    după etichetă, iar valoarea îl are deja. Doar în paragrafele completate (vezi _CHANGED_ATTR)."""
+    for p in _all_paragraphs(doc):
+        if p._p.get(_CHANGED_ATTR) is None:
+            continue
+        text = "".join(r.text for r in p.runs)
+        for i in reversed([m.start() for m in re.finditer(r"%(?=%)", text)]):
+            variants._replace_span(p, i, i + 1, "")
+
+
 def _fix_dash_fill_tails(doc: Document) -> None:
     """Șabloanele „stil notarial" (Act Constitutiv, Declarații) umplu manual
     restul rândului cu liniuțe literale („...text.------------------"), ca la
@@ -875,6 +886,8 @@ def fill_docx(
         _replace_and_mark(part.paragraphs, replacements)
 
     _clean_unresolved_numbered_positions(doc, replacements, protected_paragraphs, capacity_warnings)
+
+    _collapse_double_percent(doc)
 
     # După ce toate etichetele/locurile libere au fost completate (deci
     # lungimea finală a textului e cunoscută) — vezi _fix_dash_fill_tails.

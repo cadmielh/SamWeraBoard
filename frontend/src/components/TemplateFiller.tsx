@@ -29,6 +29,8 @@ import DriveFolderPicker from './DriveFolderPicker'
 import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
 import ClauseSelector from './ClauseSelector'
+import CesiunePanel from './CesiunePanel'
+import { calculCesiune, hasCesiune, notaAplicata, propunereCesiune } from '../lib/cesiune'
 import type { ClauseSelectorValue } from './ClauseSelector'
 import DeclaratieActivitateFiller from './DeclaratieActivitateFiller'
 import type { DeclaratieActivitateFillerHandle, DeclaratieFormValue } from './DeclaratieActivitateFiller'
@@ -245,12 +247,16 @@ export default function TemplateFiller({
   // avea un tag repetitiv ȘI unul „…LISTA”, dar o SINGURĂ listă de persoane aleasă, pentru amândouă). Nu se
   // salvează la fișa clientului — doar pentru acest document.
   const [customGroupPicks, setCustomGroupPicks] = useState<Record<string, Record<string, Persoana[]>>>({})
+  // Cesiunea de părți sociale (CEDENT_1 → CESIONAR_1), per șablon: doar numărul de părți se introduce, restul se calculează
+  // (vezi lib/cesiune.ts); `dinFisa` — calculul din fișa actuală, deși ea a fost deja actualizată după această cesiune.
+  const [cesiuneState, setCesiuneState] = useState<Record<string, { parti: string; dinFisa: boolean }>>({})
   // Persoanele alese țin de firma curentă (ex. administratorul care semnează anexa) — la alt client se aleg din nou
   const [picksForClient, setPicksForClient] = useState(client?.id)
   if (picksForClient !== client?.id) {
     setPicksForClient(client?.id)
     setCustomPersonPicks({})
     setCustomGroupPicks({})
+    setCesiuneState({})
   }
   type TplWithRoles = { id: string; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]>; placeholders?: string[] }
   // Un BuiltinTemplate n-are `id` (identificat prin `key`, vezi builtinKey) — formă minimă pentru
@@ -284,7 +290,30 @@ export default function TemplateFiller({
     }
     return out
   }
-  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...customPersonReplacementsFor(id) })
+  const cesiuneFor = (id: string) => {
+    const cedent = customPersonPicks[id]?.CEDENT_1 ?? null
+    const cesionar = customPersonPicks[id]?.CESIONAR_1 ?? null
+    const st = cesiuneState[id] ?? { parti: '', dinFisa: false }
+    const parti = Number(st.parti) || 0
+    const nota = notaAplicata(client, cedent, parti)
+    const calc = calculCesiune(client, cedent, cesionar, parti, nota && !st.dinFisa ? nota.inainte : undefined)
+    return { cedent, cesionar, st, parti, nota, calc }
+  }
+  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...customPersonReplacementsFor(id), ...cesiuneFor(id).calc.values })
+  const renderCesiunePanel = (id: string) => {
+    const { cedent, cesionar, st, nota, calc } = cesiuneFor(id)
+    const set = (patch: Partial<{ parti: string; dinFisa: boolean }>) => setCesiuneState(prev => ({ ...prev, [id]: { ...st, ...patch } }))
+    return <CesiunePanel cedent={cedent} cesionar={cesionar} parti={st.parti} onParti={v => set({ parti: v })} calc={calc}
+      nota={nota} dinFisa={st.dinFisa} onDinFisa={v => set({ dinFisa: v })} />
+  }
+  // Actualizarea fișei după cesiune — doar dacă nu a fost deja aplicată (nota din fișă), ca să nu se aplice de două ori.
+  const cesiuneProposalFor = (tpl: DocTemplate, selectedClauses?: string[]): ClientPatchProposal[] => {
+    if (!hasCesiune(tpl.placeholders)) return []
+    if (tpl.clauses?.length && !tpl.clauses.some(c => selectedClauses?.includes(c.tag) && hasCesiune(c.placeholders))) return []
+    const { cedent, cesionar, parti, nota, calc } = cesiuneFor(tpl.id)
+    if (!cedent || !cesionar || nota || calc.error || !(parti > 0)) return []
+    return [propunereCesiune(cedent, cesionar, parti, calc.totalParti)]
+  }
   // Etichetele cerute pentru alegerile curente — ex. modul de exercitare a mandatelor doar de la 2 reprezentanți legali
   // și câmpurile din blocul {{#ACTUALIZARE}} (numărul/data hotărârii) doar la actualizare
   const groupFieldsOf = (id: string) => (listTemplates.find(t => t.id === id) ?? builtins.find(b => builtinKey(b) === id))?.repeatGroupFields
@@ -501,7 +530,7 @@ export default function TemplateFiller({
         await _logGeneration(tpl, outputName)
         maybePromptSaveClient()
       }
-      offerClientPatches(cs)
+      offerClientPatches(cs, cesiuneProposalFor(tpl, cs?.selectedClauses))
       if (decl) offerClientPatchList(decl.clientPatches)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
@@ -683,9 +712,10 @@ export default function TemplateFiller({
   // După o generare reușită, propune (nu aplică direct) actualizarea
   // profilului clientului cu tot ce a colectat ClauseSelector din clauzele
   // bifate — userul alege ce anume se scrie în Firestore.
-  const offerClientPatches = (cs: ClauseSelectorValue | undefined) => {
-    if (!client?.id || !cs) return
-    const proposals = Object.entries(cs.clientPatches).map(([key, p]) => ({ key, ...p }))
+  const offerClientPatches = (cs: ClauseSelectorValue | undefined, extra: ClientPatchProposal[] = []) => {
+    if (!client?.id || (!cs && extra.length === 0)) return
+    const proposals = [...Object.entries(cs?.clientPatches ?? {}).map(([key, p]) => ({ key, ...p })),
+      ...extra.map((p, i) => ({ key: `extra-${i}`, ...p }))]
     if (proposals.length === 0) return
     setPendingClientPatches(proposals)
     setCheckedPatchKeys(new Set(proposals.map(p => p.key)))
@@ -1118,6 +1148,7 @@ export default function TemplateFiller({
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
         {renderTemplateInputs(tpl, manualFields, customRoles, customGroups)}
+        {hasCesiune(placeholders) && renderCesiunePanel(tpl.id)}
         {/* Progress bar row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
           <div style={{ flex: 1, height: 4, background: 'var(--s200)', borderRadius: 99, overflow: 'hidden' }}>
@@ -1346,7 +1377,13 @@ export default function TemplateFiller({
             <ClauseSelector
               renderPersons={phs => {
                 const roles = detectCustomPersonRoles(phs)
-                return roles.length > 0 && renderCustomPersonInputs(tpl.id, roles)
+                // Panoul de cesiune stă în clauza în care se cedează părțile (nu și în retragere/cooptare, care doar le preia)
+                return (
+                  <>
+                    {roles.length > 0 && renderCustomPersonInputs(tpl.id, roles)}
+                    {phs.includes('{{NR_PARTI_CEDATE}}') && renderCesiunePanel(tpl.id)}
+                  </>
+                )
               }}
               key={`${tpl.id}:${client?.id ?? 'none'}`}
               clauses={tpl.clauses!}

@@ -747,6 +747,12 @@ export function parsePlaceholder(ph: string): { group: string; field: string } {
 
   if (inner === 'CAPITAL_SOCIAL_TOTAL') return { group: 'Societate', field: 'Capital social total' }
   if (inner === 'CAPITAL_SOCIAL_ACTUAL') return { group: 'Societate', field: 'Capital social actual' }
+  if (inner === 'NR_PARTI_CEDATE') return { group: 'Cesiune', field: 'Părți sociale cedate' }
+  if (inner === 'CAPITAL_CEDAT') return { group: 'Cesiune', field: 'Capital cedat' }
+  if (inner === 'PROCENT_CEDAT') return { group: 'Cesiune', field: 'Procent cedat' }
+  if (inner === 'PARTI_SOCIALE_COOPTAT') return { group: 'Cesiune', field: 'Părțile cesionarului după cesiune' }
+  if (inner === 'CAPITAL_COOPTAT') return { group: 'Cesiune', field: 'Capitalul cesionarului după cesiune' }
+  if (inner === 'PROCENT_COOPTAT') return { group: 'Cesiune', field: 'Procentul cesionarului după cesiune' }
   if (inner === 'PARTI_SOCIALE_TOTALE') return { group: 'Societate', field: 'Părți sociale totale' }
   if (inner === 'VALOARE_PARTE_SOCIALA') return { group: 'Societate', field: 'Valoarea unei părți sociale' }
   if (inner === 'VALOARE_PARTE_SOCIALA_LITERE') return { group: 'Societate', field: 'Valoarea unei părți sociale, în litere' }

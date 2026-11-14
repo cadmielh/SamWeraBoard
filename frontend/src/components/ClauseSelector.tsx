@@ -18,6 +18,7 @@ import { DurataMandatClauseFields, DurataSocietateClauseFields, MandatNouClauseF
 import CaenFieldInput from './clauses/CaenFieldInput'
 import LichidareAsociatiFields from './clauses/LichidareAsociatiFields'
 import { findCaenDescriere } from '../data/caen'
+import { isCesiuneField } from '../lib/cesiune'
 
 export interface ClauseSelectorValue {
   selectedClauses: string[]
@@ -316,14 +317,16 @@ export default function ClauseSelector({ clauses, client, baseReplacements, onCh
                     const { field } = parsePlaceholder(ph)
                     return field === key ? key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ') : field
                   }
-                  const dinFisa = visible.filter(ph => isFisaFirmaField(keyOf(ph)) && !!baseReplacements[ph]?.trim())
+                  // La fel valorile cesiunii, calculate în panoul ei (vezi CesiunePanel): fără valoare, nu se tastează aici
+                  const auto = (key: string) => isFisaFirmaField(key) || isCesiuneField(key)
+                  const dinFisa = visible.filter(ph => auto(keyOf(ph)) && !!baseReplacements[ph]?.trim())
                   return [
                     ...dinFisa.map(ph => (
                       <div key={ph} style={{ fontSize: '.85rem', color: 'var(--s400)' }}>
-                        {labelOf(ph)}: <strong>{baseReplacements[ph]}</strong> (din fișa clientului)
+                        {labelOf(ph)}: <strong>{baseReplacements[ph]}</strong> {isCesiuneField(keyOf(ph)) ? '(calculat)' : '(din fișa clientului)'}
                       </div>
                     )),
-                    ...visible.filter(ph => !dinFisa.includes(ph)).map(ph => {
+                    ...visible.filter(ph => !dinFisa.includes(ph) && !isCesiuneField(keyOf(ph))).map(ph => {
                     const key = keyOf(ph)
                     const auto = baseReplacements[ph]
                     const label = labelOf(ph)

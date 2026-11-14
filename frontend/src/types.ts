@@ -181,6 +181,8 @@ export interface Client {
   dataInmatricularii?: string
   // Valoarea nominală a unei părți sociale, în lei (întreg ≥ 1). Lipsă = 10 lei (vezi lib/cota.ts valoareParteSociala).
   valoareParteSociala?: number | null
+  // Ultima cesiune de părți sociale aplicată fișei (cotele de dinainte) — vezi lib/cesiune.ts
+  ultimaCesiune?: import('./lib/cesiune').UltimaCesiune
   dataAnafActualizat: string | null
   notite: string
   asociati: Persoana[]

@@ -163,6 +163,7 @@ const GUIDE_SECTIONS = [
       '{{SEPARATOR}}și — rând în interiorul blocului care apare doar ÎNTRE elemente (ex. „și” între persoane), nu și după ultimul',
       '{{/ASOCIATI}}. — punctul (sau „;”) după marcajul de final se pune doar după ultimul element',
       '{{#BR_ASOCIATI}} ... {{/BR_ASOCIATI}} — beneficiarii reali: asociații cu peste 25%; dacă nu e niciunul, {{#BR_ADMINISTRATORI}} ... {{/BR_ADMINISTRATORI}} (administratorii). {{#BR_DIRECT}} / {{#BR_CONDUCERE}} — textul modalității de control potrivit cazului',
+      'Cesiune (cu persoanele {{CEDENT_1_…}} și {{CESIONAR_1_…}}): {{NR_PARTI_CEDATE}}, {{CAPITAL_CEDAT}}, {{PROCENT_CEDAT}}, {{PARTI_SOCIALE_COOPTAT}}, {{CAPITAL_COOPTAT}}, {{PROCENT_COOPTAT}} (cesionarul după cesiune) — se introduce doar numărul de părți cedate, restul se calculează din fișa firmei; procentele conțin deja „%”',
       '{{#CLAUZA_CESIUNE_PARTI_SOCIALE}} ... {{/CLAUZA_CESIUNE_PARTI_SOCIALE}} — text în afara listei de clauze care apare doar când clauza respectivă e bifată (ex. semnătura cesionarului); după CLAUZA_ vine numele clauzei, cu majuscule și „_” în loc de spații',
     ],
   },

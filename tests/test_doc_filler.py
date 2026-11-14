@@ -467,3 +467,9 @@ def test_beneficiarii_reali_cu_denumirea_intre_ei_si_verb():
     ctx = {"sex": {}, "asociati": 2, "administratori": 1, "tip": "PJ"}
     out = _read_paragraphs(df.fill_docx(tpl, {"{{SOCIETATE_DENUMIRE}}": "BETA SRL"}, groups, variant_ctx=ctx))
     assert out[0] == "declar că beneficiarul real al societății comerciale BETA SRL este:"
+
+
+def test_procentul_nu_se_dubleaza():
+    tpl = _build_docx(["reprezentând {{PROCENT}}% din capital", "reprezentând {{PROCENT}} din capital", "fix 100%%"])
+    out = _read_paragraphs(df.fill_docx(tpl, {"{{PROCENT}}": "60%"}))
+    assert out == ["reprezentând 60% din capital", "reprezentând 60% din capital", "fix 100%%"]
