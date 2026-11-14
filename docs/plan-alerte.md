@@ -357,7 +357,10 @@ Aceste decizii înlocuiesc textul de mai sus acolo unde diferă.
 
 1. **[Eu]** Deploy-ul funcțiilor adaugă șase funcții noi: `alerte_client`, `alerte_dosar`, `alerte_sarcina`, `alerte_cabinet`, `alerte_preferinte` (triggere Firestore) și `alerte_zilnice` (job la 06:00).
 2. **[Tu]** La primul deploy, Firebase CLI cere activarea API-ului Eventarc (dacă nu e activ); confirmi.
-3. **[Tu]** Contul de serviciu dedicat (`RUNTIME_SERVICE_ACCOUNT`) are nevoie de rolul `Eventarc Event Receiver` (`roles/eventarc.eventReceiver`) ca să primească evenimentele. Comanda o pregătesc eu.
+3. **[Tu]** Contul de serviciu dedicat (`RUNTIME_SERVICE_ACCOUNT`, `api-runtime@…`) are nevoie de **două** roluri, altfel evenimentele ajung la triggere dar sunt refuzate cu 403 (văzut la primul deploy, 15 nov 2026):
+   - `roles/eventarc.eventReceiver` pe proiect (primirea evenimentelor);
+   - `roles/run.invoker` pe cele 5 servicii `alerte-*` (pornirea funcțiilor). Firebase CLI nu-l dă singur unui cont de serviciu personalizat; la funcțiile programate (`purge_deletions`, `alerte_zilnice`) nu e nevoie.
+   La primul deploy, crearea triggerelor poate eșua cu „Permission denied while using the Eventarc Service Agent”: se reia deploy-ul după câteva minute.
 4. **[Eu]** Triggerele trebuie să ruleze în regiunea bazei de date Firestore. Implicit e `europe-west3`; dacă baza e în altă locație (ex. `eur3`), se setează `ALERTE_TRIGGER_REGION` în `.env.samwera-board-eu`. Deploy-ul eșuează explicit dacă regiunea nu se potrivește.
 5. **[Eu]** Regulile Firestore se publică împreună cu frontendul (`npm run build:eu`).
 6. **[Eu]** `python scripts/backfill_stadiu_din.py --project samwera-board-eu --dry-run`, apoi fără `--dry-run`: dosarele existente primesc `stadiuDin` = momentul rulării, ca „Dosar blocat” să nu pornească deodată pentru toate dosarele vechi. Se rulează înainte de flag.
