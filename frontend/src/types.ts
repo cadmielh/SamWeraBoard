@@ -375,6 +375,9 @@ export interface Dosar {
   // Arhivare (vezi lib/dosare.ts) — un dosar e arhivat instant ce stadiu
   // devine 'documente_predate_client'; calculat din stadiu, nu un status separat.
   documentePredateAt: string | null   // serverTimestamp() la tranziția în acest stadiu; șters la ieșire
+  // serverTimestamp() la fiecare schimbare de stadiu (inclusiv la creare) — de când stă dosarul în stadiul curent,
+  // pentru alertele „dosar blocat” (alerte.py). Lipsă la dosarele vechi: se folosește createdAt.
+  stadiuDin?: string | null
   createdAt: string | null
   createdBy: string
 }

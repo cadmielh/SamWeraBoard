@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useReducer, forwardRef } from 'react'
 import { FixedSizeList } from 'react-window'
+import { useSearchParams } from 'react-router-dom'
 import type { Client } from '../types'
 import { inferTipClient } from '../types'
 import type { ClientInput } from '../lib/clienti'
@@ -13,12 +14,13 @@ import ExportRangeDialog, { type ExportRangeResult } from '../components/export/
 import { useApp } from '../AppContext'
 import { READ_ONLY_TITLE } from '../lib/billing'
 import ClientModal from '../components/ClientModalGate'
-import ClientView from '../components/ClientView'
+import ClientView, { type ClientFocus } from '../components/ClientView'
 import Modal from '../components/Modal'
 import IconTrash from '../components/IconTrash'
 import IconPencil from '../components/IconPencil'
 import IconEye from '../components/IconEye'
 import IconExport from '../components/IconExport'
+import NotificariBell from '../components/NotificariBell'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -310,7 +312,7 @@ export default function ClientiPage() {
   const { user, activeWorkspace, toast, canEdit } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
 
-  const { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove, legacyRawById } = useClienti(workspaceId)
+  const { clienti, listati, loading, loadingMore, hasMore, loadMore, search, ensureLoaded, add, update, remove, legacyRawById } = useClienti(workspaceId)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Client[] | null>(null)
@@ -326,7 +328,7 @@ export default function ClientiPage() {
   // UI imediat, dar rămân în datele reale până expiră toast-ul (sau se anulează).
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set())
 
-  const rawDisplayed = (searchResults ?? clienti).filter(c => !pendingDeleteIds.has(c.id))
+  const rawDisplayed = (searchResults ?? listati).filter(c => !pendingDeleteIds.has(c.id))
 
   const [typeFilter, setTypeFilter] = useState<'all' | 'PF' | 'PJ'>(() => {
     return (localStorage.getItem('samwera-type-filter') as 'all' | 'PF' | 'PJ') ?? 'all'
@@ -432,6 +434,41 @@ export default function ClientiPage() {
     setOpenClientIds(prev => prev.includes(c.id) ? prev : [...prev, c.id])
     setActiveTab(c.id)
   }, [])
+
+  // Deep-link din alerte: /?open=<clientId>&sectiune=<…>&pid=<pid> deschide fișa clientului ca filă, exact ca un
+  // click din listă, apoi derulează la secțiune/persoană (ClientView `focus`). Lista e paginată, deci un client
+  // din afara paginilor încărcate se citește după id (ensureLoaded îl adaugă în `clienti`, ca să se editeze la fel).
+  // Așteaptă prima pagină: altfel încărcarea ei ar înlocui clientul adus separat. Parametrii se consumă o dată
+  // (și la un link nou, ex. din clopoțel, cu pagina deja deschisă).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [focus, setFocus] = useState<{ clientId: string; focus: ClientFocus } | null>(null)
+  const handledOpenRef = useRef<string | null>(null)
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId) { handledOpenRef.current = null; return }
+    if (!workspaceId || loading) return
+    if (handledOpenRef.current !== openId) {
+      handledOpenRef.current = openId
+      const sectiune = searchParams.get('sectiune')
+      const pid = searchParams.get('pid')
+      ensureLoaded(workspaceId, openId).then(c => {
+        if (!c) { toast('Clientul nu mai există.', 'info'); return }
+        openTab(c)
+        setFocus(sectiune ? { clientId: c.id, focus: { sectiune, pid: pid ?? undefined } } : null)
+      }).catch((err: unknown) => toast((err as Error).message ?? 'Eroare la deschiderea clientului', 'err'))
+    }
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('open'); next.delete('sectiune'); next.delete('pid')
+      return next
+    }, { replace: true })
+  }, [searchParams, setSearchParams, workspaceId, loading, ensureLoaded, openTab, toast])
+
+  // Derularea se face o singură dată: la plecarea de pe filă, ținta se uită (altfel revenirea ar derula din nou).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (focus && activeTab !== focus.clientId) setFocus(null)
+  }, [activeTab, focus])
 
   const closeTab = useCallback((id: string) => {
     setOpenClientIds(prev => prev.filter(x => x !== id))
@@ -556,6 +593,7 @@ export default function ClientiPage() {
               <button className="btn btn-primary" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
                 + Adaugă client
               </button>
+              <NotificariBell />
             </div>
           </div>
 
@@ -681,6 +719,7 @@ export default function ClientiPage() {
               <ClientView
                 client={activeClient}
                 embedded
+                focus={focus?.clientId === activeClient.id ? focus.focus : undefined}
                 onEdit={() => setModal(activeClient)}
                 onDelete={() => setDeleteConf(activeClient)}
                 onSaveNotite={async (notite) => {

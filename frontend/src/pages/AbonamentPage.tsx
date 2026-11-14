@@ -6,6 +6,7 @@ import {
   formatDate, getBilling, openPortal, saveBillingDetails, startCheckout, syncBilling, toDate,
   type BillingDetails, type BillingOverview,
 } from '../lib/billing'
+import NotificariBell from '../components/NotificariBell'
 
 const EMPTY_DETAILS: BillingDetails = {
   tip: 'PJ', denumire: '', cui: '', regCom: '', adresa: '', localitate: '', judet: '', email: '',
@@ -166,6 +167,7 @@ export default function AbonamentPage() {
             <div className="page-title">Abonament</div>
             <div className="page-subtitle">Perioada de probă, plata și datele de facturare ale cabinetului</div>
           </div>
+          <div className="page-actions"><NotificariBell /></div>
         </div>
       </div>
 

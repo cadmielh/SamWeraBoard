@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { doc, getDoc } from 'firebase/firestore'
+import { db } from '../lib/firebase'
 import type { Sarcina, SarcinaInput, StadiuDosar } from '../types'
 import { STADIU_DOSAR_LABELS } from '../types'
 import { useSarcini } from '../lib/sarcini'
@@ -13,6 +15,7 @@ import TaskModal from '../components/sarcini/TaskModal'
 import ArchivedSarciniSection from '../components/sarcini/ArchivedSarciniSection'
 import ClientDocSelector from '../components/ClientDocSelector'
 import Modal from '../components/Modal'
+import NotificariBell from '../components/NotificariBell'
 
 type ModalState = 'add' | Sarcina | null
 /** 'mele'/'toate' sau uid-ul unui membru anume. */
@@ -56,7 +59,10 @@ export default function SarciniPage() {
   // filtrează board-ul la sarcinile acelui client. Consumate o singură dată —
   // ?open= așteaptă până se termină încărcarea live înainte să caute ținta
   // (și renunță, fără să rămână agățat, dacă sarcina nu se găsește — poate fi
-  // arhivată, deci în afara listei live a board-ului).
+  // arhivată, deci în afara listei live a board-ului; dacă nu mai există deloc,
+  // ex. link dintr-o alertă veche, anunță printr-un toast). Un link nou cu pagina
+  // deja deschisă (ex. din clopoțel) e tratat din nou: handledOnce se resetează
+  // când parametrii au fost consumați.
   const [searchParams, setSearchParams] = useSearchParams()
   const [handledOnce, setHandledOnce] = useState(false)
   useEffect(() => {
@@ -64,11 +70,14 @@ export default function SarciniPage() {
     const newForClient = searchParams.get('newForClient')
     const filterClientId = searchParams.get('filterClient')
     const denumire = searchParams.get('denumire')
-    if (!openId && !newForClient && !filterClientId) return
+    if (!openId && !newForClient && !filterClientId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (handledOnce) setHandledOnce(false)
+      return
+    }
     if (openId && loading) return // reîncearcă la următoarea actualizare a listei live
 
     if (!handledOnce) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (newForClient && denumire) { setPrefillClient({ id: newForClient, denumire }); setModal('add') }
       if (filterClientId && denumire) { setClientFilter({ id: filterClientId, denumire }); setAssigneeFilter('toate') }
       if (openId) {
@@ -79,6 +88,10 @@ export default function SarciniPage() {
           // — dacă rămâne filtrul implicit „mele", sarcina dispare din board
           // imediat după orice editare (nemaifiind găsită prin `open`).
           if (target.assigneeUid !== user?.uid) setAssigneeFilter('toate')
+        } else if (workspaceId) {
+          getDoc(doc(db, 'workspaces', workspaceId, 'sarcini', openId))
+            .then(snap => { if (!snap.exists()) toast('Sarcina nu mai există.', 'info') })
+            .catch(() => { /* fără acces / offline — rămâne comportamentul vechi: nu se deschide nimic */ })
         }
       }
       setHandledOnce(true)
@@ -221,6 +234,7 @@ export default function SarciniPage() {
             </div>
             <div className="page-actions">
               <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Sarcină</button>
+              <NotificariBell />
             </div>
           </div>
 

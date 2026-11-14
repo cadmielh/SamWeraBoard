@@ -5,6 +5,7 @@ import {
   termeneClient, termeneUrgente, confirmaAprobarea, type Durata, type Mandat,
 } from './durata'
 import { EMPTY_PERSOANA } from './clienti'
+import termeneFixture from '../../../tests/fixtures/termene.json'
 
 const ani = (n: string): Durata => ({ tip: 'ani', ani: n, data: '' })
 const pana = (data: string): Durata => ({ tip: 'data', ani: '', data })
@@ -165,5 +166,18 @@ describe('confirmarea aprobării dosarului', () => {
     expect(a.mandat?.dataNumire).toBe('15.06.2026')
     expect([b, c, d]).toEqual([cuData, altaData, faraMandat])
     expect(confirmaAprobarea([asteapta], '31.02.2026')[0]).toBe(asteapta)
+  })
+})
+
+// Aceleași exemple sunt verificate și de serverul de alerte (alerte.py, tests/test_alerte.py): cele două
+// implementări ale termenelor nu au voie să dea rezultate diferite.
+describe('paritate cu serverul de alerte (tests/fixtures/termene.json)', () => {
+  const [z, l, a] = termeneFixture.azi.split('.').map(Number)
+  const azi = new Date(a, l - 1, z)
+  it.each(termeneFixture.mandate)('mandat: $titlu', ({ mandat, asteptat }) => {
+    expect(stareMandat((mandat ?? undefined) as Mandat | undefined, azi)).toEqual(asteptat)
+  })
+  it.each(termeneFixture.durate)('durata societății: $titlu', ({ durata, dataInmatricularii, asteptat }) => {
+    expect(stareDurataSocietate((durata ?? undefined) as Durata | undefined, dataInmatricularii, azi)).toEqual(asteptat)
   })
 })

@@ -21,6 +21,7 @@ import MultiPersonPreview, { type MultiPersonPreviewHandle } from '../components
 import ClientModal from '../components/ClientModal'
 import PersonScanModal from '../components/PersonScanModal'
 import ConfirmModal from '../components/ConfirmModal'
+import NotificariBell from '../components/NotificariBell'
 
 // Internal source modes — 'buletin' = nou PF, 'societate' = nou PJ, 'client' = din portofoliu
 type SourceMode = 'buletin' | 'societate' | 'client'
@@ -415,6 +416,7 @@ export default function GenerareDocumentePage() {
         <button className="btn btn-ghost btn-sm" onClick={() => setHistoryOpen(h => !h)}>
           {historyOpen ? 'Închide' : 'Istoric'}
         </button>
+        <NotificariBell />
       </div>
 
       <main style={CONTENT_STYLE}>

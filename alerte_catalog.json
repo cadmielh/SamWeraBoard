@@ -1,0 +1,308 @@
+{
+  "_descriere": "Catalogul alertelor (sursă unică pentru server, alerte.py, și frontend, lib/alerteCatalog.ts). Vezi docs/plan-alerte.md. Setările sunt doar personale (workspaces/{wid}/preferinteAlerte/{uid}); aici sunt valorile implicite pe rol. fel: termen = cu N zile înainte de o dată, apoi depășit; vechime = după N zile într-o stare; imediat = cât timp ține starea; eveniment = la o schimbare. roluri = cine poate primi tipul; implicit = la ce roluri e pornit până își schimbă utilizatorul setările; obligatoriu = la ce roluri nu se poate opri. sursaImplicita (la categoriile dosare/sarcini) = de la ce dosare/sarcini primește fiecare rol, implicit.",
+  "categorii": [
+    {
+      "id": "clienti",
+      "eticheta": "Clienți"
+    },
+    {
+      "id": "dosare",
+      "eticheta": "Dosare",
+      "sursaImplicita": {
+        "admin": "toate",
+        "member": "ale_mele",
+        "viewer": "ale_mele"
+      }
+    },
+    {
+      "id": "sarcini",
+      "eticheta": "Sarcini",
+      "sursaImplicita": {
+        "admin": "toate",
+        "member": "ale_mele",
+        "viewer": "ale_mele"
+      }
+    },
+    {
+      "id": "cabinet",
+      "eticheta": "Cont și abonament"
+    }
+  ],
+  "tipuri": [
+    {
+      "cod": "mandat_expira",
+      "categorie": "clienti",
+      "fel": "termen",
+      "eticheta": "Mandat de administrator expiră",
+      "descriere": "Mandatul unui administrator se apropie de expirare sau a expirat.",
+      "praguri": [
+        90,
+        30,
+        7
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "mandat_fara_data",
+      "categorie": "clienti",
+      "fel": "imediat",
+      "eticheta": "Mandat fără dată de numire",
+      "descriere": "Mandatul are o durată aleasă, dar lipsește data de la care curge, deși firma nu mai e în înființare.",
+      "praguri": [],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "durata_expira",
+      "categorie": "clienti",
+      "fel": "termen",
+      "eticheta": "Durata societății expiră",
+      "descriere": "Durata societății se apropie de final; asociații trebuie consultați despre prelungire cu 3 luni înainte (Legea 31/1990, art. 227 alin. 2).",
+      "praguri": [
+        90,
+        30
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "ci_expira",
+      "categorie": "clienti",
+      "fel": "termen",
+      "eticheta": "Act de identitate expiră",
+      "descriere": "Actul de identitate al unui asociat, administrator, titular sau membru IF expiră sau a expirat.",
+      "praguri": [
+        60,
+        30
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "dosar_asignat",
+      "categorie": "dosare",
+      "fel": "eveniment",
+      "eticheta": "Dosar asignat",
+      "descriere": "Ți s-a asignat un dosar (doar ție, ca responsabil).",
+      "praguri": [],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin",
+        "member"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "dosar_planificare",
+      "categorie": "dosare",
+      "fel": "termen",
+      "eticheta": "Dată de planificare apropiată",
+      "descriere": "Se apropie data de planificare a unui dosar în lucru.",
+      "praguri": [
+        3,
+        1,
+        0
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin",
+        "member"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "dosar_blocat",
+      "categorie": "dosare",
+      "fel": "vechime",
+      "eticheta": "Dosar blocat în același stadiu",
+      "descriere": "Dosarul stă de prea mult timp în același stadiu, de la depunere până la predarea documentelor către client (inclusiv eliberat, dar nepredat).",
+      "praguri": [
+        14
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin",
+        "member"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "dosar_nefacturat",
+      "categorie": "dosare",
+      "fel": "vechime",
+      "eticheta": "Dosar predat, nefacturat",
+      "descriere": "Documentele au fost predate clientului, dar dosarul nu e marcat ca facturat.",
+      "praguri": [
+        7
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "sarcina_asignata",
+      "categorie": "sarcini",
+      "fel": "eveniment",
+      "eticheta": "Sarcină asignată",
+      "descriere": "Ți s-a asignat o sarcină (doar ție).",
+      "praguri": [],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin",
+        "member"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "sarcina_termen",
+      "categorie": "sarcini",
+      "fel": "termen",
+      "eticheta": "Termen de sarcină",
+      "descriere": "Termenul unei sarcini nefinalizate se apropie, e azi sau a trecut.",
+      "praguri": [
+        3,
+        1,
+        0
+      ],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin",
+        "member"
+      ],
+      "obligatoriu": []
+    },
+    {
+      "cod": "trial_expira",
+      "categorie": "cabinet",
+      "fel": "termen",
+      "eticheta": "Perioada de probă se termină",
+      "descriere": "Perioada de probă a cabinetului se apropie de final.",
+      "praguri": [
+        7,
+        3,
+        1
+      ],
+      "roluri": [
+        "admin"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": [
+        "admin"
+      ]
+    },
+    {
+      "cod": "plata_esuata",
+      "categorie": "cabinet",
+      "fel": "imediat",
+      "eticheta": "Plata abonamentului a eșuat",
+      "descriere": "Ultima plată a abonamentului nu a reușit; accesul se poate opri.",
+      "praguri": [],
+      "roluri": [
+        "admin"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": [
+        "admin"
+      ]
+    },
+    {
+      "cod": "acces_citire",
+      "categorie": "cabinet",
+      "fel": "imediat",
+      "eticheta": "Cabinet doar în citire",
+      "descriere": "Perioada de probă sau abonamentul a expirat; datele se pot doar citi și exporta.",
+      "praguri": [],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "obligatoriu": [
+        "admin",
+        "member",
+        "viewer"
+      ]
+    },
+    {
+      "cod": "membru_nou",
+      "categorie": "cabinet",
+      "fel": "eveniment",
+      "eticheta": "Membru nou în cabinet",
+      "descriere": "Cineva a acceptat o invitație și a intrat în cabinet.",
+      "praguri": [],
+      "roluri": [
+        "admin",
+        "member",
+        "viewer"
+      ],
+      "implicit": [
+        "admin"
+      ],
+      "obligatoriu": []
+    }
+  ]
+}

@@ -28,6 +28,11 @@ function dosareCol(workspaceId: string) {
   return collection(db, 'workspaces', workspaceId, 'dosare')
 }
 
+/** Stadiul se schimbă cu adevărat (nu o resalvare cu aceeași valoare) — atunci se resetează `stadiuDin`. */
+function stadiuSchimbat(prevStadiu: StadiuDosar | undefined, nextStadiu: StadiuDosar | undefined): boolean {
+  return nextStadiu !== undefined && nextStadiu !== prevStadiu
+}
+
 /** Determină dacă o schimbare de stadiu intră/iese din TRIGGER_STADIU —
  * folosit pentru a ști când să pornească/oprească ceasul săptămânii de
  * arhivare (documentePredateAt) în useDosare().update(). */
@@ -108,8 +113,11 @@ export function useDosare(workspaceId: string | null) {
     delete payload.id
     delete payload.createdAt
     delete payload.createdBy
+    delete payload.stadiuDin
     payload.createdAt = serverTimestamp()
     payload.createdBy = uid
+    // stadiuDin — de când stă dosarul în stadiul curent (alertele „dosar blocat”, alerte.py); pornește la creare.
+    payload.stadiuDin = serverTimestamp()
 
     // Un dosar creat direct în TRIGGER_STADIU (rar, dar posibil — ex. import
     // istoric) tot trebuie să pornească ceasul săptămânii de arhivare.
@@ -121,7 +129,8 @@ export function useDosare(workspaceId: string | null) {
     if (data.facturat) payload.dataFacturarii = serverTimestamp()
 
     const tempId = `temp-${crypto.randomUUID()}`
-    setDosare(prev => [{ ...(payload as unknown as Dosar), id: tempId, createdAt: new Date().toISOString(), ...localCreatedExtra }, ...prev])
+    const nowIso = new Date().toISOString()
+    setDosare(prev => [{ ...(payload as unknown as Dosar), id: tempId, createdAt: nowIso, stadiuDin: nowIso, ...localCreatedExtra }, ...prev])
     try {
       assertWritable()
       const ref = await addDoc(dosareCol(workspaceId), payload)
@@ -143,6 +152,7 @@ export function useDosare(workspaceId: string | null) {
       const transition = stadiuTransition(d.stadiu, data.stadiu)
       const facturatTr = facturatTransition(d.facturat, data.facturat)
       const localExtras: Partial<Dosar> = {
+        ...(stadiuSchimbat(d.stadiu, data.stadiu) ? { stadiuDin: new Date().toISOString() } : {}),
         ...(transition === 'enter' ? { documentePredateAt: new Date().toISOString() } : transition === 'leave' ? { documentePredateAt: null } : {}),
         ...(facturatTr === 'enter' ? { dataFacturarii: new Date().toISOString() } : facturatTr === 'leave' ? { dataFacturarii: null } : {}),
       }
@@ -161,6 +171,10 @@ export function useDosare(workspaceId: string | null) {
     delete patch.id
     delete patch.createdAt
     delete patch.createdBy
+    // stadiuDin e scris doar aici, la o schimbare reală de stadiu — niciodată copiat din formular (DosarModal
+    // trimite tot dosarul, inclusiv valoarea locală, care poate fi un ISO string, nu Timestamp).
+    delete patch.stadiuDin
+    if (stadiuSchimbat(previous?.stadiu, data.stadiu)) patch.stadiuDin = serverTimestamp()
 
     // documentePredateAt pornește/oprește ceasul săptămânii de arhivare —
     // stampat aici, centralizat, ca să nu depindă de fiecare punct din UI
@@ -266,16 +280,23 @@ export async function fetchDosarById(workspaceId: string, dosarId: string): Prom
  * board-ul de Sarcini. Stampează/șterge documentePredateAt necondiționat pe
  * baza stadiului țintă — acceptabil aici (flux declanșat o singură dată per
  * tranziție), spre deosebire de update() din useDosare, care compară cu
- * stadiul anterior ca să nu reseteze ceasul la resalvări redundante. */
+ * stadiul anterior ca să nu reseteze ceasul la resalvări redundante. `stadiuDin` însă se resetează doar
+ * dacă stadiul chiar se schimbă (utilizatorul poate alege în sugestie chiar stadiul curent) — de aceea
+ * citim întâi dosarul. */
 export async function updateDosarStadiu(workspaceId: string, dosarId: string, stadiu: StadiuDosar) {
+  assertWritable()
+  const ref = doc(dosareCol(workspaceId), dosarId)
   const patch: Record<string, unknown> = { stadiu }
+  const curent = await getDoc(ref)
+  if (stadiuSchimbat(curent.exists() ? (curent.data().stadiu as StadiuDosar | undefined) : undefined, stadiu)) {
+    patch.stadiuDin = serverTimestamp()
+  }
   if (stadiu === TRIGGER_STADIU) {
     patch.documentePredateAt = serverTimestamp()
   } else {
     patch.documentePredateAt = deleteField()
   }
-  assertWritable()
-  await updateDoc(doc(dosareCol(workspaceId), dosarId), patch)
+  await updateDoc(ref, patch)
 }
 
 /** Dosare arhivate — stadiu === TRIGGER_STADIU ȘI facturat === true (vezi

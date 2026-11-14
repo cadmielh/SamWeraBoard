@@ -449,7 +449,7 @@ def delete_account():
     db = authz.db()
     uid = principal.uid
     own, owned, last_admin = [], [], []
-    q = db.collection("workspaces").where(filter=FieldFilter(f"members.{uid}.role", "in", list(ROLES)))
+    q = db.collection("workspaces").where(filter=FieldFilter(workspace_deletion.cale_rol_membru(uid), "in", list(ROLES)))
     for snap in q.stream():
         ws = snap.to_dict() or {}
         members = ws.get("members") or {}
@@ -490,7 +490,7 @@ def export_account():
     db = authz.db()
     uid = principal.uid
     memberships = []
-    q = db.collection("workspaces").where(filter=FieldFilter(f"members.{uid}.role", "in", list(ROLES)))
+    q = db.collection("workspaces").where(filter=FieldFilter(workspace_deletion.cale_rol_membru(uid), "in", list(ROLES)))
     for snap in q.stream():
         ws = snap.to_dict() or {}
         m = (ws.get("members") or {}).get(uid) or {}

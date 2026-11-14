@@ -1,8 +1,8 @@
-import { useState, useMemo, useCallback, useReducer, useEffect } from 'react'
+import { useState, useMemo, useCallback, useReducer, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { Dosar, DosarInput } from '../types'
 import { obiecteCereriiText, resolveFacturareConfig } from '../types'
-import { useDosare, useArchivedDosare, isDosarArhivat, fetchAllDosare } from '../lib/dosare'
+import { useDosare, useArchivedDosare, isDosarArhivat, fetchAllDosare, fetchDosarById } from '../lib/dosare'
 import { useSarcini } from '../lib/sarcini'
 import { buildSarcinaForDosar } from '../lib/dosarSarcini'
 import { useApp } from '../AppContext'
@@ -20,6 +20,7 @@ import { LUNI, type StatsPeriod, computeDosarStats, computeTarifStats, computeSu
 import type { ExportColumnSpec } from '../lib/xlsxExport'
 import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import Modal from '../components/Modal'
+import NotificariBell from '../components/NotificariBell'
 
 type ModalState = 'add' | Dosar | null
 /* Fila „active" = dosare în lucru (tot ce nu e arhivat), fila „incheiate" =
@@ -146,18 +147,31 @@ export default function DosarePage() {
     return () => document.removeEventListener('keydown', handler)
   }, [tab, returnTab])
 
-  // Deep-link din ClientView: ?open=<dosarId> deschide direct fișa acelui
-  // dosar (ca tab nou); ?newForClient=<id>&denumire=<nume> deschide
+  // Deep-link din ClientView și din alerte: ?open=<dosarId> deschide direct fișa
+  // acelui dosar (ca tab nou); ?newForClient=<id>&denumire=<nume> deschide
   // formularul de creare cu clientul deja ales — ambele consumate o
-  // singură dată, la montare.
+  // singură dată (și la un link nou, ex. din clopoțel, cu pagina deja deschisă). Dosarul se citește după id, nu se caută în listă:
+  // poate fi în afara primei pagini sau în „Dosare încheiate” (paginate separat);
+  // ținut în extraDosare, ca un dosar deschis din „încheiate”.
   const [searchParams, setSearchParams] = useSearchParams()
+  // Ultimul ?open= tratat — ca efectul rulat de două ori (StrictMode) să nu citească și să anunțe de două ori.
+  const handledOpenRef = useRef<string | null>(null)
   useEffect(() => {
     const openId = searchParams.get('open')
     const newForClient = searchParams.get('newForClient')
     const denumire = searchParams.get('denumire')
-    if (!openId && !newForClient) return
+    if (!openId && !newForClient) { handledOpenRef.current = null; return }
+    if (!workspaceId) return // reîncearcă după ce se încarcă cabinetul
+    if (openId && handledOpenRef.current !== openId) {
+      handledOpenRef.current = openId
+      fetchDosarById(workspaceId, openId).then(d => {
+        if (!d) { toast('Dosarul nu mai există.', 'info'); return }
+        setExtraDosare(prev => ({ ...prev, [d.id]: d }))
+        setOpenDosarIds(prev => prev.includes(d.id) ? prev : [...prev, d.id])
+        setTab(d.id)
+      }).catch((err: unknown) => toast((err as Error).message ?? 'Eroare la deschiderea dosarului', 'err'))
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (openId) { setOpenDosarIds(prev => prev.includes(openId) ? prev : [...prev, openId]); setTab(openId) }
     if (newForClient && denumire) { setPrefillClient({ id: newForClient, denumire }); setModal('add') }
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
@@ -165,7 +179,7 @@ export default function DosarePage() {
       return next
     }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [searchParams, workspaceId])
 
   // Stare de sortare/filtrare — separată pe fiecare filă-listă, ca filtrele
   // aplicate în „Dosare în lucru" să nu se scurgă în „Dosare încheiate" și
@@ -478,6 +492,7 @@ export default function DosarePage() {
                 <IconExport /> Exportă
               </button>
               <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Dosar nou</button>
+              <NotificariBell />
             </div>
           </div>
 

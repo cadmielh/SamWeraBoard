@@ -790,6 +790,16 @@ body {
 /* Person cards */
 .cv2-persons-list { display:flex; flex-direction:column; gap:.5rem; }
 .cv2-persoana-card { background:var(--surface-2); border:1px solid var(--s200); border-radius:var(--r-md); padding:.875rem 1rem; }
+/* Persoana spre care duce un link din alerte (?open=&sectiune=&pid=) — evidențiere scurtă, care se stinge în ~2s. */
+.cv2-persoana-card--focus { animation:cv2FocusFade 2s var(--ease) forwards; }
+@keyframes cv2FocusFade {
+  0%, 35% { background:var(--p50); border-color:var(--p500); box-shadow:0 0 0 3px var(--p100); }
+  100%    { background:var(--surface-2); border-color:var(--s200); box-shadow:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* fără animație: doar un contur static cât e marcată (clasa se scoate după 2s) */
+  .cv2-persoana-card--focus { animation:none; border-color:var(--p500); box-shadow:0 0 0 3px var(--p100); }
+}
 .cv2-avatar { width:38px; height:38px; border-radius:10px; color:#fff; font-weight:800; font-size:.8rem; display:flex; align-items:center; justify-content:center; flex-shrink:0; letter-spacing:.02em; }
 .cv2-persoana-header { display:flex; align-items:flex-start; gap:.75rem; }
 .cv2-persoana-meta { flex:1; min-width:0; }

@@ -176,6 +176,34 @@ service cloud.firestore {
         allow delete: if canWrite(wid);
       }
 
+      // Setările de notificări ale fiecărui utilizator (ce primește, cu ce praguri, de la ce dosare/sarcini, ce a ignorat).
+      // Sunt doar personale, deci le poate schimba orice membru, inclusiv vizualizatorul, și fără abonament valabil.
+      // Forma internă o normalizează serverul (alerte.py); aici doar cheile și mărimile.
+      match /preferinteAlerte/{uid} {
+        allow read, delete: if signedIn() && request.auth.uid == uid && isMember(wid);
+        allow create, update: if signedIn() && request.auth.uid == uid && isMember(wid) &&
+          validPreferinteAlerte(request.resource.data);
+      }
+
+      function validPreferinteAlerte(d) {
+        return d.keys().hasOnly(['tipuri', 'surse', 'ignorate', 'actualizatLa'])
+          && (!('tipuri' in d) || (d.tipuri is map && d.tipuri.size() <= 30))
+          && (!('surse' in d) || (d.surse is map && d.surse.keys().hasOnly(['dosare', 'sarcini'])))
+          && (!('ignorate' in d) || (d.ignorate is list && d.ignorate.size() <= 200));
+      }
+
+      // Alerte (clopoțelul) — create, rezolvate și șterse doar de server (alerte.py), câte un document pe destinatar.
+      // Destinatarul își vede doar alertele lui (interogarea trebuie să filtreze pe uid) și poate schimba
+      // doar starea de afișare: văzut / amânat.
+      match /notificari/{nid} {
+        allow read: if isMember(wid) && resource.data.uid == request.auth.uid;
+        allow update: if isMember(wid) && resource.data.uid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vazut', 'amanatPana']) &&
+          request.resource.data.get('vazut', false) is bool &&
+          (request.resource.data.get('amanatPana', null) == null || request.resource.data.amanatPana is timestamp);
+        allow create, delete: if false;
+      }
+
       // Jurnal de audit — scris exclusiv de server; citit doar de admini.
       match /auditLog/{entryId} {
         allow read: if isAdmin(wid);

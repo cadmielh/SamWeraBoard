@@ -22,7 +22,15 @@ interface Props {
   onSaveNotite: (notite: string) => Promise<void>
   onSaveField: (patch: Partial<Client>) => Promise<void>
   embedded?: boolean
+  /** Link dintr-o alertă: derulează la secțiune și evidențiază scurt persoana cu `pid`. Un obiect nou = o nouă derulare. */
+  focus?: ClientFocus
 }
+
+/** Ținta unui link din alerte: `sectiune` ∈ administratori | asociati | durata | titular | membriIF (atributele
+ * data-sectiune de mai jos), `pid` = persoana de evidențiat. */
+export interface ClientFocus { sectiune: string; pid?: string }
+
+const FOCUS_MS = 2000
 
 const SUBTIP_LABELS: Record<string, string> = {
   PFA: 'PFA',
@@ -143,7 +151,7 @@ function CaenSecundareList({ items }: { items: { cod: string; descriere: string 
 }
 
 /** `showMandat`: pe cardul unui administrator — durata mandatului și starea lui. */
-function PersoanaCard({ p, pii, onReveal, showMandat }: { p: Persoana; pii: PiiMap | null; onReveal: () => void; showMandat?: boolean }) {
+function PersoanaCard({ p, pii, onReveal, showMandat, focused }: { p: Persoana; pii: PiiMap | null; onReveal: () => void; showMandat?: boolean; focused?: boolean }) {
   // Valorile reale vin din vault doar după „Arată” (cerere auditată); implicit se văd cele mascate.
   const entry = p.pid && pii ? pii[p.pid] : undefined
   const cnp = entry?.cnp ?? p.cnp
@@ -167,7 +175,7 @@ function PersoanaCard({ p, pii, onReveal, showMandat }: { p: Persoana; pii: PiiM
   ].filter(Boolean) as { label: string; value: string }[]
 
   return (
-    <div className="cv2-persoana-card">
+    <div className={`cv2-persoana-card${focused ? ' cv2-persoana-card--focus' : ''}`} data-pid={p.pid}>
       <div className="cv2-persoana-header">
         <div className="cv2-avatar" style={{ background: avatarBg }}>{initials}</div>
         <div className="cv2-persoana-meta">
@@ -208,8 +216,31 @@ function PersoanaCard({ p, pii, onReveal, showMandat }: { p: Persoana; pii: PiiM
   )
 }
 
-export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onSaveField, embedded }: Props) {
+export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onSaveField, embedded, focus }: Props) {
   const navigate = useNavigate()
+  const rootRef = useRef<HTMLDivElement>(null)
+  // pid-ul evidențiat acum (link din alerte); se stinge singur după FOCUS_MS.
+  const [focusPid, setFocusPid] = useState<string | null>(null)
+
+  // Derulare la secțiunea cerută și, dacă există, la persoana cu pid-ul dat. Selectorii caută doar în fișa
+  // curentă (rootRef). Dacă secțiunea nu e afișată (ex. „durata” la un PF), rămâne sus, fără eroare.
+  useEffect(() => {
+    if (!focus) return
+    const root = rootRef.current
+    if (!root) return
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    const section = root.querySelector<HTMLElement>(`[data-sectiune="${CSS.escape(focus.sectiune)}"]`)
+    const card = focus.pid
+      ? (section ?? root).querySelector<HTMLElement>(`[data-pid="${CSS.escape(focus.pid)}"]`)
+      : null
+    const target = card ?? section
+    if (!target) return
+    target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: card ? 'center' : 'start' })
+    if (!card || !focus.pid) return
+    setFocusPid(focus.pid)
+    const t = setTimeout(() => setFocusPid(null), FOCUS_MS)
+    return () => clearTimeout(t)
+  }, [focus])
   const tipClient = inferTipClient(client)
   const isPF = tipClient === 'PF'
   const isIF = isPF && client.subtipPF === 'IF'
@@ -274,7 +305,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
   const createdAtDate = toDateSafe(client.createdAt)
 
   return (
-    <div className={embedded ? 'cv2-embed' : 'cv2-panel'}>
+    <div ref={rootRef} className={embedded ? 'cv2-embed' : 'cv2-panel'}>
 
       {/* ── Header ── */}
       <div className="cv2-header">
@@ -344,11 +375,11 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
 
         {/* ── Bloc Date persoană (CI) — orice PF ── */}
         {isPF && client.titular && (
-          <div className="cv2-section">
+          <div className="cv2-section" data-sectiune="titular">
             <div className="cv2-section-label" style={{ color: 'var(--b600)' }}>
               Date persoană (CI)
             </div>
-            <PersoanaCard p={client.titular} pii={pii} onReveal={revealPii} />
+            <PersoanaCard p={client.titular} pii={pii} onReveal={revealPii} focused={!!focusPid && client.titular.pid === focusPid} />
           </div>
         )}
 
@@ -378,7 +409,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                 </div>
               )}
               {!isPF && (
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }} data-sectiune="durata">
                   <InfoRow label="Data înmatriculării" value={client.dataInmatricularii} />
                   <InfoRow label="Durata societății" value={durataFraza(client.durataSocietate) || undefined} />
                   {client.durataSocietate && client.durataSocietate.tip !== 'nedeterminata' && (
@@ -460,7 +491,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
         {!isPF && (
           <div className="cv2-section">
             <div className="cv2-two-col">
-              <div className="cv2-col">
+              <div className="cv2-col" data-sectiune="asociati">
                 <div className="cv2-col-title" style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
                   Asociați
                   {client.asociati.length > 0 && <span className="cv2-count-chip">{client.asociati.length}</span>}
@@ -472,19 +503,19 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                 )}
                 {client.asociati.length > 0
                   ? <div className="cv2-persons-list">
-                      {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} />)}
+                      {client.asociati.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} focused={!!focusPid && p.pid === focusPid} />)}
                     </div>
                   : <span className="cv2-info-empty">Niciun asociat adăugat.</span>
                 }
               </div>
-              <div className="cv2-col">
+              <div className="cv2-col" data-sectiune="administratori">
                 <div className="cv2-col-title" style={{ display: 'flex', alignItems: 'center', gap: '.35rem' }}>
                   Administratori
                   {client.administratori.length > 0 && <span className="cv2-count-chip">{client.administratori.length}</span>}
                 </div>
                 {client.administratori.length > 0
                   ? <div className="cv2-persons-list">
-                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} showMandat />)}
+                      {client.administratori.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} showMandat focused={!!focusPid && p.pid === focusPid} />)}
                     </div>
                   : <span className="cv2-info-empty">Niciun administrator adăugat.</span>
                 }
@@ -500,14 +531,14 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
 
         {/* ── Membri familie (doar IF) ── */}
         {isIF && (
-          <div className="cv2-section">
+          <div className="cv2-section" data-sectiune="membriIF">
             <div className="cv2-section-label">
               Membri familie IF
               {(client.membriIF?.length ?? 0) > 0 && <span className="cv2-count-chip">{client.membriIF!.length}</span>}
             </div>
             {(client.membriIF?.length ?? 0) > 0
               ? <div className="cv2-persons-list">
-                  {client.membriIF!.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} />)}
+                  {client.membriIF!.map((p, i) => <PersoanaCard key={i} p={p} pii={pii} onReveal={revealPii} focused={!!focusPid && p.pid === focusPid} />)}
                 </div>
               : <span className="cv2-info-empty">Niciun membru adăugat.</span>
             }

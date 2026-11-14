@@ -1,5 +1,6 @@
 import { useApp } from '../AppContext'
 import MembriPanel from '../components/MembriPanel'
+import NotificariBell from '../components/NotificariBell'
 
 export default function MembriPage() {
   const { activeWorkspace, userRole } = useApp()
@@ -19,13 +20,16 @@ export default function MembriPage() {
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto', padding: '2rem 1.5rem' }}>
-      <div style={{ marginBottom: '1.75rem' }}>
-        <h1 style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--s900)', letterSpacing: '-.025em', margin: 0 }}>
-          Gestionare utilizatori
-        </h1>
-        <p style={{ color: 'var(--s400)', fontSize: '.875rem', marginTop: '.375rem' }}>
-          Spațiu de lucru: <strong>{activeWorkspace.name}</strong>
-        </p>
+      <div style={{ marginBottom: '1.75rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+        <div>
+          <h1 style={{ fontWeight: 800, fontSize: '1.25rem', color: 'var(--s900)', letterSpacing: '-.025em', margin: 0 }}>
+            Gestionare utilizatori
+          </h1>
+          <p style={{ color: 'var(--s400)', fontSize: '.875rem', marginTop: '.375rem' }}>
+            Spațiu de lucru: <strong>{activeWorkspace.name}</strong>
+          </p>
+        </div>
+        <NotificariBell />
       </div>
       <div className="card">
         <div className="card-body">

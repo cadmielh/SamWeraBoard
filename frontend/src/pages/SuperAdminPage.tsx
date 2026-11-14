@@ -12,6 +12,7 @@ import DeliveredTemplatesPanel from '../components/DeliveredTemplatesPanel'
 import DeleteWorkspaceModal from '../components/DeleteWorkspaceModal'
 import IconTrash from '../components/IconTrash'
 import type { Workspace } from '../types'
+import NotificariBell from '../components/NotificariBell'
 
 const ROLE_LABEL: Record<'admin' | 'member' | 'viewer', string> = { admin: 'Admin', member: 'Membru', viewer: 'Doar citire' }
 
@@ -189,6 +190,7 @@ export default function SuperAdminPage() {
             <div className="page-title">Super admin</div>
             <div className="page-subtitle">Toate conturile și spațiile de lucru din aplicație: abonamente și feature flags per workspace</div>
           </div>
+          <div className="page-actions"><NotificariBell /></div>
         </div>
       </div>
 

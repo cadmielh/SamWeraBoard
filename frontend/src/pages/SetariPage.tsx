@@ -6,9 +6,11 @@ import { useApp } from '../AppContext'
 import AccountCard from '../components/AccountCard'
 import PrivacyCard from '../components/PrivacyCard'
 import AuditLogCard from '../components/AuditLogCard'
+import NotificariCard from '../components/NotificariCard'
 import { resolveFacturareConfig } from '../types'
 import type { FacturareConfig } from '../types'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
+import NotificariBell from '../components/NotificariBell'
 
 const THEME_OPTIONS: { key: Theme; label: string; desc: string }[] = [
   { key: 'light', label: 'Deschis', desc: 'Fundal alb, potrivit pentru lucru ziua' },
@@ -148,6 +150,7 @@ export default function SetariPage() {
             <div className="page-title">Setări</div>
             <div className="page-subtitle">{userRole === 'admin' ? 'Aspectul aplicației și jurnalul de acces' : 'Aspectul aplicației'}</div>
           </div>
+          <div className="page-actions"><NotificariBell /></div>
         </div>
       </div>
 
@@ -215,6 +218,11 @@ export default function SetariPage() {
               ar suprascrie configul noului workspace cu date stale). */}
           {userRole === 'admin' && activeWorkspace && hasFeature('facturareSamiAdi') && (
             <div className="settings-grid-full"><FacturareConfigCard key={activeWorkspace.id} /></div>
+          )}
+
+          {/* Notificări: doar la cabinetele cu flag-ul `alerte`; key=workspace id, ca editoarele să nu rămână cu starea altui cabinet. */}
+          {activeWorkspace && hasFeature('alerte') && (
+            <NotificariCard key={`notificari-${activeWorkspace.id}`} />
           )}
         </div>
       </div>

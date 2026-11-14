@@ -383,3 +383,89 @@ test('hiddenBuiltins: doar adminul îl schimbă, ca listă de cel mult 50', asyn
   await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: Array.from({ length: 51 }, (_, i) => `k${i}`) }))
   await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { hiddenBuiltins: [], members: {} }))
 })
+
+// ── Alerte: regulile cabinetului, preferințele personale, notificările ───────
+const NOTIF = (uid, extra = {}) => ({
+  uid, cheie: 'mandat_expira:client:c1:p1:2027-03-01', cheieBaza: 'mandat_expira:client:c1:p1', cod: 'mandat_expira',
+  sursa: 'client:c1', severitate: 'atentie', prag: '30', titlu: 'Mandat expiră în 30 de zile', detaliu: 'X',
+  link: '/?open=c1', vazut: false, amanatPana: null, rezolvat: false, rezolvatLa: null, ...extra,
+})
+async function seedNotificari() {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore()
+    await setDoc(doc(db, 'workspaces', W1, 'notificari', `${MEMBER}__k1`), NOTIF(MEMBER))
+    await setDoc(doc(db, 'workspaces', W1, 'notificari', `${ADMIN}__k1`), NOTIF(ADMIN))
+  })
+}
+const notif = (uid, id) => doc(ctx(uid), 'workspaces', W1, 'notificari', id)
+
+test('notificari: fiecare își citește doar alertele lui, nici adminul nu le vede pe ale altora', async () => {
+  await seedNotificari()
+  await assertSucceeds(getDoc(notif(MEMBER, `${MEMBER}__k1`)))
+  await assertFails(getDoc(notif(MEMBER, `${ADMIN}__k1`)))
+  await assertFails(getDoc(notif(ADMIN, `${MEMBER}__k1`)))
+  await assertFails(getDoc(notif(OUTSIDER, `${MEMBER}__k1`)))
+})
+test('notificari: interogarea cu filtru pe uid trece; fără filtru sau cu uid străin e refuzată', async () => {
+  await seedNotificari()
+  const col = collection(ctx(MEMBER), 'workspaces', W1, 'notificari')
+  const snap = await assertSucceeds(getDocs(query(col, where('uid', '==', MEMBER), where('rezolvat', '==', false))))
+  assert.equal(snap.size, 1)
+  await assertFails(getDocs(col))
+  await assertFails(getDocs(query(col, where('rezolvat', '==', false))))
+  await assertFails(getDocs(query(col, where('uid', '==', ADMIN))))
+})
+test('notificari: destinatarul schimbă doar vazut / amanatPana, cu tipurile corecte', async () => {
+  await seedNotificari()
+  const ref = notif(MEMBER, `${MEMBER}__k1`)
+  await assertSucceeds(updateDoc(ref, { vazut: true }))
+  await assertSucceeds(updateDoc(ref, { amanatPana: FUTURE }))
+  await assertSucceeds(updateDoc(ref, { amanatPana: null, vazut: false }))
+  for (const patch of [{ vazut: 'da' }, { amanatPana: '2027-01-01' }, { rezolvat: true }, { titlu: 'x' },
+    { uid: ADMIN }, { vazut: true, severitate: 'info' }]) {
+    await assertFails(updateDoc(ref, patch))
+  }
+  await assertFails(updateDoc(notif(ADMIN, `${MEMBER}__k1`), { vazut: true }))
+})
+test('notificari: nu se creează și nu se șterg din browser', async () => {
+  await seedNotificari()
+  await assertFails(setDoc(notif(MEMBER, `${MEMBER}__k2`), NOTIF(MEMBER)))
+  await assertFails(setDoc(notif(ADMIN, `${MEMBER}__k2`), NOTIF(MEMBER)))
+  await assertFails(deleteDoc(notif(MEMBER, `${MEMBER}__k1`)))
+})
+
+const pref = (uid, owner = uid) => doc(ctx(uid), 'workspaces', W1, 'preferinteAlerte', owner)
+const PREF = {
+  tipuri: { ci_expira: { activ: true, praguri: [60, 30] }, membru_nou: { activ: false } },
+  surse: { dosare: { sursa: 'ale_mele', responsabili: [] } },
+  ignorate: ['client:c1'], actualizatLa: new Date(),
+}
+
+test('preferinteAlerte: fiecare își scrie și citește doar setările lui', async () => {
+  await assertSucceeds(setDoc(pref(MEMBER), PREF))
+  await assertSucceeds(getDoc(pref(MEMBER)))
+  await assertSucceeds(updateDoc(pref(MEMBER), { tipuri: {} }))
+  await assertFails(getDoc(pref(ADMIN, MEMBER)))
+  await assertFails(setDoc(pref(ADMIN, MEMBER), PREF))
+  await assertFails(setDoc(pref(OUTSIDER), PREF))
+  await assertSucceeds(deleteDoc(pref(MEMBER)))
+})
+test('preferinteAlerte: vizualizatorul își scrie setările, și cu cabinetul expirat', async () => {
+  await assertSucceeds(setDoc(pref(VIEWER), PREF))
+  await expire()
+  await assertSucceeds(updateDoc(pref(VIEWER), { 'tipuri.mandat_expira': { activ: true } }))
+})
+test('preferinteAlerte: forme invalide sunt refuzate', async () => {
+  for (const bad of [{ ...PREF, extra: 1 }, { ...PREF, tipuri: ['ci_expira'] },
+    { ...PREF, tipuri: Object.fromEntries(Array.from({ length: 31 }, (_, i) => [`t${i}`, { activ: true }])) },
+    { ...PREF, surse: { clienti: { sursa: 'toate', responsabili: [] } } }, { ...PREF, surse: 'toate' },
+    { ...PREF, ignorate: Array.from({ length: 201 }, (_, i) => `k${i}`) },
+    { ...PREF, oprite: ['ci_expira'] }]) {
+    await assertFails(setDoc(pref(MEMBER), bad))
+  }
+  await assertSucceeds(setDoc(pref(MEMBER), { ignorate: Array.from({ length: 200 }, (_, i) => `k${i}`) }))
+})
+
+test('alerteConfig: nu mai există reguli de cabinet, nici adminul nu-l poate scrie', async () => {
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { alerteConfig: {} }))
+})

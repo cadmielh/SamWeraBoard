@@ -1,0 +1,303 @@
+{
+ "azi": "13.11.2026",
+ "mandate": [
+  {
+   "titlu": "fără mandat",
+   "mandat": null,
+   "asteptat": {
+    "stare": "incomplet"
+   }
+  },
+  {
+   "titlu": "nedeterminat",
+   "mandat": {
+    "durata": {
+     "tip": "nedeterminata",
+     "ani": "",
+     "data": ""
+    },
+    "inceput": "aprobare",
+    "dataNumire": ""
+   },
+   "asteptat": {
+    "stare": "nedeterminat"
+   }
+  },
+  {
+   "titlu": "4 ani, expiră în 2 zile",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "4",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "15.11.2022"
+   },
+   "asteptat": {
+    "stare": "curand",
+    "expira": "15.11.2026",
+    "zile": 2
+   }
+  },
+  {
+   "titlu": "din prezent, încă neaprobat",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "5",
+     "data": ""
+    },
+    "inceput": "aprobare",
+    "dataNumire": ""
+   },
+   "asteptat": {
+    "stare": "asteptare",
+    "motiv": "aprobare"
+   }
+  },
+  {
+   "titlu": "de la o dată, lipsește data",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "5",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": ""
+   },
+   "asteptat": {
+    "stare": "asteptare",
+    "motiv": "numire"
+   }
+  },
+  {
+   "titlu": "până la o dată",
+   "mandat": {
+    "durata": {
+     "tip": "data",
+     "ani": "",
+     "data": "31.12.2030"
+    },
+    "inceput": "data",
+    "dataNumire": ""
+   },
+   "asteptat": {
+    "stare": "activ",
+    "expira": "31.12.2030",
+    "zile": 1509
+   }
+  },
+  {
+   "titlu": "1 an din 29 februarie",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "1",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "29.02.2024"
+   },
+   "asteptat": {
+    "stare": "expirat",
+    "expira": "28.02.2025",
+    "zile": -623
+   }
+  },
+  {
+   "titlu": "ani invalizi",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "abc",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "01.01.2020"
+   },
+   "asteptat": {
+    "stare": "incomplet"
+   }
+  },
+  {
+   "titlu": "3 ani din 31 august, expirat",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "3",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "31.08.2023"
+   },
+   "asteptat": {
+    "stare": "expirat",
+    "expira": "31.08.2026",
+    "zile": -74
+   }
+  },
+  {
+   "titlu": "dată imposibilă",
+   "mandat": {
+    "durata": {
+     "tip": "data",
+     "ani": "",
+     "data": "31.02.2027"
+    },
+    "inceput": "aprobare",
+    "dataNumire": ""
+   },
+   "asteptat": {
+    "stare": "asteptare",
+    "motiv": "aprobare"
+   }
+  },
+  {
+   "titlu": "4 ani cu spații în număr",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": " 4 ",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "01.03.2023"
+   },
+   "asteptat": {
+    "stare": "activ",
+    "expira": "01.03.2027",
+    "zile": 108
+   }
+  },
+  {
+   "titlu": "expiră azi",
+   "mandat": {
+    "durata": {
+     "tip": "data",
+     "ani": "",
+     "data": "13.11.2026"
+    },
+    "inceput": "data",
+    "dataNumire": "01.01.2020"
+   },
+   "asteptat": {
+    "stare": "curand",
+    "expira": "13.11.2026",
+    "zile": 0
+   }
+  },
+  {
+   "titlu": "expiră peste 90 de zile",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "1",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "11.02.2026"
+   },
+   "asteptat": {
+    "stare": "curand",
+    "expira": "11.02.2027",
+    "zile": 90
+   }
+  },
+  {
+   "titlu": "expiră peste 91 de zile",
+   "mandat": {
+    "durata": {
+     "tip": "ani",
+     "ani": "1",
+     "data": ""
+    },
+    "inceput": "data",
+    "dataNumire": "12.02.2026"
+   },
+   "asteptat": {
+    "stare": "activ",
+    "expira": "12.02.2027",
+    "zile": 91
+   }
+  }
+ ],
+ "durate": [
+  {
+   "titlu": "10 ani de la înmatriculare",
+   "durata": {
+    "tip": "ani",
+    "ani": "10",
+    "data": ""
+   },
+   "dataInmatricularii": "10.02.2017",
+   "asteptat": {
+    "stare": "curand",
+    "expira": "10.02.2027",
+    "zile": 89
+   }
+  },
+  {
+   "titlu": "fără dată de înmatriculare",
+   "durata": {
+    "tip": "ani",
+    "ani": "10",
+    "data": ""
+   },
+   "dataInmatricularii": "",
+   "asteptat": {
+    "stare": "asteptare",
+    "motiv": "inmatriculare"
+   }
+  },
+  {
+   "titlu": "nedeterminată",
+   "durata": {
+    "tip": "nedeterminata",
+    "ani": "",
+    "data": ""
+   },
+   "dataInmatricularii": "01.01.2010",
+   "asteptat": {
+    "stare": "nedeterminat"
+   }
+  },
+  {
+   "titlu": "necompletată",
+   "durata": null,
+   "dataInmatricularii": "01.01.2010",
+   "asteptat": {
+    "stare": "incomplet"
+   }
+  },
+  {
+   "titlu": "până la o dată trecută",
+   "durata": {
+    "tip": "data",
+    "ani": "",
+    "data": "01.06.2026"
+   },
+   "dataInmatricularii": "",
+   "asteptat": {
+    "stare": "expirat",
+    "expira": "01.06.2026",
+    "zile": -165
+   }
+  },
+  {
+   "titlu": "20 de ani din 31 ianuarie",
+   "durata": {
+    "tip": "ani",
+    "ani": "20",
+    "data": ""
+   },
+   "dataInmatricularii": "31.01.2007",
+   "asteptat": {
+    "stare": "curand",
+    "expira": "31.01.2027",
+    "zile": 79
+   }
+  }
+ ]
+}

@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault("UPLOAD_FOLDER", "/tmp/uploads")
 
-from firebase_functions import https_fn, params, scheduler_fn
+from firebase_functions import firestore_fn, https_fn, params, scheduler_fn
 
 _azure_docint_key = params.SecretParam("AZURE_DOCUMENT_INTELLIGENCE_KEY")
 _stripe_secret_key = params.SecretParam("STRIPE_SECRET_KEY")
@@ -86,3 +86,80 @@ def purge_deletions(event: scheduler_fn.ScheduledEvent) -> None:
     import workspace_deletion
     authz.init_admin()          # instanța funcției nu încarcă app.py, unde se face inițializarea pentru `api`
     print(f"[purge] {workspace_deletion.purge_due(authz.db(), authz.delete_user)}")
+
+
+# ── Alerte (alerte.py, docs/plan-alerte.md) ─────────────────────────────────────
+# Triggerele Firestore trebuie să ruleze în regiunea bazei de date; se poate schimba din .env.<proiect>.
+_alerte_region = os.getenv("ALERTE_TRIGGER_REGION", "europe-west3")
+_ALERTE_TRIGGER = dict(region=_alerte_region, memory=512, timeout_sec=120, max_instances=10, service_account=_runtime_sa)
+
+
+def _date_document(snap) -> dict | None:
+    return (snap.to_dict() or {}) if snap is not None and snap.exists else None
+
+
+def _autor(event) -> str | None:
+    """uid-ul utilizatorului care a scris, ca să nu-i trimitem „ți s-a asignat” când se asignează singur. Valorile
+    `auth_type` diferă între documentații și versiuni ale SDK-ului; conturile de serviciu au însă ca id o adresă de
+    e-mail, iar uid-urile Firebase Auth nu conțin „@”."""
+    autor = getattr(event, "auth_id", None)
+    return autor if autor and "@" not in autor else None
+
+
+def _alerte_entitate(tip: str, cheie: str, event) -> None:
+    import alerte
+    import authz
+    authz.init_admin()          # instanța funcției nu încarcă app.py
+    alerte.la_scriere_entitate(authz.db(), tip, event.params["wid"], event.params[cheie],
+                               _date_document(event.data.before), _date_document(event.data.after), autor=_autor(event))
+
+
+@firestore_fn.on_document_written_with_auth_context(document="workspaces/{wid}/clienti/{cid}", **_ALERTE_TRIGGER)
+def alerte_client(event) -> None:
+    _alerte_entitate("client", "cid", event)
+
+
+@firestore_fn.on_document_written_with_auth_context(document="workspaces/{wid}/dosare/{did}", **_ALERTE_TRIGGER)
+def alerte_dosar(event) -> None:
+    _alerte_entitate("dosar", "did", event)
+
+
+@firestore_fn.on_document_written_with_auth_context(document="workspaces/{wid}/sarcini/{sid}", **_ALERTE_TRIGGER)
+def alerte_sarcina(event) -> None:
+    _alerte_entitate("sarcina", "sid", event)
+
+
+@firestore_fn.on_document_written(document="workspaces/{wid}/preferinteAlerte/{uid}", **_ALERTE_TRIGGER)
+def alerte_preferinte(event) -> None:
+    """Un membru și-a schimbat setările de notificări: doar alertele lui se recalculează."""
+    import alerte
+    import authz
+    authz.init_admin()
+    alerte.la_scriere_preferinte(authz.db(), event.params["wid"], event.params["uid"],
+                                 _date_document(event.data.before), _date_document(event.data.after))
+
+
+@firestore_fn.on_document_updated(document="workspaces/{wid}", **_ALERTE_TRIGGER)
+def alerte_cabinet(event) -> None:
+    """Membri (și roluri), abonament sau flag-ul s-au schimbat: tot cabinetul se recalculează."""
+    import alerte
+    import authz
+    authz.init_admin()
+    alerte.la_scriere_cabinet(authz.db(), event.params["wid"], _date_document(event.data.before),
+                              _date_document(event.data.after))
+
+
+@scheduler_fn.on_schedule(
+    schedule="every day 06:00",
+    timezone=scheduler_fn.Timezone("Europe/Bucharest"),
+    region="europe-west3",
+    memory=512,
+    timeout_sec=1800,           # alerte.BUGET_ZILNIC_SEC lasă marjă până la limită
+    service_account=_runtime_sa,
+)
+def alerte_zilnice(event: scheduler_fn.ScheduledEvent) -> None:
+    """Termenele avansează odată cu zilele: recalculează alertele tuturor cabinetelor cu flag-ul `alerte`."""
+    import alerte
+    import authz
+    authz.init_admin()
+    print(f"[alerte] {alerte.ruleaza_zilnic(authz.db())}")

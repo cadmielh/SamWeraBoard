@@ -269,6 +269,7 @@
         ".env.*",
         "*.local",
         "firebase-service-account.json",
+        "firebase.test.json",
         "credentials.json",
         "token.json",
         "*.pem",

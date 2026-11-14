@@ -11,12 +11,19 @@ from datetime import datetime, timedelta, timezone
 
 from google.cloud.firestore_v1 import DELETE_FIELD
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.cloud.firestore_v1.field_path import FieldPath
 
 GRACE_DAYS = 14          # DPA: ștergere în cel mult 30 de zile de la cerere
 PENDING = "pendingDeletion"
 ACCOUNTS = "accountDeletions"
 
 COUNTED = ("clienti", "dosare", "sarcini", "docTemplates", "auditLog")
+
+
+def cale_rol_membru(uid: str) -> str:
+    """`members.<uid>.role`, citată, pentru interogări: un uid care începe cu o cifră e refuzat de Firestore într-o cale
+    necitată (scrierile cu `update` citează singure)."""
+    return FieldPath("members", uid, "role").to_api_repr()
 
 
 def run(db, wid: str, dry_run: bool = False, actor: str = "operator") -> dict:
@@ -123,7 +130,7 @@ def restore_account(db, uid: str) -> bool:
 def purge_account(db, uid: str, email: str, delete_user) -> None:
     """Ștergerea definitivă a contului: calitatea de membru, invitațiile, profilul, apoi contul Firebase."""
     import audit
-    q = db.collection("workspaces").where(filter=FieldFilter(f"members.{uid}.role", "in", ["admin", "member", "viewer"]))
+    q = db.collection("workspaces").where(filter=FieldFilter(cale_rol_membru(uid), "in", ["admin", "member", "viewer"]))
     for snap in q.stream():
         if len((snap.to_dict() or {}).get("members") or {}) == 1:
             run(db, snap.id, actor=uid)

@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  collection, doc, setDoc, updateDoc,
+  collection, doc, setDoc, updateDoc, getDoc,
   query, where, orderBy, limit, startAfter, getDocs,
   serverTimestamp, deleteField,
 } from 'firebase/firestore'
-import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
+import type { QueryDocumentSnapshot, DocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
 import type { Client, Persoana } from '../types'
@@ -71,8 +71,8 @@ export function resolveInfiintare<T extends Partial<ClientInput>>(data: T, exist
  * original e întors separat (`legacyRaw`), nu atașat pe `Client` — altfel ar
  * ajunge, din greșeală, în payload-ul de `updateDoc` (Firestore aruncă eroare
  * la scrierea unui câmp cu valoare `undefined` pentru clienții deja migrați). */
-function clientFromDoc(d: QueryDocumentSnapshot<DocumentData>): { client: Client; legacyRaw: string | null } {
-  const raw = d.data() as Record<string, unknown>
+function clientFromDoc(d: QueryDocumentSnapshot<DocumentData> | DocumentSnapshot<DocumentData>): { client: Client; legacyRaw: string | null } {
+  const raw = (d.data() ?? {}) as Record<string, unknown>
   const rawSediu = raw.sediuSocial
   const legacyRaw = typeof rawSediu === 'string' ? rawSediu : null
   const sediuSocial: AdresaStructurata = legacyRaw
@@ -152,6 +152,18 @@ export async function searchClienti(workspaceId: string, searchQuery: string): P
   return rows.map(r => r.client)
 }
 
+/** Un singur document de client, după id (rândul brut, ca în searchClientiDocs); null dacă nu există. */
+async function fetchClientDoc(workspaceId: string, clientId: string): Promise<{ client: Client; legacyRaw: string | null } | null> {
+  const snap = await getDoc(doc(clientiCol(workspaceId), clientId))
+  return snap.exists() ? clientFromDoc(snap) : null
+}
+
+/** Un singur client, după id — oglinda fetchDosarById din lib/dosare.ts. Fără CNP/serie în clar (sunt în vault,
+ * vezi lib/pii.ts): persoanele au doar `pid` și variantele mascate, ca în lista din useClienti. */
+export async function fetchClientById(workspaceId: string, clientId: string): Promise<Client | null> {
+  return (await fetchClientDoc(workspaceId, clientId))?.client ?? null
+}
+
 /** Potrivire locală (substring, nu doar prefix) peste clienții deja încărcați.
  * Tolerantă la câmpuri lipsă: documentele vechi/importate pot să nu aibă
  * `denumireLower` sau `codFiscal`, iar un `.includes` pe undefined ar arunca
@@ -223,6 +235,8 @@ export function useClientOptions(
 
 export function useClienti(workspaceId: string | null) {
   const [clienti, setClienti] = useState<Client[]>([])
+  // Clienți aduși după id (ensureLoaded) care nu sunt încă în paginile încărcate; vezi `listati`.
+  const [separati, setSeparati] = useState<Set<string>>(() => new Set())
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -247,7 +261,7 @@ export function useClienti(workspaceId: string | null) {
   useEffect(() => {
     if (!workspaceId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setClienti([]); setLoading(false); setHasMore(false); lastDocRef.current = null
+      setClienti([]); setSeparati(new Set()); setLoading(false); setHasMore(false); lastDocRef.current = null
       return
     }
     let cancelled = false
@@ -257,6 +271,7 @@ export function useClienti(workspaceId: string | null) {
       if (cancelled) return
       const rows = snap.docs.map(clientFromDoc)
       setClienti(rows.map(r => r.client))
+      setSeparati(new Set())
       mergeLegacyRaw(rows)
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null
       setHasMore(snap.docs.length === PAGE_SIZE)
@@ -276,7 +291,10 @@ export function useClienti(workspaceId: string | null) {
       )
       const snap = await getDocs(q)
       const rows = snap.docs.map(clientFromDoc)
-      setClienti(prev => [...prev, ...rows.map(r => r.client)])
+      // Un client adus deja separat (ensureLoaded) își ia aici locul firesc din listă, fără duplicat.
+      const ids = new Set(rows.map(r => r.client.id))
+      setClienti(prev => [...prev.filter(c => !ids.has(c.id)), ...rows.map(r => r.client)])
+      setSeparati(prev => prev.size && rows.some(r => prev.has(r.client.id)) ? new Set([...prev].filter(id => !ids.has(id))) : prev)
       mergeLegacyRaw(rows)
       lastDocRef.current = snap.docs[snap.docs.length - 1] ?? lastDocRef.current
       setHasMore(snap.docs.length === PAGE_SIZE)
@@ -284,6 +302,22 @@ export function useClienti(workspaceId: string | null) {
       setLoadingMore(false)
     }
   }, [loadingMore])
+
+  /** Clientul cu id-ul dat, din lista încărcată sau, dacă nu e în paginile încărcate (ex. link dintr-o alertă),
+   * citit după id și adăugat în `clienti` — astfel fișa deschisă ca filă se editează exact ca una din listă
+   * (update() găsește fișa curentă, deci persoanele/pid-urile se tratează la fel). Nu apare însă în `listati`
+   * până nu ajunge loadMore la pagina lui, ca lista să rămână în ordine. null dacă nu există. */
+  const ensureLoaded = useCallback(async (workspaceId: string, clientId: string): Promise<Client | null> => {
+    const known = clientiRef.current.find(c => c.id === clientId)
+    if (known) return known
+    const row = await fetchClientDoc(workspaceId, clientId)
+    if (!row) return null
+    setClienti(prev => prev.some(c => c.id === clientId) ? prev : [...prev, row.client])
+    setSeparati(prev => new Set(prev).add(clientId))
+    mergeLegacyRaw([row])
+    clientiRef.current = [...clientiRef.current, row.client]
+    return row.client
+  }, [])
 
   const search = useCallback(async (workspaceId: string, searchQuery: string): Promise<Client[]> => {
     const rows = await searchClientiDocs(workspaceId, searchQuery)
@@ -392,7 +426,10 @@ export function useClienti(workspaceId: string | null) {
     }
   }, [])
 
-  return { clienti, loading, loadingMore, hasMore, loadMore, search, add, update, remove, legacyRawById }
+  // Lista paginată, în ordinea ei: fără clienții aduși separat de ensureLoaded (încă nu le-a venit pagina).
+  const listati = useMemo(() => separati.size ? clienti.filter(c => !separati.has(c.id)) : clienti, [clienti, separati])
+
+  return { clienti, listati, loading, loadingMore, hasMore, loadMore, search, ensureLoaded, add, update, remove, legacyRawById }
 }
 
 /** Toți clienții workspace-ului, într-un singur `getDocs` fără `where` — folosit de
