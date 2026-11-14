@@ -313,6 +313,7 @@ Reguli pentru cabinet                                   [Revino la implicite]
 - Scadențe fiscale (refolosește `lib/scadente.ts`, azi nefolosit).
 - Verificare periodică la ANAF și alerte la schimbări de stare.
 - Export în calendar (.ics / Google Calendar).
+- Alertă „Șablon nou primit” la livrarea unui șablon de către super admin (din `deliver_template`, ca eveniment; implicit admini și membri). Discutată pe 15 nov 2026, amânată.
 
 ## Decizii confirmate (13 noiembrie 2026)
 
