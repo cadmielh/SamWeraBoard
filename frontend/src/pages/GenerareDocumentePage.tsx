@@ -346,78 +346,80 @@ export default function GenerareDocumentePage() {
 
   return (
     <>
-      {/* ══ TOP BAR — sticky, ca navigarea înapoi să rămână mereu vizibilă, indiferent de scroll ══ */}
-      <div style={{
-        background: 'var(--surface)', borderBottom: '1px solid var(--s200)',
-        padding: '.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
-        position: 'sticky', top: 0, zIndex: 10,
-      }}>
-        {hasStarted ? (
-          <>
-            {step > 1 && (
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleStepBack}
-                style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flexShrink: 0 }}
-              >
-                ← Pasul anterior
+      {/* ══ Antetul standard (ca pe Clienți, Dosare, Sarcini): titlu, subtitlu, acțiuni și clopoțel în același loc ══ */}
+      <div className="page-top">
+        <div className="page-header">
+          <div>
+            <div className="page-title">Generare documente</div>
+            <div className="page-subtitle">{hasStarted ? getModeLabel() : 'Alege sursa de date'}</div>
+          </div>
+          <div className="page-actions">
+            {workspaceId && (
+              <button className="btn btn-ghost" onClick={() => setLibraryOpen(true)}>
+                {/* line-height 1: emoji-ul nu mai înalță butonul față de celelalte din antet */}
+                <span aria-hidden="true" style={{ lineHeight: 1 }}>📁</span> Șabloane
               </button>
             )}
+            <button className="btn btn-ghost" onClick={() => setHistoryOpen(h => !h)}>
+              {historyOpen ? 'Închide istoricul' : 'Istoric'}
+            </button>
+            <NotificariBell />
+          </div>
+        </div>
+      </div>
+
+      {/* ══ Pașii — sticky, ca navigarea înapoi să rămână mereu vizibilă, indiferent de scroll ══ */}
+      {hasStarted && (
+        <div style={{
+          background: 'var(--surface)', borderBottom: '1px solid var(--s200)',
+          padding: '.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+          position: 'sticky', top: 0, zIndex: 10,
+        }}>
+          {step > 1 && (
             <button
-              className="btn btn-ghost btn-sm"
-              onClick={goToLanding}
+              className="btn btn-primary btn-sm"
+              onClick={handleStepBack}
               style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flexShrink: 0 }}
             >
-              ← Generare documente
+              ← Pasul anterior
             </button>
-            <div style={{
-              fontSize: '.72rem', fontWeight: 700, color: 'var(--p600)',
-              background: 'var(--p50)', padding: '.2rem .5rem', borderRadius: 4, whiteSpace: 'nowrap',
-            }}>
-              {getModeLabel()}
-            </div>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={goToLanding}
+            style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flexShrink: 0 }}
+          >
+            ← Alege altă sursă
+          </button>
 
-            <nav style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flex: 1 }}>
-              {getStepLabels().map(({ num: s, label }, i) => {
-                const active = step === s
-                const done = step > s
-                return (
-                  <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
-                    {i > 0 && <div style={{ width: 20, height: 1, background: done ? 'var(--p200)' : 'var(--s200)' }} />}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '.3rem', opacity: done || active ? 1 : 0.4 }}>
-                      <span style={{
-                        width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                        background: done ? 'var(--p500)' : active ? 'var(--p100)' : 'transparent',
-                        color: done ? '#fff' : active ? 'var(--p600)' : 'var(--s400)',
-                        border: done || active ? 'none' : '1.5px solid var(--s300)',
-                        fontSize: '.65rem', fontWeight: 700,
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {done ? '✓' : i + 1}
-                      </span>
-                      <span style={{ fontSize: '.78rem', fontWeight: active ? 600 : 400, color: active ? 'var(--s800)' : 'var(--s400)', whiteSpace: 'nowrap' }}>
-                        {label}
-                      </span>
-                    </div>
+          <nav style={{ display: 'flex', alignItems: 'center', gap: '.375rem', flex: 1 }}>
+            {getStepLabels().map(({ num: s, label }, i) => {
+              const active = step === s
+              const done = step > s
+              return (
+                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '.375rem' }}>
+                  {i > 0 && <div style={{ width: 20, height: 1, background: done ? 'var(--p200)' : 'var(--s200)' }} />}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '.3rem', opacity: done || active ? 1 : 0.4 }}>
+                    <span style={{
+                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                      background: done ? 'var(--p500)' : active ? 'var(--p100)' : 'transparent',
+                      color: done ? '#fff' : active ? 'var(--p600)' : 'var(--s400)',
+                      border: done || active ? 'none' : '1.5px solid var(--s300)',
+                      fontSize: '.65rem', fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {done ? '✓' : i + 1}
+                    </span>
+                    <span style={{ fontSize: '.78rem', fontWeight: active ? 600 : 400, color: active ? 'var(--s800)' : 'var(--s400)', whiteSpace: 'nowrap' }}>
+                      {label}
+                    </span>
                   </div>
-                )
-              })}
-            </nav>
-          </>
-        ) : (
-          <span style={{ fontWeight: 700, fontSize: '.9rem', color: 'var(--s800)', flex: 1 }}>
-            Generare documente
-          </span>
-        )}
-
-        {workspaceId && (
-          <button className="btn btn-ghost btn-sm" onClick={() => setLibraryOpen(true)}>📁 Șabloane</button>
-        )}
-        <button className="btn btn-ghost btn-sm" onClick={() => setHistoryOpen(h => !h)}>
-          {historyOpen ? 'Închide' : 'Istoric'}
-        </button>
-        <NotificariBell />
-      </div>
+                </div>
+              )
+            })}
+          </nav>
+        </div>
+      )}
 
       <main style={CONTENT_STYLE}>
         {/* key nou la fiecare schimbare de ecran → React remontează, deci
@@ -436,14 +438,6 @@ export default function GenerareDocumentePage() {
         {/* ══════════════ LANDING ══════════════ */}
         {!hasStarted && !deepLinkPending && (
           <div style={{ ...COMPACT_STYLE, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ textAlign: 'center', paddingTop: '.5rem' }}>
-              <h2 style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--s800)', margin: 0 }}>
-                Generare documente
-              </h2>
-              <p style={{ color: 'var(--s400)', fontSize: '.875rem', marginTop: '.375rem' }}>
-                Alege sursa de date
-              </p>
-            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', width: '100%' }}>
 

@@ -443,12 +443,13 @@ export default function DosarePage() {
     <>
       <div className="page--data">
         <div className="page-top">
-          <div className="page-header" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
+          <div className="page-header" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center' }}>
             <div>
               <div className="page-title">Dosare</div>
               <div className="page-subtitle">Registrul dosarelor depuse la Registrul Comerțului (ONRC)</div>
             </div>
-            <div style={{ justifySelf: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '.4rem' }}>
+            {/* Un singur rând, ca antetul să aibă aceeași înălțime ca pe celelalte pagini (titlul și clopoțelul nu „sar”). */}
+            <div style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '.25rem' }}>
                 {STATS_PERIOD_OPTIONS.map(opt => (
                   <button
