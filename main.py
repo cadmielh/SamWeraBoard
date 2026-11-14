@@ -162,4 +162,9 @@ def alerte_zilnice(event: scheduler_fn.ScheduledEvent) -> None:
     import alerte
     import authz
     authz.init_admin()
-    print(f"[alerte] {alerte.ruleaza_zilnic(authz.db())}")
+    rezultat = alerte.ruleaza_zilnic(authz.db())
+    print(f"[alerte] {rezultat}")
+    # Un cabinet căzut sau rămas neprocesat nu oprește restul, dar rularea se încheie cu eroare: răspunsul 5xx declanșează
+    # alerta din Cloud Monitoring (scripts/setup_alerts.sh, „Alerte: erori”). Rularea e idempotentă.
+    if rezultat["erori"] or rezultat["neprocesate"]:
+        raise RuntimeError(f"[alerte] rulare incompletă: {rezultat}")

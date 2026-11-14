@@ -16,9 +16,9 @@ if [ -z "$CHANNEL" ]; then
     --type=email --channel-labels=email_address="$EMAIL" --format='value(name)')"
 fi
 
-# Nume, condiția pe metricile Cloud Run, pragul pe 5 minute
+# Nume, condiția pe metricile Cloud Run, pragul pe 5 minute, serviciile (implicit doar `api`)
 create_policy() {
-  local name="$1" metric_filter="$2" threshold="$3"
+  local name="$1" metric_filter="$2" threshold="$3" service_filter="${4:-resource.labels.service_name=\\\"api\\\"}"
   if gcloud alpha monitoring policies list --project "$PROJECT" --filter="displayName=\"$name\"" --format='value(name)' | grep -q .; then
     echo "Există deja: $name"
     return
@@ -31,7 +31,7 @@ create_policy() {
   "conditions": [{
     "displayName": "$name",
     "conditionThreshold": {
-      "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"api\" AND metric.type=\"run.googleapis.com/request_count\" AND $metric_filter",
+      "filter": "resource.type=\"cloud_run_revision\" AND $service_filter AND metric.type=\"run.googleapis.com/request_count\" AND $metric_filter",
       "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_SUM", "crossSeriesReducer": "REDUCE_SUM"}],
       "comparison": "COMPARISON_GT",
       "thresholdValue": $threshold,
@@ -46,5 +46,11 @@ EOF
 create_policy "API erori 5xx" 'metric.labels.response_code_class=\"5xx\"' 10
 create_policy "API autentificari respinse" 'metric.labels.response_code=\"401\"' 50
 create_policy "API cereri limitate" 'metric.labels.response_code=\"429\"' 50
+
+# Alertele din aplicație (alerte.py): triggerele Firestore și jobul zilnic. Un 4xx la triggere înseamnă că evenimentele
+# nu pot fi livrate (ex. lipsește run.invoker, ca la primul deploy); un 5xx, o eroare în cod sau un cabinet nerecalculat.
+ALERTE='resource.labels.service_name=starts_with(\"alerte-\")'
+create_policy "Alerte: livrare refuzata (4xx)" 'metric.labels.response_code_class=\"4xx\"' 3 "$ALERTE"
+create_policy "Alerte: erori (5xx)" 'metric.labels.response_code_class=\"5xx\"' 3 "$ALERTE"
 
 echo "Gata. Alertele ajung la $EMAIL."

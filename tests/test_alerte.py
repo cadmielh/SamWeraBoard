@@ -567,3 +567,15 @@ def test_redeschiderea_anuleaza_amanarea_veche():
     ex = {"x": {**_doc(), "rezolvat": True, "rezolvatLa": ACUM, "vazut": True, "amanatPana": ACUM + timedelta(days=20)}}
     _, actualizat, _ = alerte.plan_sincronizare({"x": _doc()}, ex, set(), {"m1"}, ACUM)
     assert actualizat["x"]["amanatPana"] is None and actualizat["x"]["rezolvat"] is False
+
+
+def test_jobul_zilnic_raporteaza_eroare_daca_un_cabinet_a_cazut(monkeypatch):
+    import authz
+    import main
+    monkeypatch.setattr(authz, "init_admin", lambda: None)
+    monkeypatch.setattr(authz, "db", lambda: None)
+    monkeypatch.setattr(alerte, "ruleaza_zilnic", lambda db: {"cabinete": 3, "erori": 0, "neprocesate": 0})
+    main.alerte_zilnice.__wrapped__(None)                      # totul în regulă: fără excepție
+    monkeypatch.setattr(alerte, "ruleaza_zilnic", lambda db: {"cabinete": 2, "erori": 1, "neprocesate": 0})
+    with pytest.raises(RuntimeError, match="rulare incompletă"):
+        main.alerte_zilnice.__wrapped__(None)
