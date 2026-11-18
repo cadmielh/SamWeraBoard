@@ -10,8 +10,10 @@ import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { JUDETE_ROMANIA } from '../lib/counties'
 import { useFieldRefs } from '../lib/useFieldRefs'
 import type { ElRef } from '../lib/useFieldRefs'
+import type { IDFields } from '../lib/api'
 import Combobox from './Combobox'
 import DateFieldInput from './DateFieldInput'
+import MiniOCR from './MiniOCR'
 
 export interface DeclaratieFormValue {
   replacements: Record<string, string>
@@ -90,6 +92,20 @@ function declarantFromPersoana(p: Persoana): DeclarantFormFields {
     actEmisDe: p.emisa_de || '', actValabilDeLa: p.valabila_de_la || '', actValabilPanaLa: p.valabila_pana_la || '',
     calitate: p.calitate || '',
   }
+}
+
+/** Datele citite dintr-un buletin scanat, peste cele deja scrise: ce n-a citit scanarea rămâne neschimbat, iar țara,
+ * tipul actului și calitatea (valori implicite / alese, nu din buletin) nu se ating. */
+function declarantDinBuletin(prev: DeclarantFormFields, f: IDFields): DeclarantFormFields {
+  const citit = declarantFromPersoana({ ...f, calitate: '', cotaParticipare: '' })
+  const out = { ...prev, domiciliu: { ...prev.domiciliu } }
+  for (const k of Object.keys(citit.domiciliu) as (keyof AdresaStructurata)[]) {
+    if (citit.domiciliu[k].trim()) out.domiciliu[k] = citit.domiciliu[k]
+  }
+  const simple = ['nume', 'prenume', 'cnp', 'domiciliuJudet', 'cetatenia', 'nasterelocalitate', 'nastereJudet', 'nastereData',
+    'actSerie', 'actNumar', 'actEmisDe', 'actValabilDeLa', 'actValabilPanaLa'] as const
+  for (const k of simple) if (citit[k].trim()) out[k] = citit[k]
+  return out
 }
 
 /** Inversul lui declarantFromPersoana — reasamblează Persoana pornind de la
@@ -420,6 +436,7 @@ const DeclaratieActivitateFiller = forwardRef<DeclaratieActivitateFillerHandle, 
         {declarantChoice && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
             {declarantChoice !== '__manual__' && <div style={AUTO_NOTE_STYLE}>Completat automat din profil — verifică.</div>}
+            {declarantChoice === '__manual__' && <MiniOCR onExtracted={f => setDeclarant(prev => declarantDinBuletin(prev, f))} />}
 
             <div style={{ display: 'flex', gap: '.5rem' }}>
               <Field label="Nume" value={declarant.nume} onChange={v => setDeclarant({ ...declarant, nume: v })} fieldRef={bindRef('declarant-nume')} />

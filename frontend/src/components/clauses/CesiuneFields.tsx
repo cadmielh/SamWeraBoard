@@ -4,6 +4,7 @@ import type { Client, Persoana } from '../../types'
 import { parsePercent, valoareParteSociala } from '../../lib/cota'
 import { EMPTY_PERSOANA } from '../../lib/clienti'
 import type { ClientPatchProposal } from '../../lib/clauseFieldSpecs'
+import MiniOCR from '../MiniOCR'
 
 interface Props {
   client?: Partial<Client> | null
@@ -137,10 +138,13 @@ export default function CesiuneFields({ client, fields, onField, rows, onRows, o
             ))}
           </select>
         ) : (
-          <div style={{ display: 'flex', gap: '.375rem' }}>
-            <input className="field-input" placeholder="Nume" value={nouNume} onChange={e => handleCesionarNou(e.target.value, nouPrenume)} />
-            <input className="field-input" placeholder="Prenume" value={nouPrenume} onChange={e => handleCesionarNou(nouNume, e.target.value)} />
-          </div>
+          <>
+            <MiniOCR compact onExtracted={f => handleCesionarNou(f.nume || nouNume, f.prenume || nouPrenume)} />
+            <div style={{ display: 'flex', gap: '.375rem', marginTop: '.3rem' }}>
+              <input className="field-input" placeholder="Nume" value={nouNume} onChange={e => handleCesionarNou(e.target.value, nouPrenume)} />
+              <input className="field-input" placeholder="Prenume" value={nouPrenume} onChange={e => handleCesionarNou(nouNume, e.target.value)} />
+            </div>
+          </>
         )}
       </div>
 

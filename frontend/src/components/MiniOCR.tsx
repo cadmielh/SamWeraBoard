@@ -7,9 +7,11 @@ interface Props {
   /** Poate întoarce mesajul de confirmare (ex. câte câmpuri s-au completat); altfel, mesajul generic. */
   onExtracted: (fields: IDFields) => string | void
   onDrivePick?: () => void
+  /** Doar butonul, fără zona de tras fișierul și fără „sau completează manual” — pentru formularele cu puține câmpuri. */
+  compact?: boolean
 }
 
-export default function MiniOCR({ onExtracted, onDrivePick }: Props) {
+export default function MiniOCR({ onExtracted, onDrivePick, compact }: Props) {
   const { toast } = useApp()
   const [loading, setLoading] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -38,6 +40,17 @@ export default function MiniOCR({ onExtracted, onDrivePick }: Props) {
     const file = e.target.files?.[0]
     if (file) void process(file)
     e.target.value = ''
+  }
+
+  if (compact) {
+    return (
+      <div>
+        <button type="button" className="btn btn-outline-primary btn-xs" onClick={() => inputRef.current?.click()} disabled={loading}>
+          {loading ? <><span className="spin spin-dark" />Se extrage...</> : '📷 Preia din buletin (scanare)'}
+        </button>
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" style={{ display: 'none' }} onChange={onFileChange} />
+      </div>
+    )
   }
 
   return (
