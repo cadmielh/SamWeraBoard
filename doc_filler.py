@@ -124,7 +124,10 @@ def _header_footer_parts(doc: Document):
     for section in doc.sections:
         for part in (section.header, section.first_page_header, section.even_page_header,
                      section.footer, section.first_page_footer, section.even_page_footer):
-            if part is not None:
+            # Doar cele definite: python-docx *creează* antetul/subsolul la prima citire a paragrafelor lui, iar un
+            # antet/subsol gol, adăugat așa, mută textul paginii (ex. Anexa 1 trecea un rând pe pagina următoare).
+            # Unul „legat de secțiunea anterioară” e același cu al ei, deja parcurs.
+            if part is not None and not part.is_linked_to_previous:
                 yield part
 
 

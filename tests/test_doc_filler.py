@@ -473,3 +473,23 @@ def test_procentul_nu_se_dubleaza():
     tpl = _build_docx(["reprezentând {{PROCENT}}% din capital", "reprezentând {{PROCENT}} din capital", "fix 100%%"])
     out = _read_paragraphs(df.fill_docx(tpl, {"{{PROCENT}}": "60%"}))
     assert out == ["reprezentând 60% din capital", "reprezentând 60% din capital", "fix 100%%"]
+
+
+def test_fill_docx_does_not_add_headers_or_footers():
+    """Un antet/subsol gol, creat doar pentru că a fost citit, ocupă loc pe pagină și mută textul (Anexa 1 trecea
+    nota „*) Anexa este reprodusă în facsimil” pe pagina următoare)."""
+    import zipfile
+    out = df.fill_docx(_build_docx(["Nume {{NUME}}"]), {"{{NUME}}": "Ion"})
+    names = zipfile.ZipFile(io.BytesIO(out)).namelist()
+    assert not [n for n in names if "header" in n or "footer" in n]
+    assert _read_paragraphs(out) == ["Nume Ion"]
+
+
+def test_fill_docx_still_fills_existing_footer():
+    doc = Document()
+    doc.add_paragraph("Corp {{NUME}}")
+    doc.sections[0].footer.paragraphs[0].text = "Subsol {{NUME}}"
+    buf = io.BytesIO()
+    doc.save(buf)
+    out = Document(io.BytesIO(df.fill_docx(buf.getvalue(), {"{{NUME}}": "Ion"})))
+    assert out.sections[0].footer.paragraphs[0].text == "Subsol Ion"
