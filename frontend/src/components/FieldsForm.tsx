@@ -87,7 +87,7 @@ export default function FieldsForm({ fields, sourceFile, onFieldsChange, onNext,
 
         <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary" onClick={onNext}>
-            Completează șablonul →
+            Confirmă și continuă la date client →
           </button>
         </div>
       </div>

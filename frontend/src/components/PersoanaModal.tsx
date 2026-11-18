@@ -17,6 +17,8 @@ import { CAMPURI_BULETIN, campuriSchimbate, mesajCompletare } from '../lib/campu
 interface Props {
   initial: Persoana | null
   prefill?: Partial<Persoana>
+  /** Calitatea persoanei, dată de lista în care e (Asociat, Administrator, Titular, Membru IF, rolul din șablon).
+   * Nu se alege în formular: se salvează mereu aceasta, ca eticheta să nu contrazică lista. */
   calitateDefault: string
   showCota?: boolean
   /** Doar la administratori: forma juridică, de care depind variantele mandatului (la SA, mereu pe durată determinată). */
@@ -24,8 +26,6 @@ interface Props {
   onSave: (p: Persoana) => void
   onClose: () => void
 }
-
-const CALITATI = ['Asociat', 'Administrator', 'Asociat și Administrator', 'Cenzor', 'Acționar', 'Fondator', 'Altul']
 
 export default function PersoanaModal({ initial, prefill, calitateDefault, showCota = true, mandatContext, onSave, onClose }: Props) {
   // Mandatul nu se precompletează: îl alege doar cine folosește șabloane cu durata mandatului.
@@ -98,16 +98,6 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
           <MiniOCR onExtracted={handleExtracted} />
 
           <div className="form-grid">
-            <div className="field full">
-              <label className="field-label">Calitate</label>
-              <select
-                className="field-input"
-                value={p.calitate}
-                onChange={e => set('calitate', e.target.value)}
-              >
-                {CALITATI.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
             {showCota && (
               <div className="field full">
                 <label className="field-label">Cotă participare</label>
@@ -203,7 +193,7 @@ export default function PersoanaModal({ initial, prefill, calitateDefault, showC
 
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Anulează</button>
-          <button className="btn btn-primary" onClick={() => onSave(p)} disabled={!canSave}>
+          <button className="btn btn-primary" onClick={() => onSave({ ...p, calitate: calitateDefault })} disabled={!canSave}>
             {initial ? 'Salvează' : 'Adaugă'}
           </button>
         </div>

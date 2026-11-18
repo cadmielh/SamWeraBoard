@@ -27,6 +27,18 @@ import NotificariBell from '../components/NotificariBell'
 type SourceMode = 'buletin' | 'societate' | 'client'
 type Step = 1 | 2 | 3
 
+// La fel pentru o entitate PF nouă: buletinul de la Pasul 1 devine titularul, iar restul (PFA/II/IF, denumire,
+// CUI, sediu profesional, CAEN) se completează în același formular de client.
+function buletinToClientInitial(fields: IDFields): Client {
+  return {
+    id: '', createdAt: null, createdBy: '', denumireLower: '',
+    ...EMPTY_CLIENT,
+    tipClient: 'PF',
+    subtipPF: 'PFA',
+    titular: idFieldsToPersoana(fields, { ...EMPTY_PERSOANA, calitate: 'Titular' }),
+  } as Client
+}
+
 // Echipa scanată la Pasul 1 devine profilul inițial pentru ClientModal la
 // Pasul 2 — același formular complet (date fiscale, verificare unicitate
 // denumire) folosit peste tot, nu un formular trunchiat separat, ca să nu mai
@@ -111,6 +123,11 @@ export default function GenerareDocumentePage() {
   // comportă ca un modal obișnuit) — fără acest flag, acel onClose ar anula
   // imediat avansarea la Pasul 3 declanșată chiar de acel onSave.
   const societateJustSavedRef = useRef(false)
+  // Același tipar pentru o entitate PF nouă (sursa „buletin”): fișa completată la Pasul 2.
+  const [pfClientInput, setPfClientInput] = useState<ClientInput | null>(null)
+  const pfJustSavedRef = useRef(false)
+  // Pasul 2 la PF nou are două ecrane: întâi verificarea datelor din buletin, apoi fișa clientului (Editează client).
+  const [pfEtapa, setPfEtapa] = useState<'verificare' | 'client'>('verificare')
   const [pfScanMode, setPfScanMode] = useState<'scan' | 'manual' | null>(null)
   // Buton "Continuă" duplicat sus, lângă "Înapoi" — mereu activ; la click,
   // MultiPersonPreview validează singur și sare la primul câmp lipsă dacă e cazul.
@@ -162,6 +179,7 @@ export default function GenerareDocumentePage() {
     setScannedPersons([])
     setSelectedClient(null)
     setSocietateClientInput(null)
+    setPfClientInput(null)
     setShowDrivePicker(false)
     setStep(1)
     setHasStarted(true)
@@ -175,6 +193,7 @@ export default function GenerareDocumentePage() {
     setScannedPersons([])
     setSelectedClient(null)
     setSocietateClientInput(null)
+    setPfClientInput(null)
     setShowDrivePicker(false)
     setStep(1)
   }
@@ -191,7 +210,10 @@ export default function GenerareDocumentePage() {
       return
     }
     if (step !== 2) return
-    if (sourceMode === 'buletin') { setStep(1); setFields(null); return }
+    if (sourceMode === 'buletin') {
+      if (pfEtapa === 'client') { setPfEtapa('verificare'); return }
+      setStep(1); setFields(null); setPfClientInput(null); return
+    }
     setStep(1)
   }
 
@@ -200,6 +222,7 @@ export default function GenerareDocumentePage() {
   const handleExtracted = useCallback(async (result: IDFields, filename: string) => {
     setFields(result)
     setSourceFile(filename)
+    setPfEtapa('verificare')
     setStep(2)
     setShowDrivePicker(false)
     toast('Câmpuri extrase cu succes', 'ok')
@@ -336,7 +359,7 @@ export default function GenerareDocumentePage() {
   // și se sare direct la 3.
   const getStepLabels = (): { num: Step; label: string }[] => {
     if (sourceMode === 'buletin') return [
-      { num: 1, label: 'Scanează CI' }, { num: 2, label: 'Verifică' }, { num: 3, label: 'Completează' },
+      { num: 1, label: 'Scanează CI' }, { num: 2, label: 'Verifică · date client' }, { num: 3, label: 'Completează' },
     ]
     if (sourceMode === 'societate') return [
       { num: 1, label: 'Configurează echipa' }, { num: 2, label: 'Date client' }, { num: 3, label: 'Completează' },
@@ -502,21 +525,55 @@ export default function GenerareDocumentePage() {
                       onExtracted={handleExtracted}
                       onToast={toast}
                       onShowDrivePicker={() => setShowDrivePicker(true)}
-                      onManualEntry={() => { setFields(EMPTY_ID_FIELDS); setSourceFile('manual'); setStep(2) }}
+                      onManualEntry={() => { setFields(EMPTY_ID_FIELDS); setSourceFile('manual'); setPfEtapa('verificare'); setStep(2) }}
                     />
                 }
               </div>
             )}
-            {step === 2 && fields && (
+            {step === 2 && fields && pfEtapa === 'verificare' && (
               <div style={COMPACT_STYLE}>
                 <FieldsForm
                   fields={fields}
                   sourceFile={sourceFile}
                   onFieldsChange={setFields}
-                  onNext={() => setStep(3)}
+                  onNext={() => setPfEtapa('client')}
                   onBack={handleStepBack}
                 />
               </div>
+            )}
+            {step === 2 && fields && pfEtapa === 'client' && (
+              <>
+                <div style={COMPACT_STYLE} className="card">
+                  <div className="card-head">
+                    <span className="card-title">
+                      <span className="step-chip">2</span>
+                      Date client
+                    </span>
+                  </div>
+                  <div className="card-body">
+                    <p className="card-sub" style={{ margin: 0 }}>
+                      Alege forma (PFA, II, IF) și completează datele entității — denumire, CUI, sediu profesional, obiect de activitate. Datele din buletin sunt deja la titular.
+                    </p>
+                  </div>
+                </div>
+                <ClientModal
+                  // Fișa deja completată se păstrează la revenire; titularul vine mereu din datele verificate.
+                  initial={pfClientInput
+                    ? { ...(pfClientInput as Client), titular: idFieldsToPersoana(fields, pfClientInput.titular ?? { ...EMPTY_PERSOANA, calitate: 'Titular' }) }
+                    : buletinToClientInitial(fields)}
+                  onSave={async data => {
+                    pfJustSavedRef.current = true
+                    setPfClientInput(data)
+                    // Titularul poate fi corectat și în fișă: documentele folosesc varianta finală.
+                    if (data.titular) setFields(persoanaToIDFields(data.titular))
+                    setStep(3)
+                  }}
+                  onClose={() => {
+                    if (pfJustSavedRef.current) { pfJustSavedRef.current = false; return }
+                    handleStepBack()
+                  }}
+                />
+              </>
             )}
             {step === 3 && fields && (
               <TemplateFiller
@@ -527,7 +584,7 @@ export default function GenerareDocumentePage() {
                   id: 'single', role: 'asociat', cotaParticipare: '',
                   fields, scanStatus: sourceFile === 'manual' ? 'manual' : 'scanned',
                 }]}
-                client={null}
+                client={pfClientInput}
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}

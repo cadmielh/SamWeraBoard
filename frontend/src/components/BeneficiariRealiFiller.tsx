@@ -6,6 +6,7 @@ import {
 } from '../lib/beneficiariRealiFiller'
 import type { BeneficiariRealiFormState, BrxTemei } from '../lib/beneficiariRealiFiller'
 import { useFieldRefs } from '../lib/useFieldRefs'
+import { cotaCuProcent } from '../lib/cota'
 import { SectionCard } from './FormFillerKit'
 
 export interface BrxFormValue {
@@ -82,7 +83,8 @@ const BeneficiariRealiFiller = forwardRef<BrxFillerHandle, Props>(function Benef
   const beneficiarLabel = (asociatIndex: number) => {
     const p = asociati[asociatIndex]
     const nume = `${p?.nume ?? ''} ${p?.prenume ?? ''}`.trim() || '(fără nume)'
-    return p?.cotaParticipare ? `${nume} — ${p.cotaParticipare}%` : nume
+    // În fișă cota e de regulă deja cu „%” („75%”); doar cele tastate ca număr îl primesc aici.
+    return p?.cotaParticipare ? `${nume} — ${cotaCuProcent(p.cotaParticipare)}` : nume
   }
 
   const chosenIndexes = new Set(state.beneficiari.map(b => b.asociatIndex))
