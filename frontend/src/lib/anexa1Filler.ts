@@ -193,7 +193,3 @@ export function buildAnexa1DocxData(state: Anexa1FormState, client?: Partial<Cli
 
 export const ANEXA1_KEY = 'anexa1_inregistrare_fiscala'
 
-/** Șablonul e Anexa 1 (cerere de înregistrare fiscală): cel de bază, sau o copie din bibliotecă a lui. */
-export function isAnexa1Template(tpl: { sourceKey?: string; key?: string }): boolean {
-  return tpl.sourceKey === ANEXA1_KEY || tpl.key === ANEXA1_KEY
-}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BuiltinTemplate, WorkspaceMember } from '../types'
-import { applyTemplateOrder, dedicatedFormKey, deliveryLabel, diffTemplate, formLinkOptions, hasChanges, matchesTemplateSearch, visibleBuiltins } from './templateChanges'
+import { applyTemplateOrder, dedicatedFormKey, isDedicatedKey, deliveryLabel, diffTemplate, formLinkOptions, hasChanges, matchesTemplateSearch, visibleBuiltins } from './templateChanges'
 import { actorLabel, type AuditEntry } from './audit'
 
 const builtin = (key: string, placeholders: string[] = []): BuiltinTemplate => ({
@@ -38,6 +38,21 @@ describe('diffTemplate', () => {
     const decl = ['{{DECLARANT_NUME}}', '{{SEDIU_LOCALITATE}}']
     expect(dedicatedFormKey({ placeholders: decl })).toBe('declaratie_activitate')
     expect(diffTemplate({ placeholders: decl }, { placeholders: ['{{DECLARANT_NUME}}'], clauses: [] }, BUILTINS).dedicatedLost).toBe(true)
+  })
+})
+
+describe('formularele dedicate', () => {
+  const CHEI = ['anexa1_inregistrare_fiscala', 'anexa2a_cerere_inregistrare_pj', 'anexa2b_cerere_inregistrare_pf', 'declaratie_beneficiari_reali', 'declaratie_activitate']
+
+  it('șabloanele de bază se recunosc după cheie', () => {
+    for (const k of CHEI) expect(isDedicatedKey(k), k).toBe(true)
+    expect(isDedicatedKey('act_constitutiv')).toBe(false)
+  })
+
+  it('copiile din bibliotecă se recunosc după sursă', () => {
+    for (const k of CHEI) expect(dedicatedFormKey({ sourceKey: k, placeholders: [] }), k).toBe(k)
+    expect(dedicatedFormKey({ sourceKey: 'act_constitutiv', placeholders: ['{{SOCIETATE_DENUMIRE}}'] })).toBeNull()
+    expect(dedicatedFormKey({})).toBeNull()
   })
 })
 
@@ -100,7 +115,7 @@ describe('applyTemplateOrder', () => {
   it('fără ordine salvată, lista rămâne neschimbată', () => {
     expect(applyTemplateOrder(items, x => x, undefined)).toEqual(items)
   })
-  it('respectă ordinea salvată; elementele noi vin primele, iar cheile vechi sunt ignorate', () => {
-    expect(applyTemplateOrder(items, x => x, ['c', 'zzz', 'a', 'b'])).toEqual(['d', 'c', 'a', 'b'])
+  it('respectă ordinea salvată; elementele noi vin la final, în ordinea adăugării, iar cheile vechi sunt ignorate', () => {
+    expect(applyTemplateOrder(items, x => x, ['c', 'zzz', 'a'])).toEqual(['c', 'a', 'b', 'd'])
   })
 })

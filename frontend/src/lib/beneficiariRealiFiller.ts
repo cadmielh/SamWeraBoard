@@ -147,7 +147,3 @@ export function buildBeneficiariRealiDocxData(
 
 export const BRX_KEY = 'declaratie_beneficiari_reali'
 
-/** Șablonul e Declarație Beneficiari Reali (cel de bază, sau o copie din bibliotecă a lui). */
-export function isBeneficiariRealiTemplate(tpl: { sourceKey?: string; key?: string }): boolean {
-  return tpl.sourceKey === BRX_KEY || tpl.key === BRX_KEY
-}

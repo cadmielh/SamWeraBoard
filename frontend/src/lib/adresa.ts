@@ -116,7 +116,11 @@ export function parseAdresa(text?: string | null): AdresaStructurata {
   // "localitate" — județul are propriul câmp în șablon (extractJudet separat).
   const judet = extractJudet(rest)
   if (judet) {
-    rest = rest.replace(new RegExp(`\\b(?:jud(?:e[tț]ul)?\\.?\\s*)?${diacriticInsensitiveSource(judet)}\\b`, 'i'), '')
+    // Întâi forma cu etichetă („jud. Cluj”), apoi numele simplu, dar nu ca parte dintr-o localitate cu cratimă:
+    // altfel, în „Mun. Cluj-Napoca, …, jud. Cluj”, se ștergea „Cluj” din localitate.
+    const name = diacriticInsensitiveSource(judet)
+    const labeled = new RegExp(`\\bjud(?:e[tț]ul)?\\.?\\s*${name}\\b`, 'i')
+    rest = labeled.test(rest) ? rest.replace(labeled, '') : rest.replace(new RegExp(`\\b${name}\\b(?!-)`, 'i'), '')
   }
   rest = rest.replace(/\bsector\s*\d\b/i, '')
 

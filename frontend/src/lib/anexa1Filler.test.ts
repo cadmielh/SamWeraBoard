@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  splitDigitBoxes, buildAnexa1DocxData, declarantCandidatesAnexa1, isAnexa1Template,
-  EMPTY_ANEXA1_STATE, ANEXA1_KEY,
+  splitDigitBoxes, buildAnexa1DocxData, declarantCandidatesAnexa1,
+  EMPTY_ANEXA1_STATE,
 } from './anexa1Filler'
 import type { Anexa1FormState } from './anexa1Filler'
 import type { Client, Persoana } from '../types'
@@ -171,16 +171,5 @@ describe('buildAnexa1DocxData', () => {
     const todayDigits = `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`.split('')
     const { replacements } = buildAnexa1DocxData(EMPTY_ANEXA1_STATE, { tipClient: 'PJ' })
     todayDigits.forEach((digit, i) => expect(replacements[`{{DDEC_${i + 1}}}`]).toBe(digit))
-  })
-})
-
-describe('isAnexa1Template', () => {
-  it('recunoaște șablonul de bază și copiile lui', () => {
-    expect(isAnexa1Template({ key: ANEXA1_KEY })).toBe(true)
-    expect(isAnexa1Template({ sourceKey: ANEXA1_KEY })).toBe(true)
-  })
-  it('nu confundă alte șabloane', () => {
-    expect(isAnexa1Template({ key: 'act_constitutiv' })).toBe(false)
-    expect(isAnexa1Template({})).toBe(false)
   })
 })

@@ -34,7 +34,8 @@ _TID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _TIP_TEMPLATE = ("PF", "PJ", "universal")
 # Șabloanele de bază cu formular dedicat (vezi isAnexa1Template & co. din frontend): formularul cere doar
 # etichetele șablonului de bază, deci o etichetă în plus într-o copie nu e cerută nicăieri.
-DEDICATED_FORM_KEYS = frozenset({"anexa1_inregistrare_fiscala", "declaratie_beneficiari_reali", "declaratie_activitate"})
+DEDICATED_FORM_KEYS = frozenset({"anexa1_inregistrare_fiscala", "anexa2a_cerere_inregistrare_pj", "anexa2b_cerere_inregistrare_pf", "declaratie_beneficiari_reali",
+                                 "declaratie_activitate"})
 
 # Setat de app.py după încărcarea fisiere_template/ (cheie -> intrarea din registry, cu `placeholders`).
 _builtins: dict[str, dict] = {}

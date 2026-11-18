@@ -9,7 +9,7 @@ import type { User } from 'firebase/auth'
 import {
   buildReplacements, buildRepeatGroups, checkReadiness, groupMissingFields, isManualPlaceholder, manualLabel,
   detectCustomPersonRoles, customPersonReplacements, detectCustomPersonGroups, persoanaToSingularMap,
-  customRolePool, joinNames, isDateLabel, pairManualDateFields, cuMandatDinFisa,
+  customRolePool, joinNames, isDateLabel, pairManualDateFields,
   visibleManualPlaceholders, MOD_EXERCITARE_MANDATE, MOD_EXERCITARE_OPTIUNI,
   ACTUALIZARE_GROUP, actualizareGroups, withoutActualizareFields, defaultActMode, type ActMode, activeClauses, withDenumireActualizata,
 } from '../lib/placeholders'
@@ -20,7 +20,7 @@ import DateFieldInput from './DateFieldInput'
 import { useTemplates, logDocGeneration } from '../lib/templates'
 import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
-import { applyTemplateOrder, builtinOrderKey, matchesTemplateSearch, ownOrderKey, visibleBuiltins } from '../lib/templateChanges'
+import { applyTemplateOrder, builtinOrderKey, dedicatedFormKey, isDedicatedKey, matchesTemplateSearch, ownOrderKey, visibleBuiltins } from '../lib/templateChanges'
 import { groupByFolder } from '../lib/templateFolders'
 import TemplateFolderHeader from './TemplateFolderHeader'
 import { useApp } from '../AppContext'
@@ -33,18 +33,34 @@ import CesiunePanel from './CesiunePanel'
 import { calculCesiune, hasCesiune, notaAplicata, propunereCesiune } from '../lib/cesiune'
 import type { ClauseSelectorValue } from './ClauseSelector'
 import DeclaratieActivitateFiller from './DeclaratieActivitateFiller'
-import type { DeclaratieActivitateFillerHandle, DeclaratieFormValue } from './DeclaratieActivitateFiller'
 import Anexa1Filler from './Anexa1Filler'
-import type { Anexa1FillerHandle, Anexa1FormValue } from './Anexa1Filler'
 import BeneficiariRealiFiller from './BeneficiariRealiFiller'
-import type { BrxFillerHandle, BrxFormValue } from './BeneficiariRealiFiller'
+import Anexa2aFiller from './Anexa2aFiller'
+import Anexa2bFiller from './Anexa2bFiller'
+import type { Anexa2aFormState } from '../lib/anexa2aFiller'
+import type { Anexa2bFormState } from '../lib/anexa2bFiller'
 import type { ClientPatchProposal } from '../lib/clauseFieldSpecs'
 import { buildVariantContext, variantWarningMessage } from '../lib/variants'
-import { withEmptyFieldMarks, withOptionalFieldMarks, isDeclaratieTemplate, DECLARATIE_ACTIVITATE_KEY } from '../lib/declaratieActivitateFiller'
-import { isAnexa1Template, ANEXA1_KEY } from '../lib/anexa1Filler'
-import { isBeneficiariRealiTemplate, BRX_KEY } from '../lib/beneficiariRealiFiller'
+import { withEmptyFieldMarks, withOptionalFieldMarks, DECLARATIE_ACTIVITATE_KEY } from '../lib/declaratieActivitateFiller'
+import { ANEXA1_KEY } from '../lib/anexa1Filler'
+import { BRX_KEY } from '../lib/beneficiariRealiFiller'
+import { ANEXA2A_KEY } from '../lib/anexa2aFiller'
+import { ANEXA2B_KEY } from '../lib/anexa2bFiller'
 import Modal from './Modal'
 import TemplateSearchInput from './TemplateSearchInput'
+
+/** Rezultatul unui formular dedicat (declarație, Anexa 1, BRX, Anexa 2a/2b), ținut pe șablon. Câmpurile opționale
+ * există doar la unele formulare: tabelele declarației, propunerile ei de actualizare a fișei, grupurile BRX și starea
+ * completă a formularelor lungi (Anexa 2a/2b), redată la revenirea pe șablon. */
+interface DedicatedFormValue {
+  replacements: Record<string, string>
+  isComplete: boolean
+  completion: { done: number; total: number; missing: string[] }
+  rowGroups?: Record<string, Record<string, string>[]>
+  groups?: Record<string, Record<string, string>[]>
+  clientPatches?: ClientPatchProposal[]
+  state?: unknown
+}
 
 interface Props {
   workspaceId: string
@@ -87,15 +103,9 @@ export default function TemplateFiller({
   const { update: updateClient } = useClienti(workspaceId)
 
   const [clauseState, setClauseState] = useState<Record<string, ClauseSelectorValue>>({})
-  const [declaratieFormState, setDeclaratieFormState] = useState<Record<string, DeclaratieFormValue & { forClient?: string }>>({})
-  // Un singur formular de declarație e randat la un moment dat (panoul de
-  // detaliu arată doar șablonul activ) — un singur ref, la fel ca
-  // companyFormRef din MultiPersonPreview.
-  const declaratieFormRef = useRef<DeclaratieActivitateFillerHandle>(null)
-  const [anexa1FormState, setAnexa1FormState] = useState<Record<string, Anexa1FormValue & { forClient?: string }>>({})
-  const anexa1FormRef = useRef<Anexa1FillerHandle>(null)
-  const [brxFormState, setBrxFormState] = useState<Record<string, BrxFormValue & { forClient?: string }>>({})
-  const brxFormRef = useRef<BrxFillerHandle>(null)
+  // Formularele dedicate: rezultatul fiecăruia, pe șablon (cheie = id-ul din listă), și handle-ul celui randat acum.
+  const [dedicatedForms, setDedicatedForms] = useState<Record<string, DedicatedFormValue & { forClient?: string }>>({})
+  const dedicatedRefs = useRef<Record<string, { scrollToFirstMissing: () => string[] } | null>>({})
   const [pendingClientPatches, setPendingClientPatches] = useState<(ClientPatchProposal & { key: string })[] | null>(null)
   const [checkedPatchKeys, setCheckedPatchKeys] = useState<Set<string>>(new Set())
   // Șablonul afișat momentan în panoul din dreapta — 'builtin:<key>' pentru
@@ -204,10 +214,22 @@ export default function TemplateFiller({
       : null
 
   const listTemplates = useMemo(() => applyTemplateOrder(templates, t => ownOrderKey(t.id), templateOrder), [templates, templateOrder])
+  // Diferențiere PF/PJ — un client PJ nu ar trebui să poată genera un șablon
+  // gândit strict pentru PF (și invers). "universal"/lipsă = se aplică oricui.
+  const clientTip = client ? inferTipClient(client as Client) : null
+  const tipMismatchMsg = (tipTemplate: string | undefined, tplLabel: string): string | null => {
+    if (!tipTemplate || tipTemplate === 'universal' || !clientTip) return null
+    if (tipTemplate === clientTip) return null
+    return `${tplLabel} e valabil doar pentru ${tipTemplate}, dar clientul selectat este ${clientTip}`
+  }
+  // Șabloanele celuilalt tip (PF/PJ) nu apar deloc în listă; fără client (tip necunoscut) apar toate.
+  const tipOk = (t: { tipTemplate?: string; name: string }) => !tipMismatchMsg(t.tipTemplate, t.name)
+  const ascunseTip = builtins.filter(b => !tipOk(b)).length + listTemplates.filter(t => !tipOk(t)).length
+
   // Căutarea filtrează doar ce se afișează în listă: selecția și generarea în lot rămân neschimbate.
   const [tplSearch, setTplSearch] = useState('')
-  const shownBuiltins = builtins.filter(b => matchesTemplateSearch(b.name, tplSearch))
-  const shownTemplates = listTemplates.filter(t => matchesTemplateSearch(t.name, tplSearch))
+  const shownBuiltins = builtins.filter(b => tipOk(b) && matchesTemplateSearch(b.name, tplSearch))
+  const shownTemplates = listTemplates.filter(t => tipOk(t) && matchesTemplateSearch(t.name, tplSearch))
 
   const replacements = buildReplacements({ idFields: fields, client, scannedPersons })
   const repeatGroups = buildRepeatGroups({ idFields: fields, client, scannedPersons })
@@ -353,16 +375,7 @@ export default function TemplateFiller({
   }
 
   // În lot intră doar ce se aplică clientului curent (o bifă rămasă de la alt client nu mai contează).
-  const selectedTemplates = listTemplates.filter(t => selectedIds.has(t.id) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
-
-  // Diferențiere PF/PJ — un client PJ nu ar trebui să poată genera un șablon
-  // gândit strict pentru PF (și invers). "universal"/lipsă = se aplică oricui.
-  const clientTip = client ? inferTipClient(client as Client) : null
-  const tipMismatchMsg = (tipTemplate: string | undefined, tplLabel: string): string | null => {
-    if (!tipTemplate || tipTemplate === 'universal' || !clientTip) return null
-    if (tipTemplate === clientTip) return null
-    return `${tplLabel} e valabil doar pentru ${tipTemplate}, dar clientul selectat este ${clientTip}`
-  }
+  const selectedTemplates = listTemplates.filter(t => selectedIds.has(t.id) && tipOk(t) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
 
   // Șablon cu număr de asociați nepotrivit: nu se poate deschide; un click explică de ce.
   const notApplicable = (name: string, reason: string) =>
@@ -373,17 +386,18 @@ export default function TemplateFiller({
   // intrarea în pas; derivat la randare (nu stocat separat), ca selecția
   // explicită a userului să rămână prioritară.
   const defaultActiveKey = (() => {
-    if (builtins.length > 0) {
-      const compatible = builtins.find(b => !tipMismatchMsg(b.tipTemplate, b.name) && (b.key === DECLARATIE_ACTIVITATE_KEY || !asociatiCountMismatch(b.key, asociatiCount)))
-        ?? builtins.find(b => !tipMismatchMsg(b.tipTemplate, b.name))
-      return builtinKey(compatible ?? builtins[0])
-    }
-    const compatible = listTemplates.find(t => !tipMismatchMsg(t.tipTemplate, t.name) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
-      ?? listTemplates.find(t => !tipMismatchMsg(t.tipTemplate, t.name))
-    return (compatible ?? listTemplates[0])?.id ?? null
+    const b = builtins.find(x => tipOk(x) && (x.key === DECLARATIE_ACTIVITATE_KEY || !asociatiCountMismatch(x.key, asociatiCount)))
+      ?? builtins.find(tipOk)
+    if (b) return builtinKey(b)
+    const compatible = listTemplates.find(t => tipOk(t) && !asociatiCountMismatch(t.sourceKey, asociatiCount))
+      ?? listTemplates.find(tipOk)
+    return compatible?.id ?? null
   })()
-  // Un șablon de bază ascuns între timp de admin nu mai rămâne activ: se trece la cel implicit.
-  const activeKeyVisible = activeKey && (!activeKey.startsWith('builtin:') || builtins.some(b => builtinKey(b) === activeKey)) ? activeKey : null
+  // Un șablon de bază ascuns între timp de admin, sau unul pentru celălalt tip de client (ales înainte de schimbarea
+  // clientului), nu mai rămâne activ: se trece la cel implicit.
+  const activeKeyVisible = activeKey && (activeKey.startsWith('builtin:')
+    ? builtins.some(b => builtinKey(b) === activeKey && tipOk(b))
+    : !listTemplates.some(t => t.id === activeKey && !tipOk(t))) ? activeKey : null
   const effectiveActiveKey = activeKeyVisible ?? defaultActiveKey
 
   // Revizia fișierului văzută când s-a deschis formularul: dacă cineva înlocuiește fișierul între timp, documentul
@@ -465,27 +479,23 @@ export default function TemplateFiller({
     }
   }
 
+  // Formularul dedicat al unui șablon: cheia lui (vezi dedicatedFormKey) sau null. Șabloanele de bază după cheie,
+  // copiile din bibliotecă după `sourceKey` (sau declarația, după etichete).
+  const dedicatedKindOf = (tpl: DocTemplate): string | null => tpl.type === 'docx' ? dedicatedFormKey(tpl) : null
+  const builtinDedicatedKind = (b: BuiltinTemplate): string | null => isDedicatedKey(b.key) ? b.key : null
+  const dedicatedFor = (id: string) => {
+    const st = dedicatedForms[id]
+    return st && st.forClient === client?.id ? st : undefined
+  }
+
   const handleGenerateDocx = async (tpl: DocTemplate) => {
-    // Declarație de activitate (copie din bibliotecă sau document propriu cu aceleași etichete): formularul dedicat.
-    const decl = tpl.type === 'docx' && isDeclaratieTemplate(tpl) ? declaratieFormState[tpl.id] : undefined
-    if (tpl.type === 'docx' && isDeclaratieTemplate(tpl)) {
-      const missing = declaratieFormRef.current?.scrollToFirstMissing() ?? []
+    // Formular dedicat (copie din bibliotecă, sau declarația recunoscută după etichete): el completează documentul.
+    const dedicatedKey = dedicatedKindOf(tpl)
+    const form = dedicatedKey ? dedicatedFor(tpl.id) : undefined
+    if (dedicatedKey) {
+      const missing = dedicatedRefs.current[tpl.id]?.scrollToFirstMissing() ?? []
       if (missing.length > 0) { onToast(`Completează: ${missing.join(', ')}.`, 'err'); return }
-      if (!decl) return
-    }
-    // Anexa 1 (copie din bibliotecă): la fel, formularul dedicat (nu placeholdere generice/clauze).
-    const anexa1 = tpl.type === 'docx' && isAnexa1Template(tpl) ? anexa1FormState[tpl.id] : undefined
-    if (tpl.type === 'docx' && isAnexa1Template(tpl)) {
-      const missing = anexa1FormRef.current?.scrollToFirstMissing() ?? []
-      if (missing.length > 0) { onToast(`Completează: ${missing.join(', ')}.`, 'err'); return }
-      if (!anexa1) return
-    }
-    // Declarație Beneficiari Reali (copie din bibliotecă): la fel, formularul dedicat.
-    const brx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl) ? brxFormState[tpl.id] : undefined
-    if (tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)) {
-      const missing = brxFormRef.current?.scrollToFirstMissing() ?? []
-      if (missing.length > 0) { onToast(`Completează: ${missing.join(', ')}.`, 'err'); return }
-      if (!brx) return
+      if (!form) return
     }
     if (!(await askDestination())) return
     setLoading(tpl.id, true)
@@ -493,15 +503,14 @@ export default function TemplateFiller({
       const outputName = resolveOutputName(tpl)
       const cs = hasActiveClauses(tpl) ? clauseState[tpl.id] : undefined
       let mergedReplacements = withDenumireActualizata({ ...repl(tpl.id), ...customListReplacementsFor(tpl), ...(cs?.extraReplacements ?? {}) })
-      const mergedGroups = { ...repeatGroups, ...customGroupsFor(tpl), ...(cs?.extraGroups ?? {}), ...(brx?.groups ?? {}) }
+      const mergedGroups = { ...repeatGroups, ...customGroupsFor(tpl), ...(cs?.extraGroups ?? {}), ...(form?.groups ?? {}) }
       let rowGroups: Record<string, Record<string, string>[]> | undefined
-      if (decl) {
-        rowGroups = decl.rowGroups
-        mergedReplacements = withEmptyFieldMarks(tpl.placeholders ?? [], { ...replacements, ...decl.replacements }, decl.rowGroups)
-      } else if (anexa1) {
-        mergedReplacements = { ...replacements, ...anexa1.replacements }
-      } else if (brx) {
-        mergedReplacements = { ...replacements, ...brx.replacements }
+      if (form?.rowGroups) {
+        // Declarația: câmpurile necompletate apar ca „-”, iar tabelele au lungime variabilă.
+        rowGroups = form.rowGroups
+        mergedReplacements = withEmptyFieldMarks(tpl.placeholders ?? [], { ...replacements, ...form.replacements }, form.rowGroups)
+      } else if (form) {
+        mergedReplacements = { ...replacements, ...form.replacements }
       } else {
         mergedReplacements = withOptionalFieldMarks(tpl.placeholders ?? [], mergedReplacements, mergedGroups)
       }
@@ -531,7 +540,7 @@ export default function TemplateFiller({
         maybePromptSaveClient()
       }
       offerClientPatches(cs, cesiuneProposalFor(tpl, cs?.selectedClauses))
-      if (decl) offerClientPatchList(decl.clientPatches)
+      if (form?.clientPatches) offerClientPatchList(form.clientPatches)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
     } finally {
@@ -579,16 +588,13 @@ export default function TemplateFiller({
     }
   }
 
-  // Șablon de bază "Declarație activitate" — nu are placeholdere/clauze
-  // generice, ci un formular dedicat (DeclaratieActivitateFiller) care
-  // asamblează direct replacements + rowGroups (tabelele CAEN/sedii
-  // secundare, cu lungime variabilă — vezi doc_filler._expand_repeat_table_rows).
-  const handleGenerateDeclaratie = async (b: BuiltinTemplate) => {
+  // Șabloanele de bază cu formular dedicat (declarație, Anexa 1, BRX, Anexa 2a/2b): formularul asamblează direct
+  // etichetele proprii; {{SOCIETATE_*}}/{{DATA_AZI}} etc. vin din `replacements`, comune tuturor șabloanelor.
+  const handleGenerateDedicated = async (b: BuiltinTemplate) => {
     const key = builtinKey(b)
-    const form = declaratieFormState[key]
-    // Butonul rămâne mereu activ — la click sărim la primul câmp lipsă în loc
-    // să-l ținem disabled (același tipar ca CompanyInfoForm.scrollToFirstMissing).
-    const missing = declaratieFormRef.current?.scrollToFirstMissing() ?? []
+    const form = dedicatedFor(key)
+    // Butonul rămâne mereu activ — la click sărim la primul câmp lipsă în loc să-l ținem disabled.
+    const missing = dedicatedRefs.current[key]?.scrollToFirstMissing() ?? []
     if (missing.length > 0) {
       onToast(`Completează: ${missing.join(', ')}.`, 'err')
       return
@@ -603,14 +609,14 @@ export default function TemplateFiller({
       // dintr-o versiune veche (.pdf) ar produce altfel "...pdf.docx".
       outputName = outputName.replace(/\.(pdf|docx)$/i, '') + '.docx'
 
-      // {{SOCIETATE_*}}/{{DATA_AZI}} etc. vin din `replacements` (calculate o
-      // singură dată, comun tuturor șabloanelor) — form.replacements le
-      // suprascrie doar pe cele proprii formularului (declarant/sediu).
-      // Câmpurile necompletate ale declarației (bloc, scară, etaj, telefon...) apar ca „-”, nu ca etichetă brută.
-      const mergedReplacements = withEmptyFieldMarks(b.placeholders ?? [], { ...replacements, ...form.replacements }, form.rowGroups)
-      const { ctx: variantCtx, labels: variantLabels } = variantsFor(mergedReplacements)
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, undefined, undefined, form.rowGroups, variantCtx)
-      notifyVariants(result.warnings, variantLabels)
+      // Declarația (singura cu tabele de lungime variabilă, `rowGroups`): câmpurile necompletate (bloc, scară,
+      // telefon...) apar ca „-”, nu ca etichetă brută. Celelalte formulare completează deja fiecare etichetă.
+      const mergedReplacements = form.rowGroups
+        ? withEmptyFieldMarks(b.placeholders ?? [], { ...replacements, ...form.replacements }, form.rowGroups)
+        : { ...replacements, ...form.replacements }
+      const variants = form.rowGroups ? variantsFor(mergedReplacements) : undefined
+      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, form.groups, undefined, form.rowGroups, variants?.ctx)
+      if (variants) notifyVariants(result.warnings, variants.labels)
       if (result.link) {
         setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
         onToast(`Salvat pe Drive: ${result.name}`, 'ok')
@@ -621,87 +627,7 @@ export default function TemplateFiller({
         onToast(`Se descarcă: ${outputName}`, 'ok')
       }
       maybePromptSaveClient()
-      offerClientPatchList(form.clientPatches)
-    } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Generare eșuată', 'err')
-    } finally {
-      setLoading(key, false)
-    }
-  }
-
-  // Șablon de bază "Anexa 1 - Înregistrare fiscală" — la fel ca declarația de
-  // activitate de mai sus: formular dedicat (bife ☒/☐ + cutii de dată, fără
-  // #TAG-uri repetitive), nu placeholdere generice.
-  const handleGenerateAnexa1 = async (b: BuiltinTemplate) => {
-    const key = builtinKey(b)
-    const form = anexa1FormState[key]
-    const missing = anexa1FormRef.current?.scrollToFirstMissing() ?? []
-    if (missing.length > 0) {
-      onToast(`Completează: ${missing.join(', ')}.`, 'err')
-      return
-    }
-    if (!form) return
-    if (!(await askDestination())) return
-    setLoading(key, true)
-    try {
-      let outputName = b.outputNameTemplate || b.name
-      for (const [ph, val] of Object.entries(replacements)) outputName = outputName.replaceAll(ph, val)
-      outputName = outputName.replace(/\.(pdf|docx)$/i, '') + '.docx'
-
-      // {{SOCIETATE_*}}/{{DATA_AZI}} etc. vin din `replacements` (comune tuturor șabloanelor) — form.replacements
-      // le suprascrie doar pe cele proprii formularului; buildAnexa1DocxData completează deja fiecare
-      // placeholder al șablonului (bifă/cutie de dată/câmp text), deci nu mai e nevoie de withEmptyFieldMarks.
-      const mergedReplacements = { ...replacements, ...form.replacements }
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName)
-      if (result.link) {
-        setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
-        onToast(`Salvat pe Drive: ${result.name}`, 'ok')
-      } else if (result.blob) {
-        const url = URL.createObjectURL(result.blob)
-        const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
-        URL.revokeObjectURL(url)
-        onToast(`Se descarcă: ${outputName}`, 'ok')
-      }
-      maybePromptSaveClient()
-    } catch (err: unknown) {
-      onToast((err as Error).message ?? 'Generare eșuată', 'err')
-    } finally {
-      setLoading(key, false)
-    }
-  }
-
-  // Șablon de bază "Declarație Beneficiari Reali" — formular dedicat (bife ☒/☐ +
-  // bloc repetitiv BENEFICIARI_REALI), la fel ca Anexa 1 de mai sus, dar cu
-  // `groups` în plus (lista de beneficiari reali e un bloc repetitiv, nu
-  // placeholdere plate).
-  const handleGenerateBrx = async (b: BuiltinTemplate) => {
-    const key = builtinKey(b)
-    const form = brxFormState[key]
-    const missing = brxFormRef.current?.scrollToFirstMissing() ?? []
-    if (missing.length > 0) {
-      onToast(`Completează: ${missing.join(', ')}.`, 'err')
-      return
-    }
-    if (!form) return
-    if (!(await askDestination())) return
-    setLoading(key, true)
-    try {
-      let outputName = b.outputNameTemplate || b.name
-      for (const [ph, val] of Object.entries(replacements)) outputName = outputName.replaceAll(ph, val)
-      outputName = outputName.replace(/\.(pdf|docx)$/i, '') + '.docx'
-
-      const mergedReplacements = { ...replacements, ...form.replacements }
-      const result = await fillDocxFromBuiltinTemplate(b.key, mergedReplacements, driveTarget(), outputName, form.groups)
-      if (result.link) {
-        setGeneratedLinks(prev => ({ ...prev, [key]: result.link! }))
-        onToast(`Salvat pe Drive: ${result.name}`, 'ok')
-      } else if (result.blob) {
-        const url = URL.createObjectURL(result.blob)
-        const a = document.createElement('a'); a.href = url; a.download = outputName; a.click()
-        URL.revokeObjectURL(url)
-        onToast(`Se descarcă: ${outputName}`, 'ok')
-      }
-      maybePromptSaveClient()
+      if (form.clientPatches) offerClientPatchList(form.clientPatches)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
     } finally {
@@ -792,7 +718,7 @@ export default function TemplateFiller({
     // Șabloanele cu clauze au propria verificare de completitudine în
     // ClauseSelector (butonul Generează e dezactivat până e completă) —
     // nu mai trece prin dialogul de confirmare pentru câmpuri lipsă.
-    if (hasActiveClauses(tpl) || (tpl.type === 'docx' && (isDeclaratieTemplate(tpl) || isAnexa1Template(tpl) || isBeneficiariRealiTemplate(tpl)))) { handleGenerateDocx(tpl); return }
+    if (hasActiveClauses(tpl) || dedicatedKindOf(tpl)) { handleGenerateDocx(tpl); return }
 
     const { missing } = checkReadiness(shownPh(tpl.id, tpl.placeholders), { ...repl(tpl.id), ...customListReplacementsFor(tpl) }, { ...repeatGroups, ...customGroupsFor(tpl) }, tpl.repeatGroupFields)
     if (missing.length > 0) {
@@ -857,7 +783,11 @@ export default function TemplateFiller({
   }
 
   const buildClientInitial = (): Client => {
-    const asociati = (scannedPersons ?? []).filter(p => p.role === 'asociat').map(p => ({
+    const base = { id: '', createdAt: null, createdBy: user?.uid ?? '', denumireLower: (client?.denumire ?? '').toLowerCase() }
+    // Fișa completată deja la pasul anterior (entitate nouă PF/PJ) se salvează exact cum e: refăcută din scanări,
+    // și-ar pierde corecturile la persoane, iar titularul unui PF ar ajunge și printre asociați.
+    if (client) return { ...base, ...EMPTY_CLIENT, ...client, id: '' } as Client
+    const asociati =(scannedPersons ?? []).filter(p => p.role === 'asociat').map(p => ({
       calitate: 'Asociat', cotaParticipare: p.cotaParticipare,
       cnp: p.fields.cnp, nume: p.fields.nume, prenume: p.fields.prenume,
       serie_numar: p.fields.serie_numar, data_nasterii: p.fields.data_nasterii,
@@ -875,14 +805,7 @@ export default function TemplateFiller({
       emisa_de: p.fields.emisa_de, valabila_de_la: p.fields.valabila_de_la,
       valabila_pana_la: p.fields.valabila_pana_la,
     }))
-    return {
-      id: '', createdAt: null, createdBy: user?.uid ?? '',
-      denumireLower: (client?.denumire ?? '').toLowerCase(),
-      ...EMPTY_CLIENT,
-      ...(client ?? {}),
-      asociati,
-      administratori: admini.map(p => cuMandatDinFisa(p, client?.administratori ?? [])),
-    } as Client
+    return { ...base, ...EMPTY_CLIENT, asociati, administratori: admini } as Client
   }
 
   const toggleReadiness = (id: string) =>
@@ -904,17 +827,6 @@ export default function TemplateFiller({
     const phs = id ? shownPh(id, placeholders) : placeholders
     const { filled } = checkReadiness(phs, { ...(id ? repl(id) : replacements), ...extraRepl }, { ...repeatGroups, ...extraGroups }, tpl?.repeatGroupFields)
     return Math.round((filled.length / phs.length) * 100)
-  }
-
-  // Declarația: procentul vine din formularul dedicat (câmpurile obligatorii), nu din etichetele șablonului. Apare după
-  // prima deschidere a șablonului pentru clientul curent; starea unui client anterior nu se afișează.
-  const declCompletion = (id: string) => {
-    const st = declaratieFormState[id]
-    return st && st.forClient === client?.id ? st.completion : undefined
-  }
-  const declPct = (id: string): number | null => {
-    const c = declCompletion(id)
-    return c && c.total > 0 ? Math.round((c.done / c.total) * 100) : null
   }
 
   // Bara de completare: „X/Y câmpuri” + lista a ceea ce lipsește (deschisă la cerere).
@@ -960,39 +872,30 @@ export default function TemplateFiller({
     )
   }
 
-  const renderDeclaratieProgress = (id: string) => {
-    const c = declCompletion(id)
-    return c ? renderProgressBar(id, c, 'De completat înainte de generare') : null
-  }
-
-  // Anexa 1: la fel ca declarația de activitate — procentul vine din formularul dedicat (câmpurile
-  // obligatorii: data luării în evidență + declarant), nu din placeholder-ele șablonului (toate completate
-  // automat de buildAnexa1DocxData, deci n-ar reflecta nimic real).
-  const anexa1Completion = (id: string) => {
-    const st = anexa1FormState[id]
-    return st && st.forClient === client?.id ? st.completion : undefined
-  }
-  const anexa1Pct = (id: string): number | null => {
-    const c = anexa1Completion(id)
+  // Formularele dedicate: procentul vine din formular (câmpurile obligatorii), nu din etichetele șablonului — toate
+  // completate automat de formular, deci n-ar reflecta nimic real. Apare după prima deschidere a șablonului pentru
+  // clientul curent; starea unui client anterior nu se afișează.
+  const dedicatedPct = (id: string): number | null => {
+    const c = dedicatedFor(id)?.completion
     return c && c.total > 0 ? Math.round((c.done / c.total) * 100) : null
   }
-  const renderAnexa1Progress = (id: string) => {
-    const c = anexa1Completion(id)
+  const renderDedicatedProgress = (id: string) => {
+    const c = dedicatedFor(id)?.completion
     return c ? renderProgressBar(id, c, 'De completat înainte de generare') : null
   }
-
-  // Declarație Beneficiari Reali: la fel ca Anexa 1 — procentul vine din formularul dedicat.
-  const brxCompletion = (id: string) => {
-    const st = brxFormState[id]
-    return st && st.forClient === client?.id ? st.completion : undefined
-  }
-  const brxPct = (id: string): number | null => {
-    const c = brxCompletion(id)
-    return c && c.total > 0 ? Math.round((c.done / c.total) * 100) : null
-  }
-  const renderBrxProgress = (id: string) => {
-    const c = brxCompletion(id)
-    return c ? renderProgressBar(id, c, 'De completat înainte de generare') : null
+  /** Formularul dedicat al șablonului `id` (cheia formularului = `kind`); `mountKey` îl reface la schimbarea clientului. */
+  const renderDedicatedForm = (kind: string, id: string, mountKey: string) => {
+    const ref = (h: { scrollToFirstMissing: () => string[] } | null) => { dedicatedRefs.current[id] = h }
+    const onChange = (v: DedicatedFormValue) => setDedicatedForms(prev => ({ ...prev, [id]: { ...v, forClient: client?.id } }))
+    const initial = dedicatedFor(id)?.state
+    switch (kind) {
+      case DECLARATIE_ACTIVITATE_KEY: return <DeclaratieActivitateFiller key={mountKey} ref={ref} client={client} onChange={onChange} />
+      case ANEXA1_KEY: return <Anexa1Filler key={mountKey} ref={ref} client={client} onChange={onChange} />
+      case BRX_KEY: return <BeneficiariRealiFiller key={mountKey} ref={ref} client={client} onChange={onChange} />
+      case ANEXA2A_KEY: return <Anexa2aFiller key={mountKey} ref={ref} client={client} onChange={onChange} initial={initial as Anexa2aFormState | undefined} />
+      case ANEXA2B_KEY: return <Anexa2bFiller key={mountKey} ref={ref} client={client} onChange={onChange} initial={initial as Anexa2bFormState | undefined} />
+      default: return null
+    }
   }
 
   // Șabloane cu clauze (Decizia Asociatului Unic, Hotărâre AGA și copiile lor): completarea = datele din afara clauzelor
@@ -1218,12 +1121,10 @@ export default function TemplateFiller({
     const key = builtinKey(b)
     const isActive = effectiveActiveKey === key
     const link = generatedLinks[key]
-    const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
-    const isAnexa1 = b.key === ANEXA1_KEY
-    const isBrx = b.key === BRX_KEY
-    const mismatch = (isDeclaratie || isAnexa1 || isBrx) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
+    const dedicated = builtinDedicatedKind(b)
+    const mismatch = dedicated ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
-    const pct = isDeclaratie ? declPct(key) : isAnexa1 ? anexa1Pct(key) : isBrx ? brxPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses, b.repeatGroupFields) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
+    const pct = dedicated ? dedicatedPct(key) : b.clauses.length > 0 ? clausePct(key, b.placeholders, b.clauses, b.repeatGroupFields) : readinessPct(builtinCheckablePlaceholders(b), key, builtinTplRef(b))
     return (
       <div key={key} className={`tf-row${isActive ? ' tf-row--active' : ''}${mismatch ? ' tf-row--na' : ''}`}>
         <button
@@ -1257,13 +1158,11 @@ export default function TemplateFiller({
     const link = generatedLinks[tpl.id]
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
-    const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
-    const isAnexa1 = tpl.type === 'docx' && isAnexa1Template(tpl)
-    const isBrx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)
-    const pct = isDecl ? declPct(tpl.id) : isAnexa1 ? anexa1Pct(tpl.id) : isBrx ? brxPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!, tpl.repeatGroupFields) : readinessPct(tpl.placeholders, tpl.id, tpl)
+    const dedicated = dedicatedKindOf(tpl)
+    const pct = dedicated ? dedicatedPct(tpl.id) : hasClauses ? clausePct(tpl.id, tpl.placeholders, tpl.clauses!, tpl.repeatGroupFields) : readinessPct(tpl.placeholders, tpl.id, tpl)
     return (
       <div key={tpl.id} className={`tf-row${isActive ? ' tf-row--active' : ''}${asociatiMismatch ? ' tf-row--na' : ''}`}>
-        {!hasClauses && !isDecl && !isAnexa1 && !isBrx && (
+        {!hasClauses && !dedicated && (
           <input
             type="checkbox"
             checked={isSelected && !asociatiMismatch}
@@ -1304,9 +1203,7 @@ export default function TemplateFiller({
     const asociatiMismatch = asociatiCountMismatch(tpl.sourceKey, asociatiCount)
     const isSelected = selectedIds.has(tpl.id)
     const tipMsg = tipMismatchMsg(tpl.tipTemplate, tpl.name)
-    const isDecl = tpl.type === 'docx' && isDeclaratieTemplate(tpl)
-    const isAnexa1 = tpl.type === 'docx' && isAnexa1Template(tpl)
-    const isBrx = tpl.type === 'docx' && isBeneficiariRealiTemplate(tpl)
+    const dedicated = dedicatedKindOf(tpl)
     const seenRevision = seenRevisions[tpl.id]
     const fileChanged = seenRevision !== undefined && (tpl.revision ?? 0) !== seenRevision
 
@@ -1339,31 +1236,10 @@ export default function TemplateFiller({
         {renderInfiintareNote(tpl.placeholders)}
         {!asociatiMismatch && renderActModeToggle(tpl.repeatGroups)}
 
-        {!asociatiMismatch && isDecl && renderDeclaratieProgress(tpl.id)}
-        {!asociatiMismatch && isAnexa1 && renderAnexa1Progress(tpl.id)}
-        {!asociatiMismatch && isBrx && renderBrxProgress(tpl.id)}
-        {!asociatiMismatch && !isDecl && !isAnexa1 && !isBrx && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!, tpl.repeatGroupFields), 'De completat înainte de generare')}
-        {!asociatiMismatch && (isDecl ? (
-          <DeclaratieActivitateFiller
-            key={`${tpl.id}:${client?.id ?? 'none'}`}
-            ref={declaratieFormRef}
-            client={client}
-            onChange={v => setDeclaratieFormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
-          />
-        ) : isAnexa1 ? (
-          <Anexa1Filler
-            key={`${tpl.id}:${client?.id ?? 'none'}`}
-            ref={anexa1FormRef}
-            client={client}
-            onChange={v => setAnexa1FormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
-          />
-        ) : isBrx ? (
-          <BeneficiariRealiFiller
-            key={`${tpl.id}:${client?.id ?? 'none'}`}
-            ref={brxFormRef}
-            client={client}
-            onChange={v => setBrxFormState(prev => ({ ...prev, [tpl.id]: { ...v, forClient: client?.id } }))}
-          />
+        {!asociatiMismatch && dedicated && renderDedicatedProgress(tpl.id)}
+        {!asociatiMismatch && !dedicated && hasClauses && renderProgressBar(tpl.id, clauseCompletion(tpl.id, tpl.placeholders, tpl.clauses!, tpl.repeatGroupFields), 'De completat înainte de generare')}
+        {!asociatiMismatch && (dedicated ? (
+          renderDedicatedForm(dedicated, tpl.id, `${tpl.id}:${client?.id ?? 'none'}`)
         ) : hasClauses ? (
           <>
             {(() => {
@@ -1414,14 +1290,12 @@ export default function TemplateFiller({
 
   const renderBuiltinDetail = (b: BuiltinTemplate) => {
     const key = builtinKey(b)
-    const isDeclaratie = b.key === DECLARATIE_ACTIVITATE_KEY
-    const isAnexa1 = b.key === ANEXA1_KEY
-    const isBrx = b.key === BRX_KEY
+    const dedicated = builtinDedicatedKind(b)
     const isLoading = loadingIds.has(key)
     const link = generatedLinks[key]
-    // Declarația, Anexa 1 și Beneficiari Reali (formulare dedicate, fără clauze/#ASOCIATI) nu au
+    // Declarația, Anexa 1, Anexa 2a și Beneficiari Reali (formulare dedicate, fără clauze/#ASOCIATI) nu au
     // legătură cu numărul de asociați din document — restricția nu se aplică.
-    const mismatch = (isDeclaratie || isAnexa1 || isBrx) ? undefined : asociatiCountMismatch(b.key, asociatiCount)
+    const mismatch = dedicated ? undefined : asociatiCountMismatch(b.key, asociatiCount)
     const tipMsg = tipMismatchMsg(b.tipTemplate, b.name)
 
     return (
@@ -1431,8 +1305,8 @@ export default function TemplateFiller({
           <span className="tf-detail-title" title={b.name}>{b.name}</span>
           <button
             className="btn btn-sm btn-outline-primary"
-            onClick={() => isDeclaratie ? handleGenerateDeclaratie(b) : isAnexa1 ? handleGenerateAnexa1(b) : isBrx ? handleGenerateBrx(b) : tryGenerateBuiltinSingle(b)}
-            disabled={isLoading || !!mismatch || !!tipMsg || (!isDeclaratie && !isAnexa1 && !isBrx && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
+            onClick={() => dedicated ? handleGenerateDedicated(b) : tryGenerateBuiltinSingle(b)}
+            disabled={isLoading || !!mismatch || !!tipMsg || (!dedicated && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : '↓ '}
             Generează
@@ -1445,31 +1319,10 @@ export default function TemplateFiller({
 
         {!mismatch && renderActModeToggle(b.repeatGroups)}
 
-        {!mismatch && isDeclaratie && renderDeclaratieProgress(key)}
-        {!mismatch && isAnexa1 && renderAnexa1Progress(key)}
-        {!mismatch && isBrx && renderBrxProgress(key)}
-        {!mismatch && !isDeclaratie && !isAnexa1 && !isBrx && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses, b.repeatGroupFields), 'De completat înainte de generare')}
-        {!mismatch && (isDeclaratie ? (
-          <DeclaratieActivitateFiller
-            key={client?.id ?? 'none'}
-            ref={declaratieFormRef}
-            client={client}
-            onChange={v => setDeclaratieFormState(prev => ({ ...prev, [key]: { ...v, forClient: client?.id } }))}
-          />
-        ) : isAnexa1 ? (
-          <Anexa1Filler
-            key={client?.id ?? 'none'}
-            ref={anexa1FormRef}
-            client={client}
-            onChange={v => setAnexa1FormState(prev => ({ ...prev, [key]: { ...v, forClient: client?.id } }))}
-          />
-        ) : isBrx ? (
-          <BeneficiariRealiFiller
-            key={client?.id ?? 'none'}
-            ref={brxFormRef}
-            client={client}
-            onChange={v => setBrxFormState(prev => ({ ...prev, [key]: { ...v, forClient: client?.id } }))}
-          />
+        {!mismatch && dedicated && renderDedicatedProgress(key)}
+        {!mismatch && !dedicated && b.clauses.length > 0 && renderProgressBar(key, clauseCompletion(key, b.placeholders, b.clauses, b.repeatGroupFields), 'De completat înainte de generare')}
+        {!mismatch && (dedicated ? (
+          renderDedicatedForm(dedicated, key, client?.id ?? 'none')
         ) : b.clauses.length > 0 ? (
           <ClauseSelector
             key={`${key}:${client?.id ?? 'none'}`}
@@ -1541,6 +1394,11 @@ export default function TemplateFiller({
 
               {(builtins.length > 0 || listTemplates.length > 0) && (
                 <TemplateSearchInput value={tplSearch} onChange={setTplSearch} />
+              )}
+              {ascunseTip > 0 && clientTip && (
+                <div style={{ fontSize: '.75rem', color: 'var(--s500)' }}>
+                  {ascunseTip === 1 ? 'Un șablon doar pentru' : `${ascunseTip} șabloane doar pentru`} {clientTip === 'PF' ? 'PJ' : 'PF'} {ascunseTip === 1 ? 'nu apare' : 'nu apar'}: clientul e {clientTip}.
+                </div>
               )}
               {tplSearch.trim() && !tplLoading && shownBuiltins.length === 0 && shownTemplates.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '1rem 0', color: 'var(--s400)', fontSize: '.85rem' }}>

@@ -1,11 +1,16 @@
 import type { BuiltinTemplate, ClauseMeta, DocTemplate, WorkspaceMember } from '../types'
 import { ANEXA1_KEY } from './anexa1Filler'
+import { ANEXA2A_KEY } from './anexa2aFiller'
+import { ANEXA2B_KEY } from './anexa2bFiller'
 import { BRX_KEY } from './beneficiariRealiFiller'
 import { DECLARATIE_ACTIVITATE_KEY, isDeclaratieTemplate } from './declaratieActivitateFiller'
 
 /** Șabloanele de bază cu formular dedicat: formularul cere doar etichetele șablonului de bază
  * (oglinda DEDICATED_FORM_KEYS din templates_api.py). */
-const DEDICATED_KEYS = [ANEXA1_KEY, BRX_KEY, DECLARATIE_ACTIVITATE_KEY]
+const DEDICATED_KEYS = [ANEXA1_KEY, ANEXA2A_KEY, ANEXA2B_KEY, BRX_KEY, DECLARATIE_ACTIVITATE_KEY]
+
+/** Șablonul de bază cu cheia `key` are formular dedicat. */
+export const isDedicatedKey = (key: string): boolean => DEDICATED_KEYS.includes(key)
 
 /** Cheia formularului dedicat folosit de un șablon (după `sourceKey` sau, la declarație, după etichete), altfel null. */
 export function dedicatedFormKey(tpl: { sourceKey?: string; placeholders?: string[] }): string | null {
@@ -63,13 +68,13 @@ export const builtinOrderKey = (key: string) => `b:${key}`
 export const ownOrderKey = (id: string) => `t:${id}`
 
 /** Aplică ordinea stabilită de admin. Elementele care nu apar în ea (șabloane noi, adăugate după ultima
- * reordonare) vin primele, în ordinea lor obișnuită, ca un șablon tocmai adăugat să se vadă imediat. */
+ * reordonare) vin la final, în ordinea adăugării (ordinea lor obișnuită). */
 export function applyTemplateOrder<T>(items: T[], keyOf: (t: T) => string, order: string[] | undefined): T[] {
   if (!order?.length) return items
   const pos = new Map(order.map((k, i) => [k, i]))
   const unknown = items.filter(t => !pos.has(keyOf(t)))
   const known = items.filter(t => pos.has(keyOf(t))).sort((a, b) => pos.get(keyOf(a))! - pos.get(keyOf(b))!)
-  return [...unknown, ...known]
+  return [...known, ...unknown]
 }
 
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -87,6 +92,8 @@ export function matchesTemplateSearch(name: string, query: string): boolean {
  * ASOCIATI_COUNT_RULES (builtinTemplates.ts). */
 const FORM_LINK_EFFECTS: Record<string, string> = {
   [ANEXA1_KEY]: 'Folosește formularul dedicat al Anexei 1, cu aceeași completare automată ca la șablonul de bază.',
+  [ANEXA2A_KEY]: 'Folosește formularul dedicat al Anexei 2a (cerere ONRC), cu aceeași completare automată ca la șablonul de bază.',
+  [ANEXA2B_KEY]: 'Folosește formularul dedicat al Anexei 2b (cerere ONRC pentru PFA, II, IF), cu aceeași completare automată ca la șablonul de bază.',
   [BRX_KEY]: 'Folosește formularul dedicat al declarației de beneficiari reali, cu aceeași completare automată ca la șablonul de bază.',
   [DECLARATIE_ACTIVITATE_KEY]: 'Folosește formularul dedicat al declarației (activitate), cu aceeași completare automată ca la șablonul de bază.',
   decizie_asociat_unic: 'Formularul rămâne cel din etichete; șablonul apare la generare doar pentru clienții cu exact un asociat.',

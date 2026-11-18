@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  reprezentantCandidatesBrx, buildBeneficiariRealiDocxData, isBeneficiariRealiTemplate,
-  EMPTY_BRX_STATE, BRX_KEY, BRX_TIP_DECLARATIE_OPTIONS, BRX_TEMEI_OPTIONS,
+  reprezentantCandidatesBrx, buildBeneficiariRealiDocxData,
+  EMPTY_BRX_STATE, BRX_TIP_DECLARATIE_OPTIONS, BRX_TEMEI_OPTIONS,
 } from './beneficiariRealiFiller'
 import type { BeneficiariRealiFormState, BrxBeneficiarRow } from './beneficiariRealiFiller'
 import type { Client, Persoana } from '../types'
@@ -100,16 +100,5 @@ describe('buildBeneficiariRealiDocxData', () => {
     // altfel placeholder-ele lor ar rămâne literal {{...}} în documentul generat.
     expect(item.CNP).toBe('')
     expect(item.DESCRIERE_CONTROL).toBe('test')
-  })
-})
-
-describe('isBeneficiariRealiTemplate', () => {
-  it('recunoaște șablonul de bază și copiile lui', () => {
-    expect(isBeneficiariRealiTemplate({ key: BRX_KEY })).toBe(true)
-    expect(isBeneficiariRealiTemplate({ sourceKey: BRX_KEY })).toBe(true)
-  })
-  it('nu confundă alte șabloane', () => {
-    expect(isBeneficiariRealiTemplate({ key: 'anexa1_inregistrare_fiscala' })).toBe(false)
-    expect(isBeneficiariRealiTemplate({})).toBe(false)
   })
 })
