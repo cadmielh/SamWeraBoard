@@ -57,9 +57,11 @@ def test_only_the_expected_python_modules_ship():
         assert not ignored(py.name), py.name
 
 
-def test_production_env_is_invite_only():
+def test_production_signup_is_open():
+    """Înscriere liberă din 20.11.2026 (decizia proprietarului, fără MFA/reCAPTCHA deocamdată). `invite` rămâne
+    întrerupătorul: o singură linie în .env.samwera-board-eu și un deploy al funcțiilor."""
     env = (ROOT / ".env.samwera-board-eu").read_text(encoding="utf-8")
-    assert "SIGNUP_MODE=invite" in env.splitlines()
+    assert "SIGNUP_MODE=open" in env.splitlines()
 
 
 def test_production_prices_are_all_or_nothing():

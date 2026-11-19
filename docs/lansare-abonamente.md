@@ -104,10 +104,10 @@ Codul pentru credite și pentru prețurile din 2027 e gata și testat (ramura `f
 
 ## Partea 5: lansarea publică
 
-30. **[Tu]** Îmi spui data lansării.
-31. **[Claude]** Pun `SIGNUP_MODE=open`, actualizez `tests/test_deploy_hygiene.py` și fac deploy.
+30. **[Făcut, 20.11.2026]** Plățile au pornit, iar înscrierea s-a deschis pentru toată lumea, fără MFA și fără reCAPTCHA (decizia proprietarului).
+31. **[Făcut]** Am pus `SIGNUP_MODE=open`, actualizez `tests/test_deploy_hygiene.py` și fac deploy.
 
-Până atunci, un cabinet nou nu poate plăti. Înainte să-i expire proba, îi dai „Gratuit până la” din Super-admin.
+Oricine își poate crea acum un cabinet (14 zile de probă, o singură dată pe adresă de email). Revenirea la înscrierea pe invitație: `SIGNUP_MODE=invite` în `.env.samwera-board-eu`, plus deploy la funcții.
 
 ## Facturare automată (când devine necesară)
 
