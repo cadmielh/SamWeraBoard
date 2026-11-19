@@ -60,6 +60,10 @@ export const adminExtendTrial = (workspaceId: string, days: number) =>
 export const adminSetComp = (workspaceId: string, until: string | null, reason?: string) =>
   apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/comp`, { until, reason })
 
+/** Credite gratuite (`amount` > 0, valabile 12 luni) sau ajustare negativă (ex. după o rambursare). */
+export const adminCredits = (workspaceId: string, amount: number, reason: string) =>
+  apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/credits`, { amount, reason })
+
 export interface DeletionPreview { counts: Record<string, number>; subscription: boolean; graceDays: number }
 
 export const adminDeletionPreview = (workspaceId: string) =>

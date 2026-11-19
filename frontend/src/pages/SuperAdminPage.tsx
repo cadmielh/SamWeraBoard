@@ -11,8 +11,9 @@ import SuperAdminBilling from '../components/SuperAdminBilling'
 import DeliveredTemplatesPanel from '../components/DeliveredTemplatesPanel'
 import DeleteWorkspaceModal from '../components/DeleteWorkspaceModal'
 import IconTrash from '../components/IconTrash'
-import type { Workspace } from '../types'
+import type { BillingTime, Workspace } from '../types'
 import NotificariBell from '../components/NotificariBell'
+import { billingAccess, formatDate, toDate } from '../lib/billing'
 
 const ROLE_LABEL: Record<'admin' | 'member' | 'viewer', string> = { admin: 'Admin', member: 'Membru', viewer: 'Doar citire' }
 
@@ -24,6 +25,17 @@ export default function SuperAdminPage() {
   const [wsError, setWsError] = useState<string | null>(null)
   // Cabinet → cabinetul în care același CUI a mai avut o perioadă de probă.
   const [cuiSeen, setCuiSeen] = useState<Record<string, string>>({})
+  // Cardurile cabinetelor sunt restrânse implicit (doar esențialul); aici, cele deschise.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  // Fila deschisă în fiecare card (implicit Abonament).
+  const [tabs, setTabs] = useState<Record<string, WsTab>>({})
+  const tabOf = (id: string): WsTab => tabs[id] ?? 'abonament'
+  const toggleExpanded = (id: string) => setExpanded(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
 
   const [grants, setGrants] = useState<SuperAdminGrant[]>([])
   const [grantsLoading, setGrantsLoading] = useState(true)
@@ -195,7 +207,7 @@ export default function SuperAdminPage() {
       </div>
 
       <div className="page-body" style={{ overflowY: 'auto' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 860 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 1120, margin: '0 auto', width: '100%' }}>
           <div className="card">
             <div className="card-head">
               <span className="card-title">🗂️ Toate spațiile de lucru</span>
@@ -209,57 +221,74 @@ export default function SuperAdminPage() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {workspaces.map(w => (
-                    <div key={w.id} style={{ border: '1px solid var(--s200)', borderRadius: 'var(--radius-md, 8px)', padding: '.875rem 1rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '.625rem', flexWrap: 'wrap', gap: '.5rem' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--s900)' }}>{w.name}</div>
-                        <div className="card-sub">{Object.keys(w.members ?? {}).length} cont{Object.keys(w.members ?? {}).length !== 1 ? 'uri' : ''}</div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem', marginBottom: '.75rem' }}>
-                        {Object.entries(w.members ?? {}).map(([uid, m]) => (
-                          <div key={uid} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8125rem', color: 'var(--s600)' }}>
-                            <span>{m.displayName ? `${m.displayName} — ${m.email}` : m.email}</span>
-                            <span className={`chip ${m.role === 'admin' ? 'chip-success' : 'chip-muted'}`}>{ROLE_LABEL[m.role]}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {cuiSeen[w.id] && (
-                        <div role="status" style={{ color: 'var(--a800, #92400e)', fontSize: '.8125rem', marginBottom: '.5rem' }}>
-                          Atenție: acest CUI a mai avut o perioadă de probă în cabinetul „{workspaces.find(x => x.id === cuiSeen[w.id])?.name ?? cuiSeen[w.id]}”.
+                    <div key={w.id} style={{ border: '1px solid var(--s200)', borderRadius: 'var(--radius-md, 8px)', padding: expanded.has(w.id) ? '.875rem 1rem' : '.5rem 1rem' }}>
+                      <WorkspaceSummary w={w} open={expanded.has(w.id)} cuiWarning={!!cuiSeen[w.id]} onToggle={() => toggleExpanded(w.id)} />
+                      {expanded.has(w.id) && (<div style={{ marginTop: '.625rem' }}>
+                      {w.status === 'pendingDeletion' && (
+                        <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '.5rem' }}>
+                          <span role="status" style={{ color: 'var(--r600)', fontSize: '.8125rem', flex: 1 }}>
+                            Programat pentru ștergere{w.deleteAfter ? ` pe ${w.deleteAfter.toDate().toLocaleDateString('ro-RO')}` : ''}. Membrii nu mai au acces.
+                          </span>
+                          <button className="btn btn-sm" onClick={() => void handleRestoreWorkspace(w)}>Restaurează</button>
                         </div>
                       )}
-                      <SuperAdminBilling workspaceId={w.id} billing={w.billing}
-                        onChange={b => setWorkspaces(prev => prev.map(x => x.id === w.id ? { ...x, billing: b } : x))} />
-                      {w.status !== 'pendingDeletion' && <DeliveredTemplatesPanel workspaceId={w.id} />}
-
-                      <div style={{ borderTop: '1px solid var(--s100)', paddingTop: '.625rem', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
-                        {FEATURE_REGISTRY.map(def => (
-                          <label key={def.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '.6rem', cursor: 'pointer' }}>
-                            <input
-                              type="checkbox"
-                              checked={hasFeature(w.features, def.key)}
-                              onChange={e => void handleToggleFeature(w.id, def.key, e.target.checked)}
-                              style={{ marginTop: '.2rem' }}
-                            />
-                            <span>
-                              <div style={{ fontWeight: 600, color: 'var(--s800)' }}>{def.label}</div>
-                              <div className="card-sub">{def.description}</div>
-                            </span>
-                          </label>
+                      <div className="page-tabs" role="tablist" style={{ padding: 0, background: 'transparent', marginBottom: '.75rem' }}>
+                        {WS_TABS.map(([key, label]) => (
+                          <button key={key} type="button" role="tab" aria-selected={tabOf(w.id) === key}
+                            className={`page-tab${tabOf(w.id) === key ? ' page-tab--active' : ''}`}
+                            onClick={() => setTabs(prev => ({ ...prev, [w.id]: key }))}>
+                            {label}{key === 'membri' ? ` (${Object.keys(w.members ?? {}).length})` : ''}
+                          </button>
                         ))}
                       </div>
-                      <div style={{ borderTop: '1px solid var(--s100)', marginTop: '.625rem', paddingTop: '.625rem', display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {w.status === 'pendingDeletion' && (
-                          <>
-                            <span role="status" style={{ color: 'var(--r600)', fontSize: '.8125rem', flex: 1 }}>
-                              Programat pentru ștergere{w.deleteAfter ? ` pe ${w.deleteAfter.toDate().toLocaleDateString('ro-RO')}` : ''}. Membrii nu mai au acces.
-                            </span>
-                            <button className="btn btn-sm" onClick={() => void handleRestoreWorkspace(w)}>Restaurează</button>
-                          </>
+
+                      {tabOf(w.id) === 'abonament' && (<>
+                        {cuiSeen[w.id] && (
+                          <div role="status" style={{ color: 'var(--a800, #92400e)', fontSize: '.8125rem', marginBottom: '.5rem' }}>
+                            Atenție: acest CUI a mai avut o perioadă de probă în cabinetul „{workspaces.find(x => x.id === cuiSeen[w.id])?.name ?? cuiSeen[w.id]}”.
+                          </div>
                         )}
-                        <button className="btn btn-danger btn-sm" onClick={() => setDeleting(w)}><IconTrash size={14} /> Șterge cabinetul</button>
-                      </div>
+                        <SuperAdminBilling workspaceId={w.id} billing={w.billing}
+                          onChange={b => setWorkspaces(prev => prev.map(x => x.id === w.id ? { ...x, billing: b } : x))} />
+                      </>)}
+
+                      {tabOf(w.id) === 'membri' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                          {Object.entries(w.members ?? {}).map(([uid, m]) => (
+                            <div key={uid} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.8125rem', color: 'var(--s600)' }}>
+                              <span>{m.displayName ? `${m.displayName} — ${m.email}` : m.email}</span>
+                              <span className={`chip ${m.role === 'admin' ? 'chip-success' : 'chip-muted'}`}>{ROLE_LABEL[m.role]}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {tabOf(w.id) === 'sabloane' && (w.status !== 'pendingDeletion'
+                        ? <DeliveredTemplatesPanel workspaceId={w.id} />
+                        : <div className="card-sub">Cabinet programat pentru ștergere: nu se mai livrează șabloane.</div>)}
+
+                      {tabOf(w.id) === 'setari' && (<>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                          {FEATURE_REGISTRY.map(def => (
+                            <label key={def.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '.6rem', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={hasFeature(w.features, def.key)}
+                                onChange={e => void handleToggleFeature(w.id, def.key, e.target.checked)}
+                                style={{ marginTop: '.2rem' }}
+                              />
+                              <span>
+                                <div style={{ fontWeight: 600, color: 'var(--s800)' }}>{def.label}</div>
+                                <div className="card-sub">{def.description}</div>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <div style={{ borderTop: '1px solid var(--s100)', marginTop: '.75rem', paddingTop: '.625rem' }}>
+                          <button className="btn btn-danger btn-sm" onClick={() => setDeleting(w)}><IconTrash size={14} /> Șterge cabinetul</button>
+                        </div>
+                      </>)}
+                      </div>)}
                     </div>
                   ))}
                 </div>
@@ -376,5 +405,45 @@ export default function SuperAdminPage() {
         />
       )}
     </div>
+  )
+}
+
+type WsTab = 'abonament' | 'membri' | 'sabloane' | 'setari'
+const WS_TABS: [WsTab, string][] = [['abonament', 'Abonament'], ['membri', 'Membri'], ['sabloane', 'Șabloane'], ['setari', 'Setări']]
+
+const STATUS_LABEL: Record<string, string> = {
+  trial: 'Probă', subscription: 'Abonament', past_due: 'Plată eșuată', comp: 'Gratuit', credits: 'Credite', expired: 'Mod citire',
+}
+
+/** Rândul restrâns al unui cabinet: nume, stare, până când are acces, administratorul, semnale. Click = detalii. */
+function WorkspaceSummary({ w, open, cuiWarning, onToggle }: {
+  w: Workspace; open: boolean; cuiWarning: boolean; onToggle: () => void
+}) {
+  const access = billingAccess(w.billing)
+  const members = Object.values(w.members ?? {})
+  const admin = members.find(m => m.role === 'admin')
+  // Firestore întoarce un Timestamp (tipul din Workspace e mai larg); cabinetele foarte vechi pot să nu-l aibă.
+  const created = toDate(w.createdAt as BillingTime)
+  let detail: string
+  if (!w.billing) detail = 'nemigrat'
+  else if (!access.full) detail = 'fără acces complet'
+  else if (access.reason === 'credits') detail = `${access.credits.balance} credite${access.credits.firstExpiry ? ` · expiră ${formatDate(access.credits.firstExpiry)}` : ''}`
+  else if (access.reason === 'subscription') detail = `${access.interval === 'year' ? 'anual' : 'lunar'} · ${access.cancelAtPeriodEnd ? 'se încheie' : 'următoarea plată'} ${formatDate(access.currentPeriodEnd)}`
+  else detail = `până pe ${formatDate(access.accessUntil)}`
+  const tone = !access.full ? 'chip chip-muted' : access.reason === 'past_due' ? 'badge badge-inactiv' : access.reason === 'trial' ? 'chip chip-primary' : 'chip chip-success'
+  return (
+    <button type="button" onClick={onToggle} aria-expanded={open}
+      style={{ all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '.625rem', flexWrap: 'wrap' }}>
+      <span aria-hidden style={{ color: 'var(--s400)', fontSize: '.7rem', width: '.75rem', transform: open ? 'rotate(90deg)' : undefined, transition: 'transform .15s' }}>▶</span>
+      <span style={{ fontWeight: 700, color: 'var(--s900)', minWidth: 0 }}>{w.name}</span>
+      <span className={tone}>{w.billing ? STATUS_LABEL[access.reason] : 'Nemigrat'}</span>
+      <span style={{ color: 'var(--s600)', fontSize: '.8125rem' }}>{detail}</span>
+      {w.status === 'pendingDeletion' && <span className="badge badge-inactiv">Programat pentru ștergere</span>}
+      {cuiWarning && <span className="chip" style={{ background: 'var(--y50)', color: 'var(--a800, #92400e)' }} title="Același CUI a mai avut o perioadă de probă în alt cabinet">CUI refolosit</span>}
+      <span style={{ marginLeft: 'auto', color: 'var(--s500)', fontSize: '.75rem', whiteSpace: 'nowrap' }}
+        title={created ? `Cabinet deschis pe ${formatDate(created)}` : 'Data deschiderii nu e înregistrată'}>
+        {created ? `deschis ${created.toLocaleDateString('ro-RO')} · ` : ''}{admin?.email ?? '—'}{members.length > 1 ? ` +${members.length - 1}` : ''}
+      </span>
+    </button>
   )
 }

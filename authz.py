@@ -88,6 +88,18 @@ class SubscriptionRequired(AuthError):
         return "subscription_required"
 
 
+class CreditsRequired(AuthError):
+    """Cabinet pe credite fără credite valabile pentru o firmă nouă: 402 cu cod distinct, ca aplicația să arate
+    pachetele. Firmele cu fereastra încă deschisă și restul aplicației (până la expirarea accesului) merg în continuare."""
+
+    def __init__(self):
+        super().__init__(402)
+
+    @property
+    def public(self) -> str:
+        return "credits_required"
+
+
 class RateLimited(AuthError):
     """Prea multe cereri: 429 cu `Retry-After` (secunde)."""
 

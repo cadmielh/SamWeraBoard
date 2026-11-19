@@ -32,11 +32,30 @@ export function setApiWorkspace(id: string | null) {
   activeWorkspaceId = id ?? "";
 }
 
-/** Evenimentul care deschide fereastra de abonare (UpgradeModal), emis la orice refuz `subscription_required`. */
+/** Evenimentul care deschide fereastra de abonare (UpgradeModal), emis la orice refuz `subscription_required`
+ * (detail: 'access') sau `credits_required` (detail: 'credits' — cabinet pe credite, fără credite pentru un client nou). */
 export const SUBSCRIPTION_REQUIRED_EVENT = 'cabinio:subscription-required'
 
-export function notifySubscriptionRequired(): void {
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SUBSCRIPTION_REQUIRED_EVENT))
+export function notifySubscriptionRequired(kind: 'access' | 'credits' = 'access'): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(SUBSCRIPTION_REQUIRED_EVENT, { detail: kind }))
+}
+
+/** Emis după o generare care a consumat (sau a folosit) un credit — detaliul vine din antetul X-Credits. */
+export const CREDITS_EVENT = 'cabinio:credits'
+export interface CreditsUse { consumed: boolean; balance: number | null; coveredUntil: string | null }
+
+function notifyCredits(raw: string | null): void {
+  if (!raw || typeof window === 'undefined') return
+  try {
+    window.dispatchEvent(new CustomEvent<CreditsUse>(CREDITS_EVENT, { detail: JSON.parse(raw) as CreditsUse }))
+  } catch { /* antet invalid: doar informativ */ }
+}
+
+// Clientul pentru care se generează acum (setat de pagina de generare, ca setApiWorkspace): la cabinetele pe credite,
+// serverul consumă creditul lui după generare (vezi billing_credits.py).
+let generationClientId = "";
+export function setGenerationClient(id: string | null | undefined) {
+  generationClientId = id ?? "";
 }
 
 /** Mesajul afișat utilizatorului pentru un răspuns de eroare al API-ului (coduri cunoscute → text clar).
@@ -53,7 +72,16 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Crearea de cabinete noi este momentan oprită. Scrie-ne la adresa de contact din subsolul paginii.";
     case "subscription_required":
       notifySubscriptionRequired();
-      return "Perioada de probă sau abonamentul cabinetului a expirat. Activează abonamentul pentru a continua.";
+      return "Perioada de probă, abonamentul sau creditele cabinetului au expirat. Alege un abonament sau un pachet de credite pentru a continua.";
+    case "credits_required":
+      notifySubscriptionRequired("credits");
+      return "Nu mai ai credite pentru un client nou. Cumpără un pachet de credite din pagina Abonament.";
+    case "client_required":
+      return "Cabinetul folosește credite: salvează întâi clientul în portofoliu, apoi generează documentul.";
+    case "subscription_active":
+      return "Cabinetul are abonament activ, care include generări nelimitate: creditele nu sunt necesare.";
+    case "invalid_pack":
+      return "Pachetul de credite ales nu există.";
     case "billing_details_required":
       return "Completează datele de facturare înainte de abonare.";
     case "subscription_exists":
@@ -217,11 +245,13 @@ function fileNameFrom(res: Response, fallback: string): string {
 /** Trimite formularul la /fill/docx. Dacă se cere Drive, fișierul generat se încarcă din browser (serverul nu vede tokenul). */
 async function postFillDocx(fd: FormData, drive: DriveTarget | null | undefined, outputName?: string): Promise<FillResult> {
   if (drive) fd.append("_destination", "drive");      // doar pentru jurnalul de acces
+  if (generationClientId) fd.append("_client_id", generationClientId);
   const res = await fetch(`${BASE}/fill/docx`, { method: "POST", headers: await authHeaders(), body: fd });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(apiErrorMessage(err, res, "Fill failed"));
   }
+  notifyCredits(res.headers.get("X-Credits"));
   const blob = await res.blob();
   const warnings = parseVariantWarnings(res.headers.get("X-Variant-Warnings"));
   if (!drive) return { blob, warnings };
@@ -447,6 +477,7 @@ export async function fillPdfFromBuiltinTemplate(
   fd.append("template_builtin_key", builtinKey);
   Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
   if (outputName) fd.append("_output_name", outputName);
+  if (generationClientId) fd.append("_client_id", generationClientId);
 
   const res = await fetch(`${BASE}/fill/pdf`, {
     method: "POST",
@@ -457,6 +488,7 @@ export async function fillPdfFromBuiltinTemplate(
     const err = await res.json();
     throw new Error(apiErrorMessage(err, res, "Fill failed"));
   }
+  notifyCredits(res.headers.get("X-Credits"));
   return res.blob();
 }
 
@@ -545,6 +577,12 @@ export async function fillGdoc(
   token: string,
   outputName?: string,
 ): Promise<{ doc_id: string; link: string }> {
+  // Documentul se creează în browser, deci creditul (la cabinetele pe credite) se cere înainte, pe server.
+  const use = await apiJson<{ mode: string; balance?: number; coveredUntil?: string }>(
+    "POST", "/billing/credits/consume", { clientId: generationClientId || null, template: outputName ?? "Google Doc" });
+  if (use.mode !== "unlimited") {
+    notifyCredits(JSON.stringify({ consumed: use.mode === "consumed", balance: use.balance ?? null, coveredUntil: use.coveredUntil ?? null }));
+  }
   const upperFields: Record<string, string> = {};
   Object.entries(fields).forEach(([k, v]) => { upperFields[k.toUpperCase()] = v; });
   const out = await withDriveAccess(templateDocId, token, () => fillGoogleDoc(templateDocId, upperFields, outputName, token));

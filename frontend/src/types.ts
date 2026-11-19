@@ -249,7 +249,7 @@ export type BillingTime = { toDate: () => Date } | string | null
  * acum < accessUntil; după, cabinetul e în citire + export. `status` e doar pentru afișare. */
 export interface WorkspaceBilling {
   plan: string
-  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'comp' | 'expired' | 'none'
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'comp' | 'credits' | 'expired' | 'none'
   interval: 'month' | 'year' | null
   accessUntil: BillingTime
   trialEndsAt: BillingTime
@@ -260,6 +260,14 @@ export interface WorkspaceBilling {
   graceUntil: BillingTime
   cancelAtPeriodEnd: boolean
   hasSubscription: boolean
+  /** Credite preplătite: pachetele cu sold și sfârșitul celei mai târzii ferestre de firmă (vezi billing.py). */
+  credits?: { lots: CreditLot[]; coveredUntil: BillingTime }
+}
+
+export interface CreditLot {
+  id: string
+  remaining: number
+  expiresAt: BillingTime
 }
 
 export interface Workspace {

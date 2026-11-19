@@ -125,6 +125,8 @@ export default function GenerareDocumentePage() {
   const societateJustSavedRef = useRef(false)
   // Același tipar pentru o entitate PF nouă (sursa „buletin”): fișa completată la Pasul 2.
   const [pfClientInput, setPfClientInput] = useState<ClientInput | null>(null)
+  // Id-ul clientului nou salvat din pasul de generare: la cabinetele pe credite, creditul se leagă de el.
+  const [newClientId, setNewClientId] = useState<string | null>(null)
   const pfJustSavedRef = useRef(false)
   // Pasul 2 la PF nou are două ecrane: întâi verificarea datelor din buletin, apoi fișa clientului (Editează client).
   const [pfEtapa, setPfEtapa] = useState<'verificare' | 'client'>('verificare')
@@ -180,6 +182,7 @@ export default function GenerareDocumentePage() {
     setSelectedClient(null)
     setSocietateClientInput(null)
     setPfClientInput(null)
+    setNewClientId(null)
     setShowDrivePicker(false)
     setStep(1)
     setHasStarted(true)
@@ -194,6 +197,7 @@ export default function GenerareDocumentePage() {
     setSelectedClient(null)
     setSocietateClientInput(null)
     setPfClientInput(null)
+    setNewClientId(null)
     setShowDrivePicker(false)
     setStep(1)
   }
@@ -338,7 +342,7 @@ export default function GenerareDocumentePage() {
   const handleClientSaved = useCallback(async (clientData: Client) => {
     if (!workspaceId || !user) return
     try {
-      await addClient(workspaceId, clientData, user.uid)
+      setNewClientId(await addClient(workspaceId, clientData, user.uid))
       toast('Client salvat în portofoliu', 'ok')
     } catch (err: unknown) {
       toast((err as Error).message ?? 'Eroare la salvare client', 'err')
@@ -584,7 +588,7 @@ export default function GenerareDocumentePage() {
                   id: 'single', role: 'asociat', cotaParticipare: '',
                   fields, scanStatus: sourceFile === 'manual' ? 'manual' : 'scanned',
                 }]}
-                client={pfClientInput}
+                client={pfClientInput && newClientId ? { ...pfClientInput, id: newClientId } : pfClientInput}
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}
@@ -648,7 +652,7 @@ export default function GenerareDocumentePage() {
                 user={user}
                 fields={null}
                 scannedPersons={scannedPersons}
-                client={societateClientInput}
+                client={societateClientInput && newClientId ? { ...societateClientInput, id: newClientId } : societateClientInput}
                 onToast={toast}
                 onBack={handleStepBack}
                 onClientSaved={handleClientSaved}

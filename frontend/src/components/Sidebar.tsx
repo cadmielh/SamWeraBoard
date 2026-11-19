@@ -4,6 +4,7 @@ import type { User } from 'firebase/auth'
 import type { Workspace } from '../types'
 import ThemeToggleSwitch from './ThemeToggleSwitch'
 import LogoMark from './LogoMark'
+import { creditsState, formatDate } from '../lib/billing'
 
 interface Props {
   user: User
@@ -132,6 +133,11 @@ const LEGAL_LINKS: [string, string][] = [
 ]
 
 export default function Sidebar({ user, activeWorkspace, workspaces, userRole, isSuperAdmin, onSignOut, onWorkspaceChange, onWorkspaceRename }: Props) {
+  // Cabinet pe credite: soldul lângă „Abonament”, cu data primei expirări în tooltip.
+  const credits = creditsState(activeWorkspace?.billing)
+  const creditsTitle = credits.mode === 'credits'
+    ? `${credits.balance} credite${credits.firstExpiry ? ` · primele expiră pe ${formatDate(credits.firstExpiry)}` : ''}`
+    : null
   const navigate = useNavigate()
   const initials = (user.displayName ?? user.email ?? '?')[0].toUpperCase()
 
@@ -339,9 +345,18 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
               <IconUsers />
               <span className="sidebar-nav-label">Utilizatori</span>
             </NavLink>
-            <NavLink to="/abonament" title="Abonament" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+            <NavLink to="/abonament" title={creditsTitle ?? 'Abonament'} className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconCard />
               <span className="sidebar-nav-label">Abonament</span>
+              {!collapsed && credits.mode === 'credits' && (
+                // Doar numărul (bara e îngustă); textul complet e în tooltip-ul legăturii.
+                <span aria-label={creditsTitle ?? undefined} style={{ marginLeft: 'auto', flexShrink: 0, minWidth: '1.25rem', height: '1.25rem',
+                  padding: '0 .35rem', borderRadius: 'var(--r-full)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '.6875rem', fontWeight: 700, background: credits.balance <= 3 ? 'var(--y400)' : 'var(--p500)',
+                  color: credits.balance <= 3 ? '#422006' : '#fff' }}>
+                  {credits.balance}
+                </span>
+              )}
             </NavLink>
           </div>
         )}

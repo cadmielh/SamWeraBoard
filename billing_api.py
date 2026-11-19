@@ -22,14 +22,13 @@ from flask import Blueprint, jsonify, request
 import audit
 import authz
 import billing
+import billing_credits
 
 bp = Blueprint("billing", __name__)
 webhook_bp = Blueprint("billing_webhook", __name__)
 
 # Aceeași versiune trebuie setată pe endpoint-ul de webhook din Stripe Dashboard (forma obiectelor diferă între versiuni).
 STRIPE_API_VERSION = "2026-08-26.dahlia"
-# Preț afișat (RON, preț final — furnizor neplătitor de TVA). Încasarea folosește prețurile din Stripe (PLANS).
-DISPLAY_PRICES_RON = {"month": 200, "year": 2000}
 # Statusuri care împiedică un Checkout nou (abonamentul se gestionează din portal).
 _BLOCKING_SUB_STATUSES = ("trialing", "active", "past_due", "unpaid", "incomplete", "paused")
 _EVENT_STALE = timedelta(minutes=5)
@@ -52,6 +51,11 @@ def _body() -> dict:
 @bp.errorhandler(authz.AuthError)
 def _handle_auth(e: authz.AuthError):
     return authz.error_response(e)
+
+
+@bp.errorhandler(billing_credits.ClientNotFound)
+def _handle_no_client(_e):
+    return _err("client_required", 400)
 
 
 @bp.errorhandler(BillingUnavailable)
@@ -165,6 +169,10 @@ def _wid_for_customer(customer_id: str | None) -> str | None:
 def _iso(v):
     if isinstance(v, datetime):
         return v.astimezone(timezone.utc).isoformat()
+    if isinstance(v, dict):
+        return {k: _iso(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_iso(x) for x in v]
     return v
 
 
@@ -265,11 +273,15 @@ def details_complete(details: dict | None) -> bool:
 
 
 def _customer_params(details: dict) -> dict:
+    # Tipul, CUI-ul și Nr. Reg. Com. ajung în metadate ca facturile manuale din SmartBill să se poată
+    # emite doar din Stripe Dashboard. Un "" șterge cheia la update (o persoană fizică n-are CUI).
     return {
         "name": details["denumire"], "email": details["email"],
         "address": {"line1": details["adresa"][:200], "city": details["localitate"],
                     "state": details["judet"], "country": "RO"},
         "preferred_locales": ["ro"],
+        "metadata": {"tip": details.get("tip") or "", "cui": details.get("cui") or "",
+                     "regCom": details.get("regCom") or ""},
     }
 
 
@@ -281,8 +293,22 @@ def get_billing():
         "billing": serialize_billing(ws.get("billing")),
         "details": acct.get("details"),
         "hasCustomer": bool(acct.get("stripeCustomerId")),
-        "prices": DISPLAY_PRICES_RON,
+        **_price_info(),
     })
+
+
+def _price_info() -> dict:
+    """Prețurile afișate (RON, preț final — furnizor neplătitor de TVA); încasarea folosește prețurile din Stripe.
+    `nextPrices`: generația care urmează, cât timp prețul curent e garantat celor care se abonează acum."""
+    now = datetime.now(timezone.utc)
+    upcoming = now < billing.PRICE_V2_FROM
+    return {
+        "prices": billing.display_prices(now=now),
+        "nextPrices": billing.display_prices(now=billing.PRICE_V2_FROM) if upcoming else None,
+        "nextPricesFrom": _iso(billing.PRICE_V2_FROM) if upcoming else None,
+        "packs": billing.display_packs(now),
+        "nextPacks": billing.display_packs(billing.PRICE_V2_FROM) if upcoming else None,
+    }
 
 
 @bp.put("/billing/details")
@@ -311,6 +337,14 @@ def put_details():
 
 # ── Checkout / Portal / Sync ────────────────────────────────────────────────
 
+def _create_customer(wid: str, details: dict) -> str:
+    params = _customer_params(details)
+    meta = {k: v for k, v in params["metadata"].items() if v}
+    customer = stripe_customer_create({**params, "metadata": {**meta, "workspaceId": wid}})
+    _acct_ref(wid).set({"stripeCustomerId": customer["id"]}, merge=True)
+    return customer["id"]
+
+
 @bp.post("/billing/checkout")
 def create_checkout():
     principal, wid, ws = authz.require_from_header("admin")
@@ -328,9 +362,7 @@ def create_checkout():
 
     customer_id = acct.get("stripeCustomerId")
     if not customer_id:
-        customer = stripe_customer_create({**_customer_params(acct["details"]), "metadata": {"workspaceId": wid}})
-        customer_id = customer["id"]
-        _acct_ref(wid).set({"stripeCustomerId": customer_id}, merge=True)
+        customer_id = _create_customer(wid, acct["details"])
     elif any(s.get("status") in _BLOCKING_SUB_STATUSES for s in stripe_subscriptions(customer_id)):
         return _err("subscription_exists", 409)
 
@@ -393,9 +425,82 @@ def sync():
         if session.get("client_reference_id") != wid:       # sesiunea altui cabinet: nu o atingem
             return _err("invalid_session", 400)
         customer_id = session.get("customer")
-        _acct_ref(wid).set({"pendingCheckout": None}, merge=True)
+        if session.get("mode") == "payment":
+            billing_credits.fulfill_purchase(session)
+        else:
+            _acct_ref(wid).set({"pendingCheckout": None}, merge=True)
     new = sync_subscription(wid, customer_id, actor=principal.uid)
     return jsonify({"billing": serialize_billing(new)})
+
+
+# ── Credite ──────────────────────────────────────────────────────────────────
+
+@bp.post("/billing/credits/checkout")
+def credits_checkout():
+    """Pachet de credite: Checkout cu plată unică. Pachetul îl alege clientul, prețul îl ia serverul din env."""
+    principal, wid, ws = authz.require_from_header("admin")
+    pack = _body().get("pack")
+    if pack not in billing.CREDIT_PACKS:
+        return _err("invalid_pack", 400)
+    price = billing.pack_price_id(pack)
+    if not price:
+        raise BillingUnavailable(f"prețul pachetului {pack} lipsește din env")
+    if (ws.get("billing") or {}).get("hasSubscription"):
+        return _err("subscription_active", 409)            # abonamentul e nelimitat: creditele n-ar avea rost
+    acct = _account(wid)
+    if not details_complete(acct.get("details")):
+        return _err("billing_details_required", 400)
+    base = _app_base_url()
+    customer_id = acct.get("stripeCustomerId") or _create_customer(wid, acct["details"])
+    meta = {"workspaceId": wid, "pack": pack}
+    session = stripe_checkout_create({
+        "mode": "payment",
+        "customer": customer_id,
+        "client_reference_id": wid,
+        "line_items": [{"price": price, "quantity": 1}],
+        "metadata": meta,
+        # Pe plată (și pe charge) ca o rambursare sau o dispută să ajungă la cabinetul potrivit.
+        "payment_intent_data": {"metadata": meta},
+        "allow_promotion_codes": True,
+        "consent_collection": {"terms_of_service": "required"},
+        "locale": "ro",
+        "success_url": f"{base}/abonament?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{base}/abonament?checkout=cancel",
+    })
+    audit.log(wid, principal.uid, "billing.credits_checkout_start", wid, {"pack": pack})
+    return jsonify({"url": session["url"]})
+
+
+@bp.get("/billing/credits")
+def get_credits():
+    """Soldul, pachetele și istoricul (ultimele 100 de mișcări) — pentru admin."""
+    _principal, wid, ws = authz.require_from_header("admin")
+    b = ws.get("billing") or {}
+    now = datetime.now(timezone.utc)
+    return jsonify({
+        "balance": billing.credit_balance(b, now),
+        "lots": _iso(billing.live_lots(b, now)),
+        "coveredUntil": _iso(billing.covered_until(b)),
+        "mode": billing.credit_mode(b, now),
+        "ledger": [_iso(e) for e in billing_credits.ledger(wid)],
+    })
+
+
+@bp.get("/billing/credits/quote")
+def credits_quote():
+    """Ce face generarea pentru un client: inclus în nelimitat, inclus în fereastra firmei, consumă 1 credit, sau nimic."""
+    _principal, wid, ws = authz.require_from_header("member")
+    cid = request.args.get("clientId") or None
+    return jsonify(_iso(billing_credits.quote(wid, ws, cid)))
+
+
+@bp.post("/billing/credits/consume")
+def credits_consume():
+    """Pentru documentele completate în browser (șabloane Google Docs): consumul se cere ÎNAINTE de copie."""
+    principal, wid, _ws = authz.require_from_header("member", billing=True)
+    body = _body()
+    result = billing_credits.consume(wid, body.get("clientId"), principal.uid, str(body.get("template") or "gdoc"))
+    return jsonify(_iso(result))
 
 
 # ── Webhook ──────────────────────────────────────────────────────────────────
@@ -447,6 +552,10 @@ def process_event(event: dict) -> str | None:
     obj = (event.get("data") or {}).get("object") or {}
     if etype == "checkout.session.completed":
         wid, customer = _event_wid(obj, "checkout")
+        if wid and obj.get("mode") == "payment":
+            # Pachet de credite: recitim sesiunea din Stripe (plata confirmată), nu ne bazăm pe corpul evenimentului.
+            billing_credits.fulfill_purchase(stripe_checkout_retrieve(obj["id"]))
+            return wid
         if wid:
             _acct_ref(wid).set({"pendingCheckout": None}, merge=True)
             sync_subscription(wid, customer)
@@ -626,6 +735,24 @@ def admin_comp(wid: str):
     audit.log(wid, principal.uid, "billing.comp_set" if until else "billing.comp_revoke", wid,
               {"until": until_raw, "billingDeferred": deferred} if until else {})
     return jsonify({"billing": serialize_billing(new)})
+
+
+@bp.post("/admin/workspaces/<wid>/billing/credits")
+def admin_credits(wid: str):
+    """Credite gratuite (`amount` > 0, valabile 12 luni) sau ajustare negativă (`amount` < 0, ex. după o rambursare)."""
+    principal = authz.require_super_admin()
+    body = _body()
+    amount, reason = body.get("amount"), str(body.get("reason") or "").strip()[:120]
+    if not isinstance(amount, int) or isinstance(amount, bool) or amount == 0 or not -1000 <= amount <= 1000:
+        return _err("invalid_amount", 400)
+    reason = reason or ("acordate de super admin" if isinstance(amount, int) and amount > 0 else "ajustare")
+    if not authz.valid_wid(wid) or authz.load_workspace(wid) is None:
+        return _err("not_found", 404)
+    if amount > 0:
+        billing_credits.grant(wid, amount, reason, principal.uid)
+    elif billing_credits.remove(wid, -amount, reason, principal.uid) is None:
+        return _err("insufficient_credits", 409)
+    return jsonify({"billing": serialize_billing((authz.load_workspace(wid) or {}).get("billing"))})
 
 
 @bp.post("/admin/workspaces/<wid>/billing/sync")

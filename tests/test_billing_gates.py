@@ -23,7 +23,7 @@ GATED = {
     ("POST", "/extract"), ("POST", "/fill/docx"), ("POST", "/fill/pdf"),
     ("POST", "/template/placeholders"), ("POST", "/template/blanks"), ("POST", "/template/blanks/apply"),
     ("POST", "/template/blanks/ai-suggest"), ("PUT", "/clients/<cid>/pii"), ("POST", "/templates/<tid>/file"),
-    ("POST", "/templates"), ("POST", "/templates/from-builtin"),
+    ("POST", "/templates"), ("POST", "/templates/from-builtin"), ("POST", "/billing/credits/consume"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
 # ștergerea GDPR a unui client, căutarea ANAF (necesară completării datelor de facturare) și abonarea.
@@ -43,6 +43,8 @@ UNGATED = {
     # abonarea trebuie să meargă tocmai când accesul a expirat
     ("GET", "/billing"), ("PUT", "/billing/details"), ("POST", "/billing/checkout"), ("POST", "/billing/portal"),
     ("POST", "/billing/sync"), ("POST", "/billing/webhook"),
+    ("POST", "/billing/credits/checkout"), ("GET", "/billing/credits"), ("GET", "/billing/credits/quote"),
+    ("POST", "/admin/workspaces/<wid>/billing/credits"),
     ("GET", "/admin/billing/overview"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
     ("POST", "/admin/workspaces/<wid>/billing/comp"), ("POST", "/admin/workspaces/<wid>/billing/sync"),
     # super admin: livrarea cere acces activ la cabinetul ȚINTĂ (billing.has_full_access), nu la cel al apelantului
@@ -119,3 +121,28 @@ def test_read_and_gdpr_delete_still_work_when_expired(env):
     assert c.get(f"/clients/{CID}/pii", headers={"X-Workspace-Id": WID}).status_code == 200
     assert c.delete(f"/clients/{CID}", headers={"X-Workspace-Id": WID}).status_code == 200
     assert c.get("/templates/builtin", headers={"X-Workspace-Id": WID}).status_code == 200
+
+
+def test_fill_consumes_credit_for_the_firm_after_generation(env, app_mod):
+    import json
+    import billing  # noqa: PLC0415
+    c, db = env
+    now = datetime.now(timezone.utc)
+    db.collection("workspaces").document(WID).update(
+        {"billing": billing.add_credits(billing.no_trial(now), "lotA", 2, now + timedelta(days=365), now)})
+    db.collection("workspaces").document(WID).collection("clienti").document(CID).set(
+        {"denumire": "Firma X SRL", "codFiscal": "18547290"})
+    key = next(iter(app_mod.BUILTIN_TEMPLATES))
+    form = lambda cid=None: {"template_builtin_key": key, **({"_client_id": cid} if cid else {})}  # noqa: E731
+    try:
+        assert c.post("/fill/docx", data=form(), headers={"X-Workspace-Id": WID}).get_json() == {"error": "client_required"}
+        r1 = c.post("/fill/docx", data=form(CID), headers={"X-Workspace-Id": WID})
+        r2 = c.post("/fill/docx", data=form(CID), headers={"X-Workspace-Id": WID})
+        assert r1.status_code == r2.status_code == 200
+        assert json.loads(r1.headers["X-Credits"])["consumed"] is True
+        assert json.loads(r2.headers["X-Credits"]) | {"coveredUntil": None} == {"consumed": False, "balance": 1, "coveredUntil": None}
+        b = db.collection("workspaces").document(WID).get().to_dict()["billing"]
+        assert billing.credit_balance(b) == 1
+    finally:
+        db.recursive_delete(db.collection("billingAccounts").document(WID))
+        db.collection("workspaces").document(WID).collection("clienti").document(CID).delete()

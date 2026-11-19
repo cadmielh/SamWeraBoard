@@ -20,7 +20,7 @@ MUST_IGNORE = [
     "fisiere_template/.golden/hotarare_aga--pj_doi_asociati.txt",   # versiunile salvate ale testului de regresie (tests/test_golden_templates.py)
     "fisiere_template/Șabloane Dorothea - Actus Consult/MODEL.docx",   # orice subfolder = șabloanele unui client, nu ale aplicației
 ]
-MUST_SHIP = ["app.py", "main.py", "authz.py", "billing.py", "billing_api.py", "billing_webhook_app.py", "vault.py", "ratelimit.py", "workspace_deletion.py", "templates_api.py", "template_safety.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
+MUST_SHIP = ["app.py", "main.py", "authz.py", "billing.py", "billing_api.py", "billing_credits.py", "billing_webhook_app.py", "vault.py", "ratelimit.py", "workspace_deletion.py", "templates_api.py", "template_safety.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
              "fisiere_template/registry.json", "fonts/DejaVuSans.ttf", "local_extractor.py"]
 
 
@@ -60,6 +60,21 @@ def test_only_the_expected_python_modules_ship():
 def test_production_env_is_invite_only():
     env = (ROOT / ".env.samwera-board-eu").read_text(encoding="utf-8")
     assert "SIGNUP_MODE=invite" in env.splitlines()
+
+
+def test_production_prices_are_all_or_nothing():
+    """Prețurile Stripe din producție: toate sau niciunul (niciunul = plățile oprite). Fără cele din 2027, abonările și
+    creditele se opresc pe 1 ianuarie; fără cele vechi, abonații la prețul de ofertă rămân fără acces."""
+    import sys
+    sys.path.insert(0, str(ROOT))
+    import billing
+    expected = {env for gens in billing.PLAN_PRICES.values() for g in gens for env in g["env"].values()}
+    expected |= {env for g in billing.PACK_PRICES for env in g["env"].values()}
+    assert len(expected) == 10
+    env = (ROOT / ".env.samwera-board-eu").read_text(encoding="utf-8")
+    present = {line.split("=", 1)[0].strip() for line in env.splitlines()
+               if line.strip().startswith("STRIPE_PRICE_") and line.split("=", 1)[1].strip()}
+    assert present in (set(), expected), f"lipsesc: {sorted(expected - present)}; necunoscute: {sorted(present - expected)}"
 
 
 def test_csp_is_enforced_and_allows_the_firebase_auth_frame():

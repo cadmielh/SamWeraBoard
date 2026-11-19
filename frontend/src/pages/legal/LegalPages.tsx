@@ -54,10 +54,13 @@ export function TermeniPage() {
       <H>7. Disponibilitate</H>
       <P>Furnizorul depune eforturi rezonabile pentru ca Serviciul să fie disponibil, fără a garanta funcționarea neîntreruptă: pot exista întreruperi pentru
         mentenanță sau din cauza unor servicii terțe (ex. Google, Microsoft, ANAF). Întreruperile programate importante se anunță în prealabil, când este posibil.</P>
-      <H>8. Tarife, perioadă de probă și abonament</H>
+      <H>8. Tarife, perioadă de probă, abonament și credite</H>
       <UL>
-        <li>Serviciul se oferă pe bază de abonament per spațiu de lucru (cabinet), cu plată lunară sau anuală, la prețul afișat în aplicație la momentul
-          abonării. Furnizorul nu este plătitor de TVA; prețul afișat este prețul final.</li>
+        <li>Serviciul se oferă per spațiu de lucru (cabinet), fie pe bază de abonament, cu plată lunară sau anuală, fie pe bază de pachete de credite
+          preplătite, la prețul afișat în aplicație la momentul cumpărării. Furnizorul nu este plătitor de TVA; prețul afișat este prețul final.</li>
+        <li>Abonamentele încheiate până la 31 decembrie 2026 la prețul de ofertă (200 RON/lună sau 2000 RON/an) își păstrează acest preț cât timp
+          rămân active, fără întrerupere. Pentru celelalte abonamente se aplică prețul afișat la încheiere și regula privind modificările de preț de
+          mai jos.</li>
         <li>Fiecare cont beneficiază o singură dată de o perioadă de probă gratuită de 14 zile, fără card. Furnizorul poate prelungi perioada de probă sau
           poate acorda acces gratuit, la alegerea sa.</li>
         <li>Plata se face cu cardul, prin procesatorul de plăți Stripe; Furnizorul nu primește și nu stochează datele cardului. Abonamentul se reînnoiește
@@ -65,9 +68,19 @@ export function TermeniPage() {
         <li>Anularea se face oricând din aplicație și produce efecte la sfârșitul perioadei deja plătite; sumele plătite pentru perioada în curs nu se
           restituie proporțional.</li>
         <li>Dacă o plată eșuează, accesul complet se păstrează încă 7 zile, timp în care plata se reîncearcă automat.</li>
-        <li>După încheierea perioadei de probă sau a abonamentului, spațiul de lucru trece în modul citire: datele rămân accesibile pentru consultare și
+        <li>Un credit acoperă un client al Cabinetului (identificat după CUI sau, în lipsa acestuia, după fișa și denumirea clientului) timp
+          de 30 de zile: primul document generat pentru client consumă un credit, iar documentele și regenerările pentru același client în următoarele
+          30 de zile sunt incluse. Schimbarea CUI-ului sau a denumirii clientului înseamnă un client nou. Scanarea actelor și sugestiile automate sunt
+          incluse, în limitele zilnice ale Serviciului.</li>
+        <li>Creditele sunt valabile 12 luni de la cumpărare și se consumă în ordinea expirării. Creditele neconsumate până la expirare se pierd și nu se
+          restituie. Cât timp spațiul de lucru are un abonament activ, o perioadă de probă sau acces gratuit, creditele nu se consumă, dar termenul lor
+          de valabilitate continuă să curgă.</li>
+        <li>Cât timp există credite valabile, spațiul de lucru are acces complet. Fără credite, clienții pentru care s-a consumat deja un credit rămân
+          disponibili până la sfârșitul celor 30 de zile, după care spațiul de lucru trece în modul citire.</li>
+        <li>După încheierea perioadei de probă, a abonamentului sau a creditelor, spațiul de lucru trece în modul citire: datele rămân accesibile pentru consultare și
           export, dar nu mai pot fi adăugate sau modificate. Ștergerea datelor se face la cererea Cabinetului, conform DPA.</li>
-        <li>Modificările de preț se anunță cu cel puțin 30 de zile înainte și se aplică doar perioadelor următoare.</li>
+        <li>Modificările de preț se anunță cu cel puțin 30 de zile înainte și se aplică doar perioadelor următoare. Ele nu afectează creditele deja
+          cumpărate și nici abonamentele la prețul de ofertă de mai sus.</li>
       </UL>
       <H>9. Răspundere</H>
       <P>În măsura permisă de lege, răspunderea Furnizorului față de Cabinet pentru orice prejudiciu legat de Serviciu este limitată la sumele plătite pentru

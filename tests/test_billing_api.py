@@ -64,7 +64,8 @@ class FakeStripe:
     def checkout_create(self, params):
         sid = "cs_test_" + self._id("s")
         self.sessions[sid] = {"id": sid, "url": f"https://checkout/{sid}", "customer": params["customer"],
-                              "client_reference_id": params["client_reference_id"],
+                              "client_reference_id": params["client_reference_id"], "mode": params["mode"],
+                              "metadata": params.get("metadata") or {}, "payment_status": "unpaid",
                               "expires_at": int(datetime.now(timezone.utc).timestamp()) + DAY, "params": params}
         return self.sessions[sid]
 
@@ -173,7 +174,9 @@ def test_checkout_server_picks_price_and_carries_trial(env):
     assert params["subscription_data"]["trial_end"] == int(trial_end.timestamp())
     assert params["success_url"].startswith("https://cabinio.test/abonament?checkout=success")
     cust = db.collection("billingAccounts").document(wid).get().to_dict()["stripeCustomerId"]
-    assert stripe.customers[cust]["metadata"] == {"workspaceId": wid}
+    cui = billing.normalize_cui(DETAILS["cui"])
+    # regCom gol nu ajunge în metadate; CUI-ul și tipul sunt acolo pentru facturarea manuală.
+    assert stripe.customers[cust]["metadata"] == {"workspaceId": wid, "tip": "PJ", "cui": cui}
 
 
 def test_checkout_charges_now_when_trial_has_under_48h(env):
@@ -450,3 +453,196 @@ def test_admin_overview_lists_workspaces(env):
     rows = as_root(c, "get", "/admin/billing/overview").get_json()
     row = next(r for r in rows if r["id"] == wid)
     assert row["billing"]["status"] == "trialing" and row["hasCustomer"] is False
+
+
+# ── Credite ──────────────────────────────────────────────────────────────────
+import billing_credits  # noqa: E402
+
+
+@pytest.fixture()
+def credits_env(env, monkeypatch):
+    c, db, stripe, wid = env
+    for pack in ("10", "30", "50"):
+        monkeypatch.setenv(f"STRIPE_PRICE_CREDITS_{pack}", f"price_c{pack}")
+    # Cabinet după probă, fără abonament: trece pe credite.
+    db.collection("workspaces").document(wid).update({"billing": billing.no_trial(datetime.now(timezone.utc))})
+    db.collection("workspaces").document(wid).collection("clienti").document("clientFirmaX01").set(
+        {"denumire": "Firma X SRL", "codFiscal": "RO18547290"})
+    db.collection("workspaces").document(wid).collection("clienti").document("clientFirmaY01").set(
+        {"denumire": "Firma Y SRL", "codFiscal": ""})
+    return c, db, stripe, wid
+
+
+def buy(c, stripe, wid, pack="10", via="webhook"):
+    r = call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": pack})
+    assert r.status_code == 200, r.get_json()
+    sid = r.get_json()["url"].rsplit("/", 1)[1]
+    stripe.sessions[sid].update(payment_status="paid", amount_total=35000)
+    if via == "webhook":
+        assert post_event(c, event(f"evt_{sid}", "checkout.session.completed", stripe.sessions[sid])).status_code == 200
+    else:
+        assert call(c, wid, "bob", "post", "/billing/sync", json={"sessionId": sid}).status_code == 200
+    return sid
+
+
+def test_credit_checkout_is_one_time_payment_with_server_price(credits_env):
+    c, db, stripe, wid = credits_env
+    assert call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "10"}).get_json()["error"] \
+        == "billing_details_required"
+    with_details(c, wid)
+    assert call(c, wid, "bob", "post", "/billing/credits/checkout", json={"pack": "10"}).status_code == 403
+    assert call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "7"}).get_json()["error"] == "invalid_pack"
+    r = call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "30", "priceId": "price_ieftin"})
+    params = next(iter(stripe.sessions.values()))["params"]
+    assert r.status_code == 200 and params["mode"] == "payment"
+    assert params["line_items"] == [{"price": "price_c30", "quantity": 1}]
+    assert params["metadata"] == {"workspaceId": wid, "pack": "30"}
+    assert params["payment_intent_data"]["metadata"]["workspaceId"] == wid
+
+
+def test_credit_checkout_refused_while_subscribed(credits_env):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    db.collection("workspaces").document(wid).update({"billing.hasSubscription": True})
+    assert call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "10"}).status_code == 409
+
+
+def test_credit_checkout_unavailable_without_price(credits_env, monkeypatch):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    monkeypatch.delenv("STRIPE_PRICE_CREDITS_10")
+    assert call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "10"}).status_code == 503
+
+
+@pytest.mark.parametrize("via", ["webhook", "sync"])
+def test_purchase_adds_credits_once(credits_env, via):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    sid = buy(c, stripe, wid, "10", via)
+    # A doua livrare (webhook după sync sau eveniment retrimis) nu dublează pachetul.
+    assert post_event(c, event("evt_again", "checkout.session.completed", stripe.sessions[sid])).status_code == 200
+    call(c, wid, "bob", "post", "/billing/sync", json={"sessionId": sid})
+    b = billing_of(db, wid)
+    assert billing.credit_balance(b) == 10 and b["status"] == "credits"
+    assert billing.has_full_access({"billing": b})
+    data = call(c, wid, "alice", "get", "/billing/credits").get_json()
+    assert data["balance"] == 10 and [e["kind"] for e in data["ledger"]] == ["purchase"]
+
+
+def test_full_discount_promo_still_delivers_the_pack(credits_env):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    r = call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "30"})
+    sid = r.get_json()["url"].rsplit("/", 1)[1]
+    stripe.sessions[sid].update(payment_status="no_payment_required", amount_total=0)
+    post_event(c, event("evt_free", "checkout.session.completed", stripe.sessions[sid]))
+    assert billing.credit_balance(billing_of(db, wid)) == 30
+
+
+def test_unpaid_session_adds_nothing(credits_env):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    r = call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "10"})
+    sid = r.get_json()["url"].rsplit("/", 1)[1]
+    post_event(c, event("evt_unpaid", "checkout.session.completed", stripe.sessions[sid]))
+    assert billing.credit_balance(billing_of(db, wid)) == 0
+
+
+def test_consume_once_per_firm_within_window(credits_env):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    buy(c, stripe, wid, "10")
+    assert call(c, wid, "bob", "get", "/billing/credits/quote?clientId=clientFirmaX01").get_json()["mode"] == "consume"
+    first = billing_credits.consume(wid, "clientFirmaX01", "bob", "Act constitutiv.docx")
+    again = billing_credits.consume(wid, "clientFirmaX01", "bob", "Anexa 1.docx")
+    other = billing_credits.consume(wid, "clientFirmaY01", "bob", "Anexa 1.docx")
+    assert (first["mode"], again["mode"], other["mode"]) == ("consumed", "included", "consumed")
+    assert other["balance"] == 8
+    q = call(c, wid, "bob", "get", "/billing/credits/quote?clientId=clientFirmaX01").get_json()
+    assert q["mode"] == "included" and q["coveredUntil"]
+    # Același CUI pe alt client = aceeași firmă; schimbarea CUI-ului = firmă nouă.
+    clients = db.collection("workspaces").document(wid).collection("clienti")
+    clients.document("clientFirmaX02").set({"denumire": "X", "codFiscal": "18547290"})
+    assert billing_credits.consume(wid, "clientFirmaX02", "bob", "d")["mode"] == "included"
+    clients.document("clientFirmaX01").update({"codFiscal": "RO14399840"})
+    assert billing_credits.consume(wid, "clientFirmaX01", "bob", "d")["mode"] == "consumed"
+    ledger = call(c, wid, "alice", "get", "/billing/credits").get_json()["ledger"]
+    assert [e["kind"] for e in ledger].count("consume") == 3
+    assert all("denumire" not in e for e in ledger)           # jurnalul nu păstrează nume
+    consumed_for = {e["clientName"] for e in ledger if e["kind"] == "consume"}
+    assert consumed_for == {"Firma X SRL", "Firma Y SRL"}     # citite acum din fișa clientului
+
+
+def test_window_expiry_consumes_again(credits_env):
+    c, db, stripe, wid = credits_env
+    with_details(c, wid)
+    buy(c, stripe, wid, "10")
+    billing_credits.consume(wid, "clientFirmaX01", "bob", "d")
+    firm_docs = list(db.collection("billingAccounts").document(wid).collection("creditFirms").stream())
+    firm_docs[0].reference.update({"coveredUntil": datetime.now(timezone.utc) - timedelta(seconds=1)})
+    assert billing_credits.consume(wid, "clientFirmaX01", "bob", "d")["mode"] == "consumed"
+
+
+def test_no_credits_left_refuses_new_firm_but_keeps_open_window(credits_env):
+    c, db, stripe, wid = credits_env
+    billing_credits.grant(wid, 1, "test", "admin")
+    assert billing_credits.consume(wid, "clientFirmaX01", "bob", "d")["mode"] == "consumed"
+    with pytest.raises(authz.CreditsRequired):
+        billing_credits.consume(wid, "clientFirmaY01", "bob", "d")
+    assert billing_credits.consume(wid, "clientFirmaX01", "bob", "d")["mode"] == "included"
+    assert call(c, wid, "bob", "get", "/billing/credits/quote?clientId=clientFirmaY01").get_json()["mode"] == "none"
+    with pytest.raises(billing_credits.ClientNotFound):
+        billing_credits.consume(wid, None, "bob", "d")
+    assert call(c, wid, "bob", "get", "/billing/credits/quote?clientId=lipsaClient001").status_code == 400
+
+
+def test_unlimited_access_does_not_consume(credits_env):
+    c, db, stripe, wid = credits_env
+    billing_credits.grant(wid, 5, "test", "admin")
+    db.collection("workspaces").document(wid).update(
+        {"billing.compUntil": datetime.now(timezone.utc) + timedelta(days=10)})
+    assert billing_credits.consume(wid, None, "bob", "d") == {"mode": "unlimited"}
+    assert billing.credit_balance(billing_of(db, wid)) == 5
+
+
+def test_concurrent_generations_for_same_firm_consume_once(credits_env):
+    from concurrent.futures import ThreadPoolExecutor
+    c, db, stripe, wid = credits_env
+    billing_credits.grant(wid, 5, "test", "admin")
+    with ThreadPoolExecutor(3) as pool:
+        modes = list(pool.map(lambda _: billing_credits.consume(wid, "clientFirmaX01", "bob", "d")["mode"], range(3)))
+    assert modes.count("consumed") == 1
+    assert billing.credit_balance(billing_of(db, wid)) == 4
+
+
+def test_gdoc_consume_endpoint(credits_env):
+    c, db, stripe, wid = credits_env
+    r = call(c, wid, "bob", "post", "/billing/credits/consume", json={"clientId": "clientFirmaX01"})
+    assert r.status_code == 402 and r.get_json()["error"] == "subscription_required"   # fără credite: citire
+    billing_credits.grant(wid, 2, "test", "admin")
+    r = call(c, wid, "bob", "post", "/billing/credits/consume", json={"clientId": "clientFirmaX01", "template": "Doc"})
+    assert r.status_code == 200 and r.get_json()["mode"] == "consumed"
+    assert call(c, wid, "bob", "post", "/billing/credits/consume", json={}).get_json()["error"] == "client_required"
+
+
+def test_super_admin_grants_and_removes_credits(credits_env):
+    c, db, stripe, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    admin = lambda body: call(c, wid, "root", "post", f"/admin/workspaces/{wid}/billing/credits", json=body)  # noqa: E731
+    assert call(c, wid, "alice", "post", f"/admin/workspaces/{wid}/billing/credits",
+                json={"amount": 3, "reason": "x"}).status_code == 403
+    assert admin({"amount": 0, "reason": "x"}).get_json()["error"] == "invalid_amount"
+    assert admin({"amount": 3, "reason": "bonus"}).status_code == 200
+    assert admin({"amount": -5, "reason": "rambursare"}).status_code == 409
+    assert admin({"amount": -2, "reason": "rambursare"}).status_code == 200
+    assert billing.credit_balance(billing_of(db, wid)) == 1
+    kinds = [e["kind"] for e in call(c, wid, "alice", "get", "/billing/credits").get_json()["ledger"]]
+    assert sorted(kinds) == ["adjust", "grant"]
+
+
+def test_billing_overview_shows_packs_and_upcoming_prices(credits_env):
+    c, db, stripe, wid = credits_env
+    data = call(c, wid, "alice", "get", "/billing").get_json()
+    if datetime.now(timezone.utc) < billing.PRICE_V2_FROM:
+        assert data["prices"] == {"month": 200, "year": 2000} and data["nextPrices"] == {"month": 250, "year": 2500}
+        assert data["packs"]["50"] == {"credits": 50, "ron": 1000} and data["nextPacks"]["50"]["ron"] == 1250

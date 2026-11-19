@@ -24,32 +24,85 @@ GRACE_DAYS = int(os.getenv("BILLING_GRACE_DAYS", "7"))
 ACTIVE_BUFFER = timedelta(days=2)
 # Stripe cere ca `trial_end` din Checkout să fie la cel puțin 48h în viitor.
 MIN_TRIAL_CARRY = timedelta(hours=48)
+MAX_TRIAL_CARRY = timedelta(days=720)
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 # Planuri: azi unul singur; grila după volum (2027) se adaugă aici. Id-urile de preț vin din env
 # (diferă între modul test și live), prețul îl alege mereu serverul — clientul trimite doar intervalul.
-PLANS: dict[str, dict[str, str]] = {
-    "standard": {"month": "STRIPE_PRICE_STANDARD_MONTH", "year": "STRIPE_PRICE_STANDARD_YEAR"},
+# Generații de preț, cea mai nouă prima: un abonament nou primește generația în vigoare la checkout, iar cine
+# s-a abonat la un preț îl păstrează (Stripe nu schimbă prețul abonamentelor existente) — deci toate
+# generațiile rămân recunoscute. 1 ianuarie 2027, 00:00 ora României = 31 decembrie 2026, 22:00 UTC.
+PRICE_V2_FROM = datetime(2026, 12, 31, 22, 0, tzinfo=timezone.utc)
+PLAN_PRICES: dict[str, list[dict]] = {
+    "standard": [
+        {"from": PRICE_V2_FROM, "ron": {"month": 250, "year": 2500},
+         "env": {"month": "STRIPE_PRICE_STANDARD_MONTH_2027", "year": "STRIPE_PRICE_STANDARD_YEAR_2027"}},
+        {"from": EPOCH, "ron": {"month": 200, "year": 2000},
+         "env": {"month": "STRIPE_PRICE_STANDARD_MONTH", "year": "STRIPE_PRICE_STANDARD_YEAR"}},
+    ],
 }
 INTERVALS = ("month", "year")
 LIVE_SUB_STATUSES = ("trialing", "active", "past_due")
 
+# Pachete de credite (plată unică). Un credit = o firmă (client) timp de CREDIT_WINDOW_DAYS: prima generare
+# pentru firmă consumă creditul, restul documentelor și regenerările pentru ea în fereastră sunt incluse.
+CREDIT_PACKS: dict[str, dict] = {"10": {"credits": 10}, "30": {"credits": 30}, "50": {"credits": 50}}
+# Prețurile pachetelor, pe generații ca la abonament: preț de lansare până la 31.12.2026, apoi grila din 2027.
+# Un pachet cumpărat la prețul de lansare rămâne valabil 12 luni de la cumpărare.
+PACK_PRICES: list[dict] = [
+    {"from": PRICE_V2_FROM, "ron": {"10": 350, "30": 900, "50": 1250},
+     "env": {"10": "STRIPE_PRICE_CREDITS_10_2027", "30": "STRIPE_PRICE_CREDITS_30_2027", "50": "STRIPE_PRICE_CREDITS_50_2027"}},
+    {"from": EPOCH, "ron": {"10": 300, "30": 750, "50": 1000},
+     "env": {"10": "STRIPE_PRICE_CREDITS_10", "30": "STRIPE_PRICE_CREDITS_30", "50": "STRIPE_PRICE_CREDITS_50"}},
+]
+CREDIT_VALID_DAYS = 365
+CREDIT_WINDOW_DAYS = 30
 
-def price_id(plan: str, interval: str) -> str | None:
-    env = PLANS.get(plan, {}).get(interval)
+
+def _generation(plan: str, now: datetime | None = None) -> dict | None:
+    now = _now(now)
+    return next((g for g in PLAN_PRICES.get(plan, []) if g["from"] <= now), None)
+
+
+def price_id(plan: str, interval: str, now: datetime | None = None) -> str | None:
+    """Prețul Stripe pentru un abonament nou, din generația în vigoare. None = plățile sunt oprite (env lipsă)."""
+    gen = _generation(plan, now)
+    env = gen["env"].get(interval) if gen else None
     return (os.getenv(env) or None) if env else None
 
 
+def display_prices(plan: str = "standard", now: datetime | None = None) -> dict[str, int]:
+    gen = _generation(plan, now)
+    return dict(gen["ron"]) if gen else {}
+
+
 def plan_for_price(pid: str | None) -> tuple[str, str] | None:
-    """(plan, interval) pentru un id de preț cunoscut; None pentru orice alt preț (inclusiv lipsă din env)."""
+    """(plan, interval) pentru un id de preț cunoscut, din orice generație; None pentru orice alt preț."""
     if not pid:
         return None
-    for plan, intervals in PLANS.items():
-        for interval, env in intervals.items():
-            if os.getenv(env) and os.getenv(env) == pid:
-                return plan, interval
+    for plan, gens in PLAN_PRICES.items():
+        for gen in gens:
+            for interval, env in gen["env"].items():
+                if os.getenv(env) and os.getenv(env) == pid:
+                    return plan, interval
     return None
+
+
+def _pack_generation(now: datetime | None = None) -> dict:
+    now = _now(now)
+    return next(g for g in PACK_PRICES if g["from"] <= now)
+
+
+def pack_price_id(pack: str, now: datetime | None = None) -> str | None:
+    """Prețul Stripe al pachetului, din generația în vigoare. None = plățile sunt oprite (env lipsă)."""
+    env = _pack_generation(now)["env"].get(pack)
+    return (os.getenv(env) or None) if env else None
+
+
+def display_packs(now: datetime | None = None) -> dict[str, dict[str, int]]:
+    ron = _pack_generation(now)["ron"]
+    return {k: {"credits": v["credits"], "ron": ron[k]} for k, v in CREDIT_PACKS.items()}
 
 
 # ── Timp ─────────────────────────────────────────────────────────────────────
@@ -82,12 +135,24 @@ def has_full_access(ws: dict | None, now: datetime | None = None) -> bool:
 
 
 def quota_tier(ws: dict | None, now: datetime | None = None) -> str:
-    """'trial' cât timp cabinetul e în perioada de probă fără abonament (cote OCR/AI mai mici), altfel 'standard'."""
+    """'trial' (cote OCR/AI mai mici) cât timp cabinetul e în perioada de probă fără abonament, sau pe credite: un
+    credit nefolosit ține accesul deschis până la un an, deci scanarea nu poate avea plafonul unui abonament.
+    Altfel 'standard'."""
     b = (ws or {}).get("billing") or {}
     trial_end = to_utc(b.get("trialEndsAt"))
     if b.get("hasSubscription") or (to_utc(b.get("compUntil")) or EPOCH) > _now(now):
         return "standard"
-    return "trial" if trial_end and trial_end > _now(now) else "standard"
+    if trial_end and trial_end > _now(now):
+        return "trial"
+    return "trial" if credit_mode(b, now) == "credits" else "standard"
+
+
+def unlimited_until(b: dict | None) -> datetime | None:
+    """Până când are cabinetul acces nelimitat (probă, acces gratuit sau abonament) — fără consum de credite."""
+    b = b or {}
+    dates = [t for t in (to_utc(b.get("trialEndsAt")), to_utc(b.get("compUntil")),
+                         to_utc(b.get("subscriptionAccessUntil"))) if t]
+    return max(dates) if dates else None
 
 
 def finalize(b: dict, now: datetime | None = None) -> dict:
@@ -95,8 +160,8 @@ def finalize(b: dict, now: datetime | None = None) -> dict:
     now = _now(now)
     trial_end = to_utc(b.get("trialEndsAt"))
     comp_until = to_utc(b.get("compUntil"))
-    sub_until = to_utc(b.get("subscriptionAccessUntil"))
-    candidates = [t for t in (trial_end, comp_until, sub_until) if t]
+    credits_until = credits_access_until(b)
+    candidates = [t for t in (unlimited_until(b), credits_until) if t]
     out = dict(b)
     out["schema"] = SCHEMA
     out["accessUntil"] = max(candidates) if candidates else EPOCH
@@ -107,9 +172,11 @@ def finalize(b: dict, now: datetime | None = None) -> dict:
         status = "comp"
     elif trial_end and trial_end > now:
         status = "trialing"
+    elif credits_until and credits_until > now:
+        status = "credits"
     elif sub_status == "canceled":
         status = "canceled"
-    elif trial_end or comp_until or sub_status:
+    elif trial_end or comp_until or sub_status or b.get("credits"):
         status = "expired"
     else:
         status = "none"
@@ -219,12 +286,115 @@ def with_subscription(prev: dict | None, sub: dict | None, now: datetime | None 
 
 
 def trial_end_for_checkout(ws: dict | None, now: datetime | None = None) -> int | None:
-    """Zilele de probă rămase se păstrează la abonare (prima plată la sfârșitul probei), doar dacă mai sunt
-    cel puțin 48h; altfel plata se încasează imediat. Secunde Unix, cum le cere Stripe."""
-    trial_end = to_utc(((ws or {}).get("billing") or {}).get("trialEndsAt"))
-    if trial_end and trial_end - _now(now) >= MIN_TRIAL_CARRY:
-        return int(trial_end.timestamp())
+    """Zilele gratuite rămase (probă sau acces gratuit dat de super-admin) se păstrează la abonare: prima
+    plată vine la sfârșitul lor, doar dacă mai sunt cel puțin 48h; altfel plata se încasează imediat.
+    Plafonat la limita Stripe pentru `trial_end` (730 de zile). Secunde Unix, cum le cere Stripe."""
+    b = (ws or {}).get("billing") or {}
+    now = _now(now)
+    free_until = max((d for d in (to_utc(b.get("trialEndsAt")), to_utc(b.get("compUntil"))) if d), default=None)
+    if free_until and free_until - now >= MIN_TRIAL_CARRY:
+        return int(min(free_until, now + MAX_TRIAL_CARRY).timestamp())
     return None
+
+
+# ── Credite ──────────────────────────────────────────────────────────────────
+# Rezumatul din `billing.credits` (scris doar de server): `lots` = pachetele cu sold, `coveredUntil` = sfârșitul
+# celei mai târzii ferestre de firmă deschise. Accesul pe credite ține până la expirarea ultimului pachet cu sold
+# sau până la sfârșitul ultimei ferestre: expirarea unui pachet mai vechi nu schimbă maximul, deci trecerea
+# timpului nu cere nicio scriere. Soldul se calculează mereu doar din pachetele încă valabile.
+
+def _lots(b: dict | None) -> list[dict]:
+    return list(((b or {}).get("credits") or {}).get("lots") or [])
+
+
+def live_lots(b: dict | None, now: datetime | None = None) -> list[dict]:
+    """Pachetele cu sold, încă valabile, în ordinea consumului (cel care expiră primul, primul)."""
+    now = _now(now)
+    lots = [lot for lot in _lots(b) if lot.get("remaining", 0) > 0 and (to_utc(lot.get("expiresAt")) or EPOCH) > now]
+    return sorted(lots, key=lambda lot: to_utc(lot["expiresAt"]))
+
+
+def credit_balance(b: dict | None, now: datetime | None = None) -> int:
+    return sum(int(lot["remaining"]) for lot in live_lots(b, now))
+
+
+def covered_until(b: dict | None) -> datetime | None:
+    return to_utc(((b or {}).get("credits") or {}).get("coveredUntil"))
+
+
+def credits_access_until(b: dict | None) -> datetime | None:
+    dates = [to_utc(lot.get("expiresAt")) for lot in _lots(b) if lot.get("remaining", 0) > 0]
+    dates.append(covered_until(b))
+    dates = [d for d in dates if d]
+    return max(dates) if dates else None
+
+
+def credit_mode(b: dict | None, now: datetime | None = None) -> str:
+    """'unlimited' (probă / gratuit / abonament: nu se consumă credite), 'credits' sau 'none'."""
+    now = _now(now)
+    if (unlimited_until(b) or EPOCH) > now:
+        return "unlimited"
+    if credit_balance(b, now) > 0 or (covered_until(b) or EPOCH) > now:
+        return "credits"
+    return "none"
+
+
+def _with_lots(prev: dict | None, lots: list[dict], now: datetime, covered: datetime | None = None) -> dict:
+    b = {**_empty(), **(prev or {})}
+    keep = [lot for lot in lots if lot.get("remaining", 0) > 0 and (to_utc(lot.get("expiresAt")) or EPOCH) > now]
+    cov = max((d for d in (covered_until(prev), to_utc(covered)) if d), default=None)
+    b["credits"] = {"lots": sorted(keep, key=lambda lot: to_utc(lot["expiresAt"])), "coveredUntil": cov}
+    return finalize(b, now)
+
+
+def add_credits(prev: dict | None, lot_id: str, amount: int, expires_at: datetime,
+                now: datetime | None = None) -> dict:
+    """Pachet nou (cumpărat sau acordat de super admin). Idempotent după `lot_id`."""
+    now = _now(now)
+    lots = live_lots(prev, now)
+    if not any(lot["id"] == lot_id for lot in _lots(prev)):
+        lots.append({"id": lot_id, "remaining": int(amount), "expiresAt": to_utc(expires_at)})
+    return _with_lots(prev, lots, now)
+
+
+def consume_credit(prev: dict | None, covered: datetime, now: datetime | None = None) -> tuple[dict, str | None]:
+    """Ia un credit din pachetul care expiră primul și deschide fereastra firmei până la `covered`.
+    (billing neschimbat, None) dacă nu mai există credite valabile."""
+    now = _now(now)
+    lots = [dict(lot) for lot in live_lots(prev, now)]
+    if not lots:
+        return prev or {}, None
+    lots[0]["remaining"] = int(lots[0]["remaining"]) - 1
+    return _with_lots(prev, lots, now, covered), lots[0]["id"]
+
+
+def remove_credits(prev: dict | None, amount: int, now: datetime | None = None) -> dict | None:
+    """Ajustare negativă (ex. după o rambursare): scade din pachetele care expiră ultimele (cel mai probabil
+    cel rambursat). None dacă soldul nu ajunge."""
+    now = _now(now)
+    if credit_balance(prev, now) < amount:
+        return None
+    lots = [dict(lot) for lot in live_lots(prev, now)]
+    left = amount
+    for lot in reversed(lots):
+        take = min(left, int(lot["remaining"]))
+        lot["remaining"] = int(lot["remaining"]) - take
+        left -= take
+        if not left:
+            break
+    return _with_lots(prev, lots, now)
+
+
+def firm_key(cid: str, client: dict) -> str:
+    """Identitatea firmei pentru fereastra de credit, calculată pe server din fișa clientului: CUI-ul, iar fără
+    CUI (firmă în înființare, persoană fizică) clientul + denumirea. Schimbarea lor înseamnă altă firmă."""
+    cui = normalize_cui(client.get("codFiscal") or "")
+    if cui.isdigit():
+        raw = f"cui|{cui}"
+    else:
+        name = re.sub(r"\s+", " ", str(client.get("denumire") or "")).strip().lower()
+        raw = f"den|{cid}|{name}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
 
 # ── Anti-abuz perioadă de probă ─────────────────────────────────────────────

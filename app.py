@@ -38,6 +38,7 @@ from firebase_admin import credentials as fb_creds
 
 import audit
 import authz
+import billing_credits
 import ratelimit
 import local_extractor
 import azure_extractor
@@ -86,7 +87,7 @@ app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024  # 15 MB — OCR uploads onl
 _cors_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 CORS(app, origins=_cors_origins,
      allow_headers=["Content-Type", "X-Firebase-Token", "X-Workspace-Id"],
-     expose_headers=["Content-Disposition", "Retry-After", "X-Variant-Warnings", "X-Capacity-Warnings"])
+     expose_headers=["Content-Disposition", "Retry-After", "X-Variant-Warnings", "X-Capacity-Warnings", "X-Credits"])
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 
@@ -125,6 +126,24 @@ def _verify(min_role: str = "member", consent: bool = False, limit: str | None =
     Serverul NU primește și nu folosește tokenul Google al utilizatorului: operațiunile Drive/Docs se fac din browser."""
     principal, _wid, _ws = authz.require_from_header(min_role, consent=consent, limit=limit, billing=billing)
     return principal.uid
+
+
+def _consume_credit(uid: str, document: str):
+    """După o generare reușită: consumă creditul firmei, dacă cabinetul e pe credite (vezi billing_credits).
+    Cabinetul e cel din `X-Workspace-Id`, deja verificat de `_verify`.
+    Întoarce (antetul X-Credits, None) sau (None, răspunsul de eroare) — fără client sau fără credite."""
+    wid = request.headers.get("X-Workspace-Id", "")
+    try:
+        result = billing_credits.consume(wid, request.form.get("_client_id") or None, uid, document)
+    except billing_credits.ClientNotFound:
+        return None, (jsonify({"error": "client_required"}), 400)
+    except authz.AuthError as e:
+        return None, authz.error_response(e)
+    if result.get("mode") == "unlimited":
+        return None, None
+    until = result.get("coveredUntil")
+    return json.dumps({"consumed": result["mode"] == "consumed", "balance": result.get("balance"),
+                       "coveredUntil": until.isoformat() if until else None}), None
 
 
 def _auth_error(e: Exception):
@@ -376,6 +395,7 @@ def fill_docx_route():
     try:
         fields       = request.form.to_dict()
         fields.pop("template_builtin_key", None)
+        fields.pop("_client_id", None)
         destination  = _clean_choice(fields.pop("_destination", None), ("download", "drive"), "download")   # doar pentru jurnal
         output_name  = fields.pop("_output_name", None) or None
         groups_raw   = fields.pop("_groups", None)
@@ -397,10 +417,15 @@ def fill_docx_route():
     except Exception as e:
         return _server_error("Fill failed", e)
 
+    credits_header, denied = _consume_credit(uid, original_name)
+    if denied:
+        return denied
     out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
     _audit(uid, "document.generate", _fill_meta("docx", _template_source(request.form.get("template_builtin_key")), replacements, destination))
     resp = send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    if credits_header:
+        resp.headers["X-Credits"] = credits_header
     if variant_warnings:
         resp.headers["X-Variant-Warnings"] = json.dumps(sorted(variant_warnings)[:20])   # persoane cu sex necunoscut (ASCII)
     if capacity_warnings:
@@ -434,6 +459,7 @@ def fill_pdf_route():
     try:
         fields = request.form.to_dict()
         fields.pop("template_builtin_key", None)
+        fields.pop("_client_id", None)
         output_name = fields.pop("_output_name", None) or None
         # Spre deosebire de /fill/docx, aici nu filtrăm valorile goale — un
         # câmp PDF necompletat rămâne pur și simplu gol, nu apare vreun text
@@ -442,10 +468,15 @@ def fill_pdf_route():
     except Exception as e:
         return _server_error("Fill failed", e)
 
+    credits_header, denied = _consume_credit(uid, original_name)
+    if denied:
+        return denied
     out_name = secure_filename(output_name) if output_name else "completat_" + secure_filename(original_name)
     _audit(uid, "document.generate", _fill_meta("pdf", _template_source(request.form.get("template_builtin_key")), fields))
-    return send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name,
-                     mimetype="application/pdf")
+    resp = send_file(io.BytesIO(filled_bytes), as_attachment=True, download_name=out_name, mimetype="application/pdf")
+    if credits_header:
+        resp.headers["X-Credits"] = credits_header
+    return resp
 
 
 @app.route("/audit/document", methods=["POST"])

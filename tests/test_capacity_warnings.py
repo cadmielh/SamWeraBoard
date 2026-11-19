@@ -95,6 +95,7 @@ def test_capacity_warnings_optional_nu_e_obligatoriu():
 def test_ruta_fill_docx_expune_avertismentele_de_capacitate(monkeypatch):
     import app as app_module
     monkeypatch.setattr(app_module, "_verify", lambda *a, **k: "uid")
+    monkeypatch.setattr(app_module.billing_credits, "consume", lambda *a, **k: {"mode": "unlimited"})
     c = app_module.app.test_client()
     r = c.post("/fill/docx", data={
         "template": (io.BytesIO(_doc(MIXED)), "t.docx"),

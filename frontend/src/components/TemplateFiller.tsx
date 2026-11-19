@@ -28,6 +28,7 @@ import { EMPTY_CLIENT, denumireExists, missingRegistrationFields, useClienti, ty
 import DriveFolderPicker from './DriveFolderPicker'
 import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
+import CreditNotice from './CreditNotice'
 import ClauseSelector from './ClauseSelector'
 import CesiunePanel from './CesiunePanel'
 import { calculCesiune, hasCesiune, notaAplicata, propunereCesiune } from '../lib/cesiune'
@@ -186,6 +187,8 @@ export default function TemplateFiller({
   const [showSavePrompt, setShowSavePrompt] = useState(false)
   const [askedSaveClient, setAskedSaveClient] = useState(false)
   const [clientSaved, setClientSaved] = useState(false)
+  // Cabinet pe credite fără credite pentru firma aleasă (sau fără client salvat): butoanele de generare sunt oprite.
+  const [creditBlock, setCreditBlock] = useState<string | null>(null)
   const [expandedReadiness, setExpandedReadiness] = useState<Set<string>>(new Set())
   const [pendingGenerate, setPendingGenerate] = useState<{
     tpl: DocTemplate | BuiltinTemplate
@@ -1218,14 +1221,16 @@ export default function TemplateFiller({
         )}
         <div className="tf-detail-head">
           <span className="tf-detail-title" title={tpl.name}>{tpl.name}</span>
+          <span title={creditBlock ?? undefined} style={{ display: 'inline-flex' }}>
           <button
             className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'}`}
             onClick={() => tryGenerateSingle(tpl)}
-            disabled={isLoading || !!asociatiMismatch || !!tipMsg || (hasClauses && !clauseState[tpl.id]?.isComplete)}
+            disabled={isLoading || !!creditBlock || !!asociatiMismatch || !!tipMsg || (hasClauses && !clauseState[tpl.id]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : (tpl.type === 'gdoc' ? '🔷 ' : '↓ ')}
             Generează
           </button>
+          </span>
         </div>
 
         {tpl.description && <p className="card-sub" style={{ margin: 0 }}>{tpl.description}</p>}
@@ -1303,14 +1308,16 @@ export default function TemplateFiller({
         <div className="tf-detail-head">
           <span className="tf-row-badge">DE BAZĂ</span>
           <span className="tf-detail-title" title={b.name}>{b.name}</span>
+          <span title={creditBlock ?? undefined} style={{ display: 'inline-flex' }}>
           <button
             className="btn btn-sm btn-outline-primary"
             onClick={() => dedicated ? handleGenerateDedicated(b) : tryGenerateBuiltinSingle(b)}
-            disabled={isLoading || !!mismatch || !!tipMsg || (!dedicated && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
+            disabled={isLoading || !!creditBlock || !!mismatch || !!tipMsg || (!dedicated && b.clauses.length > 0 && !clauseState[key]?.isComplete)}
           >
             {isLoading ? <><span className="spin" />&nbsp;</> : '↓ '}
             Generează
           </button>
+          </span>
         </div>
 
         {mismatch && <div style={WARN_BOX}>⚠️ {b.name} {mismatch}</div>}
@@ -1376,6 +1383,7 @@ export default function TemplateFiller({
         </div>
 
         <div className="card-body">
+          <CreditNotice clientId={client?.id || null} clientName={client?.denumire} onToast={onToast} onBlockedChange={setCreditBlock} />
           <div className="tf-layout" ref={layoutRef} style={{ ['--tf-list-w' as string]: `${listW}px` }}>
 
             {/* ── Coloana din stânga — listă ── */}
@@ -1459,12 +1467,12 @@ export default function TemplateFiller({
 
               {/* Batch generate */}
               {selectedTemplates.length > 1 && (
-                <button className="btn btn-primary" onClick={tryBatchGenerate} disabled={loadingIds.size > 0}>
+                <span title={creditBlock ?? undefined} style={{ display: 'inline-flex' }}><button className="btn btn-primary" onClick={tryBatchGenerate} disabled={loadingIds.size > 0 || !!creditBlock}>
                   {loadingIds.size > 0
                     ? <><span className="spin" />&nbsp;Generare în curs…</>
                     : `⚡ Generează toate (${selectedTemplates.length})`
                   }
-                </button>
+                </button></span>
               )}
             </div>
 

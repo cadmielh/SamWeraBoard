@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 
 vi.mock('./firebase', () => ({ auth: { currentUser: null } }))
 
-import { assertWritable, billingAccess, setWriteAccess, toDate } from './billing'
+import { assertWritable, billingAccess, creditsState, setWriteAccess, toDate } from './billing'
 import { apiErrorMessage, SUBSCRIPTION_REQUIRED_EVENT } from './api'
 import type { WorkspaceBilling } from '../types'
 
@@ -65,5 +65,38 @@ describe('garda de scriere și fereastra de abonare', () => {
     const msg = apiErrorMessage({ error: 'subscription_required' }, new Response(null, { status: 402 }), 'x')
     expect(msg).toMatch(/abonamentul/i)
     expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('credite — oglinda lui billing.credit_mode / credit_balance', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+  const lots = [
+    { id: 'b', remaining: 5, expiresAt: iso(300 * DAY) },
+    { id: 'a', remaining: 2, expiresAt: iso(20 * DAY) },
+    { id: 'gol', remaining: 0, expiresAt: iso(400 * DAY) },
+    { id: 'expirat', remaining: 9, expiresAt: iso(-DAY) },
+  ]
+  it('soldul ia doar pachetele valabile; prima expirare e a pachetului consumat primul', () => {
+    const c = creditsState(b({ accessUntil: iso(300 * DAY), credits: { lots, coveredUntil: null } }), NOW)
+    expect(c).toMatchObject({ mode: 'credits', balance: 7, firstExpiryDays: 20 })
+  })
+  it('motivul e „credite” după probă; în probă creditele nu se consumă', () => {
+    const withCredits = b({ accessUntil: iso(300 * DAY), credits: { lots, coveredUntil: null } })
+    expect(billingAccess(withCredits, NOW).reason).toBe('credits')
+    const inTrial = { ...withCredits, trialEndsAt: iso(5 * DAY) }
+    expect(billingAccess(inTrial, NOW).reason).toBe('trial')
+    expect(creditsState(inTrial, NOW).mode).toBe('unlimited')
+  })
+  it('fără sold, fereastra de firmă deschisă ține modul „credite”', () => {
+    const empty = b({ accessUntil: iso(10 * DAY), credits: { lots: [], coveredUntil: iso(10 * DAY) } })
+    expect(creditsState(empty, NOW)).toMatchObject({ mode: 'credits', balance: 0 })
+    expect(creditsState(empty, new Date(NOW.getTime() + 11 * DAY)).mode).toBe('none')
+  })
+  it('un refuz credits_required deschide fereastra cu mesajul despre credite', () => {
+    const dispatch = vi.fn()
+    vi.stubGlobal('window', { dispatchEvent: dispatch })
+    const msg = apiErrorMessage({ error: 'credits_required' }, new Response(null, { status: 402 }), 'x')
+    expect(msg).toMatch(/credite/)
+    expect((dispatch.mock.calls[0][0] as CustomEvent).detail).toBe('credits')
   })
 })

@@ -11,7 +11,7 @@ const TONES: Record<Tone, React.CSSProperties> = {
   danger: { background: 'var(--r50)', borderBottom: '1px solid var(--r200)', color: 'var(--r600)' },
 }
 
-/** Banda de sub antet cu starea abonamentului: zilele de probă rămase, plată eșuată, modul citire.
+/** Banda de sub antet cu starea abonamentului: zilele de probă rămase, plată eșuată, credite puține, modul citire.
  *  Acțiunile (abonare, portal) apar doar pentru administrator; ceilalți membri primesc doar informația. */
 export default function TrialBanner() {
   const { activeWorkspace, billing, userRole, toast } = useApp()
@@ -29,13 +29,18 @@ export default function TrialBanner() {
     }
   }
   const subscribeLink = isAdmin
-    ? <Link to="/abonament" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Activează abonamentul</Link>
+    ? <Link to="/abonament" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Alege un plan</Link>
+    : null
+  const buyLink = isAdmin
+    ? <Link to="/abonament" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Cumpără credite</Link>
     : null
   const portalButton = isAdmin
     ? <button className="btn btn-primary btn-sm" onClick={portal} disabled={opening}>{opening ? <span className="spin" /> : 'Actualizează plata'}</button>
     : null
   const until = formatDate(billing.accessUntil)
   const days = billing.daysLeft ?? 0
+  const credits = billing.credits
+  const firstExpiryDays = credits.firstExpiryDays
 
   let tone: Tone
   let text: string
@@ -43,7 +48,7 @@ export default function TrialBanner() {
   if (!billing.full) {
     tone = 'danger'
     text = 'Cabinetul este în modul citire: datele rămân vizibile și se pot exporta, dar nu se mai pot adăuga sau modifica.'
-      + (isAdmin ? '' : ' Administratorul poate activa abonamentul.')
+      + (isAdmin ? '' : ' Administratorul poate alege un abonament sau un pachet de credite.')
     action = subscribeLink
   } else if (billing.reason === 'past_due') {
     tone = 'danger'
@@ -59,6 +64,19 @@ export default function TrialBanner() {
     tone = 'warn'
     text = `Accesul gratuit al cabinetului se încheie pe ${until}.`
     action = subscribeLink
+  } else if (billing.reason === 'credits' && credits.balance === 0) {
+    tone = 'warn'
+    text = `Nu mai ai credite. Clienții pentru care ai consumat deja un credit rămân disponibili până pe ${formatDate(credits.coveredUntil)}; `
+      + 'pentru un client nou e nevoie de un pachet nou.'
+    action = buyLink
+  } else if (billing.reason === 'credits' && credits.balance <= 3) {
+    tone = 'warn'
+    text = credits.balance === 1 ? 'Mai ai un singur credit.' : `Mai ai ${credits.balance} credite.`
+    action = buyLink
+  } else if (billing.reason === 'credits' && firstExpiryDays !== null && firstExpiryDays <= 30) {
+    tone = 'info'
+    text = `O parte din credite expiră pe ${formatDate(credits.firstExpiry)}. Creditele se consumă începând cu cele care expiră primele.`
+    action = null
   } else if (billing.reason === 'subscription' && billing.cancelAtPeriodEnd) {
     tone = 'warn'
     text = `Abonamentul a fost anulat și se încheie pe ${formatDate(billing.currentPeriodEnd)}.`

@@ -360,6 +360,7 @@ export function useClienti(workspaceId: string | null) {
       assertWritable()
       await setDoc(ref, payload)
       setClienti(prev => prev.map(c => c.id === tempId ? { ...c, id: ref.id } : c))
+      return ref.id
     } catch (err) {
       setClienti(prev => prev.filter(c => c.id !== tempId))
       throw err

@@ -19,10 +19,24 @@ const FAQ: [string, string][] = [
   ['La ce documente accesează aplicația din Google Drive?',
     'Doar la fișierul sau folderul pe care îl alegeți dumneavoastră prin selectorul Google. Nu are acces la restul Drive-ului.'],
   ['Cum primesc acces?',
-    'Vă autentificați și creați cabinetul: primele 14 zile sunt gratuite, fără card. Apoi activați abonamentul din aplicație, cu plata prin card (Stripe).'],
+    'Vă autentificați și creați cabinetul: primele 14 zile sunt gratuite, fără card. Apoi alegeți din aplicație un abonament sau un pachet de credite, cu plata prin card (Stripe).'],
+  ['Abonament sau credite?',
+    'Un credit acoperă un client timp de 30 de zile: primul document pentru client consumă creditul, iar toate documentele și corecturile pentru el în următoarele 30 de zile sunt incluse. Creditele sunt valabile un an. Până la aproximativ 6–10 clienți pe lună (în funcție de pachet), creditele ies mai ieftin; peste, abonamentul.'],
   ['Ce se întâmplă dacă nu activez abonamentul?',
-    'Cabinetul trece în modul citire: datele rămân vizibile și se pot exporta oricând, dar nu se mai pot adăuga sau modifica. Activarea abonamentului reia imediat lucrul.'],
+    'Cabinetul trece în modul citire: datele rămân vizibile și se pot exporta oricând, dar nu se mai pot adăuga sau modifica. Un abonament sau un pachet de credite reia imediat lucrul.'],
 ]
+
+// Prețul abonamentelor noi crește la 1 ianuarie 2027, 00:00 ora României (billing.PRICE_V2_FROM); cine se abonează
+// înainte își păstrează prețul. Evaluat la încărcarea paginii.
+const PRICE_V2_AT = Date.UTC(2026, 11, 31, 22)
+const PRICE_V2 = Date.now() >= PRICE_V2_AT
+// Zilele rămase din oferta de lansare (prețurile de după apar tăiate).
+const OFFER_DAYS = Math.max(0, Math.ceil((PRICE_V2_AT - Date.now()) / 86_400_000))
+
+/** Prețul de ofertă cu prețul de după tăiat (până la 1 ianuarie 2027), apoi doar prețul nou. */
+function Price({ now, later }: { now: number; later: number }) {
+  return PRICE_V2 ? <>{later}</> : <><s className="lp-was">{later}</s>{now}</>
+}
 
 type Card = { icon: IconName; title: string; text: string }
 
@@ -358,24 +372,37 @@ export default function LandingPage({ onSignIn, passwordAuth }: { onSignIn: () =
 
         <section className="lp-sec" id="pret">
           <h2 {...reveal()}>Preț</h2>
-          <p className="lp-sub lp-reveal">14 zile gratuite, fără card. Apoi un singur abonament per cabinet, pentru toți colegii.</p>
+          <p className="lp-sub lp-reveal">14 zile gratuite, fără card. Apoi un abonament sau credite, per cabinet, pentru toți colegii.</p>
+          {!PRICE_V2 && (
+            <div className="lp-offer lp-reveal" role="note">
+              <span className="lp-offer-dot" aria-hidden />
+              <span><strong>Ofertă de lansare până pe 31 decembrie 2026.</strong> Prețurile tăiate se aplică de la 1 ianuarie 2027.</span>
+              <span className="lp-offer-days">{OFFER_DAYS <= 1 ? 'Ultima zi' : `Încă ${OFFER_DAYS} zile`}</span>
+            </div>
+          )}
           <div className="lp-price">
             <div className="lp-item main lp-reveal" data-anim="left">
-              <h3>Cabinio Standard</h3>
-              <div className="lp-amount">200 RON <small>/ lună / cabinet</small></div>
-              <p>sau 2000 RON / an (2 luni gratuite). Preț final: furnizor neplătitor de TVA.</p>
+              {!PRICE_V2 && <span className="lp-tag">−20% OFERTĂ</span>}
+              <h3>Abonament</h3>
+              <div className="lp-amount"><Price now={200} later={250} /> RON <small>/ lună / cabinet</small></div>
+              <p>sau <Price now={2000} later={2500} /> RON / an (2 luni gratuite). Documente nelimitate. Preț final: furnizor neplătitor de TVA.</p>
               <ul>
                 <li>Primele 14 zile gratuite, fără card</li>
                 <li>Fără taxă de înființare: crearea cabinetului, importul de date și instruirea sunt incluse</li>
-                <li>Prețul rămâne 200 RON/lună până la 31 decembrie 2026</li>
+                {!PRICE_V2 && <li>Te abonezi până pe 31 decembrie 2026 și păstrezi prețul de ofertă cât timp rămâi abonat</li>}
                 <li>Se anulează oricând din aplicație, cu efect la sfârșitul perioadei plătite</li>
               </ul>
             </div>
             <div className="lp-item lp-reveal" data-anim="right" style={{ '--d': '120ms' } as React.CSSProperties}>
-              <h3>De la 1 ianuarie 2027</h3>
-              <p>Prețul ține cont de numărul de dosare, de scanări și de documente generate. Grila se comunică în scris cu cel puțin 30 de zile înainte.</p>
+              {!PRICE_V2 && <span className="lp-tag">până la −20%</span>}
+              <h3>Credite</h3>
+              <div className="lp-amount">de la <Price now={20} later={25} /> RON <small>/ client</small></div>
+              <p>Pentru cabinetele cu puține dosare: un credit = un client timp de 30 de zile, cu toate documentele și corecturile lui.</p>
               <ul>
-                <li>Funcționalități și șabloane la cerere, cu estimare scrisă</li>
+                <li>10 credite: <Price now={300} later={350} /> RON · 30 credite: <Price now={750} later={900} /> RON
+                  · 50 credite: <Price now={1000} later={1250} /> RON</li>
+                <li>Valabile un an de la cumpărare, inclusiv cele luate la prețul de ofertă</li>
+                <li>Până la aproximativ 6–10 clienți pe lună, ies mai ieftin decât abonamentul</li>
               </ul>
             </div>
           </div>
