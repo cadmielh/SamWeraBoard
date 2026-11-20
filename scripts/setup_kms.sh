@@ -54,6 +54,7 @@ KEY_PATH="projects/${PROJECT_ID}/locations/${LOCATION}/keyRings/${KEYRING}/crypt
 gcloud firestore fields ttls update expireAt --collection-group=extractions --enable-ttl --project "$PROJECT_ID" || true
 gcloud firestore fields ttls update expireAt --collection-group=auditLog --enable-ttl --project "$PROJECT_ID" || true
 gcloud firestore fields ttls update expireAt --collection-group=rateLimits --enable-ttl --project "$PROJECT_ID" || true
+gcloud firestore fields ttls update expireAt --collection-group=superAdminNotificari --enable-ttl --project "$PROJECT_ID" || true
 
 echo
 echo "Gata. Setați în .env.<id-proiect> (NU în firebase.json):"

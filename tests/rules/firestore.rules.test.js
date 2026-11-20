@@ -194,6 +194,16 @@ test('super adminul într-o sesiune cu parolă nu are rolul', async () => {
   await assertSucceeds(getDocs(collection(ctx(SUPER), 'superAdminGrants')))
   await assertFails(getDocs(collection(ctx(SUPER, PASSWORD), 'superAdminGrants')))
 })
+test('notificările de aplicație: le citesc doar super adminii, nu le scrie nimeni din browser', async () => {
+  await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'superAdminNotificari', 'n1'), { titlu: 'Cabinet nou' }))
+  await assertSucceeds(getDocs(collection(ctx(SUPER), 'superAdminNotificari')))
+  await assertFails(getDocs(collection(ctx(SUPER, PASSWORD), 'superAdminNotificari')))
+  await assertFails(getDocs(collection(ctx(ADMIN), 'superAdminNotificari')))
+  await assertFails(setDoc(doc(ctx(SUPER), 'superAdminNotificari', 'n2'), { titlu: 'x' }))
+})
+test('super adminul își marchează notificările ca citite în propriul profil', async () => {
+  await assertSucceeds(updateDoc(doc(ctx(SUPER), 'users', SUPER), { superAdminCititeLa: new Date() }))
+})
 test('un cabinet programat pentru ștergere nu mai e accesibil membrilor', async () => {
   await env.withSecurityRulesDisabled(async c => {
     await setDoc(doc(c.firestore(), 'workspaces', 'wsSters'), { name: 'S', status: 'pendingDeletion', members: { [ADMIN]: { role: 'admin' } }, billing: BILLING_OK })

@@ -19,6 +19,7 @@ from flask import Blueprint, jsonify, request
 
 import audit
 import authz
+import superadmin_alerte
 import billing
 import workspace_deletion
 
@@ -121,6 +122,7 @@ def create_workspace():
     audit.log(ref.id, principal.uid, "consent.accept", ref.id,
               {"tos": TOS_VERSION, "dpa": DPA_VERSION})
     audit.log(ref.id, principal.uid, "billing.trial_start" if trial else "billing.no_trial", ref.id)
+    superadmin_alerte.cabinet_nou(ref.id, name, principal.email, trial)
     return jsonify({"id": ref.id, "trial": trial}), 201
 
 
@@ -476,6 +478,7 @@ def delete_account():
         return _err("unavailable", 503)
     for wid in own:
         audit.log(wid, uid, "workspace.deletion_scheduled", wid, {"reason": "account"})
+    superadmin_alerte.cont_programat_stergere(principal.email, len(own), delete_after)
     return jsonify({"ok": True, "deleteAfter": delete_after.isoformat(), "workspaces": len(own)})
 
 

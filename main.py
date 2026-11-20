@@ -164,6 +164,13 @@ def alerte_zilnice(event: scheduler_fn.ScheduledEvent) -> None:
     authz.init_admin()
     rezultat = alerte.ruleaza_zilnic(authz.db())
     print(f"[alerte] {rezultat}")
+    # Notificările de aplicație pentru super admini (conversie, facturare); un eșec aici nu oprește alertele cabinetelor.
+    try:
+        import superadmin_alerte
+        print(f"[superadmin-alerte] {superadmin_alerte.zilnic(authz.db())}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[superadmin-alerte] rulare zilnică eșuată ({type(e).__name__})")
+        rezultat["erori"] += 1
     # Un cabinet căzut sau rămas neprocesat nu oprește restul, dar rularea se încheie cu eroare: răspunsul 5xx declanșează
     # alerta din Cloud Monitoring (scripts/setup_alerts.sh, „Alerte: erori”). Rularea e idempotentă.
     if rezultat["erori"] or rezultat["neprocesate"]:

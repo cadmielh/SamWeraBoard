@@ -247,6 +247,11 @@ service cloud.firestore {
     match /trialClaims/{id} {
       allow read, write: if false;
     }
+    // Notificările de aplicație (superadmin_alerte.py): scrise doar de server, citite doar de super admini.
+    match /superAdminNotificari/{id} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
 
     // ── superAdminGrants ───────────────────────────────────────────────────
     match /superAdminGrants/{encodedEmail} {

@@ -24,6 +24,8 @@ interface Props {
   panelRef: React.RefObject<HTMLDivElement | null>
   /** Poziția panoului pe ecran (sub clopoțel); pe telefon CSS-ul o ignoră și îl deschide de jos. */
   ancora: { top: number; right: number } | null
+  /** Comutatorul Cabinet / Aplicație (doar la super admini), sub antet. */
+  comutator?: React.ReactNode
 }
 
 const ICON_SEVERITATE: Record<SeveritateAlerta, string> = { urgent: '⚠', atentie: '⏳', info: '•' }
@@ -53,7 +55,7 @@ function isoLocal(d: Date): string {
 }
 
 /** Panoul clopoțelului: filele Noi / Toate / Amânate, cu acțiunile pe fiecare alertă. Randat în portal de NotificariBell. */
-export default function NotificariPanel({ workspaceId, notificari, prefs, ctx, role, actualizeazaPrefs, onClose, panelRef, ancora }: Props) {
+export default function NotificariPanel({ workspaceId, notificari, prefs, ctx, role, actualizeazaPrefs, onClose, panelRef, ancora, comutator }: Props) {
   const navigate = useNavigate()
   const { toast } = useApp()
 
@@ -156,6 +158,7 @@ export default function NotificariPanel({ workspaceId, notificari, prefs, ctx, r
         </div>
       </div>
 
+      {comutator}
       <div className="notif-tabs" role="tablist" aria-label="Filtru notificări">
         {fileDef.map(f => (
           <button

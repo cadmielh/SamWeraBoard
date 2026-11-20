@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { useApp } from '../AppContext'
 import { areUrgente, contorNoi, useNotificari, usePreferinteAlerte, type ContextFiltru } from '../lib/alerte'
 import NotificariPanel from './NotificariPanel'
+import NotificariAplicatiePanel from './NotificariAplicatiePanel'
+import { useNotificariAplicatie } from '../lib/notificariAplicatie'
 import '../styles/notificari.css'
 
 function IconBell() {
@@ -25,14 +27,18 @@ function useAcum(intervalMs = 60_000): Date {
 }
 
 /** Clopoțelul din antetul fiecărei pagini (ultimul în dreapta, după butoanele paginii): contorul alertelor noi și, la
- * click, panoul lor, deschis sub buton. Vizibil doar la cabinetele cu flag-ul `alerte`. */
+ * click, panoul lor, deschis sub buton. Vizibil la cabinetele cu flag-ul `alerte` și, oricum, pentru super admini, care
+ * au și fila „Aplicație” (plăți, cabinete noi, conversie, facturare — vezi superadmin_alerte.py). */
 export default function NotificariBell() {
-  const { user, activeWorkspace, userRole, hasFeature } = useApp()
+  const { user, activeWorkspace, userRole, hasFeature, isSuperAdmin } = useApp()
   const activ = !!activeWorkspace && hasFeature('alerte')
   const workspaceId = activ ? activeWorkspace.id : null
   const uid = activ ? user.uid : null
 
   const { notificari } = useNotificari(workspaceId, uid)
+  const app = useNotificariAplicatie(isSuperAdmin, isSuperAdmin ? user.uid : null)
+  // Fila deschisă la super admini: cea cu noutăți (aplicația are prioritate), altfel cabinetul.
+  const [sursa, setSursa] = useState<'cabinet' | 'aplicatie'>('cabinet')
   const { prefs, actualizeaza } = usePreferinteAlerte(workspaceId, uid, userRole)
   const now = useAcum()
   const ctx: ContextFiltru = useMemo(() => ({ now }), [now])
@@ -47,6 +53,16 @@ export default function NotificariBell() {
     setOpen(false)
     if (restoreFocus) btnRef.current?.focus()
   }, [])
+
+  // Notificările de aplicație devin „văzute” după ce fila lor a fost afișată și s-a închis (panoul sau trecerea pe
+  // Cabinet), ca la GitHub/Slack. Nu la deschidere: atunci încă vrei să vezi care sunt noi.
+  const { marcheazaCitite } = app
+  const arataApp = open && (sursa === 'aplicatie' || !activ)
+  const vazutApp = useRef(false)
+  useEffect(() => {
+    if (arataApp) { vazutApp.current = true; return }
+    if (vazutApp.current) { vazutApp.current = false; void marcheazaCitite() }
+  }, [arataApp, marcheazaCitite])
 
   // Click în afara panoului și a butonului îl închide.
   useEffect(() => {
@@ -83,10 +99,26 @@ export default function NotificariBell() {
     setOpen(false)
   }
 
-  if (!activ || !workspaceId) return null
+  if ((!activ || !workspaceId) && !isSuperAdmin) return null
 
-  const nr = contorNoi(notificari, prefs, ctx)
-  const urgent = areUrgente(notificari, prefs, ctx)
+  const nrCabinet = activ ? contorNoi(notificari, prefs, ctx) : 0
+  const noiApp = app.notificari.filter(app.esteNoua)
+  const nr = nrCabinet + noiApp.length
+  const urgent = (activ && areUrgente(notificari, prefs, ctx)) || noiApp.some(n => n.severitate === 'urgent')
+  const deschide = () => {
+    if (!open) setSursa(!activ || (noiApp.length > 0 && nrCabinet === 0) ? 'aplicatie' : 'cabinet')
+    setOpen(o => !o)
+  }
+  const comutator = isSuperAdmin && activ ? (
+    <div className="notif-tabs notif-sursa" role="tablist" aria-label="Sursa notificărilor">
+      {([['cabinet', 'Cabinet', nrCabinet], ['aplicatie', 'Aplicație', noiApp.length]] as const).map(([k, label, n]) => (
+        <button key={k} type="button" role="tab" aria-selected={sursa === k}
+          className={`notif-tab${sursa === k ? ' notif-tab--active' : ''}`} onClick={() => setSursa(k)}>
+          {label}{n ? <span className="notif-tab-nr">{n}</span> : null}
+        </button>
+      ))}
+    </div>
+  ) : undefined
   const ariaLabel = nr ? `Notificări: ${nr} ${nr === 1 ? 'nouă' : 'noi'}` : 'Notificări'
 
   return (
@@ -95,7 +127,7 @@ export default function NotificariBell() {
         ref={btnRef}
         type="button"
         className={`page-bell${open ? ' page-bell--open' : ''}`}
-        onClick={() => setOpen(o => !o)}
+        onClick={deschide}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={ariaLabel}
@@ -110,17 +142,30 @@ export default function NotificariBell() {
       {open && createPortal(
         <>
           <div className="notif-backdrop" onClick={() => close(false)} aria-hidden="true" />
-          <NotificariPanel
-            workspaceId={workspaceId}
-            notificari={notificari}
-            prefs={prefs}
-            ctx={ctx}
-            role={userRole}
-            actualizeazaPrefs={actualizeaza}
-            onClose={close}
-            panelRef={panelRef}
-            ancora={ancora}
-          />
+          {sursa === 'aplicatie' || !activ || !workspaceId ? (
+            <NotificariAplicatiePanel
+              notificari={app.notificari}
+              esteNoua={app.esteNoua}
+              marcheazaCitite={app.marcheazaCitite}
+              comutator={comutator}
+              onClose={close}
+              panelRef={panelRef}
+              ancora={ancora}
+            />
+          ) : (
+            <NotificariPanel
+              workspaceId={workspaceId}
+              notificari={notificari}
+              prefs={prefs}
+              ctx={ctx}
+              role={userRole}
+              actualizeazaPrefs={actualizeaza}
+              onClose={close}
+              panelRef={panelRef}
+              ancora={ancora}
+              comutator={comutator}
+            />
+          )}
         </>,
         document.body,
       )}

@@ -21,6 +21,7 @@ from flask import Blueprint, jsonify, request
 
 import audit
 import authz
+import superadmin_alerte
 import billing
 import billing_credits
 
@@ -384,6 +385,8 @@ def put_details():
             claim_ref.set({"kind": "cui", "workspaceId": wid, "claimedAt": firestore.SERVER_TIMESTAMP})
         elif (claim.to_dict() or {}).get("workspaceId") != wid:
             update["cuiSeenInWorkspace"] = (claim.to_dict() or {}).get("workspaceId")
+            if acct.get("cuiSeenInWorkspace") != update["cuiSeenInWorkspace"]:
+                superadmin_alerte.cui_refolosit(wid, update["cuiSeenInWorkspace"])
     acct_ref.set(update, merge=True)
     if acct.get("stripeCustomerId"):
         stripe_customer_update(acct["stripeCustomerId"], _customer_params(details))
@@ -705,6 +708,8 @@ def webhook():
         ref.set({"status": "failed", "error": type(e).__name__}, merge=True)
         return _err("processing_failed", 500)
     ref.set({"status": "done", "workspaceId": wid, "doneAt": firestore.SERVER_TIMESTAMP}, merge=True)
+    # După procesare: notificarea pentru super admini (cheia = id-ul evenimentului, deci o reluare nu o dublează).
+    superadmin_alerte.din_stripe(event, wid)
     return jsonify({"ok": True})
 
 

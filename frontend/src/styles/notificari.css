@@ -191,3 +191,7 @@
   .notif-panel, .notif-backdrop, .notif-item-menu { animation:none; }
   .notif-row, .notif-rule { transition:none; }
 }
+
+/* Super admin: comutatorul Cabinet / Aplicație, deasupra filelor panoului. */
+.notif-sursa { padding-top:.25rem; border-bottom:none; padding-bottom:.25rem; }
+.notif-sursa .notif-tab { flex:1; justify-content:center; font-weight:700; }
