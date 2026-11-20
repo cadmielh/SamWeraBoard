@@ -150,8 +150,10 @@ def fulfill_purchase(session: dict) -> str | None:
     if not wid or not authz.valid_wid(wid) or not spec:
         print(f"[billing] ALERTĂ: plată unică {session.get('id')} fără cabinet sau pachet cunoscut — verificare manuală")
         return None
+    pi = session.get("payment_intent")
     add_lot(wid, session["id"], spec["credits"], "purchase", "stripe",
-            {"pack": meta["pack"], "amountPaid": session.get("amount_total")})
+            {"pack": meta["pack"], "amountPaid": session.get("amount_total"),
+             "paymentIntent": pi if isinstance(pi, str) else (pi or {}).get("id")})
     return wid
 
 

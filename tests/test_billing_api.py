@@ -56,6 +56,15 @@ class FakeStripe:
         monkeypatch.setattr(m, "stripe_portal_create", lambda p: {"url": f"https://portal/{p['customer']}"})
         monkeypatch.setattr(m, "stripe_subscription_cancel", self.cancel)
         monkeypatch.setattr(m, "stripe_construct_event", self.construct_event)
+        monkeypatch.setattr(m, "stripe_payment_fee", self.payment_fee)
+        monkeypatch.setattr(m, "stripe_invoice_payment_intent", lambda inv_id: f"pi_{inv_id}")
+
+    def payment_fee(self, pi):
+        self.calls.append(("fee", pi))
+        if getattr(self, "fees_forbidden", False):
+            raise billing_api.BillingUnavailable("PermissionError")
+        return {"amount": 20000, "fee": 425, "net": 19575, "currency": "ron",
+                "details": [{"type": "stripe_fee", "amount": 425, "description": "Stripe processing fees"}]}
 
     def customer_create(self, params):
         cid = self._id("cus")
@@ -493,7 +502,7 @@ def buy(c, stripe, wid, pack="10", via="webhook"):
     r = call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": pack})
     assert r.status_code == 200, r.get_json()
     sid = r.get_json()["url"].rsplit("/", 1)[1]
-    stripe.sessions[sid].update(payment_status="paid", amount_total=35000)
+    stripe.sessions[sid].update(payment_status="paid", amount_total=35000, payment_intent=f"pi_{sid}")
     if via == "webhook":
         assert post_event(c, event(f"evt_{sid}", "checkout.session.completed", stripe.sessions[sid])).status_code == 200
     else:
@@ -662,3 +671,92 @@ def test_billing_overview_shows_packs_and_upcoming_prices(credits_env):
     if datetime.now(timezone.utc) < billing.PRICE_V2_FROM:
         assert data["prices"] == {"month": 200, "year": 2000} and data["nextPrices"] == {"month": 250, "year": 2500}
         assert data["packs"]["50"] == {"credits": 50, "ron": 1000} and data["nextPacks"]["50"]["ron"] == 1250
+
+
+# ── Tabloul de încasări (super admin) ────────────────────────────────────────
+def test_admin_payments_lists_subscriptions_credits_refunds_and_tracks_invoices(credits_env):
+    c, db, stripe, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    with_details(c, wid)
+    buy(c, stripe, wid, "10")                                         # 350 RON (amount_total simulat)
+    billing_credits.grant(wid, 5, "bonus", "root")                    # gratuit: nu e încasare
+    cust = db.collection("billingAccounts").document(wid).get().to_dict()["stripeCustomerId"]
+    now = int(datetime.now(timezone.utc).timestamp())
+    inv = {"id": "in_123", "customer": cust, "amount_paid": 20000, "currency": "ron", "number": "ABC-1",
+           "status_transitions": {"paid_at": now}, "metadata": {"workspaceId": wid},
+           "lines": {"data": [{"period": {"start": now, "end": now + 30 * DAY}, "price": {"id": "price_m"}}]}}
+    post_event(c, event("evt_inv", "invoice.paid", inv))
+    post_event(c, event("evt_ref", "charge.refunded", {"id": "ch_1", "customer": cust, "amount": 20000,
+                                                        "amount_refunded": 5000, "currency": "ron", "metadata": {}}))
+    assert call(c, wid, "alice", "get", "/admin/billing/payments").status_code == 403
+    data = call(c, wid, "root", "get", "/admin/billing/payments").get_json()
+    assert data["feesUnavailable"] is False
+    by_kind = {r["kind"]: r for r in data["rows"]}
+    # Brut / comision / net din Stripe, citite o singură dată și păstrate pe plată.
+    assert (by_kind["subscription"]["gross"], by_kind["subscription"]["fee"], by_kind["subscription"]["net"]) == (20000, 425, 19575)
+    assert ("fee", "pi_in_123") in stripe.calls and by_kind["credits"]["fee"] == 425
+    assert by_kind["subscription"]["feeDetails"] == [{"type": "stripe_fee", "amount": 425, "description": "Stripe processing fees"}]
+    calls = len([x for x in stripe.calls if x[0] == "fee"])
+    call(c, wid, "root", "get", "/admin/billing/payments")
+    assert len([x for x in stripe.calls if x[0] == "fee"]) == calls
+    assert set(by_kind) == {"subscription", "credits", "refund"}
+    assert by_kind["subscription"]["amount"] == 20000 and by_kind["subscription"]["interval"] == "month"
+    assert by_kind["subscription"]["cui"] == billing.normalize_cui(DETAILS["cui"])
+    assert by_kind["credits"]["amount"] == 35000 and by_kind["credits"]["credits"] == 10
+    assert by_kind["credits"]["invoice"]["status"] == "pending"
+    assert by_kind["refund"]["amount"] == -5000
+
+    lot = by_kind["credits"]["id"]
+    url = f"/admin/billing/payments/{wid}/credits/{lot}/invoice"
+    assert call(c, wid, "root", "post", url, json={"number": "  CAB 12 "}).get_json()["invoice"]["number"] == "CAB 12"
+    assert call(c, wid, "root", "post", f"/admin/billing/payments/{wid}/subscription/in_123/invoice",
+                json={"number": "CAB 13"}).status_code == 200
+    assert call(c, wid, "root", "post", f"/admin/billing/payments/{wid}/refund/x/invoice", json={"number": "1"}).status_code == 404
+    assert call(c, wid, "root", "post", url, json={"number": ""}).status_code == 400
+    rows = {r["kind"]: r for r in call(c, wid, "root", "get", "/admin/billing/payments").get_json()["rows"]}
+    assert rows["credits"]["invoice"]["status"] == "manual" and rows["subscription"]["invoice"]["number"] == "CAB 13"
+    assert call(c, wid, "root", "post", url, json={"number": None}).get_json()["invoice"]["status"] == "pending"
+
+
+def test_fee_for_older_credit_pack_is_found_through_its_checkout_session(credits_env):
+    c, db, stripe, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    with_details(c, wid)
+    sid = buy(c, stripe, wid, "10")
+    lot = db.collection("billingAccounts").document(wid).collection("creditLots").document(sid)
+    lot.update({"paymentIntent": None})                       # ca un pachet cumpărat înainte de această versiune
+    row = call(c, wid, "root", "get", "/admin/billing/payments").get_json()["rows"][0]
+    assert row["fee"] == 425 and ("fee", f"pi_{sid}") in stripe.calls
+
+
+def test_admin_payments_without_fee_permission_still_lists_payments(credits_env):
+    c, db, stripe, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    with_details(c, wid)
+    buy(c, stripe, wid, "10")
+    stripe.fees_forbidden = True
+    data = call(c, wid, "root", "get", "/admin/billing/payments").get_json()
+    assert data["feesUnavailable"] is True
+    assert data["rows"][0]["amount"] == 35000 and "fee" not in data["rows"][0]
+
+
+def test_admin_stripe_fees_lists_billing_and_dispute_fees(credits_env, monkeypatch):
+    c, db, stripe, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    seen = {}
+
+    def fees(since, until):
+        seen["range"] = (since, until)
+        return [{"id": "txn_1", "at": 1795000000, "category": "billing", "amount": 140, "currency": "ron",
+                 "description": "Billing (2026-11)"}]
+    monkeypatch.setattr(billing_api, "stripe_account_fees", fees)
+    assert call(c, wid, "alice", "get", "/admin/billing/stripe-fees").status_code == 403
+    data = call(c, wid, "root", "get", "/admin/billing/stripe-fees?from=2026-11-01&to=2026-12-01").get_json()
+    assert data["unavailable"] is False and data["items"][0]["amount"] == 140 and data["items"][0]["at"].startswith("2026")
+    assert seen["range"][0].isoformat().startswith("2026-11-01T00:00:00+02:00")
+    assert call(c, wid, "root", "get", "/admin/billing/stripe-fees?from=azi").status_code == 400
+
+    def forbidden(since, until):
+        raise billing_api.BillingUnavailable("PermissionError")
+    monkeypatch.setattr(billing_api, "stripe_account_fees", forbidden)
+    assert call(c, wid, "root", "get", "/admin/billing/stripe-fees").get_json() == {"items": [], "unavailable": True}

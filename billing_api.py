@@ -135,6 +135,54 @@ def stripe_subscription_update(sub_id: str, params: dict) -> None:
     _call(s.Subscription.modify, sub_id, **params)
 
 
+def stripe_payment_fee(payment_intent_id: str) -> dict | None:
+    """Brut, comision și net din tranzacția de sold a plății. Cere cheii drept de citire pe PaymentIntents, Charges și
+    Balance (balance transactions); fără el, Stripe răspunde cu eroare de permisiune (BillingUnavailable)."""
+    s = _stripe()
+    pi = _plain(_call(s.PaymentIntent.retrieve, payment_intent_id, expand=["latest_charge.balance_transaction"]))
+    bt = ((pi.get("latest_charge") or {}) if isinstance(pi.get("latest_charge"), dict) else {}).get("balance_transaction")
+    if not isinstance(bt, dict):
+        return None
+    details = [{"type": f.get("type"), "amount": f.get("amount", 0), "description": f.get("description")}
+               for f in (bt.get("fee_details") or [])]
+    return {"amount": bt.get("amount", 0), "fee": bt.get("fee", 0), "net": bt.get("net", 0), "currency": bt.get("currency"),
+            "details": details}
+
+
+def stripe_invoice_payment_intent(invoice_id: str) -> str | None:
+    """PaymentIntent-ul care a plătit o factură de abonament (din API basil, prin InvoicePayment). Cere drept de citire pe Invoices."""
+    s = _stripe()
+    page = _call(s.InvoicePayment.list, invoice=invoice_id, limit=5)
+    for p in page.data:
+        p = _plain(p)
+        pi = (p.get("payment") or {}).get("payment_intent")
+        if p.get("status") == "paid" and pi:
+            return pi if isinstance(pi, str) else pi.get("id")
+    return None
+
+
+def stripe_account_fees(since: datetime | None, until: datetime | None) -> list[dict]:
+    """Comisioanele Stripe care nu țin de o plată anume: Stripe Billing (reținut periodic din sold) și taxele pentru
+    dispute. Din tranzacțiile de sold; cere drept de citire pe Balance."""
+    s = _stripe()
+    created = {k: int(v.timestamp()) for k, v in (("gte", since), ("lt", until)) if v}
+    out = []
+    for kind in ("stripe_fee", "adjustment"):
+        params = {"type": kind, "limit": 100, **({"created": created} if created else {})}
+        page = _call(s.BalanceTransaction.list, **params)
+        for bt in _call(lambda: list(page.auto_paging_iter())[:2000]):
+            bt = _plain(bt)
+            if kind == "stripe_fee":
+                cost, category = -bt.get("amount", 0), "billing" if "billing" in (bt.get("description") or "").lower() else "stripe"
+            elif bt.get("reporting_category") == "dispute" and bt.get("fee"):
+                cost, category = bt["fee"], "dispute"
+            else:
+                continue
+            out.append({"id": bt.get("id"), "at": bt.get("created"), "category": category, "amount": cost,
+                        "currency": bt.get("currency"), "description": bt.get("description")})
+    return out
+
+
 def stripe_construct_event(payload: bytes, signature: str) -> dict:
     s = _stripe()
     secret = os.getenv("STRIPE_WEBHOOK_SECRET")
@@ -536,8 +584,13 @@ def _record_invoice(wid: str, inv: dict) -> None:
     lines = ((inv.get("lines") or {}).get("data") or [])
     period = (lines[0].get("period") or {}) if lines else {}
     paid_at = (inv.get("status_transitions") or {}).get("paid_at")
+    line = lines[0] if lines else {}
+    # Prețul liniei: din API basil e sub `pricing.price_details`, înainte direct sub `price`.
+    price = (((line.get("pricing") or {}).get("price_details") or {}).get("price")) or ((line.get("price") or {}).get("id"))
+    mapped = billing.plan_for_price(price if isinstance(price, str) else None)
     data = {
         "amount": inv.get("amount_paid", 0), "currency": inv.get("currency"),
+        "interval": mapped[1] if mapped else None,
         "periodStart": billing.to_utc(period.get("start") or inv.get("period_start")),
         "periodEnd": billing.to_utc(period.get("end") or inv.get("period_end")),
         "paidAt": billing.to_utc(paid_at), "stripeNumber": inv.get("number"),
@@ -553,6 +606,21 @@ def _record_invoice(wid: str, inv: dict) -> None:
                                                 "attempts": 0}})
 
     run(authz.db().transaction())
+
+
+def _record_money_event(wid: str, etype: str, obj: dict) -> None:
+    """Rambursări și dispute, pentru tabloul de încasări din super admin. Suma rambursată e cumulată pe charge
+    (Stripe trimite totalul), deci documentul se suprascrie la fiecare rambursare parțială."""
+    if etype == "charge.refunded":
+        _acct_ref(wid).collection("refunds").document(obj["id"]).set({
+            "amount": obj.get("amount", 0), "amountRefunded": obj.get("amount_refunded", 0),
+            "currency": obj.get("currency"), "at": datetime.now(timezone.utc),
+        }, merge=True)
+    else:
+        _acct_ref(wid).collection("disputes").document(obj["id"]).set({
+            "amount": obj.get("amount", 0), "currency": obj.get("currency"), "reason": obj.get("reason"),
+            "status": obj.get("status"), "charge": obj.get("charge"), "at": datetime.now(timezone.utc),
+        }, merge=True)
 
 
 def process_event(event: dict) -> str | None:
@@ -587,6 +655,7 @@ def process_event(event: dict) -> str | None:
         print(f"[billing] ALERTĂ: {etype} pentru {wid or 'cabinet necunoscut'} — storno/verificare manuală")
         if wid:
             audit.log(wid, "stripe", f"billing.{etype.split('.', 1)[1].replace('.', '_')}", obj.get("id"))
+            _record_money_event(wid, etype, obj)
         return wid
     return None
 
@@ -641,6 +710,11 @@ def webhook():
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+def _start_of_day_ro(day: str) -> datetime:
+    from zoneinfo import ZoneInfo
+    return datetime.fromisoformat(day).replace(tzinfo=ZoneInfo("Europe/Bucharest"))
+
+
 def _end_of_day_ro(day: str) -> datetime:
     from zoneinfo import ZoneInfo
     return datetime.fromisoformat(day).replace(hour=23, minute=59, second=59, tzinfo=ZoneInfo("Europe/Bucharest"))
@@ -679,6 +753,133 @@ def admin_overview():
             "cuiSeenInWorkspace": acct.get("cuiSeenInWorkspace"),
         })
     return jsonify(out)
+
+
+_PAYMENT_KINDS = {"subscription": "invoices", "credits": "creditLots"}
+# Comisioanele se citesc din Stripe o singură dată pe plată și se păstrează în documentul ei; la o încărcare a tabloului
+# se fac cel mult atâtea citiri noi (restul la următoarea), ca pagina să rămână rapidă.
+_FEE_LOOKUPS_PER_LOAD = 25
+
+
+def _fee_fields(doc, d: dict, amount: int, state: dict) -> dict:
+    """Brut / comision / net pentru o încasare, din cache sau citite acum din Stripe. Plățile de 0 RON n-au comision."""
+    if d.get("stripeFee"):
+        f = d["stripeFee"]
+        return {"gross": f.get("amount"), "fee": f.get("fee"), "net": f.get("net"), "feeCurrency": f.get("currency"),
+                "feeDetails": f.get("details") or []}
+    if not amount or state["unavailable"] or state["left"] <= 0:
+        return {}
+    state["left"] -= 1
+    try:
+        pi = d.get("paymentIntent")
+        if not pi and doc.reference.parent.id == "invoices":
+            pi = stripe_invoice_payment_intent(doc.id)
+        elif not pi and doc.id.startswith("cs_"):
+            # Pachet cumpărat înainte să păstrăm plata: id-ul pachetului e sesiunea Checkout, care o are.
+            pi = stripe_checkout_retrieve(doc.id).get("payment_intent")
+            pi = pi if isinstance(pi, str) else (pi or {}).get("id")
+        fee = stripe_payment_fee(pi) if pi else None
+    except BillingUnavailable as e:
+        print(f"[billing] comisioanele Stripe nu se pot citi ({e}) — verificați permisiunile cheii")
+        state["unavailable"] = True
+        return {}
+    if not fee:
+        return {}
+    doc.reference.set({"stripeFee": {**fee, "at": datetime.now(timezone.utc)}, "paymentIntent": pi}, merge=True)
+    return {"gross": fee["amount"], "fee": fee["fee"], "net": fee["net"], "feeCurrency": fee["currency"],
+            "feeDetails": fee.get("details") or []}
+
+
+@bp.get("/admin/billing/payments")
+def admin_payments():
+    """Toate încasările (abonamente, pachete de credite), rambursările și disputele, cu datele de facturare și starea
+    facturii emise manual. Filtrarea se face în pagină (volumul e mic); sursa e ce a primit webhook-ul de la Stripe."""
+    authz.require_super_admin()
+    db = authz.db()
+    fee_lookups = {"left": _FEE_LOOKUPS_PER_LOAD, "unavailable": False}
+    names = {d.id: (d.to_dict() or {}).get("name", "") for d in db.collection("workspaces").limit(2000).stream()}
+    accounts = {d.id: (d.to_dict() or {}) for d in db.collection("billingAccounts").limit(2000).stream()}
+
+    def base(doc, kind: str) -> dict:
+        wid = doc.reference.parent.parent.id
+        details = accounts.get(wid, {}).get("details") or {}
+        return {"id": doc.id, "kind": kind, "workspaceId": wid, "workspaceName": names.get(wid, ""),
+                "billingName": details.get("denumire", ""), "cui": details.get("cui", ""),
+                "stripeCustomerId": accounts.get(wid, {}).get("stripeCustomerId")}
+
+    rows = []
+    for doc in db.collection_group("invoices").stream():
+        d = doc.to_dict() or {}
+        sb = d.get("smartbill") or {}
+        rows.append({**base(doc, "subscription"), **_fee_fields(doc, d, d.get("amount", 0), fee_lookups), "at": _iso(d.get("paidAt")), "amount": d.get("amount", 0),
+                     "currency": d.get("currency"), "interval": d.get("interval"),
+                     "periodStart": _iso(d.get("periodStart")), "periodEnd": _iso(d.get("periodEnd")),
+                     "stripeNumber": d.get("stripeNumber"),
+                     "invoice": {"status": sb.get("status"), "number": sb.get("number"), "at": _iso(sb.get("issuedAt"))}})
+    for doc in db.collection_group("creditLots").stream():
+        d = doc.to_dict() or {}
+        if d.get("source") != "purchase":
+            continue                                        # creditele gratuite nu sunt încasări
+        amount = d.get("amountPaid") or 0
+        inv = d.get("invoice") or {}
+        rows.append({**base(doc, "credits"), **_fee_fields(doc, d, d.get("amountPaid") or 0, fee_lookups), "at": _iso(d.get("createdAt")), "amount": amount, "currency": "ron",
+                     "pack": d.get("pack"), "credits": d.get("amount"),
+                     "invoice": {"status": inv.get("status") or ("pending" if amount > 0 else "skipped"),
+                                 "number": inv.get("number"), "at": _iso(inv.get("issuedAt"))}})
+    for doc in db.collection_group("refunds").stream():
+        d = doc.to_dict() or {}
+        rows.append({**base(doc, "refund"), "at": _iso(d.get("at")), "amount": -(d.get("amountRefunded") or 0),
+                     "currency": d.get("currency")})
+    for doc in db.collection_group("disputes").stream():
+        d = doc.to_dict() or {}
+        rows.append({**base(doc, "dispute"), "at": _iso(d.get("at")), "amount": d.get("amount", 0),
+                     "currency": d.get("currency"), "status": d.get("status"), "reason": d.get("reason")})
+    rows.sort(key=lambda r: r.get("at") or "", reverse=True)
+    return jsonify({"rows": rows, "feesUnavailable": fee_lookups["unavailable"]})
+
+
+@bp.get("/admin/billing/stripe-fees")
+def admin_stripe_fees():
+    """Comisioanele Stripe din afara plăților (Billing, dispute) pentru intervalul [from, to), date AAAA-LL-ZZ, ora
+    României. Fără drept de citire pe Balance: `unavailable`, fără eroare (tabloul rămâne utilizabil)."""
+    authz.require_super_admin()
+    bounds = []
+    for key in ("from", "to"):
+        raw = request.args.get(key)
+        if raw and not _DATE_RE.match(raw):
+            return _err(f"invalid_{key}", 400)
+        try:
+            bounds.append(_start_of_day_ro(raw) if raw else None)
+        except ValueError:
+            return _err(f"invalid_{key}", 400)
+    try:
+        items = stripe_account_fees(*bounds)
+    except BillingUnavailable as e:
+        print(f"[billing] comisioanele contului Stripe nu se pot citi ({e}) — verificați permisiunile cheii")
+        return jsonify({"items": [], "unavailable": True})
+    items.sort(key=lambda x: x.get("at") or 0, reverse=True)
+    return jsonify({"items": [{**x, "at": _iso(billing.to_utc(x.get("at")))} for x in items], "unavailable": False})
+
+
+@bp.post("/admin/billing/payments/<wid>/<kind>/<pid>/invoice")
+def admin_mark_invoiced(wid: str, kind: str, pid: str):
+    """Factura emisă manual în SmartBill pentru o încasare: `number` (seria și numărul) o marchează, `null` o demarchează."""
+    principal = authz.require_super_admin()
+    coll = _PAYMENT_KINDS.get(kind)
+    if not coll or not authz.valid_wid(wid) or not re.fullmatch(r"[A-Za-z0-9_]{1,255}", pid):
+        return _err("not_found", 404)
+    number = _body().get("number")
+    if number is not None and (not isinstance(number, str) or not 1 <= len(number.strip()) <= 60):
+        return _err("invalid_number", 400)
+    ref = _acct_ref(wid).collection(coll).document(pid)
+    if not ref.get().exists:
+        return _err("not_found", 404)
+    field = "smartbill" if kind == "subscription" else "invoice"
+    value = ({"status": "manual", "number": number.strip(), "issuedAt": datetime.now(timezone.utc), "by": principal.uid}
+             if number else {"status": "pending", "number": None, "issuedAt": None, "by": principal.uid})
+    ref.set({field: value}, merge=True)
+    audit.log(wid, principal.uid, "billing.invoice_marked" if number else "billing.invoice_unmarked", pid, {"kind": kind})
+    return jsonify({"ok": True, "invoice": {"status": value["status"], "number": value["number"], "at": _iso(value["issuedAt"])}})
 
 
 @bp.post("/admin/workspaces/<wid>/billing/extend-trial")

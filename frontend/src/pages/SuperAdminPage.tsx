@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { FEATURE_REGISTRY, hasFeature } from '../lib/features'
 import { listAllWorkspaces, writeWorkspaceFeature } from '../lib/workspace'
@@ -8,6 +9,7 @@ import {
   adminBillingOverview,
 } from '../lib/superAdmin'
 import SuperAdminBilling from '../components/SuperAdminBilling'
+import SuperAdminPayments from '../components/SuperAdminPayments'
 import DeliveredTemplatesPanel from '../components/DeliveredTemplatesPanel'
 import DeleteWorkspaceModal from '../components/DeleteWorkspaceModal'
 import IconTrash from '../components/IconTrash'
@@ -25,6 +27,9 @@ export default function SuperAdminPage() {
   const [wsError, setWsError] = useState<string | null>(null)
   // Cabinet → cabinetul în care același CUI a mai avut o perioadă de probă.
   const [cuiSeen, setCuiSeen] = useState<Record<string, string>>({})
+  // Fila paginii, în adresă (?fila=incasari), ca să se poată deschide direct și să meargă butonul Înapoi.
+  const [params, setParams] = useSearchParams()
+  const pageTab: 'cabinete' | 'incasari' = params.get('fila') === 'incasari' ? 'incasari' : 'cabinete'
   // Cardurile cabinetelor sunt restrânse implicit (doar esențialul); aici, cele deschise.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // Fila deschisă în fiecare card (implicit Abonament).
@@ -200,14 +205,22 @@ export default function SuperAdminPage() {
         <div className="page-header">
           <div>
             <div className="page-title">Super admin</div>
-            <div className="page-subtitle">Toate conturile și spațiile de lucru din aplicație: abonamente și feature flags per workspace</div>
+            <div className="page-subtitle">Toate conturile și spațiile de lucru din aplicație: abonamente, încasări și feature flags</div>
           </div>
           <div className="page-actions"><NotificariBell /></div>
+        </div>
+        <div className="page-tabs" role="tablist">
+          {([['cabinete', 'Cabinete și conturi'], ['incasari', 'Încasări']] as const).map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={pageTab === key}
+              className={`page-tab${pageTab === key ? ' page-tab--active' : ''}`}
+              onClick={() => setParams(key === 'cabinete' ? {} : { fila: key })}>{label}</button>
+          ))}
         </div>
       </div>
 
       <div className="page-body" style={{ overflowY: 'auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 1120, margin: '0 auto', width: '100%' }}>
+          {pageTab === 'incasari' ? <SuperAdminPayments workspaces={workspaces} /> : (<>
           <div className="card">
             <div className="card-head">
               <span className="card-title">🗂️ Toate spațiile de lucru</span>
@@ -390,6 +403,7 @@ export default function SuperAdminPage() {
               </div>
             </div>
           </div>
+          </>)}
         </div>
       </div>
       {deleting && (

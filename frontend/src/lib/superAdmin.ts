@@ -64,6 +64,64 @@ export const adminSetComp = (workspaceId: string, until: string | null, reason?:
 export const adminCredits = (workspaceId: string, amount: number, reason: string) =>
   apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/credits`, { amount, reason })
 
+// ── Încasări (tabloul din super admin) ───────────────────────────────────────
+export interface PaymentRow {
+  id: string
+  kind: 'subscription' | 'credits' | 'refund' | 'dispute'
+  workspaceId: string
+  workspaceName: string
+  billingName: string
+  cui: string
+  stripeCustomerId: string | null
+  at: string | null
+  /** Bani (RON × 100); negativ la rambursări. */
+  amount: number
+  currency: string | null
+  interval?: 'month' | 'year' | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  stripeNumber?: string | null
+  pack?: string
+  credits?: number
+  status?: string
+  reason?: string
+  invoice?: { status: string | null; number: string | null; at: string | null }
+  /** Din tranzacția de sold Stripe (bani): brut, comisionul Stripe și net; lipsesc până se pot citi. */
+  gross?: number
+  fee?: number
+  net?: number
+  feeCurrency?: string | null
+  /** Defalcarea comisionului de la Stripe (ex. stripe_fee); lipsește la plățile citite înainte de această versiune. */
+  feeDetails?: { type: string | null; amount: number; description: string | null }[]
+}
+
+/** `feesUnavailable`: cheia Stripe nu are drept de citire pe tranzacții, deci comisioanele lipsesc. */
+export const adminBillingPayments = () =>
+  apiJson<{ rows: PaymentRow[]; feesUnavailable: boolean }>('GET', '/admin/billing/payments')
+
+/** Comision Stripe din afara plăților: Stripe Billing (reținut periodic) sau taxa unei dispute. `amount` în bani. */
+export interface AccountFee {
+  id: string
+  at: string | null
+  category: 'billing' | 'dispute' | 'stripe'
+  amount: number
+  currency: string | null
+  description: string | null
+}
+
+/** Pentru intervalul [from, to), date AAAA-LL-ZZ (ora României); fără ele, tot istoricul. */
+export const adminStripeFees = (from?: string, to?: string) => {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to) q.set('to', to)
+  return apiJson<{ items: AccountFee[]; unavailable: boolean }>('GET', `/admin/billing/stripe-fees${q.size ? `?${q}` : ''}`)
+}
+
+/** Factura emisă manual în SmartBill: `number` = seria și numărul; `null` o demarchează. */
+export const adminMarkInvoiced = (row: PaymentRow, number: string | null) =>
+  apiJson<{ ok: boolean; invoice: NonNullable<PaymentRow['invoice']> }>(
+    'POST', `/admin/billing/payments/${row.workspaceId}/${row.kind}/${row.id}/invoice`, { number })
+
 export interface DeletionPreview { counts: Record<string, number>; subscription: boolean; graceDays: number }
 
 export const adminDeletionPreview = (workspaceId: string) =>
