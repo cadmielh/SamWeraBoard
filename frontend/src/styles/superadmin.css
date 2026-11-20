@@ -76,7 +76,7 @@
 .act-chart-plot:hover .act-bar { opacity:.55; }
 .act-chart-plot:hover .act-bar--on { opacity:1; }
 .act-tip {
-  position:absolute; top:0; transform:translate(-50%, -100%); pointer-events:none; z-index:2;
+  position:absolute; pointer-events:none; z-index:2;
   display:flex; flex-direction:column; gap:.1rem; white-space:nowrap; font-size:.75rem; color:var(--s600);
   background:var(--surface); border:1px solid var(--s200); border-radius:8px; box-shadow:var(--sh-md); padding:.4rem .6rem;
 }

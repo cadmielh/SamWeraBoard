@@ -88,7 +88,14 @@ export function DailyBars({ title, data, value, unit, detail, summary }: {
           <line x1={PAD_L} x2={W} y1={H - PAD_B} y2={H - PAD_B} className="act-axis" />
         </svg>
         {h && hover !== null && (
-          <div className="act-tip" style={{ left: `${((PAD_L + hover * band + band / 2) / W) * 100}%` }} role="status">
+          // Caseta stă în interiorul graficului (cardul taie ce iese din el), lângă coloană, fără s-o acopere:
+          // în dreapta ei pentru zilele din prima jumătate, în stânga pentru celelalte.
+          <div className="act-tip" role="status" style={(() => {
+            const cx = PAD_L + hover * band + band / 2
+            return cx < W / 2
+              ? { left: cx + band / 2 + 6, top: PAD_T }
+              : { left: cx - band / 2 - 6, top: PAD_T, transform: 'translateX(-100%)' }
+          })()}>
             <b>{longDay(h.day)}</b>
             <span>{fmt(value(h))}</span>
             {detail?.(h).map(t => <span key={t}>{t}</span>)}
