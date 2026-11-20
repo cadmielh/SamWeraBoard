@@ -52,6 +52,9 @@ import TemplateSearchInput from './TemplateSearchInput'
 import { IconBack } from './NavIcons'
 import { useIsMobile } from '../lib/useIsMobile'
 import { useMobileBack } from '../lib/useMobileBack'
+import { campuriCalculate, valoriCalculate } from '../lib/campuriCalculate'
+import { campuriAutoturism, completariAutoturism } from '../lib/autoturism'
+import type { CampAuto } from '../lib/autoturism'
 
 /** Rezultatul unui formular dedicat (declarație, Anexa 1, BRX, Anexa 2a/2b), ținut pe șablon. Câmpurile opționale
  * există doar la unele formulare: tabelele declarației, propunerile ei de actualizare a fișei, grupurile BRX și starea
@@ -976,26 +979,54 @@ export default function TemplateFiller({
     customGroups: { role: string }[],
   ) => {
     const manualValue = (ph: string) => manualValues[tpl.id]?.[ph] ?? ''
-    const setManualValue = (ph: string, v: string) => setManualValues(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [ph]: v } }))
-    const renderManualField = (ph: string, style?: CSSProperties) => {
-      const label = manualLabel(ph)
+    // Câmpurile calculate din altele (litere, data de sfârșit — vezi lib/campuriCalculate) se recalculează la fiecare schimbare
+    const calculate = campuriCalculate(manualFields)
+    const setManualValue = (ph: string, v: string) => setManualValues(prev => {
+      const cur = { ...prev[tpl.id], [ph]: v, ...completariAutoturism(manualFields, ph, v) }
+      return { ...prev, [tpl.id]: { ...cur, ...valoriCalculate(manualFields, cur) } }
+    })
+    const auto = campuriAutoturism(manualFields)
+    const renderManualField = (ph: string, style?: CSSProperties, spec?: CampAuto) => {
+      const label = spec?.label ?? manualLabel(ph)
       const inputId = `manual-${tpl.id}-${ph}`
-      return isDateLabel(label) ? (
-        <DateFieldInput key={ph} id={inputId} label={label} value={manualValue(ph)} onChange={v => setManualValue(ph, v)} style={style} />
-      ) : (
+      if (isDateLabel(label)) {
+        return <DateFieldInput key={ph} id={inputId} label={label} value={manualValue(ph)} onChange={v => setManualValue(ph, v)} style={style} />
+      }
+      const avertisment = spec?.verifica?.(manualValue(ph))
+      return (
         <div className="field" key={ph} style={style}>
           <label className="field-label" htmlFor={inputId}>{label}</label>
-          <input id={inputId} className="field-input" value={manualValue(ph)} onChange={e => setManualValue(ph, e.target.value)} />
+          <input id={inputId} className="field-input" value={manualValue(ph)} list={spec?.sugestii ? `${inputId}-sugestii` : undefined}
+            inputMode={spec?.numeric ? 'decimal' : undefined}
+            onChange={e => setManualValue(ph, spec?.majuscule ? e.target.value.toUpperCase() : e.target.value)} />
+          {spec?.sugestii && <datalist id={`${inputId}-sugestii`}>{spec.sugestii.map(o => <option key={o} value={o} />)}</datalist>}
+          {avertisment && <div style={{ fontSize: '.75rem', color: 'var(--warn, #b45309)' }}>{avertisment}</div>}
         </div>
       )
     }
     // Modul de exercitare a mandatelor stă sub lista reprezentanților legali: decizia vine abia după ce se vede că
     // sunt cel puțin doi (shownPh îl scoate din `manualFields` sub 2 — vezi visibleManualPlaceholders).
     const showModExercitare = manualFields.includes(MOD_EXERCITARE_MANDATE)
-    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE)
-    const { pairs, rest } = pairManualDateFields(otherManualFields)
+    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE && !auto.has(ph))
+    const { pairs, rest } = pairManualDateFields(otherManualFields.filter(ph => !calculate.has(ph)))
+    const boxStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }
+    const titleStyle: CSSProperties = { fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }
+    // Un câmp calculat se arată doar ca rezultat, sub câmpurile din care vine
+    const renderCalculat = (ph: string) => (
+      <div key={ph} style={{ fontSize: '.85rem', color: 'var(--s500)' }}>
+        {manualLabel(ph)}: {manualValue(ph) ? <strong>{manualValue(ph)}</strong> : `se calculează din ${calculate.get(ph)!.map(manualLabel).join(' / ').toLowerCase()}`}
+        {' '}(calculat)
+      </div>
+    )
+    const renderField = (ph: string) => renderManualField(ph, undefined, auto.get(ph))
     return (
       <>
+        {auto.size > 0 && (
+          <div style={boxStyle}>
+            <div style={titleStyle}>Autoturism</div>
+            {[...auto.keys()].map(ph => calculate.has(ph) ? renderCalculat(ph) : renderField(ph))}
+          </div>
+        )}
         {otherManualFields.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
             <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>De completat manual</div>
@@ -1005,7 +1036,8 @@ export default function TemplateFiller({
                 {renderManualField(data)}
               </div>
             ))}
-            {rest.map(ph => renderManualField(ph))}
+            {rest.map(renderField)}
+            {otherManualFields.filter(ph => calculate.has(ph)).map(renderCalculat)}
           </div>
         )}
         {renderCustomPersonFields(tpl.id, customRoles)}
