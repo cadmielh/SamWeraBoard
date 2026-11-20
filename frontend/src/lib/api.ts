@@ -83,7 +83,11 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
     case "invalid_pack":
       return "Pachetul de credite ales nu există.";
     case "billing_details_required":
-      return "Completează datele de facturare înainte de abonare.";
+      return "Completează datele de facturare (firmă, PFA, II sau IF) și confirmă că achiziționezi în scop profesional.";
+    case "business_only":
+      return "Abonamentele și creditele se vând doar firmelor și profesioniștilor (PJ, PFA, II, IF), cu CUI.";
+    case "professional_required":
+      return "Bifează confirmarea că achiziționezi în numele unei firme, PFA, II sau IF, în scopul activității profesionale.";
     case "subscription_exists":
       return "Cabinetul are deja un abonament. Îl poți gestiona din portalul de plată.";
     case "billing_unavailable":

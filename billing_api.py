@@ -247,10 +247,16 @@ _DETAIL_FIELDS = {"denumire": 200, "regCom": 40, "adresa": 300, "localitate": 10
 
 
 def _clean_details(raw: dict) -> tuple[dict | None, str | None]:
-    tip = raw.get("tip")
-    if tip not in ("PJ", "PF"):
+    """Vânzare exclusiv către profesioniști (PJ, PFA, II, IF): CUI valid și confirmarea expresă că achiziția se face
+    în scopul activității profesionale. Fără ele nu se poate plăti (regulile pentru consumatori nu se aplică)."""
+    tip = raw.get("tip", "PJ")
+    if tip == "PF":
+        return None, "business_only"
+    if tip != "PJ":
         return None, "invalid_tip"
-    out = {"tip": tip, "tara": "RO"}
+    if raw.get("professional") is not True:
+        return None, "professional_required"
+    out = {"tip": "PJ", "tara": "RO", "professional": True}
     for k, maxlen in _DETAIL_FIELDS.items():
         v = str(raw.get(k) or "").strip()
         if len(v) > maxlen:
@@ -262,9 +268,9 @@ def _clean_details(raw: dict) -> tuple[dict | None, str | None]:
     if not _EMAIL_RE.match(out["email"]):
         return None, "invalid_email"
     cui = billing.normalize_cui(raw.get("cui") or "")
-    if tip == "PJ" and not billing.valid_cui(cui):
+    if not billing.valid_cui(cui):
         return None, "invalid_cui"
-    out["cui"] = cui if tip == "PJ" else ""
+    out["cui"] = cui
     return out, None
 
 
@@ -319,7 +325,9 @@ def put_details():
         return _err(error, 400)
     acct_ref = _acct_ref(wid)
     acct = _account(wid)
-    update = {"details": details, "detailsUpdatedAt": firestore.SERVER_TIMESTAMP, "detailsUpdatedBy": principal.uid}
+    # Confirmarea de profesionist se salvează la fiecare salvare a datelor, ca dovadă (cine și când).
+    update = {"details": details, "detailsUpdatedAt": firestore.SERVER_TIMESTAMP, "detailsUpdatedBy": principal.uid,
+              "professionalConfirmedAt": firestore.SERVER_TIMESTAMP, "professionalConfirmedBy": principal.uid}
     if details["cui"]:
         # Semnal pentru super admin (nu blochează): același CUI a mai avut o perioadă de probă în alt cabinet.
         claim_ref = authz.db().collection("trialClaims").document(billing.claim_id("cui", details["cui"]))

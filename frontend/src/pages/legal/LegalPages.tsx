@@ -56,6 +56,10 @@ export function TermeniPage() {
         mentenanță sau din cauza unor servicii terțe (ex. Google, Microsoft, ANAF). Întreruperile programate importante se anunță în prealabil, când este posibil.</P>
       <H>8. Tarife, perioadă de probă, abonament și credite</H>
       <UL>
+        <li>Abonamentele și creditele se vând exclusiv profesioniștilor: persoane juridice, persoane fizice autorizate, întreprinderi individuale și
+          întreprinderi familiale, identificate prin CUI. La cumpărare, Cabinetul confirmă expres că achiziționează în scopul activității sale
+          profesionale. Furnizorul nu încheie contracte cu consumatori prin intermediul Serviciului, iar prevederile legale privind protecția
+          consumatorilor (inclusiv dreptul de retragere) nu se aplică acestor contracte. Perioada de probă gratuită rămâne disponibilă oricui.</li>
         <li>Serviciul se oferă per spațiu de lucru (cabinet), fie pe bază de abonament, cu plată lunară sau anuală, fie pe bază de pachete de credite
           preplătite, la prețul afișat în aplicație la momentul cumpărării. Furnizorul nu este plătitor de TVA; prețul afișat este prețul final.</li>
         <li>Abonamentele încheiate până la 31 decembrie 2026 la prețul de ofertă (200 RON/lună sau 2000 RON/an) își păstrează acest preț cât timp

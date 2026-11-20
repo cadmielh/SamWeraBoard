@@ -372,7 +372,8 @@ export default function LandingPage({ onSignIn, passwordAuth }: { onSignIn: () =
 
         <section className="lp-sec" id="pret">
           <h2 {...reveal()}>Preț</h2>
-          <p className="lp-sub lp-reveal">14 zile gratuite, fără card. Apoi un abonament sau credite, per cabinet, pentru toți colegii.</p>
+          <p className="lp-sub lp-reveal">14 zile gratuite, fără card. Apoi un abonament sau credite, per cabinet, pentru toți colegii.
+            Pentru firme și profesioniști (PJ, PFA, II, IF).</p>
           {!PRICE_V2 && (
             <div className="lp-offer lp-reveal" role="note">
               <span className="lp-offer-dot" aria-hidden />

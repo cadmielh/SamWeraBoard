@@ -20,7 +20,8 @@ import workspaces_api  # noqa: E402
 
 CONSENT = {"tos": workspaces_api.TOS_VERSION, "dpa": workspaces_api.DPA_VERSION}
 DETAILS = {"tip": "PJ", "denumire": "Cabinet Avocat Pop", "cui": "RO18547290", "regCom": "",
-           "adresa": "Str. Exemplu 1", "localitate": "Cluj-Napoca", "judet": "Cluj", "email": "facturi@ex.ro"}
+           "adresa": "Str. Exemplu 1", "localitate": "Cluj-Napoca", "judet": "Cluj", "email": "facturi@ex.ro",
+           "professional": True}
 DAY = 86400
 
 
@@ -144,8 +145,23 @@ def test_details_validation_and_admin_only(env):
     assert call(c, wid, "alice", "put", "/billing/details", json={**DETAILS, "cui": "123"}).get_json()["error"] == "invalid_cui"
     assert call(c, wid, "alice", "put", "/billing/details", json={**DETAILS, "email": "x"}).get_json()["error"] == "invalid_email"
     assert call(c, wid, "alice", "put", "/billing/details", json={**DETAILS, "adresa": ""}).get_json()["error"] == "missing_adresa"
-    r = call(c, wid, "alice", "put", "/billing/details", json={**DETAILS, "tip": "PF", "cui": "orice"})
-    assert r.status_code == 200 and r.get_json()["details"]["cui"] == ""
+    # Doar profesioniști: persoană fizică refuzată, confirmarea de profesionist obligatorie, CUI valid obligatoriu.
+    assert call(c, wid, "alice", "put", "/billing/details", json={**DETAILS, "tip": "PF"}).get_json()["error"] == "business_only"
+    no_flag = {k: v for k, v in DETAILS.items() if k != "professional"}
+    assert call(c, wid, "alice", "put", "/billing/details", json=no_flag).get_json()["error"] == "professional_required"
+    assert call(c, wid, "alice", "put", "/billing/details", json={**DETAILS, "cui": ""}).get_json()["error"] == "invalid_cui"
+    r = call(c, wid, "alice", "put", "/billing/details", json=DETAILS)
+    assert r.status_code == 200 and r.get_json()["details"]["professional"] is True
+    acct = db.collection("billingAccounts").document(wid).get().to_dict()
+    assert acct["professionalConfirmedBy"] == "alice" and acct["professionalConfirmedAt"]
+
+
+def test_old_details_without_professional_confirmation_block_checkout(env):
+    c, db, _, wid = env
+    old = {k: v for k, v in DETAILS.items() if k != "professional"}
+    db.collection("billingAccounts").document(wid).set({"details": {**old, "cui": "18547290", "tara": "RO"}})
+    assert call(c, wid, "alice", "post", "/billing/checkout", json={"interval": "month"}).get_json()["error"] \
+        == "billing_details_required"
     with_details(c, wid)
     assert db.collection("billingAccounts").document(wid).get().to_dict()["details"]["cui"] == "18547290"
     got = call(c, wid, "alice", "get", "/billing").get_json()

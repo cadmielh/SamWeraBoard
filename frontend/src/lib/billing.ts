@@ -120,7 +120,10 @@ export function assertWritable(): void {
 // ── API ─────────────────────────────────────────────────────────────────────
 
 export interface BillingDetails {
+  /** Vânzare doar către profesioniști: mereu 'PJ' (firmă, PFA, II, IF); 'PF' poate apărea doar în date vechi. */
   tip: 'PJ' | 'PF'
+  /** Confirmarea expresă că achiziția se face în scopul activității profesionale (obligatorie la salvare). */
+  professional?: boolean
   denumire: string
   cui: string
   regCom: string

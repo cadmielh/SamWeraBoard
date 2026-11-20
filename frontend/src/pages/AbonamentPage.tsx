@@ -9,7 +9,7 @@ import {
 import NotificariBell from '../components/NotificariBell'
 
 const EMPTY_DETAILS: BillingDetails = {
-  tip: 'PJ', denumire: '', cui: '', regCom: '', adresa: '', localitate: '', judet: '', email: '',
+  tip: 'PJ', denumire: '', cui: '', regCom: '', adresa: '', localitate: '', judet: '', email: '', professional: false,
 }
 const FEATURES = [
   'Clienți, dosare și sarcini nelimitate',
@@ -35,8 +35,8 @@ function parseChoice(v: string | null): Choice | null {
 const choiceParam = (c: Choice) => (c.kind === 'sub' ? c.interval : `c${c.pack}`)
 
 function detailsComplete(d: BillingDetails): boolean {
-  return !!(d.denumire.trim() && d.adresa.trim() && d.localitate.trim() && d.judet.trim() && d.email.trim()
-    && (d.tip === 'PF' || d.cui.trim()))
+  return !!(d.tip === 'PJ' && d.cui.trim() && d.professional && d.denumire.trim() && d.adresa.trim() && d.localitate.trim()
+    && d.judet.trim() && d.email.trim())
 }
 
 export default function AbonamentPage() {
@@ -71,7 +71,8 @@ export default function AbonamentPage() {
         if (cancelled) return
         setOverview(o)
         if (o.details) {
-          setDetails({ ...EMPTY_DETAILS, ...o.details })
+          // Doar profesioniști: datele vechi de persoană fizică se completează din nou ca firmă / PFA / II / IF.
+          setDetails({ ...EMPTY_DETAILS, ...o.details, tip: 'PJ' })
           setSavedDetails(o.details)
           setEditing(!detailsComplete({ ...EMPTY_DETAILS, ...o.details }))
         }
@@ -327,6 +328,7 @@ export default function AbonamentPage() {
                     'Înainte de fiecare generare vezi dacă documentul consumă un credit sau e inclus.',
                   ]} />
                   <DetailList title="Plată și facturare" items={[
+                    'Vânzare exclusiv către firme și profesioniști (PJ, PFA, II, IF), cu CUI.',
                     'Prețuri finale per cabinet, pentru toți colegii (furnizor neplătitor de TVA).',
                     'Plata se face cu cardul, pe pagina securizată Stripe; codurile promoționale se introduc acolo.',
                     'Pentru fiecare plată se emite factură, pe datele de facturare de la pasul 2.',
@@ -499,34 +501,32 @@ function DetailsForm({ details, setDetails, onAnaf, anafBusy, disabled }: {
     setDetails(d => ({ ...d, [k]: e.target.value }))
   return (
     <>
-                <div role="radiogroup" aria-label="Tip client" style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', fontSize: '.875rem' }}>
-                  {(['PJ', 'PF'] as const).map(t => (
-                    <label key={t} style={{ display: 'flex', gap: '.35rem', alignItems: 'center' }}>
-                      <input type="radio" checked={details.tip === t} onChange={() => setDetails(d => ({ ...d, tip: t }))} />
-                      {t === 'PJ' ? 'Persoană juridică / PFA / cabinet' : 'Persoană fizică'}
-                    </label>
-                  ))}
-                </div>
+                <p style={{ color: 'var(--s600)', fontSize: '.8125rem', margin: '0 0 .875rem' }}>
+                  Facturăm doar firme și profesioniști: persoană juridică, PFA, II sau IF, cu CUI.
+                </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))', gap: '.875rem' }}>
-                  {details.tip === 'PJ' && (
-                    <div className="field">
-                      <label className="field-label" htmlFor="bd-cui">CUI</label>
-                      <div style={{ display: 'flex', gap: '.5rem' }}>
-                        <input id="bd-cui" className="field-input" value={details.cui} onChange={set('cui')} placeholder="ex: RO12345678"
-                          onKeyDown={e => { if (e.key === 'Enter') onAnaf() }} />
-                        <button className="btn btn-ghost btn-sm" onClick={onAnaf} disabled={!details.cui.trim() || disabled}>
-                          {anafBusy ? <span className="spin spin-dark" /> : 'Completează din ANAF'}
-                        </button>
-                      </div>
+                  <div className="field">
+                    <label className="field-label" htmlFor="bd-cui">CUI</label>
+                    <div style={{ display: 'flex', gap: '.5rem' }}>
+                      <input id="bd-cui" className="field-input" value={details.cui} onChange={set('cui')} placeholder="ex: RO12345678"
+                        onKeyDown={e => { if (e.key === 'Enter') onAnaf() }} />
+                      <button className="btn btn-ghost btn-sm" onClick={onAnaf} disabled={!details.cui.trim() || disabled}>
+                        {anafBusy ? <span className="spin spin-dark" /> : 'Completează din ANAF'}
+                      </button>
                     </div>
-                  )}
-                  <Field id="bd-denumire" label={details.tip === 'PJ' ? 'Denumire' : 'Nume și prenume'} value={details.denumire} onChange={set('denumire')} />
-                  {details.tip === 'PJ' && <Field id="bd-regcom" label="Nr. Reg. Com. (opțional)" value={details.regCom} onChange={set('regCom')} />}
+                  </div>
+                  <Field id="bd-denumire" label="Denumire (firmă, PFA, II sau IF)" value={details.denumire} onChange={set('denumire')} />
+                  <Field id="bd-regcom" label="Nr. Reg. Com. (opțional)" value={details.regCom} onChange={set('regCom')} />
                   <Field id="bd-adresa" label="Adresă" value={details.adresa} onChange={set('adresa')} />
                   <Field id="bd-localitate" label="Localitate" value={details.localitate} onChange={set('localitate')} />
                   <Field id="bd-judet" label="Județ" value={details.judet} onChange={set('judet')} />
                   <Field id="bd-email" label="E-mail pentru facturi" type="email" value={details.email} onChange={set('email')} />
                 </div>
+                <label style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-start', marginTop: '1rem', fontSize: '.875rem', color: 'var(--s700)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!details.professional} style={{ marginTop: '.2rem' }}
+                    onChange={e => setDetails(d => ({ ...d, professional: e.target.checked }))} />
+                  <span>Confirm că achiziționez în numele unei firme, PFA, II sau IF, în scopul activității profesionale.</span>
+                </label>
     </>
   )
 }
@@ -537,7 +537,7 @@ function DetailsSummary({ d, onEdit, disabled }: { d: BillingDetails; onEdit: ()
       background: 'var(--s50)', border: '1px solid var(--s100)', borderRadius: 8, padding: '.75rem 1rem', fontSize: '.875rem' }}>
       <div style={{ color: 'var(--s700)', lineHeight: 1.55 }}>
         <div style={{ fontWeight: 600, color: 'var(--s900)' }}>{d.denumire}</div>
-        {d.tip === 'PJ' && <div>CUI {d.cui}{d.regCom ? ` · ${d.regCom}` : ''}</div>}
+        <div>CUI {d.cui}{d.regCom ? ` · ${d.regCom}` : ''}</div>
         <div>{[d.adresa, d.localitate, d.judet].filter(Boolean).join(', ')}</div>
         <div style={{ color: 'var(--s500)' }}>Facturile se trimit la {d.email}</div>
       </div>
