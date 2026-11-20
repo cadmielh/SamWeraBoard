@@ -146,6 +146,8 @@ def _new_workspace(name: str, principal: authz.Principal, billing_state: dict) -
         "status": "active",
         "createdAt": firestore.SERVER_TIMESTAMP,
         "billing": billing_state,
+        # Alertele (clopoțelul) pornite din start; flag-ul rămâne și buton de oprire per cabinet (Super admin › Setări).
+        "features": {"alerte": True},
     }
 
 
