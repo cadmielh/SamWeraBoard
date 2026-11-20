@@ -157,3 +157,45 @@ export const listWorkspaceCreators = () => apiJson<WorkspaceCreator[]>('GET', '/
 export const addWorkspaceCreator = (email: string) =>
   apiJson<WorkspaceCreator>('POST', '/signup/creators', { email: email.trim().toLowerCase() })
 export const removeWorkspaceCreator = (id: string) => apiJson('DELETE', `/signup/creators/${id}`)
+
+// ── Activitatea cabinetelor (din jurnalul de acces; vezi activity_api.py) ─────
+
+/** O zi din seria de activitate a unui cabinet (ora României). */
+export interface ActivityDay { day: string; documents: number; scans: number; activeUsers: number }
+
+export interface WorkspaceActivity {
+  series: ActivityDay[]
+  /** Ultima acțiune a unui om din cabinet (oricând în ultimele ~13 luni), ISO. */
+  lastEventAt: string | null
+  /** Utilizatori distincți cu acțiuni în fereastră. */
+  activeUsers: number
+  clients: number
+  dosare: number
+}
+
+export const adminActivity = (days = 90) =>
+  apiJson<{ days: number; today: string; workspaces: Record<string, WorkspaceActivity> }>('GET', `/admin/activity?days=${days}`)
+
+export type EngagementKey = 'nou' | 'activ' | 'incetineste' | 'inactiv'
+export interface Engagement { key: EngagementKey; label: string; daysSince: number | null }
+
+/** Cât de folosit e cabinetul: după ultima acțiune a unui om din el (generări, scanări, accesări, invitații…). */
+export function engagementOf(a: WorkspaceActivity | undefined, createdAt: Date | null, now: Date = new Date()): Engagement {
+  const last = a?.lastEventAt ? new Date(a.lastEventAt) : null
+  const daysSince = last ? Math.floor((now.getTime() - last.getTime()) / 86_400_000) : null
+  const ageDays = createdAt ? (now.getTime() - createdAt.getTime()) / 86_400_000 : Infinity
+  if (ageDays <= 3 && (daysSince === null || daysSince <= 3)) return { key: 'nou', label: 'Nou', daysSince }
+  if (daysSince !== null && daysSince <= 3) return { key: 'activ', label: 'Activ', daysSince }
+  if (daysSince !== null && daysSince <= 13) return { key: 'incetineste', label: 'Încetinește', daysSince }
+  return { key: 'inactiv', label: 'Inactiv', daysSince }
+}
+
+/** Totalurile unei serii (ultimele `days` zile din ea). */
+export function activityTotals(series: ActivityDay[], days: number) {
+  const s = series.slice(-days)
+  return {
+    activeDays: s.filter(d => d.activeUsers > 0).length,
+    documents: s.reduce((n, d) => n + d.documents, 0),
+    scans: s.reduce((n, d) => n + d.scans, 0),
+  }
+}

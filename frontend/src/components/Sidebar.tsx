@@ -56,16 +56,6 @@ function IconExtract() {
     </svg>
   )
 }
-function IconUsers() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="7.5" cy="6.5" r="3" />
-      <path d="M2 17c0-3.6 2.5-6.3 5.5-6.3c.9 0 1.7.2 2.5.7" />
-      <circle cx="14.5" cy="14" r="3.3" />
-      <path d="M13 14l1 1 2-2.2" />
-    </svg>
-  )
-}
 function IconSettings() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -343,18 +333,8 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
           <span className="sidebar-nav-label">Setări</span>
         </NavLink>
 
-        {userRole === 'admin' && (
-          <div style={{ marginTop: isSuperAdmin ? 0 : 'auto' }}>
-            {!collapsed && <div className="sidebar-section">Administrare</div>}
-            <NavLink to="/utilizatori" {...navProps('/utilizatori')} title="Utilizatori" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
-              <IconUsers />
-              <span className="sidebar-nav-label">Utilizatori</span>
-            </NavLink>
-          </div>
-        )}
-
         {isSuperAdmin && (
-          <div style={{ marginTop: userRole === 'admin' ? 0 : 'auto' }}>
+          <div style={{ marginTop: 'auto' }}>
             {!collapsed && <div className="sidebar-section">Super admin</div>}
             <NavLink to="/super-admin" {...navProps('/super-admin')} title="Super admin" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconShield />

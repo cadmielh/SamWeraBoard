@@ -14,9 +14,11 @@ import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import NotificariBell from '../components/NotificariBell'
 import PlanSection from '../components/PlanSection'
 import DangerZoneCard from '../components/DangerZoneCard'
+import MembriPanel from '../components/MembriPanel'
 import ConfirmModal from '../components/ConfirmModal'
 import BtnLabel from '../components/BtnLabel'
-import { planSummary } from '../lib/billing'
+import { formatDate, planSummary, toDate } from '../lib/billing'
+import type { BillingTime } from '../types'
 
 const THEME_OPTIONS: { key: Theme; label: string; desc: string }[] = [
   { key: 'light', label: 'Deschis', desc: 'Fundal alb, potrivit pentru lucru ziua' },
@@ -221,11 +223,70 @@ function AspectCard() {
   )
 }
 
-type SectionKey = 'cont' | 'aspect' | 'notificari' | 'confidentialitate' | 'plan' | 'facturare' | 'jurnal' | 'stergere'
+const ROLE_LABEL: Record<string, string> = { admin: 'Administrator', member: 'Membru', viewer: 'Doar citire' }
+
+/** Cabinet › General: numele (modificabil de administrator), data deschiderii, rolul tău. */
+function GeneralCard({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const { activeWorkspace, userRole, workspaceCtx, toast, user } = useApp()
+  const saved = activeWorkspace?.name ?? ''
+  const [name, setName] = useState(saved)
+  const [saving, setSaving] = useState(false)
+  const isAdmin = userRole === 'admin'
+  const dirty = name.trim() !== saved && !!name.trim()
+  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
+  if (!activeWorkspace) return null
+  const created = toDate(activeWorkspace.createdAt as BillingTime)
+  const owner = activeWorkspace.members[activeWorkspace.ownerId]
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await workspaceCtx.renameWorkspace(activeWorkspace.id, name.trim())
+      toast('Numele cabinetului a fost schimbat', 'ok')
+    } catch (e) {
+      toast((e as Error).message || 'Nu s-a putut salva', 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="card">
+        <div className="card-head"><span className="card-title">🏛️ Cabinet</span></div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="field" style={{ maxWidth: 420 }}>
+            <label className="field-label" htmlFor="ws-name">Numele cabinetului</label>
+            <input id="ws-name" className="field-input" value={name} onChange={e => setName(e.target.value)} disabled={!isAdmin || saving}
+              onKeyDown={e => { if (e.key === 'Enter' && dirty) void save() }} />
+            {!isAdmin && <div className="card-sub" style={{ marginTop: '.25rem' }}>Numele se schimbă de un administrator.</div>}
+          </div>
+          <dl className="settings-facts">
+            <div><dt>Deschis pe</dt><dd>{created ? formatDate(created) : '—'}</dd></div>
+            <div><dt>Proprietar</dt><dd>{owner?.displayName || owner?.email || '—'}</dd></div>
+            <div><dt>Rolul tău</dt><dd>{ROLE_LABEL[activeWorkspace.members[user.uid]?.role ?? ''] ?? '—'}</dd></div>
+            <div><dt>Membri</dt><dd>{Object.keys(activeWorkspace.members).length}</dd></div>
+          </dl>
+        </div>
+      </div>
+      {isAdmin && (dirty || saving) && (
+        <div className="unsaved-bar" role="region" aria-label="Modificări nesalvate">
+          <span>Ai modificări nesalvate.</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setName(saved)} disabled={saving}>Renunță</button>
+          <button className="btn btn-primary btn-sm" onClick={() => void save()} disabled={saving}><BtnLabel busy={saving}>Salvează</BtnLabel></button>
+        </div>
+      )}
+    </>
+  )
+}
+
+type SectionKey = 'cont' | 'aspect' | 'notificari' | 'confidentialitate' | 'general' | 'membri' | 'plan' | 'facturare' | 'jurnal' | 'stergere'
 
 interface Section {
   key: SectionKey
   label: string
+  icon?: string
   title: string
   desc: string
   group: 'Personal' | 'Cabinet' | ''
@@ -242,17 +303,22 @@ export default function SetariPage() {
 
   // Secțiunile vizibile depind de rol și de funcțiile activate pentru cabinet.
   const sections: Section[] = [
-    { key: 'cont', group: 'Personal', label: 'Cont și securitate', title: 'Cont și securitate', desc: 'Parola, conexiunea cu Google Drive și sesiunile deschise.' },
-    { key: 'aspect', group: 'Personal', label: 'Aspect', title: 'Aspect', desc: 'Tema și fontul aplicației.' },
+    { key: 'cont', icon: '👤', group: 'Personal', label: 'Cont și securitate', title: 'Cont și securitate', desc: 'Parola, conexiunea cu Google Drive și sesiunile deschise.' },
+    { key: 'aspect', icon: '🎨', group: 'Personal', label: 'Aspect', title: 'Aspect', desc: 'Tema și fontul aplicației.' },
     ...(activeWorkspace && hasFeature('alerte')
-      ? [{ key: 'notificari', group: 'Personal', label: 'Notificări', title: 'Notificări', desc: 'Ce alerte primești și pe ce canale.' } as Section] : []),
-    { key: 'confidentialitate', group: 'Personal', label: 'Date și confidențialitate', title: 'Date și confidențialitate', desc: 'Textele legale acceptate și exportul datelor tale.' },
-    ...(activeWorkspace ? [{ key: 'plan', group: 'Cabinet', label: 'Plan și credite', title: 'Plan și credite', desc: `Abonamentul, creditele și datele de facturare ale ${cabinet}.` } as Section] : []),
+      ? [{ key: 'notificari', icon: '🔔', group: 'Personal', label: 'Notificări', title: 'Notificări', desc: 'Ce alerte primești și pe ce canale.' } as Section] : []),
+    { key: 'confidentialitate', icon: '🛡️', group: 'Personal', label: 'Date și confidențialitate', title: 'Date și confidențialitate', desc: 'Textele legale acceptate și exportul datelor tale.' },
+    ...(activeWorkspace ? [
+      { key: 'general', icon: '🏛️', group: 'Cabinet', label: 'General', title: 'General', desc: `Numele și datele de bază ale ${cabinet}.` } as Section,
+      { key: 'membri', icon: '👥', group: 'Cabinet', label: 'Membri', title: 'Membri',
+        desc: isAdmin ? 'Colegii din cabinet, rolurile lor și invitațiile.' : 'Colegii din cabinet și rolurile lor.' } as Section,
+    ] : []),
+    ...(activeWorkspace ? [{ key: 'plan', icon: '💳', group: 'Cabinet', label: 'Plan și credite', title: 'Plan și credite', desc: `Abonamentul, creditele și datele de facturare ale ${cabinet}.` } as Section] : []),
     ...(isAdmin && activeWorkspace && hasFeature('facturareSamiAdi')
-      ? [{ key: 'facturare', group: 'Cabinet', label: 'Facturare Sami / Adi', title: 'Facturare Sami / Adi', desc: 'Cotele de împărțire și pragurile pentru sumarul lunar.' } as Section] : []),
+      ? [{ key: 'facturare', icon: '💰', group: 'Cabinet', label: 'Facturare Sami / Adi', title: 'Facturare Sami / Adi', desc: 'Cotele de împărțire și pragurile pentru sumarul lunar.' } as Section] : []),
     ...(isAdmin && activeWorkspace
-      ? [{ key: 'jurnal', group: 'Cabinet', label: 'Jurnal de acces', title: 'Jurnal de acces', desc: 'Cine a văzut sau a modificat date sensibile, și când.' } as Section] : []),
-    { key: 'stergere', group: '', label: 'Ștergerea contului', title: 'Zonă periculoasă', desc: 'Acțiuni ireversibile.', danger: true },
+      ? [{ key: 'jurnal', icon: '📜', group: 'Cabinet', label: 'Jurnal de acces', title: 'Jurnal de acces', desc: 'Cine a văzut sau a modificat date sensibile, și când.' } as Section] : []),
+    { key: 'stergere', icon: '🗑️', group: '', label: 'Ștergerea contului', title: 'Zonă periculoasă', desc: 'Acțiuni ireversibile.', danger: true },
   ]
 
   // Modificări nesalvate în secțiunea curentă: schimbarea secțiunii cere confirmare.
@@ -282,6 +348,10 @@ export default function SetariPage() {
     // key=workspace id: editoarele nu rămân cu starea altui cabinet.
     case 'notificari': content = activeWorkspace && <NotificariCard key={`notificari-${activeWorkspace.id}`} />; break
     case 'confidentialitate': content = <PrivacyCard />; break
+    case 'general': content = activeWorkspace && <GeneralCard key={activeWorkspace.id} onDirtyChange={onDirtyChange} />; break
+    case 'membri': content = activeWorkspace && (
+      <div className="card"><div className="card-body"><MembriPanel key={activeWorkspace.id} workspace={activeWorkspace} readOnly={!isAdmin} /></div></div>
+    ); break
     case 'plan': content = <PlanSection />; break
     // key=workspace id — forțează remount la schimbarea workspace-ului activ, ca `form` să nu rămână cu valorile
     // vechiului workspace (altfel Save ar suprascrie configul noului workspace cu date stale).
@@ -311,11 +381,12 @@ export default function SetariPage() {
               const items = sections.filter(s => s.group === g)
               if (!items.length) return null
               return (
-                <div key={g || 'danger'} style={{ display: 'contents' }}>
-                  {g ? <div className="settings-nav-group">{g === 'Cabinet' ? 'Cabinet' : 'Personal'}</div> : <div className="settings-nav-group" aria-hidden>&nbsp;</div>}
+                <div key={g || 'danger'} className={`settings-nav-block${g ? '' : ' settings-nav-block--danger'}`}>
+                  {g && <div className="settings-nav-group">{g}</div>}
                   {items.map(s => (
                     <NavLink key={s.key} to={`/setari/${s.key}`} onClick={e => go(e, `/setari/${s.key}`)}
                       className={({ isActive }) => `settings-nav-item${s.danger ? ' settings-nav-item--danger' : ''}${isActive ? ' active' : ''}`}>
+                      <span className="settings-nav-icon" aria-hidden>{s.icon}</span>
                       {s.label}
                       {/* Planul cere atenție (probă pe final, credite puține, plată eșuată): semnal lângă secțiune. */}
                       {s.key === 'plan' && plan.tone !== 'ok' && (

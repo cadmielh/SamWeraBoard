@@ -95,6 +95,7 @@ import workspaces_api  # noqa: E402  (după init Firebase Admin și limiter)
 import pii_api  # noqa: E402
 import billing_api  # noqa: E402
 import templates_api  # noqa: E402
+import activity_api  # noqa: E402
 limiter.limit("120 per hour")(workspaces_api.bp)
 limiter.limit("120 per hour")(templates_api.bp)
 app.register_blueprint(templates_api.bp)
@@ -108,6 +109,9 @@ app.register_blueprint(billing_api.bp)
 # În producție rulează în funcția separată billing_webhook (main.py); aici, pentru `stripe listen` local.
 limiter.exempt(billing_api.webhook_bp)
 app.register_blueprint(billing_api.webhook_bp)
+# Statisticile de utilizare pentru super admin (doar citire, din jurnalul de acces).
+limiter.limit("120 per hour")(activity_api.bp)
+app.register_blueprint(activity_api.bp)
 
 UPLOAD_FOLDER = Path(os.getenv("UPLOAD_FOLDER", "uploads"))
 UPLOAD_FOLDER.mkdir(exist_ok=True)

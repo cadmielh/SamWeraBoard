@@ -640,18 +640,20 @@ function DetailsForm({ details, setDetails, onAnaf, anafBusy, disabled }: {
       <p style={{ color: 'var(--s600)', fontSize: '.8125rem', margin: '0 0 .875rem' }}>
         Facturăm doar firme și profesioniști: persoană juridică, PFA, II sau IF, cu CUI.
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))', gap: '.875rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(16rem, 1fr))', gap: '.875rem', alignItems: 'end' }}>
         <div className="field">
           <label className="field-label" htmlFor="bd-cui">CUI</label>
-          <div style={{ display: 'flex', gap: '.5rem' }}>
+          {/* Același tipar ca la fișa societății (CompanyInfoForm): câmpul ocupă rândul, butonul ANAF e compact. */}
+          <div className="field-with-btn">
             <input id="bd-cui" className="field-input" value={details.cui} onChange={set('cui')} placeholder="ex: RO12345678"
               onKeyDown={e => { if (e.key === 'Enter') onAnaf() }} />
-            <button className="btn btn-ghost btn-sm" onClick={onAnaf} disabled={!details.cui.trim() || disabled}>
-              <BtnLabel busy={anafBusy} dark>Completează din ANAF</BtnLabel>
+            <button type="button" className="btn btn-outline-primary btn-sm" onClick={onAnaf} disabled={!details.cui.trim() || disabled}
+              title="Completează denumirea și adresa din ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+              <BtnLabel busy={anafBusy} dark>🔍 ANAF</BtnLabel>
             </button>
           </div>
         </div>
-        <Field id="bd-denumire" label="Denumire (firmă, PFA, II sau IF)" value={details.denumire} onChange={set('denumire')} />
+        <Field id="bd-denumire" label="Denumire" value={details.denumire} onChange={set('denumire')} />
         <Field id="bd-regcom" label="Nr. Reg. Com. (opțional)" value={details.regCom} onChange={set('regCom')} />
         <Field id="bd-adresa" label="Adresă" value={details.adresa} onChange={set('adresa')} />
         <Field id="bd-localitate" label="Localitate" value={details.localitate} onChange={set('localitate')} />

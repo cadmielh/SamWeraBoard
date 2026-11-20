@@ -35,17 +35,25 @@
 }
 
 /* ── Setări: navigare pe secțiuni ── */
-.settings-layout { display:grid; grid-template-columns:220px minmax(0, 1fr); gap:1.75rem; align-items:start; max-width:1180px; }
-.settings-nav { position:sticky; top:0; display:flex; flex-direction:column; gap:.125rem; }
-.settings-nav-group { font-size:.6875rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--s400); padding:.875rem .75rem .375rem; }
-.settings-nav-group:first-child { padding-top:0; }
+.settings-layout { display:grid; grid-template-columns:244px minmax(0, 1fr); gap:1.75rem; align-items:start; max-width:1180px; }
+.settings-nav { position:sticky; top:0; display:flex; flex-direction:column; gap:.875rem; }
+/* Fiecare grup e un bloc separat (fundal, chenar), cu titlul înăuntru: grupurile se disting dintr-o privire. */
+.settings-nav-block { display:flex; flex-direction:column; gap:.125rem; padding:.5rem; border:1px solid var(--border); border-radius:var(--r-lg); background:var(--surface); box-shadow:var(--sh-sm); }
+.settings-nav-block--danger { background:transparent; box-shadow:none; border-style:dashed; border-color:var(--r200); }
+.settings-nav-group { font-size:.6875rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--p600); padding:.25rem .625rem .5rem; margin-bottom:.125rem; border-bottom:1px solid var(--s100); }
 .settings-nav-item {
-  display:flex; align-items:center; gap:.5rem; padding:.45rem .75rem; border-radius:var(--r-sm);
+  position:relative; display:flex; align-items:center; gap:.625rem; padding:.5rem .625rem; border-radius:var(--r-sm);
   color:var(--s600); font-size:.875rem; font-weight:500; text-decoration:none; transition:background var(--t), color var(--t);
 }
+.settings-nav-icon { width:1.25rem; text-align:center; font-size:.95rem; flex-shrink:0; filter:grayscale(.35); }
 .settings-nav-item:hover { background:var(--surface-2); color:var(--s900); }
-.settings-nav-item.active { background:var(--p50); color:var(--p600); font-weight:600; }
+.settings-nav-item.active { background:var(--p50); color:var(--p600); font-weight:700; }
+.settings-nav-item.active .settings-nav-icon { filter:none; }
+/* Bara de accent din stânga: secțiunea curentă se vede și fără să citești textul. */
+.settings-nav-item.active::before { content:''; position:absolute; left:-.5rem; top:.35rem; bottom:.35rem; width:3px; border-radius:0 3px 3px 0; background:var(--p500); }
+.settings-nav-item--danger { color:var(--r600); }
 .settings-nav-item--danger.active { background:var(--r50); color:var(--r600); }
+.settings-nav-item--danger.active::before { background:var(--r500); }
 .settings-nav-badge { margin-left:auto; font-size:.6875rem; font-weight:700; padding:.05rem .45rem; border-radius:var(--r-full); background:var(--p500); color:#fff; }
 .settings-nav-badge--warn { background:var(--y400); color:#422006; }
 .settings-content { display:flex; flex-direction:column; gap:1.25rem; min-width:0; max-width:760px; animation:fadeIn .2s var(--ease); }
@@ -70,7 +78,9 @@
   /* Pe ecran îngust, navigarea devine un rând de „pastile” care se derulează orizontal. */
   .settings-nav { position:static; flex-direction:row; overflow-x:auto; gap:.375rem; padding-bottom:.25rem; scrollbar-width:none; }
   .settings-nav::-webkit-scrollbar { display:none; }
+  .settings-nav-block { display:contents; }
   .settings-nav-group { display:none; }
+  .settings-nav-item.active::before { display:none; }
   .settings-nav-item { flex-shrink:0; border:1px solid var(--s200); border-radius:var(--r-full); padding:.35rem .8rem; white-space:nowrap; }
 }
 
@@ -193,3 +203,8 @@
 
 /* Clientul ales se încarcă: rândul persoanei cu CNP-ul încă necunoscut. */
 .pii-pending { display:flex; align-items:center; gap:.5rem; font-size:.8125rem; color:var(--s500); }
+
+/* Fapte scurte (etichetă + valoare), ex. Setări › General. */
+.settings-facts { display:grid; grid-template-columns:repeat(auto-fit, minmax(10rem, 1fr)); gap:.75rem 1.25rem; margin:0; }
+.settings-facts dt { font-size:.75rem; font-weight:600; color:var(--s500); }
+.settings-facts dd { margin:.1rem 0 0; color:var(--s900); font-size:.875rem; }

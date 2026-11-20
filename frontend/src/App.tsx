@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import AppLayout from './AppLayout'
 import ClientiPage from './pages/ClientiPage'
 import {
-  DosarePage, GenerareDocumentePage, MembriPage, SarciniPage, SetariPage, SuperAdminPage, WorkspaceSetupPage,
+  DosarePage, GenerareDocumentePage, SarciniPage, SetariPage, SuperAdminPage, WorkspaceSetupPage,
 } from './routes'
 import { TermeniPage, ConfidentialitatePage, DpaPage, SubImputernicitiPage, SecuritatePage } from './pages/legal/LegalPages'
 
@@ -23,7 +23,8 @@ export default function App() {
           <Route path="sarcini" element={<SarciniPage />} />
           <Route path="extragere" element={<GenerareDocumentePage />} />
           <Route path="workspace/setup" element={<WorkspaceSetupPage />} />
-          <Route path="utilizatori" element={<MembriPage />} />
+          {/* Utilizatorii s-au mutat în Setări › Membri. */}
+          <Route path="utilizatori" element={<Navigate to="/setari/membri" replace />} />
           <Route path="setari" element={<SetariPage />} />
           <Route path="setari/:sectiune" element={<SetariPage />} />
           <Route path="abonament" element={<AbonamentRedirect />} />

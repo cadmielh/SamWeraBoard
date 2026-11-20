@@ -3,19 +3,23 @@ import type { Workspace, WorkspaceRole } from '../types'
 import type { WorkspaceInvite } from '../lib/workspace'
 import { useApp } from '../AppContext'
 import BtnLabel from './BtnLabel'
+import ConfirmModal from './ConfirmModal'
 
 const ROLE_LABEL: Record<WorkspaceRole, string> = { admin: 'Administrator', member: 'Membru', viewer: 'Doar citire' }
 
 interface Props {
   workspace: Workspace
+  /** Membrii fără drept de administrare văd doar lista colegilor și rolurile lor, fără acțiuni și fără invitații. */
+  readOnly?: boolean
 }
 
-export default function MembriPanel({ workspace }: Props) {
+export default function MembriPanel({ workspace, readOnly }: Props) {
   const { user, workspaceCtx, toast } = useApp()
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>('member')
   const [pending, setPending] = useState<WorkspaceInvite[]>([])
   const [inviting, setSending] = useState(false)
+  const [removing, setRemoving] = useState<{ uid: string; email: string } | null>(null)
 
   const members = Object.entries(workspace.members)
 
@@ -23,7 +27,7 @@ export default function MembriPanel({ workspace }: Props) {
     try { setPending(await workspaceCtx.listWorkspaceInvites(workspace.id)) } catch { setPending([]) }
   }, [workspaceCtx, workspace.id])
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadPending() }, [loadPending])
+  useEffect(() => { if (!readOnly) void loadPending() }, [loadPending, readOnly])
 
   const errMsg = (e: unknown, fallback: string) => {
     switch ((e as { code?: string }).code) {
@@ -51,8 +55,7 @@ export default function MembriPanel({ workspace }: Props) {
     }
   }
 
-  const handleRemove = async (uid: string, email: string) => {
-    if (!confirm(`Elimini utilizatorul ${email}?`)) return
+  const handleRemove = async (uid: string) => {
     try {
       await workspaceCtx.removeMember(workspace.id, uid)
       toast('Utilizator eliminat', 'ok')
@@ -93,7 +96,7 @@ export default function MembriPanel({ workspace }: Props) {
               <div className="member-email">{m.displayName || m.email}</div>
               <div className="member-role">{m.email} · {ROLE_LABEL[m.role]}</div>
             </div>
-            {uid !== workspace.ownerId && uid !== user.uid && (
+            {!readOnly && uid !== workspace.ownerId && uid !== user.uid && (
               <div style={{ display: 'flex', gap: '.375rem', flexShrink: 0 }}>
                 <select
                   className="field-input"
@@ -105,7 +108,7 @@ export default function MembriPanel({ workspace }: Props) {
                   <option value="member">Membru</option>
                   <option value="viewer">Doar citire</option>
                 </select>
-                <button className="btn btn-ghost btn-xs" style={{ color: 'var(--r500)' }} onClick={() => handleRemove(uid, m.email)}>
+                <button className="btn btn-ghost btn-xs" style={{ color: 'var(--r500)' }} onClick={() => setRemoving({ uid, email: m.email })}>
                   Elimină
                 </button>
               </div>
@@ -118,7 +121,7 @@ export default function MembriPanel({ workspace }: Props) {
       </div>
 
       {/* Invite form */}
-      <div style={{ background: 'var(--s50)', border: '1px solid var(--s200)', borderRadius: 'var(--r-md)', padding: '1rem' }}>
+      {!readOnly && <div style={{ background: 'var(--s50)', border: '1px solid var(--s200)', borderRadius: 'var(--r-md)', padding: '1rem' }}>
         <div style={{ fontWeight: 700, fontSize: '.875rem', color: 'var(--s700)', marginBottom: '.75rem' }}>
           Invită utilizator
         </div>
@@ -157,7 +160,18 @@ export default function MembriPanel({ workspace }: Props) {
             ))}
           </div>
         )}
-      </div>
+      </div>}
+
+      {removing && (
+        <ConfirmModal
+          title="Elimini utilizatorul?"
+          message={`${removing.email} nu va mai avea acces la cabinet. Îl poți invita din nou oricând.`}
+          confirmLabel="Elimină"
+          danger
+          onConfirm={() => { const r = removing; setRemoving(null); void handleRemove(r.uid) }}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
     </div>
   )
 }
