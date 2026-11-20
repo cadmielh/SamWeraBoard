@@ -26,6 +26,21 @@ ZILE_PROBA_SE_INCHEIE = 3
 _SISTEM = {"stripe", "system", ""}
 
 
+def _sigur(fn):
+    """Evenimentele se apelează din fluxuri importante (webhook-ul Stripe, crearea cabinetului): orice eroare
+    neprevăzută în construirea notificării se loghează și se înghite, nu se propagă."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except Exception as e:  # noqa: BLE001
+            print(f"[superadmin-alerte] {fn.__name__} eșuat ({type(e).__name__})")
+            return None
+    return wrapper
+
+
 def _cheie(*parti: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", "__".join(p for p in parti if p))[:200]
 
@@ -75,12 +90,14 @@ def ron(bani) -> str:
 
 # ── Evenimente (apelate din fluxurile existente) ──────────────────────────────
 
+@_sigur
 def cabinet_nou(wid: str, nume: str, email: str, proba: bool) -> None:
     emite(_cheie("cabinet_nou", wid), "cabinete", f"Cabinet nou: {nume}",
           f"{email} · {'perioadă de probă de 14 zile' if proba else 'fără probă (a mai avut una): trebuie să plătească'}",
           link=_link_cabinet(wid), wid=wid)
 
 
+@_sigur
 def cui_refolosit(wid: str, alt_wid: str) -> None:
     nume, email = _cabinet(wid)
     alt, _ = _cabinet(alt_wid)
@@ -89,12 +106,14 @@ def cui_refolosit(wid: str, alt_wid: str) -> None:
           link=_link_cabinet(wid), wid=wid)
 
 
+@_sigur
 def cont_programat_stergere(email: str, cabinete: int, sterge_la: datetime) -> None:
     emite(_cheie("cont_sters", email, sterge_la.strftime("%Y%m%d")), "cabinete", f"Cerere de ștergere a contului: {email}",
           f"Se șterge pe {sterge_la.astimezone(TZ):%d.%m.%Y}" + (f", cu {cabinete} {'cabinet' if cabinete == 1 else 'cabinete'} în care era singurul membru" if cabinete else ""),
           severitate="atentie", link="/super-admin?fila=conturi")
 
 
+@_sigur
 def din_stripe(event: dict, wid: str | None) -> None:
     """Notificarea pentru un eveniment Stripe deja procesat de webhook (vezi billing_api.process_event)."""
     etype = event.get("type", "")

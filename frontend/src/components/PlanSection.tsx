@@ -770,7 +770,12 @@ function ledgerDetail(e: CreditsOverview['ledger'][number], members: Record<stri
 
 /** Istoricul creditelor ca CSV (Excel îl deschide direct; BOM-ul păstrează diacriticele). */
 function downloadLedgerCsv(ledger: CreditsOverview['ledger'], members: Record<string, { email?: string }>) {
-  const q = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+  // Textele care încep cu = + - @ (ex. un nume de client) ar rula ca formule în Excel: le prefixăm cu apostrof.
+  // Numerele (coloana Credite) rămân numere.
+  const q = (v: string | number) => {
+    const t = typeof v === 'number' ? String(v) : /^[=+\-@\t\r]/.test(v) ? `'${v}` : v
+    return `"${t.replace(/"/g, '""')}"`
+  }
   const lines = [['Data', 'Mișcare', 'Detalii', 'Credite'].map(q).join(';')]
   for (const e of ledger) {
     lines.push([formatDate(toDate(e.at)), LEDGER_LABEL[e.kind] ?? e.kind, ledgerDetail(e, members), e.amount].map(q).join(';'))

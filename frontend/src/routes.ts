@@ -2,13 +2,30 @@ import { lazy } from 'react'
 
 // Paginile se descarcă separat (nu toate la prima deschidere). Funcțiile de import sunt păstrate aici ca
 // meniul să le poată porni din timp, la trecerea cu mouse-ul peste legătură: la clic, codul e deja descărcat.
+// După un deploy, fișierele vechi ale paginilor nu mai există: cine avea aplicația deschisă ar primi o eroare la
+// prima navigare. Atunci reîncărcăm pagina o dată (codul nou se descarcă); a doua eroare la rând se arată normal.
+const RELOAD_KEY = 'cabinio-chunk-reload'
+function withReload<T>(load: () => Promise<T>): () => Promise<T> {
+  return () => load().then(
+    m => { try { sessionStorage.removeItem(RELOAD_KEY) } catch { /* fără stocare: nimic de curățat */ } return m },
+    err => {
+      // Fără sessionStorage nu putem ține minte reîncărcarea, deci nu reîncărcăm (ar putea intra în buclă).
+      const already = (() => {
+        try { const v = sessionStorage.getItem(RELOAD_KEY) === '1'; sessionStorage.setItem(RELOAD_KEY, '1'); return v } catch { return true }
+      })()
+      if (!already) window.location.reload()
+      throw err
+    },
+  )
+}
+
 const loaders = {
-  '/dosare': () => import('./pages/DosarePage'),
-  '/sarcini': () => import('./pages/SarciniPage'),
-  '/extragere': () => import('./pages/GenerareDocumentePage'),
-  '/setari': () => import('./pages/SetariPage'),
-  '/super-admin': () => import('./pages/SuperAdminPage'),
-  '/workspace/setup': () => import('./pages/WorkspaceSetupPage'),
+  '/dosare': withReload(() => import('./pages/DosarePage')),
+  '/sarcini': withReload(() => import('./pages/SarciniPage')),
+  '/extragere': withReload(() => import('./pages/GenerareDocumentePage')),
+  '/setari': withReload(() => import('./pages/SetariPage')),
+  '/super-admin': withReload(() => import('./pages/SuperAdminPage')),
+  '/workspace/setup': withReload(() => import('./pages/WorkspaceSetupPage')),
 } as const
 
 export const DosarePage = lazy(loaders['/dosare'])

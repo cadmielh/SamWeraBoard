@@ -46,7 +46,7 @@ UNGATED = {
     ("POST", "/billing/credits/checkout"), ("GET", "/billing/credits"), ("GET", "/billing/credits/quote"),
     ("POST", "/admin/workspaces/<wid>/billing/credits"), ("GET", "/admin/billing/payments"), ("GET", "/admin/billing/stripe-fees"),
     ("POST", "/admin/billing/payments/<wid>/<kind>/<pid>/invoice"),
-    ("GET", "/admin/billing/overview"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
+    ("GET", "/admin/billing/overview"), ("GET", "/admin/activity"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
     ("POST", "/admin/workspaces/<wid>/billing/comp"), ("POST", "/admin/workspaces/<wid>/billing/sync"),
     # super admin: livrarea cere acces activ la cabinetul ȚINTĂ (billing.has_full_access), nu la cel al apelantului
     ("POST", "/admin/workspaces/<target>/templates"), ("GET", "/admin/workspaces/<wid>/delivered-templates"),

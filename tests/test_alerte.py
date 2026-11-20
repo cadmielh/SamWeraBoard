@@ -574,8 +574,25 @@ def test_jobul_zilnic_raporteaza_eroare_daca_un_cabinet_a_cazut(monkeypatch):
     import main
     monkeypatch.setattr(authz, "init_admin", lambda: None)
     monkeypatch.setattr(authz, "db", lambda: None)
+    import superadmin_alerte
+    monkeypatch.setattr(superadmin_alerte, "zilnic", lambda db: {})     # pasul pentru super admini: aici nu contează
     monkeypatch.setattr(alerte, "ruleaza_zilnic", lambda db: {"cabinete": 3, "erori": 0, "neprocesate": 0})
     main.alerte_zilnice.__wrapped__(None)                      # totul în regulă: fără excepție
     monkeypatch.setattr(alerte, "ruleaza_zilnic", lambda db: {"cabinete": 2, "erori": 1, "neprocesate": 0})
     with pytest.raises(RuntimeError, match="rulare incompletă"):
+        main.alerte_zilnice.__wrapped__(None)
+
+
+def test_jobul_zilnic_raporteaza_eroare_daca_pasul_super_admin_cade(monkeypatch):
+    import authz
+    import main
+    import superadmin_alerte
+    monkeypatch.setattr(authz, "init_admin", lambda: None)
+    monkeypatch.setattr(authz, "db", lambda: None)
+    monkeypatch.setattr(alerte, "ruleaza_zilnic", lambda db: {"cabinete": 3, "erori": 0, "neprocesate": 0})
+
+    def cade(db):
+        raise ValueError("x")
+    monkeypatch.setattr(superadmin_alerte, "zilnic", cade)
+    with pytest.raises(RuntimeError, match="rulare incompletă"):   # alertele cabinetelor au rulat, dar eșecul se vede
         main.alerte_zilnice.__wrapped__(None)
