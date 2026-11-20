@@ -173,8 +173,10 @@ export interface WorkspaceActivity {
   dosare: number
 }
 
-export const adminActivity = (days = 90) =>
-  apiJson<{ days: number; today: string; workspaces: Record<string, WorkspaceActivity> }>('GET', `/admin/activity?days=${days}`)
+/** Serverul calculează statisticile o dată pe zi și le păstrează; `refresh` le recalculează acum (citește tot jurnalul). */
+export const adminActivity = (days = 90, refresh = false) =>
+  apiJson<{ days: number; today: string; computedAt: string; workspaces: Record<string, WorkspaceActivity> }>(
+    'GET', `/admin/activity?days=${days}${refresh ? '&refresh=1' : ''}`)
 
 export type EngagementKey = 'nou' | 'activ' | 'incetineste' | 'inactiv'
 export interface Engagement { key: EngagementKey; label: string; daysSince: number | null }

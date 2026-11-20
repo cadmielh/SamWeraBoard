@@ -1,4 +1,4 @@
-"""Statistici de utilizare pe cabinet, pentru pagina de super admin — doar citire.
+"""Statistici de utilizare pe cabinet, pentru pagina de super admin — doar citire (plus rezultatul zilei, păstrat).
 
 Totul vine din jurnalul de acces existent (`workspaces/{wid}/auditLog`, păstrat ~13 luni): documente generate,
 scanări, utilizatori activi și zile active, plus numărul de clienți și dosare. Nu se colectează nimic nou
@@ -82,6 +82,23 @@ def _count(query) -> int:
         return 0
 
 
+# Calculul citește 90 de zile de jurnal pentru fiecare cabinet, deci se face o dată pe zi (prima deschidere a paginii)
+# și se păstrează în `adminCache/activity` (+ câte un document per cabinet, ca să nu atingă limita de 1 MB);
+# celelalte deschideri din ziua respectivă citesc doar rezultatul. `?refresh=1` recalculează la cerere.
+# Colecția nu e expusă clienților (regulile Firestore nu o potrivesc).
+_CACHE = ("adminCache", "activity")
+
+
+def _cache_refs(db):
+    meta = db.collection(_CACHE[0]).document(_CACHE[1])
+    return meta, meta.collection("workspaces")
+
+
+def _compute_one(db, ref, days: int, now: datetime) -> dict:
+    return {**workspace_activity(db, ref.id, days, now),
+            "clients": _count(ref.collection("clienti")), "dosare": _count(ref.collection("dosare"))}
+
+
 @bp.get("/admin/activity")
 def admin_activity():
     """Activitatea tuturor cabinetelor: seria zilnică + câți clienți și dosare au (numărați, fără conținut)."""
@@ -90,13 +107,34 @@ def admin_activity():
         days = max(7, min(MAX_DAYS, int(request.args.get("days", "90"))))
     except ValueError:
         days = 90
+    refresh = request.args.get("refresh") == "1"
     db = authz.db()
     now = datetime.now(timezone.utc)
-    out = {}
+    today = ro_day(now)
+    meta_ref, ws_cache = _cache_refs(db)
+    meta = (meta_ref.get().to_dict() or {}) if not refresh else {}
+    fresh = meta.get("day") == today and int(meta.get("days") or 0) >= days
+
+    out: dict[str, dict] = {}
+    if fresh:
+        out = {d.id: d.to_dict() or {} for d in ws_cache.stream()}
+    computed = 0
     for d in db.collection("workspaces").limit(1000).stream():
-        out[d.id] = {
-            **workspace_activity(db, d.id, days, now),
-            "clients": _count(d.reference.collection("clienti")),
-            "dosare": _count(d.reference.collection("dosare")),
-        }
-    return jsonify({"days": days, "today": ro_day(now), "workspaces": out})
+        if d.id in out:
+            continue                      # din calculul de azi; doar cabinetele apărute între timp se calculează acum
+        out[d.id] = _compute_one(db, d.reference, days, now)
+        ws_cache.document(d.id).set(out[d.id])
+        computed += 1
+    if not fresh:
+        for d in ws_cache.stream():       # cabinete șterse între timp nu mai rămân în rezultatul păstrat
+            if d.id not in out:
+                d.reference.delete()
+        meta_ref.set({"day": today, "days": days, "computedAt": now})
+        computed_at = now
+    else:
+        computed_at = meta.get("computedAt") or now
+    # Seria păstrată poate fi mai lungă decât cea cerută: se taie la ultimele `days` zile.
+    for v in out.values():
+        v["series"] = (v.get("series") or [])[-days:]
+    return jsonify({"days": days, "today": today, "computedAt": computed_at.isoformat(), "recomputed": computed,
+                    "workspaces": out})

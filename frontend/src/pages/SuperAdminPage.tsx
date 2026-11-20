@@ -40,6 +40,7 @@ export default function SuperAdminPage() {
   // Cabinet → cabinetul în care același CUI a mai avut o perioadă de probă.
   const [cuiSeen, setCuiSeen] = useState<Record<string, string>>({})
   const [activity, setActivity] = useState<Record<string, WorkspaceActivity> | null>(null)
+  const [activityAt, setActivityAt] = useState<Date | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
   // Fila paginii și cabinetul deschis în panou, în adresă (?fila=…&cabinet=…): se pot trimite ca link, merge Înapoi.
   const [params, setParams] = useSearchParams()
@@ -91,9 +92,14 @@ export default function SuperAdminPage() {
   }, [])
 
   // Activitatea (din jurnalul de acces) vine separat: lista apare imediat, graficele când sosesc.
-  const loadActivity = useCallback(async () => {
+  // Prima deschidere din zi le calculează pe server, următoarele citesc rezultatul păstrat; butonul le recalculează.
+  const loadActivity = useCallback(async (refresh = false) => {
     setActivityLoading(true)
-    try { setActivity((await adminActivity(90)).workspaces) } catch { /* statisticile rămân goale */ } finally { setActivityLoading(false) }
+    try {
+      const r = await adminActivity(90, refresh)
+      setActivity(r.workspaces)
+      setActivityAt(new Date(r.computedAt))
+    } catch { /* statisticile rămân goale */ } finally { setActivityLoading(false) }
   }, [])
 
   const loadGrants = useCallback(async () => {
@@ -327,6 +333,17 @@ export default function SuperAdminPage() {
 
             <div className="card">
               <div className="card-body">
+                <div className="sa-stats-bar">
+                  <span>
+                    {activityAt
+                      ? `Statistici calculate ${activityAt.toDateString() === new Date().toDateString() ? 'azi' : activityAt.toLocaleDateString('ro-RO')} la ${activityAt.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}`
+                      : 'Statisticile se calculează o dată pe zi'}
+                  </span>
+                  <button className="btn btn-ghost btn-xs" onClick={() => void loadActivity(true)} disabled={activityLoading}
+                    title="Recalculează acum din jurnalul de acces (citește tot jurnalul pe 90 de zile)">
+                    <BtnLabel busy={activityLoading} dark>↻ Reîmprospătează</BtnLabel>
+                  </button>
+                </div>
                 {activityLoading && !activity ? <Skeleton h={190} r={10} />
                   : days30.length > 0 ? (
                     <DailyBars title="Cabinete active pe zi (ultimele 30 de zile)" data={days30} value={d => d.activeUsers}

@@ -117,3 +117,6 @@
 .seg button { border:none; background:transparent; font:inherit; font-size:.75rem; padding:.3rem .65rem; cursor:pointer; color:var(--s600); }
 .seg button + button { border-left:1px solid var(--s200); }
 .seg button[aria-pressed="true"] { background:var(--p50); color:var(--p600); font-weight:600; }
+
+/* Momentul calculului statisticilor + reîmprospătarea la cerere. */
+.sa-stats-bar { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.75rem; font-size:.75rem; color:var(--s500); }

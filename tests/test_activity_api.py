@@ -29,7 +29,7 @@ WID = "wsActivityAAAAAAAA1"
 @pytest.fixture()
 def env(monkeypatch):
     client = gcf.Client(project="demo-samwera")
-    for coll in ("workspaces", "users"):
+    for coll in ("workspaces", "users", "adminCache"):
         for d in client.collection(coll).stream():
             client.recursive_delete(d.reference)
     monkeypatch.setattr(authz, "db", lambda: client)
@@ -94,3 +94,25 @@ def test_last_event_outside_window(env):
     ws = c.get("/admin/activity?days=7", headers={"X-Test-User": "root"}).get_json()["workspaces"][WID]
     assert all(d["activeUsers"] == 0 for d in ws["series"])
     assert ws["lastEventAt"][:10] == old.isoformat()[:10]
+
+
+def test_computed_once_a_day_then_refresh(env):
+    c, db = env
+    db.collection("workspaces").document(WID).set({"name": "Cabinet", "members": {}})
+    now = datetime.now(timezone.utc)
+    log(db, now, "document.generate", "alice")
+    h = {"X-Test-User": "root"}
+    first = c.get("/admin/activity?days=30", headers=h).get_json()
+    assert first["recomputed"] == 1 and first["workspaces"][WID]["series"][-1]["documents"] == 1
+
+    log(db, now, "document.generate", "alice")              # activitate nouă după calculul zilei
+    second = c.get("/admin/activity?days=30", headers=h).get_json()
+    assert second["recomputed"] == 0 and second["computedAt"] == first["computedAt"]
+    assert second["workspaces"][WID]["series"][-1]["documents"] == 1     # rezultatul păstrat, fără citiri noi
+
+    db.collection("workspaces").document("wsNouAAAAAAAAAAAAAA1").set({"name": "Nou", "members": {}})
+    third = c.get("/admin/activity?days=30", headers=h).get_json()
+    assert third["recomputed"] == 1 and "wsNouAAAAAAAAAAAAAA1" in third["workspaces"]   # doar cabinetul nou
+
+    fresh = c.get("/admin/activity?days=30&refresh=1", headers=h).get_json()
+    assert fresh["recomputed"] == 2 and fresh["workspaces"][WID]["series"][-1]["documents"] == 2
