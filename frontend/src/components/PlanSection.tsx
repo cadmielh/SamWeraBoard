@@ -57,9 +57,9 @@ export default function PlanSection() {
   // Fila deschisă la pasul 1: a alegerii curente, altfel Credite pentru un cabinet deja pe credite.
   const [offerTab, setOfferTab] = useState<'sub' | 'credits'>(() =>
     choice ? (choice.kind === 'pack' ? 'credits' : 'sub') : billing.reason === 'credits' ? 'credits' : 'sub')
-  // Ofertele stau deschise când e nevoie de ele (probă, citire, credite puține); cine are credite destule vine
-  // de obicei să-și vadă soldul, deci le deschide din butonul de sus.
-  const [offersOpen, setOffersOpen] = useState(() => !(billing.reason === 'credits' && billing.credits.balance > 3))
+  // Ofertele stau deschise când e nevoie de ele (probă, citire, credite puține); cine are credite destule (inclusiv
+  // lângă un abonament) vine de obicei să-și vadă soldul, deci le deschide din butonul de sus.
+  const [offersOpen, setOffersOpen] = useState(() => !(billing.full && billing.credits.balance > 3))
   const [credits, setCredits] = useState<CreditsOverview | null>(null)
   // Datele salvate apar ca rezumat; formularul se deschide doar la „Modifică” sau dacă lipsesc.
   const [editing, setEditing] = useState(true)
@@ -274,6 +274,18 @@ export default function PlanSection() {
                 : <>
                   <HeroValue billing={billing} />
                   <p className="plan-hero-sub">{statusText(billing)}</p>
+                  {billing.reason !== 'credits' && billing.credits.balance > 0 && (
+                    <button type="button" className="plan-hero-credits"
+                      onClick={() => document.getElementById('plan-credite')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                      <b><AnimatedNumber value={billing.credits.balance} /> {billing.credits.balance === 1 ? 'credit' : 'credite'}</b>
+                      <span>
+                        {billing.hasSubscription && billing.cancelAtPeriodEnd
+                          ? `se folosesc după ${formatDate(billing.currentPeriodEnd)}`
+                          : billing.hasSubscription ? 'nu se consumă cât abonamentul e activ' : 'se folosesc după perioada gratuită'}
+                        {billing.credits.firstExpiry ? ` · primele expiră pe ${formatDate(billing.credits.firstExpiry)}` : ''}
+                      </span>
+                    </button>
+                  )}
                   {billing.reason === 'trial' && billing.daysLeft !== null && (
                     <div className={`plan-meter${billing.daysLeft <= 3 ? ' plan-meter--warn' : ''}`} aria-hidden>
                       <span style={{ width: `${Math.min(100, (billing.daysLeft / TRIAL_DAYS) * 100)}%` }} />
@@ -289,6 +301,9 @@ export default function PlanSection() {
                   </BtnLabel>
                 </button>
                 {heroAction === 'portal' && <small>Card, facturi, lunar ↔ anual, anulare: în portalul securizat Stripe.</small>}
+                {heroAction === 'portal' && !choice && canBuyCredits && !offersOpen && (
+                  <button className="btn btn-ghost btn-sm" onClick={openOffers} disabled={busy !== ''}>Cumpără credite</button>
+                )}
               </div>
             )}
           </div>
@@ -421,7 +436,9 @@ export default function PlanSection() {
         </div></div>
       )}
       {isAdmin && credits && (credits.balance > 0 || credits.ledger.length > 0) && (
-        <CreditsCard credits={credits} subscribed={billing.hasSubscription} members={activeWorkspace.members} />
+        <div id="plan-credite" style={{ scrollMarginTop: '1rem' }}>
+          <CreditsCard credits={credits} subscribed={billing.hasSubscription} members={activeWorkspace.members} />
+        </div>
       )}
 
       {isAdmin && billing.hasSubscription && !choice && (

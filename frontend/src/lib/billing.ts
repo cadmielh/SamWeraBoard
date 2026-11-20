@@ -120,10 +120,13 @@ export function planSummary(b: BillingAccess): PlanSummary {
         tone: c.balance === 0 ? 'bad' : c.balance <= 3 ? 'warn' : 'ok',
       }
     }
-    default:
+    default: {
+      // Credite cumpărate pe lângă abonament: apar și ele în indicator, nu doar pe pagina planului.
+      const cr = b.credits.balance > 0 ? ` · ${b.credits.balance === 1 ? '1 credit' : `${b.credits.balance} credite`}` : ''
       return b.cancelAtPeriodEnd
-        ? { label: 'Abonament anulat', sub: `Activ până pe ${formatDate(b.currentPeriodEnd)}`, tone: 'warn' }
-        : { label: `Abonament ${b.interval === 'year' ? 'anual' : 'lunar'}`, sub: `Reînnoire pe ${formatDate(b.currentPeriodEnd)}`, tone: 'ok' }
+        ? { label: 'Abonament anulat', sub: `Activ până pe ${formatDate(b.currentPeriodEnd)}${cr}`, tone: 'warn' }
+        : { label: `Abonament ${b.interval === 'year' ? 'anual' : 'lunar'}`, sub: `Reînnoire pe ${formatDate(b.currentPeriodEnd)}${cr}`, tone: 'ok' }
+    }
   }
 }
 

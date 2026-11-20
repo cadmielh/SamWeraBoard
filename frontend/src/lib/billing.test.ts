@@ -124,5 +124,8 @@ describe('planSummary — indicatorul planului din meniu și din Setări', () =>
     const sub = { accessUntil: iso(30 * DAY), subscriptionStatus: 'active' as const, hasSubscription: true, interval: 'year' as const, currentPeriodEnd: iso(30 * DAY) }
     expect(planSummary(billingAccess(b(sub), NOW))).toMatchObject({ label: 'Abonament anual', tone: 'ok' })
     expect(planSummary(billingAccess(b({ ...sub, cancelAtPeriodEnd: true }), NOW))).toMatchObject({ label: 'Abonament anulat', tone: 'warn' })
+    const cuCredite = planSummary(billingAccess(b({ ...sub, cancelAtPeriodEnd: true,
+      credits: { lots: [{ id: 'l', remaining: 30, expiresAt: iso(300 * DAY) }], coveredUntil: null } }), NOW))
+    expect(cuCredite.sub).toMatch(/· 30 credite$/)
   })
 })
