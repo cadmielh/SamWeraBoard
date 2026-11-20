@@ -33,6 +33,9 @@ export default function TemplateDeliveryModal({ template, sourceWorkspaceId, bui
   const formOptions = useMemo(() => formLinkOptions(builtins), [builtins])
   // O copie a unui șablon de bază fără efect la livrare (ex. actul constitutiv) pornește de la „fără formular dedicat”.
   const [sourceKey, setSourceKey] = useState(() => formOptions.some(o => o.key === template.sourceKey) ? template.sourceKey! : '')
+  // Formularul dedicat contează doar pentru copiile șabloanelor de bază cu formular propriu (vin preselectate);
+  // la celelalte, alegerea stă ascunsă după un link, pentru cazurile rare.
+  const [showForm, setShowForm] = useState(() => !!sourceKey)
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState<{ key: string; result: Check } | null>(null)
   const [alreadyDelivered, setAlreadyDelivered] = useState(false)
@@ -113,17 +116,23 @@ export default function TemplateDeliveryModal({ template, sourceWorkspaceId, bui
           </div>
         )}
 
-        <div className="field">
-          <label className="field-label" htmlFor="dlv-form">Formular</label>
-          <select id="dlv-form" className="field-input" style={{ appearance: 'auto' }} value={sourceKey} onChange={e => setSourceKey(e.target.value)}>
-            <option value="">Fără formular dedicat (câmpuri din etichete)</option>
-            {formOptions.map(o => <option key={o.key} value={o.key}>Ca „{o.name}”</option>)}
-          </select>
-          <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>
-            {formOptions.find(o => o.key === sourceKey)?.effect
-              ?? 'Formularul se construiește din etichetele {{ }} ale documentului. Potrivit pentru majoritatea șabloanelor.'}
-          </p>
-        </div>
+        {!showForm ? (
+          <button type="button" className="btn btn-sm btn-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setShowForm(true)}>
+            Leagă de un formular dedicat
+          </button>
+        ) : (
+          <div className="field">
+            <label className="field-label" htmlFor="dlv-form">Formular</label>
+            <select id="dlv-form" className="field-input" style={{ appearance: 'auto' }} value={sourceKey} onChange={e => setSourceKey(e.target.value)}>
+              <option value="">Fără formular dedicat (câmpuri din etichete)</option>
+              {formOptions.map(o => <option key={o.key} value={o.key}>Ca „{o.name}”</option>)}
+            </select>
+            <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>
+              {formOptions.find(o => o.key === sourceKey)?.effect
+                ?? 'Formularul se construiește din etichetele {{ }} ale documentului. Potrivit pentru majoritatea șabloanelor.'}
+            </p>
+          </div>
+        )}
 
         {checked?.status === 'blocked' && (
           <div role="alert" style={{ background: 'var(--r50)', border: '1.5px solid var(--r200)', borderRadius: 'var(--r-sm)', padding: '.75rem', fontSize: '.8rem', color: 'var(--r600)' }}>

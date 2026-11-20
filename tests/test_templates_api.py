@@ -276,7 +276,9 @@ def test_tinta_trebuie_confirmata_valida_si_cu_acces_activ(env):
     assert deliver(c, dryRun=True).status_code == 200
     ws.update({"billing": access(sub=False, comp=True)})             # acces gratuit acordat
     assert deliver(c, dryRun=True).status_code == 200
-    ws.update({"consent": {"tos": "veche", "dpa": "veche"}})
+    ws.update({"consent": {"tos": "veche", "dpa": "veche"}})         # versiune veche acceptată: se poate trimite
+    assert deliver(c, dryRun=True).status_code == 200
+    ws.update({"consent": {}})                                       # niciodată acceptați
     assert deliver(c).get_json()["error"] == "target_consent_required"
     ws.update({"consent": CONSENT, "status": "pendingDeletion"})
     assert deliver(c).status_code == 404

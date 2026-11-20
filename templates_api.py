@@ -242,7 +242,8 @@ def deliver_template(target: str):
         return _err("not_found", 404)
     if not _same_name(body.get("confirmName"), ws.get("name")):
         return _err("confirm_mismatch", 400)
-    if not authz.consent_ok(ws):
+    # Orice versiune acceptată: la prima logare după o revizuire, cabinetul acceptă versiunea nouă înainte de a-l folosi
+    if not authz.consent_ever(ws):
         return _err("target_consent_required", 409)
     # Probă activă, abonament sau acces gratuit; nu și în modul citire (probă/abonament expirat)
     if not billing.has_full_access(ws):

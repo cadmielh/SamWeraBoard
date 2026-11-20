@@ -191,6 +191,13 @@ def consent_ok(ws: dict) -> bool:
     return c.get("tos") == legal_versions.TOS_VERSION and c.get("dpa") == legal_versions.DPA_VERSION
 
 
+def consent_ever(ws: dict) -> bool:
+    """A acceptat termenii și DPA-ul, în orice versiune. Pentru ce se face în cabinet fără ca membrii lui să fie de
+    față (ex. trimiterea unui șablon): folosirea rămâne oricum în spatele acceptării versiunii curente (ConsentGate)."""
+    c = ws.get("consent") or {}
+    return bool(c.get("tos")) and bool(c.get("dpa"))
+
+
 def require_role(principal: Principal, wid: str, min_role: str = "member", consent: bool = False,
                  billing: bool = False) -> dict:
     """Întoarce documentul workspace-ului dacă utilizatorul e membru cu rol

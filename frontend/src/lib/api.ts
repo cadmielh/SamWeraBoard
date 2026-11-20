@@ -126,7 +126,7 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
     case "already_delivered":
       return "Șablonul a fost deja trimis acestui cabinet.";
     case "target_consent_required":
-      return "Cabinetul ales nu a acceptat versiunea curentă a termenilor și a DPA.";
+      return "Cabinetul ales nu a acceptat încă termenii și DPA-ul.";
     case "target_subscription_required":
       return "Cabinetul ales e în modul citire (perioada de probă sau abonamentul a expirat): șabloanele se trimit doar cabinetelor în probă, cu abonament sau cu acces gratuit.";
     case "invalid_source_key":
