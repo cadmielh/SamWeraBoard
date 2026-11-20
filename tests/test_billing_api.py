@@ -530,6 +530,9 @@ def test_credit_checkout_refused_while_subscribed(credits_env):
     with_details(c, wid)
     db.collection("workspaces").document(wid).update({"billing.hasSubscription": True})
     assert call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "10"}).status_code == 409
+    # Abonament anulat, încă activ: creditele se pot cumpăra dinainte.
+    db.collection("workspaces").document(wid).update({"billing.cancelAtPeriodEnd": True})
+    assert call(c, wid, "alice", "post", "/billing/credits/checkout", json={"pack": "10"}).status_code == 200
 
 
 def test_credit_checkout_unavailable_without_price(credits_env, monkeypatch):

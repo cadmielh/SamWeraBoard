@@ -128,6 +128,9 @@ export default function AbonamentPage() {
   // Oferta de lansare: prețurile de acum până la priceDeadline; cele de după apar tăiate pe carduri.
   const offerDaysLeft = nextFrom ? Math.max(0, Math.ceil((nextFrom.getTime() - openedAt) / 86_400_000)) : null
   const yearSaving = prices.month * 12 - prices.year
+  // Abonament nou: doar fără abonament. Credite: și cu un abonament anulat (se încheie sigur), nu cu unul care se reînnoiește.
+  const canBuySub = !billing.hasSubscription
+  const canBuyCredits = !billing.hasSubscription || billing.cancelAtPeriodEnd
 
   const choose = (c: Choice) => {
     setOfferTab(c.kind === 'pack' ? 'credits' : 'sub')
@@ -248,16 +251,23 @@ export default function AbonamentPage() {
             </div>
           </div>
 
-          {isAdmin && !billing.hasSubscription && (
+          {isAdmin && canBuyCredits && (
             <Stepper step={choice ? 2 : 1} onStep1={choice && busy === '' ? backToStep1 : undefined} />
           )}
 
-          {isAdmin && !billing.hasSubscription && !choice && (
+          {isAdmin && canBuyCredits && !choice && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {priceDeadline && offerDaysLeft !== null && (nextPrices || nextPacks) && (
                 <OfferBanner until={priceDeadline} daysLeft={offerDaysLeft} />
               )}
-              <div role="tablist" aria-label="Variantă de plată" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.25rem',
+              {!canBuySub && (
+                <p style={{ ...KEY_LINE, fontSize: '.875rem' }}>
+                  Abonamentul a fost anulat și se încheie pe <strong>{formatDate(billing.currentPeriodEnd)}</strong>. Ca să nu ajungi în
+                  modul citire, poți lua de acum un pachet de credite: se consumă abia după această dată, iar valabilitatea lui de un an
+                  curge de la cumpărare. Ca să păstrezi abonamentul, îl reactivezi din „Gestionează abonamentul”.
+                </p>
+              )}
+              {canBuySub && <div role="tablist" aria-label="Variantă de plată" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.25rem',
                 background: 'var(--surface-2)', border: '1px solid var(--s200)', borderRadius: 10, padding: '.25rem' }}>
                 {([['sub', 'Abonament', 'documente nelimitate'], ['credits', 'Credite', 'plătești per client']] as const).map(([key, label, sub]) => (
                   <button key={key} type="button" role="tab" aria-selected={offerTab === key} onClick={() => setOfferTab(key)}
@@ -268,9 +278,9 @@ export default function AbonamentPage() {
                     <div style={{ fontSize: '.75rem', color: 'var(--s500)' }}>{sub}</div>
                   </button>
                 ))}
-              </div>
+              </div>}
 
-              {offerTab === 'sub' && (<>
+              {offerTab === 'sub' && canBuySub && (<>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(15rem, 1fr))', gap: '1rem' }}>
                   <PlanCard title="Lunar" price={prices.month} was={nextPrices?.month} unit="lună" bullets={['Documente nelimitate', 'Anulezi oricând']}
                     action="Alege lunar" onChoose={() => choose({ kind: 'sub', interval: 'month' })} />
@@ -286,7 +296,7 @@ export default function AbonamentPage() {
                 )}
               </>)}
 
-              {offerTab === 'credits' && (<>
+              {(offerTab === 'credits' || !canBuySub) && (<>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))', gap: '1rem' }}>
                   {PACKS.map(p => (
                     <PlanCard key={p} title={`${packs[p].credits} credite`} price={packs[p].ron} was={nextPacks?.[p].ron} unit="an"
@@ -305,10 +315,12 @@ export default function AbonamentPage() {
                 )}
               </>)}
 
+              {canBuySub && (
               <p style={{ color: 'var(--s600)', fontSize: '.8125rem', margin: 0 }}>
                 <strong style={{ color: 'var(--s800)' }}>Cum aleg?</strong> Până la aproximativ 6–10 clienți pe lună, creditele ies mai
                 ieftin; peste, abonamentul. Poți trece oricând de la o variantă la alta.
               </p>
+              )}
 
               <details style={{ fontSize: '.8125rem', color: 'var(--s600)' }}>
                 <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--s800)' }}>Detalii și condiții</summary>
@@ -338,7 +350,7 @@ export default function AbonamentPage() {
             </div>
           )}
 
-          {isAdmin && !billing.hasSubscription && choice && (
+          {isAdmin && choice && (choice.kind === 'pack' ? canBuyCredits : canBuySub) && (
             <div className="card">
               <div className="card-head" style={{ justifyContent: 'flex-start', gap: '.75rem' }}>
                 <button className="btn btn-ghost btn-sm" onClick={backToStep1} disabled={busy !== ''}>← Înapoi la variante</button>
@@ -377,7 +389,7 @@ export default function AbonamentPage() {
             <CreditsCard credits={credits} subscribed={billing.hasSubscription} members={activeWorkspace.members} />
           )}
 
-          {isAdmin && billing.hasSubscription && (
+          {isAdmin && billing.hasSubscription && !choice && (
             <div className="card">
               <div className="card-head"><span className="card-title">Date de facturare</span></div>
               <div className="card-body">

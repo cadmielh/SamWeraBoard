@@ -501,8 +501,11 @@ def credits_checkout():
     price = billing.pack_price_id(pack)
     if not price:
         raise BillingUnavailable(f"prețul pachetului {pack} lipsește din env")
-    if (ws.get("billing") or {}).get("hasSubscription"):
-        return _err("subscription_active", 409)            # abonamentul e nelimitat: creditele n-ar avea rost
+    b = ws.get("billing") or {}
+    if b.get("hasSubscription") and not b.get("cancelAtPeriodEnd"):
+        # Abonament care se reînnoiește: e nelimitat, creditele n-ar avea rost. Unul anulat se încheie sigur, deci
+        # creditele se pot lua dinainte (se consumă abia după încheierea lui; valabilitatea curge de la cumpărare).
+        return _err("subscription_active", 409)
     acct = _account(wid)
     if not details_complete(acct.get("details")):
         return _err("billing_details_required", 400)
