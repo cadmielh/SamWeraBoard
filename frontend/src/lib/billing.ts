@@ -182,10 +182,31 @@ export interface BillingOverview {
   nextPacks: Record<CreditPack, { credits: number; ron: number }> | null
 }
 
-export const getBilling = () => apiJson<BillingOverview>('GET', '/billing')
+// Răspunsurile de citire se păstrează scurt în memorie: intrările repetate în Setări › Plan și credite nu mai
+// trimit cereri noi (serverul limitează cererile de plată pe IP, iar un birou are adesea un singur IP).
+const CACHE_MS = 60_000
+const cache = new Map<string, { at: number; p: Promise<unknown> }>()
+function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key)
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.p as Promise<T>
+  const p = load()
+  cache.set(key, { at: Date.now(), p })
+  p.catch(() => cache.delete(key))
+  return p
+}
+/** După o scriere (date de facturare, plată confirmată), următoarea citire merge din nou la server. */
+export function invalidateBillingCache(): void {
+  cache.clear()
+}
 
-export const saveBillingDetails = (details: BillingDetails) =>
-  apiJson<{ details: BillingDetails }>('PUT', '/billing/details', details)
+/** `wid` face parte doar din cheia memoriei; cabinetul cererii e cel activ (antetul X-Workspace-Id). */
+export const getBilling = (wid: string) => cached(`billing:${wid}`, () => apiJson<BillingOverview>('GET', '/billing'))
+
+export async function saveBillingDetails(details: BillingDetails) {
+  const r = await apiJson<{ details: BillingDetails }>('PUT', '/billing/details', details)
+  invalidateBillingCache()
+  return r
+}
 
 /** Pornește Stripe Checkout (pagină găzduită de Stripe) și redirecționează browserul. */
 export async function startCheckout(interval: 'month' | 'year'): Promise<void> {
@@ -222,7 +243,9 @@ export interface CreditsOverview {
   ledger: CreditLedgerEntry[]
 }
 
-export const getCredits = () => apiJson<CreditsOverview>('GET', '/billing/credits')
+/** `version` (ex. pachetele din documentul cabinetului) schimbă cheia memoriei când se schimbă soldul. */
+export const getCredits = (wid: string, version = '') =>
+  cached(`credits:${wid}:${version}`, () => apiJson<CreditsOverview>('GET', '/billing/credits'))
 
 /** Ce se întâmplă la generarea pentru un client — pentru mesajul din pagina de generare. */
 export interface CreditQuote {
@@ -240,8 +263,11 @@ export async function openPortal(): Promise<void> {
   window.location.assign(url)
 }
 
-export const syncBilling = (sessionId?: string) =>
-  apiJson<{ billing: WorkspaceBilling }>('POST', '/billing/sync', sessionId ? { sessionId } : {})
+export async function syncBilling(sessionId?: string) {
+  const r = await apiJson<{ billing: WorkspaceBilling }>('POST', '/billing/sync', sessionId ? { sessionId } : {})
+  invalidateBillingCache()
+  return r
+}
 
 export function formatDate(d: Date | null): string {
   return d ? d.toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'

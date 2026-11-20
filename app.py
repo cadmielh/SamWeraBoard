@@ -91,6 +91,13 @@ CORS(app, origins=_cors_origins,
 
 limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"])
 
+
+@limiter.request_filter
+def _skip_preflight() -> bool:
+    # Cererile preliminare CORS (OPTIONS) le trimite browserul înaintea fiecărei cereri reale; nu fac nimic pe server.
+    # Numărate, dublau consumul limitei pe IP (un birou cu un singur IP rămânea fără cereri de plată).
+    return request.method == "OPTIONS"
+
 import workspaces_api  # noqa: E402  (după init Firebase Admin și limiter)
 import pii_api  # noqa: E402
 import billing_api  # noqa: E402

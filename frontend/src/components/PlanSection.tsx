@@ -47,6 +47,9 @@ export default function PlanSection() {
   const navigate = useNavigate()
   const location = useLocation()
   const [overview, setOverview] = useState<BillingOverview | null>(null)
+  // Citirea prețurilor/datelor de facturare a eșuat: mesaj cu „Reîncearcă”, nu schelet la nesfârșit.
+  const [overviewError, setOverviewError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [details, setDetails] = useState<BillingDetails>(EMPTY_DETAILS)
   const [savedDetails, setSavedDetails] = useState<BillingDetails | null>(null)
   // Planul sau pachetul ales pe carduri (din adresă); null = încă la pasul 1.
@@ -72,7 +75,7 @@ export default function PlanSection() {
   useEffect(() => {
     if (!isAdmin || !workspaceId) return
     let cancelled = false
-    getBilling()
+    getBilling(workspaceId)
       .then(o => {
         if (cancelled) return
         setOverview(o)
@@ -83,16 +86,16 @@ export default function PlanSection() {
           setEditing(!detailsComplete({ ...EMPTY_DETAILS, ...o.details }))
         }
       })
-      .catch(e => { if (!cancelled) toast((e as Error).message, 'err') })
+      .catch(e => { if (!cancelled) setOverviewError(friendlyError(e)) })
     return () => { cancelled = true }
-  }, [isAdmin, workspaceId, toast])
+  }, [isAdmin, workspaceId, reloadKey])
 
   // Istoricul creditelor: reîncărcat când se schimbă soldul (cumpărare, consum, acordare).
   const lotsKey = JSON.stringify(activeWorkspace?.billing?.credits?.lots ?? [])
   useEffect(() => {
     if (!isAdmin || !workspaceId) return
     let cancelled = false
-    getCredits().then(c => { if (!cancelled) setCredits(c) }).catch(() => { /* panoul rămâne ascuns */ })
+    getCredits(workspaceId, lotsKey).then(c => { if (!cancelled) setCredits(c) }).catch(() => { /* panoul rămâne ascuns */ })
     return () => { cancelled = true }
   }, [isAdmin, workspaceId, lotsKey])
 
@@ -151,6 +154,7 @@ export default function PlanSection() {
     if ((location.state as { fromStep1?: boolean } | null)?.fromStep1) navigate(-1)
     else setParams({}, { replace: true })
   }
+  const retryOverview = () => { setOverviewError(null); setReloadKey(k => k + 1) }
   const openOffers = () => {
     setOffersOpen(true)
     requestAnimationFrame(() => offersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
@@ -323,7 +327,8 @@ export default function PlanSection() {
               )}
 
               {/* Prețurile vin de la server (ofertă, prețuri viitoare): până atunci, schelete în forma cardurilor, nu prețuri presupuse. */}
-              {(!prices || !packs) && (
+              {overviewError && <LoadError message={overviewError} onRetry={retryOverview} />}
+              {(!prices || !packs) && !overviewError && (
                 <div className="plan-cards" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(13rem, 1fr))' }} role="status" aria-label="Se încarcă prețurile">
                   {[0, 1].map(i => (
                     <div key={i} className="card"><div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
@@ -389,7 +394,8 @@ export default function PlanSection() {
                   </strong>
                   <button className="btn btn-ghost btn-sm" onClick={backToStep1} disabled={busy !== ''}>Schimbă</button>
                 </div>
-                {!overview ? <Skeleton h={88} r={8} /> : detailsBlock}
+                {overviewError ? <LoadError message={overviewError} onRetry={retryOverview} />
+                  : !overview ? <Skeleton h={88} r={8} /> : detailsBlock}
                 {choice.kind === 'sub' && freeCarries && (billing.reason === 'trial' || billing.reason === 'comp') && (
                   <p style={{ color: 'var(--g700)', fontSize: '.8125rem', margin: '1rem 0 0' }}>
                     {billing.reason === 'trial' ? 'Zilele de probă rămase se păstrează' : 'Accesul gratuit rămas se păstrează'}: prima plată se face pe {formatDate(freeUntil)}.
@@ -422,7 +428,8 @@ export default function PlanSection() {
         <div className="card">
           <div className="card-head"><span className="card-title">Date de facturare</span></div>
           <div className="card-body">
-            {!overview ? <Skeleton h={88} r={8} /> : detailsBlock}
+            {overviewError ? <LoadError message={overviewError} onRetry={retryOverview} />
+              : !overview ? <Skeleton h={88} r={8} /> : detailsBlock}
             {editing && overview && (
               <div style={{ marginTop: '1rem' }}>
                 <button className="btn btn-primary" onClick={() => void saveDetails()} disabled={!detailsComplete(details) || !detailsDirty || busy !== ''}>
@@ -434,6 +441,24 @@ export default function PlanSection() {
         </div>
       )}
     </>
+  )
+}
+
+/** Mesajul pentru o citire eșuată: „Failed to fetch” (rețea, limită de cereri, server oprit) nu spune nimic utilizatorului. */
+function friendlyError(e: unknown): string {
+  const err = e as Error & { status?: number }
+  if (err.status === 429) return 'Prea multe cereri într-un timp scurt. Reîncearcă peste un minut.'
+  if (!err.status || err instanceof TypeError) return 'Nu s-a putut contacta serverul. Verifică conexiunea și reîncearcă.'
+  return err.message || 'Datele nu s-au putut încărca.'
+}
+
+function LoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap', padding: '.75rem 1rem',
+      border: '1px solid var(--r200)', background: 'var(--r50)', borderRadius: 8, fontSize: '.875rem', color: 'var(--r600)' }}>
+      <span style={{ flex: 1 }}>{message}</span>
+      <button className="btn btn-ghost btn-sm" onClick={onRetry}>Reîncearcă</button>
+    </div>
   )
 }
 
