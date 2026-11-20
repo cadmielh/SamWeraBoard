@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCorners } from '@dnd-kit/core'
+import { DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, closestCorners } from '@dnd-kit/core'
 import type { DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable'
 import type { Sarcina, SarcinaStatus } from '../../types'
@@ -54,8 +54,11 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
     setColumns(groupByStatus(sarcini))
   }, [sarcini])
 
+  // Cu mouse-ul tragerea pornește imediat; pe ecranul tactil abia după o apăsare lungă,
+  // ca atingerea și derularea (inclusiv între coloane, pe telefon) să nu mute cardul din greșeală.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 

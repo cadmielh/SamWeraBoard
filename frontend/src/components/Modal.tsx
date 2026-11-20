@@ -40,7 +40,9 @@ export default function Modal({ onClose, children, className, ariaLabel, boxStyl
 
   useEffect(() => {
     previouslyFocused.current = document.activeElement as HTMLElement | null
-    const focusables = boxRef.current ? getFocusable(boxRef.current) : []
+    // Pe ecran tactil focusul rămâne pe cutie: un câmp focusat ar deschide tastatura peste jumătate din formular.
+    const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false
+    const focusables = boxRef.current && !touch ? getFocusable(boxRef.current) : []
     ;(focusables[0] ?? boxRef.current)?.focus()
     return () => { previouslyFocused.current?.focus?.() }
   }, [])

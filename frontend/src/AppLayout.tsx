@@ -12,6 +12,7 @@ import { applyPendingSuperAdminGrant } from './lib/superAdmin'
 import type { ToastItem } from './types'
 import { AppCtx, type AppContextType } from './AppContext'
 import Sidebar from './components/Sidebar'
+import MobileTabBar from './components/MobileTabBar'
 import Toast from './components/Toast'
 import ConsentGate from './components/ConsentGate'
 import TrialBanner from './components/TrialBanner'
@@ -191,6 +192,7 @@ export default function AppLayout() {
     canEdit,
     isSuperAdmin,
     workspaceCtx,
+    signOut: handleSignOut,
   }
 
   return (
@@ -211,6 +213,7 @@ export default function AppLayout() {
           <TrialBanner />
           <Suspense fallback={<PageSkeleton />}><Outlet /></Suspense>
         </div>
+        <MobileTabBar />
       </div>
       <UpgradeModal />
       <Toast toasts={toasts} onDismiss={dismissToast} />

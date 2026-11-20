@@ -407,13 +407,15 @@ export default function GenerareDocumentePage() {
           </div>
           <div className="page-actions">
             {workspaceId && (
-              <button className="btn btn-ghost" onClick={() => setLibraryOpen(true)}>
+              <button className="btn btn-ghost" onClick={() => setLibraryOpen(true)} aria-label="Șabloane">
                 {/* line-height 1: emoji-ul nu mai înalță butonul față de celelalte din antet */}
-                <span aria-hidden="true" style={{ lineHeight: 1 }}>📁</span> Șabloane
+                <span aria-hidden="true" style={{ lineHeight: 1 }}>📁</span> <span className="btn-label">Șabloane</span>
               </button>
             )}
-            <button className="btn btn-ghost" onClick={() => setHistoryOpen(h => !h)}>
-              {historyOpen ? 'Închide istoricul' : 'Istoric'}
+            {/* Pe telefon, doar iconița (antetul nu are loc de text). */}
+            <button className="btn btn-ghost" onClick={() => setHistoryOpen(h => !h)} aria-label={historyOpen ? 'Închide istoricul' : 'Istoric'} aria-pressed={historyOpen}>
+              <span aria-hidden="true" className="btn-icon-m" style={{ lineHeight: 1 }}>🕘</span>
+              <span className="btn-label">{historyOpen ? 'Închide istoricul' : 'Istoric'}</span>
             </button>
             <NotificariBell />
           </div>

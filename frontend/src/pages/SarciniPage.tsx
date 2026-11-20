@@ -18,6 +18,8 @@ import Modal from '../components/Modal'
 import NotificariBell from '../components/NotificariBell'
 import BtnLabel from '../components/BtnLabel'
 import { SkeletonBoard } from '../components/Skeleton'
+import { IconFilter } from '../components/NavIcons'
+import { useIsMobile } from '../lib/useIsMobile'
 
 type ModalState = 'add' | Sarcina | null
 /** 'mele'/'toate' sau uid-ul unui membru anume. */
@@ -134,6 +136,10 @@ export default function SarciniPage() {
 
   const hasActiveFilters = assigneeFilter !== 'mele' || !!clientFilter || termenFilter !== 'toate' || !!searchQuery.trim()
 
+  const isMobile = useIsMobile()
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const activeFilterCount = [assigneeFilter !== 'mele', !!clientFilter, termenFilter !== 'toate'].filter(Boolean).length
+
   const resetFilters = useCallback(() => {
     setAssigneeFilter('mele'); setClientFilter(null); setTermenFilter('toate'); setTermenPanaLa(''); setSearchQuery('')
   }, [])
@@ -225,6 +231,46 @@ export default function SarciniPage() {
     )
   }
 
+  // Pe telefon filtrele nu încap pe un rând: se deschid într-un panou de jos, cu numărul celor active pe buton.
+  const filterControls = (
+    <>
+      <select className="field-input" style={{ width: 'auto', maxWidth: 180 }} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
+        <option value="mele">Sarcinile mele</option>
+        <option value="toate">Toți responsabilii</option>
+        {Object.entries(activeWorkspace?.members ?? {}).map(([uid, m]) => (
+          <option key={uid} value={uid}>{m.displayName || m.email}</option>
+        ))}
+      </select>
+
+      <div style={{ maxWidth: 200, position: 'relative' }}>
+        <ClientDocSelector clients={clienti} loading={clientiLoading} value={clientFilter?.denumire} onSelect={c => setClientFilter({ id: c.id, denumire: c.denumire })} />
+        {clientFilter && (
+          <button
+            type="button"
+            onClick={() => setClientFilter(null)}
+            title="Elimină filtrul de client"
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--s400)', fontSize: '1rem', lineHeight: 1 }}
+          >×</button>
+        )}
+      </div>
+
+      <select className="field-input" style={{ width: 'auto', maxWidth: 160 }} value={termenFilter} onChange={e => setTermenFilter(e.target.value as TermenFilter)}>
+        <option value="toate">Orice termen</option>
+        <option value="restante">Restante</option>
+        <option value="azi">Azi</option>
+        <option value="saptamana">Săptămâna asta</option>
+        <option value="pana_la">Până la dată...</option>
+      </select>
+      {termenFilter === 'pana_la' && (
+        <input type="date" className="field-input" style={{ width: 'auto' }} value={termenPanaLa} onChange={e => setTermenPanaLa(e.target.value)} />
+      )}
+
+      {hasActiveFilters && (
+        <button className="btn btn-ghost btn-sm" onClick={resetFilters}>× Resetează filtre</button>
+      )}
+    </>
+  )
+
   return (
     <>
       <div className="page--data">
@@ -235,7 +281,7 @@ export default function SarciniPage() {
               <div className="page-subtitle">Board de lucru — dosare ONRC și orice altă sarcină</div>
             </div>
             <div className="page-actions">
-              <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Sarcină</button>
+              <button className="btn btn-primary page-fab" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Sarcină</button>
               <NotificariBell />
             </div>
           </div>
@@ -251,42 +297,13 @@ export default function SarciniPage() {
               )}
             </div>
 
-            <select className="field-input" style={{ width: 'auto', maxWidth: 180 }} value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
-              <option value="mele">Sarcinile mele</option>
-              <option value="toate">Toți responsabilii</option>
-              {Object.entries(activeWorkspace?.members ?? {}).map(([uid, m]) => (
-                <option key={uid} value={uid}>{m.displayName || m.email}</option>
-              ))}
-            </select>
+            {isMobile ? (
+              <button type="button" className={`btn btn-ghost m-filter-btn${activeFilterCount ? ' btn--cols-active' : ''}`} onClick={() => setFiltersOpen(true)}>
+                <IconFilter /> Filtre{activeFilterCount > 0 && <span className="cols-badge">{activeFilterCount}</span>}
+              </button>
+            ) : filterControls}
 
-            <div style={{ maxWidth: 200, position: 'relative' }}>
-              <ClientDocSelector clients={clienti} loading={clientiLoading} value={clientFilter?.denumire} onSelect={c => setClientFilter({ id: c.id, denumire: c.denumire })} />
-              {clientFilter && (
-                <button
-                  type="button"
-                  onClick={() => setClientFilter(null)}
-                  title="Elimină filtrul de client"
-                  style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--s400)', fontSize: '1rem', lineHeight: 1 }}
-                >×</button>
-              )}
-            </div>
-
-            <select className="field-input" style={{ width: 'auto', maxWidth: 160 }} value={termenFilter} onChange={e => setTermenFilter(e.target.value as TermenFilter)}>
-              <option value="toate">Orice termen</option>
-              <option value="restante">Restante</option>
-              <option value="azi">Azi</option>
-              <option value="saptamana">Săptămâna asta</option>
-              <option value="pana_la">Până la dată...</option>
-            </select>
-            {termenFilter === 'pana_la' && (
-              <input type="date" className="field-input" style={{ width: 'auto' }} value={termenPanaLa} onChange={e => setTermenPanaLa(e.target.value)} />
-            )}
-
-            {hasActiveFilters && (
-              <button className="btn btn-ghost btn-sm" onClick={resetFilters}>× Resetează filtre</button>
-            )}
-
-            <div style={{ flex: 1 }} />
+            {!isMobile && <div style={{ flex: 1 }} />}
             <div className="tasks-summary-strip">
               {summary.restante > 0 && <span className="tasks-summary-item tasks-summary-item--overdue">{summary.restante} restante</span>}
               {summary.azi > 0 && <span className="tasks-summary-item tasks-summary-item--today">{summary.azi} azi</span>}
@@ -317,6 +334,19 @@ export default function SarciniPage() {
           <ArchivedSarciniSection refreshKey={archiveRefreshKey} />
         </div>
       </div>
+
+      {filtersOpen && (
+        <Modal onClose={() => setFiltersOpen(false)} className="modal-box--sheet" ariaLabel="Filtre sarcini">
+          <div className="modal-head">
+            <span className="modal-title">Filtre</span>
+            <button className="modal-close" onClick={() => setFiltersOpen(false)} aria-label="Închide">×</button>
+          </div>
+          <div className="modal-body m-filter-sheet">{filterControls}</div>
+          <div className="modal-footer">
+            <button className="btn btn-primary btn-full" onClick={() => setFiltersOpen(false)}>Gata</button>
+          </div>
+        </Modal>
+      )}
 
       {modal && (
         <TaskModal

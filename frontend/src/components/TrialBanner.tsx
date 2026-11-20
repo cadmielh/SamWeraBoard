@@ -87,7 +87,7 @@ export default function TrialBanner() {
   }
 
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'}
+    <div role={tone === 'danger' ? 'alert' : 'status'} className="trial-banner"
       style={{ ...TONES[tone], fontSize: '.8125rem', padding: '.5rem 1rem', display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap' }}>
       <span style={{ flex: '1 1 16rem' }}>{text}</span>
       {action}

@@ -9,7 +9,7 @@ import { useApp } from '../AppContext'
 import { READ_ONLY_TITLE } from '../lib/billing'
 import DosarModal from '../components/DosarModal'
 import DosarView from '../components/DosarView'
-import DosarTable, { DosarColumnsPanel } from '../components/dosare/DosarTable'
+import DosarTable, { DosarCardList, DosarColumnsPanel } from '../components/dosare/DosarTable'
 import {
   applyFilters, applySort, sortReducer, getUniqueValues, EXTRA_COL_KEYS, getVisibleColumns,
   DATE_FIELD_OPTIONS, getDosarDateValue, getExportValue,
@@ -23,6 +23,9 @@ import Modal from '../components/Modal'
 import NotificariBell from '../components/NotificariBell'
 import { SkeletonRows } from '../components/Skeleton'
 import { withViewTransition } from '../lib/viewTransition'
+import { useIsMobile } from '../lib/useIsMobile'
+import { useMobileBack } from '../lib/useMobileBack'
+import { IconBack } from '../components/NavIcons'
 
 type ModalState = 'add' | Dosar | null
 /* Fila „active" = dosare în lucru (tot ce nu e arhivat), fila „incheiate" =
@@ -143,6 +146,15 @@ export default function DosarePage() {
       const next = { ...prev }; delete next[id]; return next
     })
   }, [returnTab])
+
+  // Pe telefon dosarul ocupă tot ecranul, fără file: „Înapoi” (și gestul telefonului) revine la lista din care a venit.
+  const isMobile = useIsMobile()
+  const mobileDetail = isMobile && !isListTab(tab)
+  const mobileBack = useMobileBack(!isListTab(tab), () => {
+    withViewTransition(() => { setOpenDosarIds([]); setTab(returnTab) })
+  })
+  // Pe telefon statisticile ocupă aproape un ecran: stau restrânse sub un singur rând, deschise la cerere.
+  const [mobileStatsOpen, setMobileStatsOpen] = useState(false)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -444,65 +456,84 @@ export default function DosarePage() {
     )
   }
 
+  // Perioada statisticilor. Pe desktop stă în antet, pe un singur rând, ca antetul să aibă aceeași înălțime
+  // ca pe celelalte pagini (titlul și clopoțelul nu „sar”); pe telefon, deasupra statisticilor deschise.
+  const periodSelector = (
+    <div style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '.25rem' }}>
+        {STATS_PERIOD_OPTIONS.map(opt => (
+          <button
+            key={opt.key}
+            type="button"
+            className={`btn btn-xs ${statsPeriod === opt.key ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setStatsPeriod(opt.key)}
+          >
+            {opt.label}
+          </button>
+        ))}
+        <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--s200)', margin: '0 .25rem' }} />
+        <button
+          type="button"
+          className={`btn btn-xs ${statsPeriod === 'total' ? 'btn-slate' : 'btn-ghost'}`}
+          onClick={() => setStatsPeriod('total')}
+        >
+          Total
+        </button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+        <button
+          className="btn btn-ghost btn-icon"
+          onClick={goPrevStats}
+          disabled={statsPeriod === 'total'}
+          style={{ visibility: statsPeriod === 'total' ? 'hidden' : 'visible' }}
+        >‹</button>
+        <span style={{ fontWeight: 700, fontSize: '.9375rem', color: 'var(--s900)', minWidth: 120, textAlign: 'center' }}>
+          {statsLabel}
+        </span>
+        <button
+          className="btn btn-ghost btn-icon"
+          onClick={goNextStats}
+          disabled={statsPeriod === 'total'}
+          style={{ visibility: statsPeriod === 'total' ? 'hidden' : 'visible' }}
+        >›</button>
+      </div>
+    </div>
+  )
+
   return (
     <>
-      <div className="page--data">
+      <div className={`page--data${mobileDetail ? ' page--mobile-detail' : ''}`}>
+        {mobileDetail && viewing && (
+          <div className="mobile-detail-bar">
+            <button type="button" className="mobile-back" onClick={mobileBack}><IconBack /> Dosare</button>
+          </div>
+        )}
         <div className="page-top">
           <div className="page-header" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center' }}>
             <div>
               <div className="page-title">Dosare</div>
               <div className="page-subtitle">Registrul dosarelor depuse la Registrul Comerțului (ONRC)</div>
             </div>
-            {/* Un singur rând, ca antetul să aibă aceeași înălțime ca pe celelalte pagini (titlul și clopoțelul nu „sar”). */}
-            <div style={{ justifySelf: 'center', display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.25rem' }}>
-                {STATS_PERIOD_OPTIONS.map(opt => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    className={`btn btn-xs ${statsPeriod === opt.key ? 'btn-primary' : 'btn-ghost'}`}
-                    onClick={() => setStatsPeriod(opt.key)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-                <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--s200)', margin: '0 .25rem' }} />
-                <button
-                  type="button"
-                  className={`btn btn-xs ${statsPeriod === 'total' ? 'btn-slate' : 'btn-ghost'}`}
-                  onClick={() => setStatsPeriod('total')}
-                >
-                  Total
-                </button>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
-                <button
-                  className="btn btn-ghost btn-icon"
-                  onClick={goPrevStats}
-                  disabled={statsPeriod === 'total'}
-                  style={{ visibility: statsPeriod === 'total' ? 'hidden' : 'visible' }}
-                >‹</button>
-                <span style={{ fontWeight: 700, fontSize: '.9375rem', color: 'var(--s900)', minWidth: 120, textAlign: 'center' }}>
-                  {statsLabel}
-                </span>
-                <button
-                  className="btn btn-ghost btn-icon"
-                  onClick={goNextStats}
-                  disabled={statsPeriod === 'total'}
-                  style={{ visibility: statsPeriod === 'total' ? 'hidden' : 'visible' }}
-                >›</button>
-              </div>
-            </div>
+            {isMobile ? <span /> : periodSelector}
             <div className="page-actions" style={{ justifySelf: 'end' }}>
-              <button className="btn btn-ghost" onClick={() => setShowExportDialog(isListTab(tab) ? tab : returnTab)}>
-                <IconExport /> Exportă
+              <button className="btn btn-ghost" onClick={() => setShowExportDialog(isListTab(tab) ? tab : returnTab)} aria-label="Exportă">
+                <IconExport /> <span className="btn-label">Exportă</span>
               </button>
-              <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Dosar nou</button>
+              <button className="btn btn-primary page-fab" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Dosar nou</button>
               <NotificariBell />
             </div>
           </div>
 
-          <DosarStatsPanel workspaceId={workspaceId} period={statsPeriod} year={year} month0={month0} facturareConfig={facturareConfig} samiAdiEnabled={samiAdiEnabled} refreshKey={statsRefreshKey} />
+          {isMobile && (
+            <button type="button" className="m-stats-toggle" aria-expanded={mobileStatsOpen} onClick={() => setMobileStatsOpen(o => !o)}>
+              <span>Statistici · {statsLabel}</span>
+              <span className={`sumar-lunar-chevron${mobileStatsOpen ? ' sumar-lunar-chevron--up' : ''}`} aria-hidden>▼</span>
+            </button>
+          )}
+          {isMobile && mobileStatsOpen && <div className="m-stats-period">{periodSelector}</div>}
+          {(!isMobile || mobileStatsOpen) && (
+            <DosarStatsPanel workspaceId={workspaceId} period={statsPeriod} year={year} month0={month0} facturareConfig={facturareConfig} samiAdiEnabled={samiAdiEnabled} refreshKey={statsRefreshKey} />
+          )}
         </div>
 
         <div className="page-tabs page-tabs--lg">
@@ -514,7 +545,7 @@ export default function DosarePage() {
           >
             Dosare încheiate
           </button>
-          {openDosare.map(d => (
+          {!isMobile && openDosare.map(d => (
             <button
               key={d.id}
               className={`page-tab${tab === d.id ? ' page-tab--active' : ''}`}
@@ -563,24 +594,27 @@ export default function DosarePage() {
                 {(tab === 'active' ? hasActiveFiltersOrSort : hasActiveFiltersOrSortInch) && (
                   <button className="btn btn-ghost btn-sm" onClick={tab === 'active' ? resetAll : resetAllInch}>× Resetează filtre</button>
                 )}
-                <div style={{ position: 'relative' }}>
-                  <button
-                    className={`btn btn-ghost btn-sm${hiddenCols.size > 0 ? ' btn--cols-active' : ''}`}
-                    onClick={() => setShowColsPanel(p => !p)}
-                  >
-                    Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
-                  </button>
-                  {showColsPanel && (
-                    <DosarColumnsPanel
-                      columns={columns}
-                      hiddenCols={hiddenCols}
-                      onToggle={toggleColVisibility}
-                      onSelectAll={showAllColumns}
-                      onDeselectAll={hideAllColumns}
-                      onClose={() => setShowColsPanel(false)}
-                    />
-                  )}
-                </div>
+                {/* Coloanele țin de tabel; pe telefon lista e din carduri. */}
+                {!isMobile && (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className={`btn btn-ghost btn-sm${hiddenCols.size > 0 ? ' btn--cols-active' : ''}`}
+                      onClick={() => setShowColsPanel(p => !p)}
+                    >
+                      Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
+                    </button>
+                    {showColsPanel && (
+                      <DosarColumnsPanel
+                        columns={columns}
+                        hiddenCols={hiddenCols}
+                        onToggle={toggleColVisibility}
+                        onSelectAll={showAllColumns}
+                        onDeselectAll={hideAllColumns}
+                        onClose={() => setShowColsPanel(false)}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -644,7 +678,8 @@ export default function DosarePage() {
                     )}
                   </div>
                 )}
-                {!loading && processedDosare.length > 0 && (
+                {!loading && processedDosare.length > 0 && isMobile && <DosarCardList dosare={processedDosare} onOpen={openTab} />}
+                {!loading && processedDosare.length > 0 && !isMobile && (
                   <DosarTable
                     columns={columns}
                     dosare={processedDosare}
@@ -686,7 +721,8 @@ export default function DosarePage() {
                     )}
                   </div>
                 )}
-                {!loadingIncheiate && processedDosareIncheiate.length > 0 && (
+                {!loadingIncheiate && processedDosareIncheiate.length > 0 && isMobile && <DosarCardList dosare={processedDosareIncheiate} onOpen={openTab} />}
+                {!loadingIncheiate && processedDosareIncheiate.length > 0 && !isMobile && (
                   <DosarTable
                     columns={columns}
                     dosare={processedDosareIncheiate}

@@ -21,6 +21,8 @@ export interface AppContextType {
   /** Rol de aplicație (nu de workspace) — vezi lib/superAdmin.ts. */
   isSuperAdmin: boolean
   workspaceCtx: WorkspaceReturn
+  /** Deconectare — din bara laterală pe desktop, din ecranul „Mai mult” pe telefon. */
+  signOut: () => void
 }
 
 export const AppCtx = createContext<AppContextType | null>(null)

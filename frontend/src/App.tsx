@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import AppLayout from './AppLayout'
 import ClientiPage from './pages/ClientiPage'
+import MaiMultPage from './pages/MaiMultPage'
 import {
   DosarePage, GenerareDocumentePage, SarciniPage, SetariPage, SuperAdminPage, WorkspaceSetupPage,
 } from './routes'
@@ -29,6 +30,8 @@ export default function App() {
           <Route path="setari/:sectiune" element={<SetariPage />} />
           <Route path="abonament" element={<AbonamentRedirect />} />
           <Route path="super-admin" element={<SuperAdminPage />} />
+          {/* A cincea filă din bara de jos a telefonului; mică, deci în pachetul principal. */}
+          <Route path="mai-mult" element={<MaiMultPage />} />
         </Route>
         {/* Pagini legale publice — în afara AppLayout, accesibile fără autentificare */}
         <Route path="/termeni" element={<TermeniPage />} />

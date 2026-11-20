@@ -63,6 +63,38 @@ function renderCellContent(d: Dosar, key: string, facturareConfig: FacturareConf
   }
 }
 
+/* ── Telefon: carduri în loc de tabel; atingerea deschide dosarul (editarea și ștergerea sunt în dosar) ── */
+export function DosarCardList({ dosare, onOpen }: { dosare: Dosar[]; onOpen: (d: Dosar) => void }) {
+  return (
+    <ul className="m-cards" aria-label="Dosare">
+      {dosare.map(d => {
+        const obiect = obiecteCereriiText(d.obiecteCererii)
+        return (
+          <li key={d.id}>
+            <button type="button" className="m-card" onClick={() => onOpen(d)}>
+              <span className="m-card-main">
+                <span className="m-card-title">
+                  <span className="m-card-title-text">{renderCellContent(d, 'clientDenumire')}</span>
+                  {d.nrInregistrareDosar && <span className="m-card-aside">{d.nrInregistrareDosar}</span>}
+                </span>
+                {obiect && <span className="m-card-sub m-card-muted">{obiect}</span>}
+                <span className="m-card-badges">
+                  {renderCellContent(d, 'stadiu')}
+                  {d.facturat && <span className="chip chip-success">Facturat</span>}
+                  {d.dataPlanificare && <span className="m-card-muted">Planificat {fmtDateShort(d.dataPlanificare)}</span>}
+                </span>
+              </span>
+              <svg className="m-card-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M7.5 4.5 13 10l-5.5 5.5" />
+              </svg>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 /* ── ColumnsPanel ── */
 interface ColumnsPanelProps {
   columns: ColDef[]

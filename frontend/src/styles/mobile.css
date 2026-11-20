@@ -1,0 +1,236 @@
+/* ══ Telefon (≤ 768px) ══════════════════════════════════════════════════════
+   Bara laterală dispare (tokens.css), iar navigarea trece în bara de jos.
+   Paginile curg cu derularea documentului (nu în cutii de înălțime fixă): bara de adresă
+   a browserului se poate strânge, iar derularea e cea nativă a telefonului.
+   Pragul e același cu MOBILE_QUERY din lib/useIsMobile.ts. */
+
+.tabbar, .mobile-detail-bar, .btn-label-m, .btn-icon-m { display:none; }
+
+@media (max-width: 768px) {
+  :root { --tabbar-h: 58px; --tabbar-space: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+
+  .app-shell { padding-bottom:var(--tabbar-space); }
+  .main-area { padding-top:env(safe-area-inset-top); }
+
+  /* ── Bara de jos ── */
+  .tabbar {
+    display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); align-items:stretch;
+    position:fixed; left:0; right:0; bottom:0; z-index:180;
+    height:var(--tabbar-space); padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background:color-mix(in srgb, var(--surface) 90%, transparent);
+    -webkit-backdrop-filter:saturate(1.6) blur(14px); backdrop-filter:saturate(1.6) blur(14px);
+    border-top:1px solid var(--border);
+  }
+  .tabbar-item {
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-width:0;
+    color:var(--s500); font-size:.6875rem; font-weight:600; letter-spacing:-.005em; text-decoration:none;
+    -webkit-tap-highlight-color:transparent; user-select:none; transition:color var(--t), transform .12s var(--ease);
+  }
+  .tabbar-item > span:last-child { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tabbar-item svg { width:23px; height:23px; }
+  .tabbar-item:active { transform:scale(.92); }
+  .tabbar-item.active { color:var(--p600); }
+  .tabbar-item.active svg { stroke-width:2; }
+  .tabbar-icon-wrap { position:relative; display:flex; }
+  .tabbar-dot { position:absolute; top:-1px; right:-3px; width:9px; height:9px; border-radius:50%; background:var(--y500); box-shadow:0 0 0 2px var(--surface); }
+  .tabbar-dot--bad { background:var(--r500); }
+  /* Generarea, în centru: butonul ridicat deasupra barei. */
+  .tabbar-main-icon {
+    width:48px; height:48px; margin-top:-20px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, var(--p500), var(--p600)); color:#fff;
+    box-shadow:0 6px 16px color-mix(in srgb, var(--p600) 40%, transparent), 0 0 0 4px var(--surface);
+    transition:transform .12s var(--ease);
+  }
+  .tabbar-item--main svg { width:24px; height:24px; }
+  .tabbar-item--main.active .tabbar-main-icon { background:linear-gradient(135deg, var(--p600), var(--p700)); }
+
+  /* ── Pagini: flux normal, fără înălțime fixă ── */
+  .page--data { height:auto; min-height:calc(100dvh - var(--tabbar-space)); overflow:visible; }
+  .page-body { overflow:visible !important; padding:.75rem 1rem 1rem !important; }
+  .table-card { flex:none !important; overflow:visible; background:transparent; border:none; box-shadow:none; border-radius:0; }
+
+  /* ── Antet compact: titlu mare, acțiuni ca iconițe; subtitlul dispare ── */
+  .page-top { padding:.75rem 1rem .625rem; }
+  .page-header { display:flex !important; align-items:center; gap:.5rem; margin-bottom:.5rem; }
+  .page-header > div:first-child { min-width:0; }
+  .page-title { font-size:1.375rem; }
+  .page-subtitle { display:none; }
+  .page-actions { gap:.375rem; }
+  .page-actions .btn-label, .page-tabs--desktop-only { display:none; }
+  .page-actions .btn-label-m, .page-actions .btn-icon-m { display:inline; }
+  .page-actions .btn-ghost[aria-pressed=true] { border-color:var(--p300, var(--p200)); background:var(--p50); }
+  .page-actions .btn-ghost { min-width:40px; height:40px; padding:0 .625rem; }
+
+  /* Acțiunea principală a paginii (Adaugă client, Dosar nou, Sarcină) plutește deasupra barei de jos. */
+  .page-fab {
+    position:fixed; right:calc(16px + env(safe-area-inset-right)); bottom:calc(var(--tabbar-space) + 14px); z-index:170;
+    height:52px; padding:0 1.25rem; border-radius:16px; font-size:.9375rem;
+    box-shadow:0 10px 24px color-mix(in srgb, var(--p600) 38%, transparent);
+  }
+  .page-fab:disabled { display:none; }
+
+  .page-tabs { overflow-x:auto; scrollbar-width:none; padding:0 .5rem; }
+  .page-tabs::-webkit-scrollbar { display:none; }
+  .page-tabs--lg .page-tab { padding:.6rem .9rem; }
+  .page-tabs--lg .page-tab:first-child { font-size:.9375rem; }
+
+  .toolbar { gap:.5rem; }
+  .search-box { max-width:none !important; min-width:0; flex:1 1 0; padding:.55rem .75rem; }
+  .table-controls { margin:.5rem 0; }
+
+  /* Fără zoom automat la focus pe iOS: câmpurile de text trebuie să aibă cel puțin 16px. */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .search-box input { font-size:16px !important; }
+
+  /* ── Detaliu (client / dosar) pe tot ecranul, cu „Înapoi” ── */
+  .page--mobile-detail .page-top, .page--mobile-detail .page-tabs { display:none; }
+  .page--mobile-detail .page-body { padding:0 !important; }
+  .mobile-detail-bar {
+    display:flex; align-items:center; position:sticky; top:0; z-index:30; min-height:48px; padding:.25rem .5rem;
+    background:color-mix(in srgb, var(--surface) 92%, transparent);
+    -webkit-backdrop-filter:saturate(1.6) blur(14px); backdrop-filter:saturate(1.6) blur(14px);
+    border-bottom:1px solid var(--border);
+  }
+  .mobile-back {
+    all:unset; display:inline-flex; align-items:center; gap:.125rem; min-height:44px; padding:0 .5rem 0 .25rem; border-radius:var(--r-sm);
+    color:var(--p600); font-size:1rem; font-weight:600; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .mobile-back svg { width:24px; height:24px; }
+  .mobile-back:active { opacity:.6; }
+  .mobile-back:focus-visible { outline:2px solid var(--p500); outline-offset:2px; }
+  .cv2-embed { height:auto; }
+  .cv2-header { padding:.875rem 1rem .75rem; }
+  /* Antetul fișei (client, dosar): titlul pe primul rând, acțiunile pe toată lățimea dedesubt. */
+  .cv2-header-row { display:flex !important; flex-wrap:wrap; gap:.625rem; }
+  .cv2-header-title { flex:1 1 100%; flex-wrap:wrap; }
+  .cv2-header-actions { flex:1 1 100%; flex-wrap:wrap; gap:.375rem; }
+  .cv2-header-actions .btn { flex:1 1 auto; min-height:40px; }
+  .cv2-body { overflow:visible; padding:.75rem 1rem 1.5rem; }
+  .cv2-two-col { grid-template-columns:minmax(0, 1fr) !important; }
+
+  /* ── Liste de carduri (Clienți, Dosare) ── */
+  .m-cards { list-style:none; margin:0; padding:0 0 84px; display:flex; flex-direction:column; gap:.5rem; }
+  .m-card {
+    all:unset; box-sizing:border-box; width:100%; display:flex; align-items:center; gap:.75rem;
+    padding:.875rem .875rem .875rem 1rem; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md);
+    box-shadow:var(--sh-sm); cursor:pointer; -webkit-tap-highlight-color:transparent;
+    transition:transform .12s var(--ease), background var(--t);
+    content-visibility:auto; contain-intrinsic-size:auto 88px;
+  }
+  .m-card:active { transform:scale(.985); background:var(--surface-2); }
+  .m-card:focus-visible { outline:2px solid var(--p500); outline-offset:2px; }
+  .m-card-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:.3rem; }
+  .m-card-title { display:flex; align-items:center; gap:.5rem; min-width:0; font-size:.9375rem; font-weight:700; color:var(--s900); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .m-card-title-text { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .m-card-aside { flex-shrink:0; font-family:ui-monospace, monospace; font-size:.75rem; font-weight:500; color:var(--s500); }
+  .m-card-sub { display:flex; align-items:center; flex-wrap:wrap; gap:.25rem .5rem; font-size:.8125rem; color:var(--s600); }
+  .m-card-sub.m-card-muted { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .m-card-muted { color:var(--s500); font-size:.78rem; }
+  .m-card-badges { display:flex; flex-wrap:wrap; align-items:center; gap:.375rem; }
+  .m-card-badges:empty { display:none; }
+  .m-card-chevron { flex-shrink:0; color:var(--s300); }
+
+  /* ── Dosare: statisticile, restrânse sub un rând ── */
+  .m-stats-toggle {
+    all:unset; box-sizing:border-box; width:100%; display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+    min-height:40px; padding:.5rem .75rem; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface-2);
+    font-size:.8125rem; font-weight:600; color:var(--s700); cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .m-stats-period { margin:.625rem 0; }
+  .m-stats-period > div { justify-content:space-between !important; }
+  .dosar-top-row, .dosar-top-row--generic { grid-template-columns:minmax(0, 1fr) !important; gap:.625rem; margin-top:.625rem; }
+
+  /* ── Sarcini: filtre în panoul de jos, coloane glisate una câte una ── */
+  .m-filter-btn { flex-shrink:0; height:42px; gap:.375rem; }
+  .m-filter-btn svg { width:18px; height:18px; }
+  .m-filter-sheet { display:flex; flex-direction:column; gap:.75rem; }
+  .m-filter-sheet > *, .m-filter-sheet .field-input { width:100% !important; max-width:none !important; }
+  .tasks-summary-strip { width:100%; }
+  .kanban-board {
+    scroll-snap-type:x mandatory; scroll-padding:0 1rem; gap:.75rem;
+    margin:0 -1rem; padding:0 1rem .5rem; scrollbar-width:none; height:auto;
+  }
+  .kanban-board::-webkit-scrollbar { display:none; }
+  .kanban-col { min-width:calc(100vw - 2.75rem) !important; scroll-snap-align:start; max-height:none; }
+  .kanban-card { touch-action:manipulation; }
+
+  /* ── Generare: lista de șabloane, apoi șablonul ales pe toată lățimea ── */
+  .tf-layout--m-list .tf-detail, .tf-layout--m-detail .tf-list { display:none; }
+  /* Sub bara lipicioasă cu pașii (Pasul anterior / Alege altă sursă + pașii), ca „‹ Șabloane” să rămână vizibil. */
+  .tf-layout { scroll-margin-top:calc(env(safe-area-inset-top) + 6.5rem); }
+  .tf-m-back { margin:0 0 .5rem -.25rem; }
+  .tf-row-main { min-height:48px; }
+  .card-body { padding:1rem; }
+
+  /* ── Banda planului: un singur rând ── */
+  .trial-banner { flex-wrap:nowrap !important; gap:.5rem !important; padding:.4rem .75rem !important; font-size:.75rem !important; line-height:1.35; }
+  .trial-banner > span { flex:1 1 0 !important; min-width:0; }
+  .trial-banner .btn { padding:.3rem .625rem; font-size:.72rem; white-space:nowrap; flex-shrink:0; }
+
+  /* ── Modalele devin panouri de jos, cu antetul și butoanele mereu vizibile ── */
+  .modal-backdrop { padding:0; align-items:flex-end; }
+  .modal-box {
+    max-width:none !important; width:100% !important; max-height:94dvh; overflow-y:auto; overscroll-behavior:contain;
+    border-radius:var(--r-lg) var(--r-lg) 0 0; padding-bottom:env(safe-area-inset-bottom);
+    animation:mSheetUp .24s var(--ease);
+  }
+  .modal-head { position:sticky; top:0; z-index:3; background:var(--surface); padding:1rem 1.125rem; }
+  .modal-body { padding:1rem 1.125rem; }
+  .modal-footer { position:sticky; bottom:calc(-1 * env(safe-area-inset-bottom)); z-index:3; background:var(--surface); padding:.75rem 1.125rem; flex-wrap:wrap; }
+  .modal-footer .btn { flex:1 1 auto; min-height:44px; }
+  .modal-close { min-width:40px; min-height:40px; }
+
+  /* ── Notificări și mesaje: deasupra barei de jos ── */
+  .toast-stack { left:12px; right:12px; bottom:calc(var(--tabbar-space) + 12px); }
+  .toast-item { min-width:0; max-width:none; }
+  .notif-panel { padding-bottom:env(safe-area-inset-bottom); }
+
+  /* ── Ecranul „Mai mult” ── */
+  .more-page { min-height:calc(100dvh - var(--tabbar-space)); }
+  .more-body { padding:1rem 1rem 2rem; display:flex; flex-direction:column; gap:1.25rem; }
+  .more-user { display:flex; align-items:center; gap:.875rem; padding:1rem; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); }
+  .more-user img, .more-user-initials { width:44px; height:44px; border-radius:50%; flex-shrink:0; }
+  .more-user-initials { display:flex; align-items:center; justify-content:center; background:var(--p100); color:var(--p600); font-weight:700; font-size:1.0625rem; }
+  .more-user-name { font-weight:700; color:var(--s900); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .more-user-email { font-size:.8125rem; color:var(--s500); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .more-heading { margin:0 0 .4rem .25rem; font-size:.72rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--s500); }
+  .more-group { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
+  .more-row {
+    all:unset; box-sizing:border-box; width:100%; display:flex; align-items:center; gap:.75rem; min-height:52px; padding:.625rem 1rem;
+    border-top:1px solid var(--s100); color:var(--s800); font-size:.9375rem; cursor:pointer; text-decoration:none;
+    -webkit-tap-highlight-color:transparent; transition:background var(--t);
+  }
+  .more-row:first-child { border-top:none; }
+  .more-row:active { background:var(--surface-2); }
+  .more-row:focus-visible { outline:2px solid var(--p500); outline-offset:-2px; }
+  .more-row--static { cursor:default; }
+  .more-row--static:active { background:none; }
+  .more-row-label { flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+  .more-row-label, .more-row-label > * { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .more-row-label strong { color:var(--s900); }
+  .more-row-label small { color:var(--s500); font-size:.78rem; }
+  .more-row-icon { display:flex; color:var(--s500); }
+  .more-row-icon svg { width:20px; height:20px; }
+  .more-row-chevron { flex-shrink:0; color:var(--s300); }
+  .more-row-plus { width:20px; text-align:center; font-size:1.125rem; font-weight:700; }
+  .more-row--muted { color:var(--p600); }
+  .more-row--checked { font-weight:600; color:var(--s900); }
+  .more-radio { width:20px; height:20px; border-radius:50%; border:2px solid var(--s300); flex-shrink:0; box-sizing:border-box; }
+  .more-row--checked .more-radio { border-color:var(--p600); background:var(--p600); box-shadow:inset 0 0 0 3px var(--surface); }
+  .more-row--danger, .more-row--danger .more-row-icon { color:var(--r600); }
+  .more-plan--warn .sidebar-plan-dot { background:var(--y500); }
+  .more-plan--bad .sidebar-plan-dot { background:var(--r500); }
+  .more-legal { display:flex; flex-wrap:wrap; justify-content:center; gap:.25rem .875rem; }
+  .more-legal a { font-size:.75rem; color:var(--s400); text-decoration:none; }
+}
+
+@keyframes mSheetUp { from { transform:translateY(24px); opacity:.6; } to { transform:none; opacity:1; } }
+
+/* Tooltip-urile [data-tooltip] apar la hover; pe ecran tactil ar rămâne agățate după atingere. */
+@media (hover: none), (pointer: coarse) {
+  [data-tooltip]::after, [data-tooltip]::before { display:none !important; }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .modal-box { animation:none; }
+  .tabbar-item, .m-card { transition:none; }
+}

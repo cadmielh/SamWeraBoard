@@ -23,6 +23,9 @@ import IconExport from '../components/IconExport'
 import NotificariBell from '../components/NotificariBell'
 import { SkeletonRows } from '../components/Skeleton'
 import { withViewTransition } from '../lib/viewTransition'
+import { useIsMobile } from '../lib/useIsMobile'
+import { useMobileBack } from '../lib/useMobileBack'
+import { IconBack } from '../components/NavIcons'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -480,6 +483,13 @@ export default function ClientiPage() {
     setActiveTab(prev => prev === id ? 'list' : prev)
   }, [])
 
+  // Pe telefon fișa clientului ocupă tot ecranul, fără file: „Înapoi” (și gestul telefonului) revine la listă.
+  const isMobile = useIsMobile()
+  const mobileDetail = isMobile && activeTab !== 'list'
+  const mobileBack = useMobileBack(activeTab !== 'list', () => {
+    withViewTransition(() => { setOpenClientIds([]); setActiveTab('list') })
+  })
+
   const toggleColVisibility = useCallback((key: string) => {
     setHiddenCols(prev => {
       const next = new Set(prev)
@@ -583,7 +593,12 @@ export default function ClientiPage() {
 
   return (
     <>
-      <div className="page--data">
+      <div className={`page--data${mobileDetail ? ' page--mobile-detail' : ''}`}>
+        {mobileDetail && activeClient && (
+          <div className="mobile-detail-bar">
+            <button type="button" className="mobile-back" onClick={mobileBack}><IconBack /> Clienți</button>
+          </div>
+        )}
         {/* Header */}
         <div className="page-top">
           <div className="page-header">
@@ -592,11 +607,11 @@ export default function ClientiPage() {
               <div className="page-subtitle">Gestionare portofoliu clienți</div>
             </div>
             <div className="page-actions">
-              <button className="btn btn-ghost" onClick={() => setShowExportDialog(true)}>
-                <IconExport /> Exportă
+              <button className="btn btn-ghost" onClick={() => setShowExportDialog(true)} aria-label="Exportă">
+                <IconExport /> <span className="btn-label">Exportă</span>
               </button>
-              <button className="btn btn-primary" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
-                + Adaugă client
+              <button className="btn btn-primary page-fab" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
+                + <span className="btn-label">Adaugă client</span><span className="btn-label-m">Client</span>
               </button>
               <NotificariBell />
             </div>
@@ -604,8 +619,9 @@ export default function ClientiPage() {
 
         </div>
 
-        {/* Tab bar — mereu vizibilă (nu doar cu tab-uri deschise), la fel ca la Dosare */}
-        <div className="page-tabs">
+        {/* Tab bar — mereu vizibilă (nu doar cu tab-uri deschise), la fel ca la Dosare. Pe telefon fișa se deschide pe
+            tot ecranul, deci ar rămâne doar „Listă”: bara nu se mai afișează. */}
+        <div className="page-tabs page-tabs--desktop-only">
           <button
             className={`page-tab${activeTab === 'list' ? ' page-tab--active' : ''}`}
             onClick={() => withViewTransition(() => setActiveTab('list'))}
@@ -688,23 +704,26 @@ export default function ClientiPage() {
                     × Resetează filtre
                   </button>
                 )}
-                <div style={{ position: 'relative' }}>
-                  <button
-                    className={`btn btn-ghost btn-sm${hiddenCols.size > 0 ? ' btn--cols-active' : ''}`}
-                    onClick={() => setShowColsPanel(p => !p)}
-                  >
-                    Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
-                  </button>
-                  {showColsPanel && (
-                    <ColumnsPanel
-                      hiddenCols={hiddenCols}
-                      onToggle={toggleColVisibility}
-                      onSelectAll={showAllColumns}
-                      onDeselectAll={hideAllColumns}
-                      onClose={() => setShowColsPanel(false)}
-                    />
-                  )}
-                </div>
+                {/* Coloanele țin de tabel; pe telefon lista e din carduri. */}
+                {!isMobile && (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className={`btn btn-ghost btn-sm${hiddenCols.size > 0 ? ' btn--cols-active' : ''}`}
+                      onClick={() => setShowColsPanel(p => !p)}
+                    >
+                      Coloane{hiddenCols.size > 0 && <span className="cols-badge">{hiddenCols.size}</span>}
+                    </button>
+                    {showColsPanel && (
+                      <ColumnsPanel
+                        hiddenCols={hiddenCols}
+                        onToggle={toggleColVisibility}
+                        onSelectAll={showAllColumns}
+                        onDeselectAll={hideAllColumns}
+                        onClose={() => setShowColsPanel(false)}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -763,7 +782,10 @@ export default function ClientiPage() {
                     )}
                   </div>
                 )}
-                {!loading && processedClients.length > 0 && (
+                {!loading && processedClients.length > 0 && isMobile && (
+                  <ClientCardList clients={processedClients} onOpen={openTab} />
+                )}
+                {!loading && processedClients.length > 0 && !isMobile && (
                   <ClientTable
                     clients={processedClients}
                     rawClients={displayed}
@@ -825,6 +847,38 @@ export default function ClientiPage() {
         </Modal>
       )}
     </>
+  )
+}
+
+/* ── Telefon: carduri în loc de tabel; atingerea deschide fișa (editarea și ștergerea sunt în fișă) ── */
+function ClientCardList({ clients, onOpen }: { clients: Client[]; onOpen: (c: Client) => void }) {
+  return (
+    <ul className="m-cards" aria-label="Clienți">
+      {clients.map(c => {
+        const caen = c.caenCod ? `CAEN ${c.caenCod}` : ''
+        return (
+          <li key={c.id}>
+            <button type="button" className="m-card" onClick={() => onOpen(c)}>
+              <span className="m-card-main">
+                <span className="m-card-title">{renderCellContent(c, 'denumire')}</span>
+                <span className="m-card-sub">
+                  {renderCellContent(c, 'formaJuridica')}
+                  {renderCellContent(c, 'codFiscal')}
+                  {caen && <span className="m-card-muted">{caen}</span>}
+                </span>
+                <span className="m-card-badges">
+                  {renderCellContent(c, 'tva')}
+                  {c.statutFiscal && c.statutFiscal !== 'activ' && renderCellContent(c, 'statutFiscal')}
+                </span>
+              </span>
+              <svg className="m-card-chevron" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M7.5 4.5 13 10l-5.5 5.5" />
+              </svg>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

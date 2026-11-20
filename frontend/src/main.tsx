@@ -7,6 +7,7 @@ import '@fontsource-variable/plus-jakarta-sans'
 import '@fontsource-variable/montserrat'
 import './styles/tokens.css'
 import './styles/ux.css'
+import './styles/mobile.css'
 import App from './App.tsx'
 import { SettingsProvider } from './SettingsContext.tsx'
 

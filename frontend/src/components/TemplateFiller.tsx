@@ -49,6 +49,9 @@ import { ANEXA2A_KEY } from '../lib/anexa2aFiller'
 import { ANEXA2B_KEY } from '../lib/anexa2bFiller'
 import Modal from './Modal'
 import TemplateSearchInput from './TemplateSearchInput'
+import { IconBack } from './NavIcons'
+import { useIsMobile } from '../lib/useIsMobile'
+import { useMobileBack } from '../lib/useMobileBack'
 
 /** Rezultatul unui formular dedicat (declarație, Anexa 1, BRX, Anexa 2a/2b), ținut pe șablon. Câmpurile opționale
  * există doar la unele formulare: tabelele declarației, propunerile ei de actualizare a fișei, grupurile BRX și starea
@@ -402,6 +405,15 @@ export default function TemplateFiller({
     ? builtins.some(b => builtinKey(b) === activeKey && tipOk(b))
     : !listTemplates.some(t => t.id === activeKey && !tipOk(t))) ? activeKey : null
   const effectiveActiveKey = activeKeyVisible ?? defaultActiveKey
+
+  // Pe telefon lista și formularul nu încap unul lângă altul: întâi lista, iar șablonul atins se deschide
+  // pe toată lățimea, cu „Înapoi” (și gestul telefonului) spre listă.
+  const isMobile = useIsMobile()
+  const mobileDetail = isMobile && !!activeKeyVisible
+  const mobileBack = useMobileBack(!!activeKeyVisible, () => setActiveKey(null))
+  useEffect(() => {
+    if (mobileDetail) layoutRef.current?.scrollIntoView({ block: 'start' })
+  }, [mobileDetail, activeKeyVisible])
 
   // Revizia fișierului văzută când s-a deschis formularul: dacă cineva înlocuiește fișierul între timp, documentul
   // s-ar genera din fișierul nou cu un formular început pe cel vechi — utilizatorul e avertizat.
@@ -1386,7 +1398,7 @@ export default function TemplateFiller({
 
         <div className="card-body">
           <CreditNotice clientId={client?.id || null} clientName={client?.denumire} onToast={onToast} onBlockedChange={setCreditBlock} />
-          <div className="tf-layout" ref={layoutRef} style={{ ['--tf-list-w' as string]: `${listW}px` }}>
+          <div className={`tf-layout${isMobile ? (mobileDetail ? ' tf-layout--m-detail' : ' tf-layout--m-list') : ''}`} ref={layoutRef} style={{ ['--tf-list-w' as string]: `${listW}px` }}>
 
             {/* ── Coloana din stânga — listă ── */}
             <div className="tf-list">
@@ -1480,6 +1492,9 @@ export default function TemplateFiller({
 
             {/* ── Coloana din dreapta — detaliu șablon activ ── */}
             <div className="tf-detail">
+              {mobileDetail && (
+                <button type="button" className="mobile-back tf-m-back" onClick={mobileBack}><IconBack /> Șabloane</button>
+              )}
               <div key={effectiveActiveKey ?? 'empty'} className="tf-detail-fade">
                 {renderDetail()}
               </div>
