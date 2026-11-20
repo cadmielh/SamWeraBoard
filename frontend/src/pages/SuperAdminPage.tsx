@@ -380,6 +380,9 @@ export default function SuperAdminPage() {
                   <div className="card-sub" style={{ padding: '1rem 0' }}>{workspaces.length === 0 ? 'Niciun spațiu de lucru în aplicație.' : 'Niciun cabinet nu corespunde filtrelor.'}</div>
                 ) : (
                   <div className="sa-list">
+                    <div className="sa-row-head" aria-hidden>
+                      <span>Cabinet</span><span>Plan</span><span>Activitate (30 zile)</span><span>Semnale</span>
+                    </div>
                     {visible.map(r => (
                       <WorkspaceRow key={r.w.id} r={r} cuiWarning={!!cuiSeen[r.w.id]} activityLoading={activityLoading}
                         active={r.w.id === openId} onOpen={() => setParam('cabinet', r.w.id)} />
@@ -572,7 +575,7 @@ function WorkspaceRow({ r, cuiWarning, activityLoading, active, onOpen }: {
       </span>
       <span className="sa-row-activity">
         {act ? <ActivitySpark data={act.series.slice(-30)} /> : activityLoading ? <Skeleton w={90} h={18} /> : null}
-        {t30 && <small>{t30.activeDays} zile · {t30.documents} doc.</small>}
+        {t30 && <small>{t30.activeDays} {t30.activeDays === 1 ? 'zi activă' : 'zile active'} · {t30.documents} doc.</small>}
       </span>
       <span className="sa-row-flags">
         {act && <span className={`sa-eng sa-eng--${eng.key}`}>{eng.label}</span>}
