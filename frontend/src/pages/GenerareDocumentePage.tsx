@@ -167,8 +167,6 @@ export default function GenerareDocumentePage() {
       return
     }
     setSelectedClient(null)
-    setPendingClient(null)
-    revealSeq.current++
     setPendingClient(c)
     // Pentru generare sunt necesare CNP/serie CI: se aduc din vault (cerere auditată).
     revealClient(c, 'generate')
