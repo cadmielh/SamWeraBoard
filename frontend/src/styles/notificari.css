@@ -14,10 +14,16 @@
 .page-bell svg { width:20px; height:20px; }
 .notif-count {
   position:absolute; top:-5px; right:-5px; min-width:18px; height:18px; padding:0 .3rem; border-radius:var(--r-full);
-  background:var(--p500); color:#fff; font-size:.65rem; font-weight:700; line-height:18px; text-align:center;
+  /* Roșu mereu (convenția „ai ceva nou”): în culoarea temei se pierdea lângă butoanele paginii. */
+  background:var(--r500); color:#fff; font-size:.65rem; font-weight:700; line-height:18px; text-align:center;
   box-shadow:0 0 0 2px var(--surface);
 }
-.notif-count--urgent { background:var(--r500); }
+/* Urgent (plată eșuată, dispută, termen depășit): un inel care pulsează discret. */
+.notif-count--urgent { animation:notif-puls 1.8s ease-out infinite; }
+@keyframes notif-puls {
+  0% { box-shadow:0 0 0 2px var(--surface), 0 0 0 2px color-mix(in srgb, var(--r500) 60%, transparent); }
+  70%, 100% { box-shadow:0 0 0 2px var(--surface), 0 0 0 9px transparent; }
+}
 
 /* ── Panoul ── */
 .notif-backdrop { display:none; }
@@ -77,7 +83,7 @@
 .notif-item-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:.1rem; }
 .notif-item-titlu { font-size:.8125rem; font-weight:500; color:var(--s800); display:flex; align-items:center; gap:.35rem; }
 .notif-item--nou .notif-item-titlu { font-weight:700; color:var(--s900); }
-.notif-dot { width:7px; height:7px; border-radius:50%; background:var(--p500); flex-shrink:0; }
+.notif-dot { width:7px; height:7px; border-radius:50%; background:var(--r500); flex-shrink:0; }
 .notif-item-detaliu { font-size:.75rem; color:var(--s500); overflow:hidden; text-overflow:ellipsis; }
 .notif-item-data { font-size:.72rem; color:var(--s400); white-space:nowrap; flex-shrink:0; margin-top:.15rem; }
 .notif-item-actions { display:flex; gap:.25rem; margin:.4rem 0 0 2.125rem; }
