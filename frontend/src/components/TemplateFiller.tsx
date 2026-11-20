@@ -1339,7 +1339,9 @@ export default function TemplateFiller({
             onChange={v => setClauseState(prev => ({ ...prev, [key]: v }))}
           />
         ) : (
-          renderReadiness({ id: key, placeholders: builtinCheckablePlaceholders(b), repeatGroupFields: b.repeatGroupFields })
+          // Aceeași referință ca procentul din listă (readinessPct): cu blocurile repetitive ale șablonului, ca persoanele
+          // alese ca listă (ex. comodanții) să conteze la completare — fără ele, numele lor apăreau „lipsă” deși erau alese.
+          renderReadiness(builtinTplRef(b))
         ))}
 
         {link && (
