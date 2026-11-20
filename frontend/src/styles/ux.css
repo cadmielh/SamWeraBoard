@@ -1,0 +1,195 @@
+/* ── Fluiditate: schelete de încărcare, butoane care lucrează, tranziții, Setări pe secțiuni, Plan și credite ── */
+
+/* Schelet de încărcare: forma conținutului care urmează, cu o lumină care trece peste el. */
+.skel {
+  display:block; flex-shrink:0; border-radius:6px;
+  background:linear-gradient(90deg, var(--s100) 25%, var(--s50) 50%, var(--s100) 75%);
+  background-size:200% 100%; animation:shimmer 1.4s infinite linear;
+}
+.skel-rows { display:flex; flex-direction:column; }
+.skel-row { display:flex; align-items:center; gap:.875rem; padding:.75rem .5rem; border-bottom:1px solid var(--s100); }
+/* Încărcările scurte (sub ~200 ms) nu mai clipesc: scheletul apare doar dacă așteptarea chiar durează. */
+.skel-delayed { opacity:0; animation:skel-show .2s .2s var(--ease) forwards; }
+@keyframes skel-show { to { opacity:1; } }
+
+/* Butonul care lucrează: textul își păstrează locul (invizibil), spinnerul stă deasupra lui. */
+.btn-label { display:inline-grid; place-items:center; }
+.btn-label > * { grid-area:1 / 1; }
+.btn-label-text { display:inline-flex; align-items:center; gap:.45rem; }
+.btn-label.is-busy > .btn-label-text { visibility:hidden; }
+
+/* Tranziții între pagini (View Transitions, din browser): fade scurt, doar pe conținut, nu pe meniul lateral. */
+.main-area { view-transition-name:main; }
+::view-transition-old(main) { animation:vt-out .12s var(--ease) both; }
+::view-transition-new(main) { animation:vt-in .2s var(--ease) both; }
+::view-transition-old(root), ::view-transition-new(root) { animation:none; }
+@keyframes vt-out { to { opacity:0; } }
+@keyframes vt-in { from { opacity:0; transform:translateY(4px); } }
+
+/* Mișcare redusă (setare de sistem): fără animații decorative în toată aplicația. */
+@media (prefers-reduced-motion: reduce) {
+  /* Spinnerul rămâne: arată că ceva lucrează, nu e decor. */
+  *:not(.spin), *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation:none !important; }
+  .skel { animation:none; }
+}
+
+/* ── Setări: navigare pe secțiuni ── */
+.settings-layout { display:grid; grid-template-columns:220px minmax(0, 1fr); gap:1.75rem; align-items:start; max-width:1180px; }
+.settings-nav { position:sticky; top:0; display:flex; flex-direction:column; gap:.125rem; }
+.settings-nav-group { font-size:.6875rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--s400); padding:.875rem .75rem .375rem; }
+.settings-nav-group:first-child { padding-top:0; }
+.settings-nav-item {
+  display:flex; align-items:center; gap:.5rem; padding:.45rem .75rem; border-radius:var(--r-sm);
+  color:var(--s600); font-size:.875rem; font-weight:500; text-decoration:none; transition:background var(--t), color var(--t);
+}
+.settings-nav-item:hover { background:var(--surface-2); color:var(--s900); }
+.settings-nav-item.active { background:var(--p50); color:var(--p600); font-weight:600; }
+.settings-nav-item--danger.active { background:var(--r50); color:var(--r600); }
+.settings-nav-badge { margin-left:auto; font-size:.6875rem; font-weight:700; padding:.05rem .45rem; border-radius:var(--r-full); background:var(--p500); color:#fff; }
+.settings-nav-badge--warn { background:var(--y400); color:#422006; }
+.settings-content { display:flex; flex-direction:column; gap:1.25rem; min-width:0; max-width:760px; animation:fadeIn .2s var(--ease); }
+.settings-content--wide { max-width:none; }
+.settings-section-head h2 { font-size:1.125rem; font-weight:700; color:var(--s900); margin:0; }
+.settings-section-head p { color:var(--s500); font-size:.875rem; margin:.25rem 0 0; }
+.settings-danger { border-color:var(--r200); }
+.settings-danger .card-head { background:var(--r50); }
+
+/* Bara „modificări nesalvate”: lipită de josul zonei de conținut cât timp formularul diferă de ce e salvat. */
+.unsaved-bar {
+  position:sticky; bottom:0; z-index:5; display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
+  margin-top:.5rem; padding:.625rem .875rem; border-radius:var(--r-md, 10px);
+  background:var(--s900); color:#fff; box-shadow:var(--sh-lg); animation:slideUp .2s var(--ease);
+}
+.unsaved-bar span { flex:1; font-size:.875rem; }
+.unsaved-bar .btn-ghost { color:#fff; border-color:rgba(255,255,255,.3); }
+.unsaved-bar .btn-ghost:hover { background:rgba(255,255,255,.1); }
+
+@media (max-width: 860px) {
+  .settings-layout { grid-template-columns:minmax(0, 1fr); gap:1rem; }
+  /* Pe ecran îngust, navigarea devine un rând de „pastile” care se derulează orizontal. */
+  .settings-nav { position:static; flex-direction:row; overflow-x:auto; gap:.375rem; padding-bottom:.25rem; scrollbar-width:none; }
+  .settings-nav::-webkit-scrollbar { display:none; }
+  .settings-nav-group { display:none; }
+  .settings-nav-item { flex-shrink:0; border:1px solid var(--s200); border-radius:var(--r-full); padding:.35rem .8rem; white-space:nowrap; }
+}
+
+/* ── Indicatorul planului în meniul lateral ── */
+.sidebar-plan {
+  display:flex; align-items:center; gap:.5rem; margin:0 .75rem .75rem; padding:.5rem .625rem; border-radius:var(--r-sm);
+  border:1px solid var(--s200); background:var(--surface-2); color:var(--s700); font-size:.75rem; text-decoration:none;
+  transition:border-color var(--t), background var(--t);
+}
+.sidebar-plan:hover { border-color:var(--p200); background:var(--p50); }
+.sidebar-plan-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--p500); }
+.sidebar-plan--warn .sidebar-plan-dot { background:var(--y500); }
+.sidebar-plan--bad { border-color:var(--r200); background:var(--r50); }
+.sidebar-plan--bad .sidebar-plan-dot { background:var(--r500); }
+.sidebar-plan-text { display:flex; flex-direction:column; min-width:0; line-height:1.3; }
+.sidebar-plan-text strong { color:var(--s900); font-size:.8125rem; }
+.sidebar-plan-text span { color:var(--s500); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sidebar--collapsed .sidebar-plan { justify-content:center; margin:0 auto .75rem; padding:.5rem; width:34px; }
+.sidebar--collapsed .sidebar-plan-text { display:none; }
+
+/* ── Plan și credite ── */
+.plan-hero { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:1rem 1.5rem; align-items:center; }
+.plan-hero-kicker { font-size:.75rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--s500); }
+.plan-hero-value { font-size:2rem; font-weight:800; letter-spacing:-.02em; color:var(--s900); line-height:1.15; font-variant-numeric:tabular-nums; }
+.plan-hero-value small { font-size:1rem; font-weight:600; color:var(--s500); margin-left:.35rem; }
+.plan-hero-sub { color:var(--s600); font-size:.875rem; margin-top:.25rem; line-height:1.5; }
+.plan-hero-actions { display:flex; flex-direction:column; gap:.375rem; align-items:flex-end; }
+.plan-hero-actions small { color:var(--s400); font-size:.75rem; max-width:16rem; text-align:right; }
+@media (max-width: 640px) {
+  .plan-hero { grid-template-columns:minmax(0, 1fr); }
+  .plan-hero-actions { align-items:stretch; }
+  .plan-hero-actions small { text-align:left; }
+}
+.plan-meter { height:6px; border-radius:var(--r-full); background:var(--s100); overflow:hidden; margin-top:.75rem; }
+.plan-meter > span { display:block; height:100%; border-radius:inherit; background:var(--p500); transition:width .6s var(--ease); }
+.plan-meter--warn > span { background:var(--y500); }
+.plan-meter--bad > span { background:var(--r500); }
+
+.plan-cards { display:grid; gap:1rem; }
+.plan-card { position:relative; overflow:visible; }
+.plan-card--hl { border-color:var(--p500); box-shadow:0 0 0 1px var(--p500); }
+.plan-card .card-body { display:flex; flex-direction:column; gap:.5rem; height:100%; }
+.plan-card-title { display:flex; justify-content:space-between; align-items:center; gap:.5rem; font-weight:700; color:var(--s900); }
+.plan-card-price { font-size:1.75rem; font-weight:800; color:var(--s900); letter-spacing:-.02em; line-height:1.2; }
+.plan-card-price s { font-size:1.05rem; font-weight:600; color:var(--s400); margin-right:.4rem; text-decoration-color:var(--r500); text-decoration-thickness:2px; }
+.plan-card-unit { display:block; font-size:.8125rem; font-weight:500; color:var(--s500); letter-spacing:0; }
+.plan-card ul { list-style:none; margin:0; padding:0; flex:1; color:var(--s600); font-size:.8125rem; line-height:1.7; }
+.plan-card li::before { content:'✓'; color:var(--g600); margin-right:.375rem; }
+.plan-card-ribbon {
+  position:absolute; top:-10px; left:14px; background:var(--r500); color:#fff; font-size:.6875rem; font-weight:800; letter-spacing:.03em;
+  padding:.15rem .55rem; border-radius:var(--r-full); box-shadow:0 2px 6px rgba(239,68,68,.35); transform:rotate(-3deg);
+}
+
+.plan-tabs { display:grid; grid-template-columns:1fr 1fr; gap:.25rem; background:var(--surface-2); border:1px solid var(--s200); border-radius:10px; padding:.25rem; }
+.plan-tab { border:none; border-radius:8px; padding:.5rem .75rem; cursor:pointer; font:inherit; text-align:center; background:transparent; transition:background var(--t), box-shadow var(--t); }
+.plan-tab[aria-selected="true"] { background:var(--surface); box-shadow:0 1px 3px rgba(0,0,0,.15); }
+.plan-tab b { display:block; color:var(--s700); }
+.plan-tab[aria-selected="true"] b { color:var(--p600); }
+.plan-tab span { font-size:.75rem; color:var(--s500); }
+
+.plan-note { color:var(--s700); font-size:.8125rem; margin:0; line-height:1.55; }
+
+/* Calculatorul „Ce mă costă?”: cursor + bare de cost comparate. */
+.plan-calc input[type="range"] { width:100%; accent-color:var(--p500); }
+.plan-calc-row { display:grid; grid-template-columns:7.5rem minmax(0, 1fr) 6.5rem; gap:.75rem; align-items:center; font-size:.8125rem; color:var(--s700); padding:.2rem 0; }
+.plan-calc-bar { height:10px; border-radius:var(--r-full); background:var(--s100); overflow:hidden; }
+.plan-calc-bar > span { display:block; height:100%; border-radius:inherit; background:var(--s300); transition:width .35s var(--ease); }
+.plan-calc-row--best { color:var(--s900); font-weight:700; }
+.plan-calc-row--best .plan-calc-bar > span { background:var(--g500); }
+.plan-calc-row b { text-align:right; font-variant-numeric:tabular-nums; }
+@media (max-width: 520px) { .plan-calc-row { grid-template-columns:6rem minmax(0, 1fr) 5.5rem; gap:.5rem; } }
+
+/* Întrebări frecvente: fiecare întrebare se deschide separat. */
+.plan-faq { border:1px solid var(--s200); border-radius:var(--r-md, 10px); overflow:hidden; background:var(--surface); }
+.plan-faq details + details { border-top:1px solid var(--s100); }
+.plan-faq summary { cursor:pointer; padding:.75rem 1rem; font-weight:600; font-size:.875rem; color:var(--s800); list-style:none; display:flex; justify-content:space-between; gap:1rem; }
+.plan-faq summary::-webkit-details-marker { display:none; }
+.plan-faq summary::after { content:'+'; color:var(--s400); font-weight:700; transition:transform var(--t); }
+.plan-faq details[open] summary::after { transform:rotate(45deg); }
+.plan-faq details > div { padding:0 1rem .875rem; color:var(--s600); font-size:.8125rem; line-height:1.6; }
+.plan-faq ul { margin:0; padding-left:1.1rem; }
+
+.plan-lots { display:flex; flex-direction:column; gap:.5rem; margin-bottom:1rem; }
+.plan-lot { display:flex; align-items:center; gap:.75rem; font-size:.8125rem; color:var(--s700); padding:.5rem .75rem; border:1px solid var(--s100); border-radius:8px; }
+.plan-lot--soon { border-color:var(--y200); background:var(--y50); }
+.plan-lot b { font-variant-numeric:tabular-nums; color:var(--s900); }
+.plan-lot span { margin-left:auto; color:var(--s500); }
+.plan-lot--soon span { color:var(--y800); font-weight:600; }
+
+.plan-ledger-tools { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:.5rem; }
+.plan-ledger-tools .seg { display:inline-flex; border:1px solid var(--s200); border-radius:var(--r-sm); overflow:hidden; }
+.plan-ledger-tools .seg button { border:none; background:transparent; font:inherit; font-size:.75rem; padding:.3rem .65rem; cursor:pointer; color:var(--s600); }
+.plan-ledger-tools .seg button + button { border-left:1px solid var(--s200); }
+.plan-ledger-tools .seg button[aria-pressed="true"] { background:var(--p50); color:var(--p600); font-weight:600; }
+.plan-ledger { width:100%; border-collapse:collapse; font-size:.8125rem; }
+.plan-ledger th { color:var(--s500); text-align:left; font-weight:600; padding:.375rem .5rem; }
+.plan-ledger td { border-top:1px solid var(--s100); color:var(--s700); padding:.375rem .5rem; }
+.plan-ledger th:first-child, .plan-ledger td:first-child { padding-left:0; white-space:nowrap; }
+.plan-ledger th:last-child, .plan-ledger td:last-child { padding-right:0; text-align:right; }
+.plan-ledger td:last-child { font-weight:600; font-variant-numeric:tabular-nums; }
+.plan-ledger .plus { color:var(--g700); }
+
+/* Reușita plății, la întoarcerea din Stripe. */
+.plan-success { display:flex; align-items:center; gap:.875rem; padding:1rem 1.125rem; border-radius:var(--r-md, 10px); border:1px solid var(--g200); background:var(--g50); animation:slideUp .3s var(--ease); }
+.plan-success-check { width:36px; height:36px; border-radius:50%; background:var(--g500); color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; animation:pop .4s .1s var(--ease) both; }
+.plan-success-check svg { width:20px; height:20px; stroke-dasharray:24; stroke-dashoffset:24; animation:draw .35s .35s var(--ease) forwards; }
+.plan-success b { color:var(--s900); }
+.plan-success p { margin:.1rem 0 0; color:var(--s600); font-size:.875rem; }
+@keyframes pop { from { transform:scale(.4); opacity:0; } 70% { transform:scale(1.1); } to { transform:scale(1); opacity:1; } }
+@keyframes draw { to { stroke-dashoffset:0; } }
+
+/* Plecarea spre Stripe: ecran peste pagină, ca 1–2 secunde de redirecționare să nu pară blocaj. */
+.redirect-overlay {
+  position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center;
+  background:color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter:blur(4px); animation:fadeIn .2s var(--ease);
+}
+.redirect-overlay > div { display:flex; flex-direction:column; align-items:center; gap:.75rem; text-align:center; padding:1.5rem; }
+.redirect-overlay b { color:var(--s900); font-size:1rem; }
+.redirect-overlay span { color:var(--s500); font-size:.8125rem; }
+
+/* Clientul ales se încarcă: rândul persoanei cu CNP-ul încă necunoscut. */
+.pii-pending { display:flex; align-items:center; gap:.5rem; font-size:.8125rem; color:var(--s500); }

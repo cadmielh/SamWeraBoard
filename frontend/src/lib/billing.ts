@@ -93,6 +93,40 @@ export function billingAccess(b: WorkspaceBilling | undefined, now: Date = new D
   }
 }
 
+export interface PlanSummary {
+  /** Starea în câteva cuvinte („12 credite”, „9 zile de probă”). */
+  label: string
+  /** Detaliul de sub ea (data relevantă). */
+  sub: string
+  tone: 'ok' | 'warn' | 'bad'
+}
+
+/** Rezumatul planului pentru indicatorul din meniu și din Setări. */
+export function planSummary(b: BillingAccess): PlanSummary {
+  const until = formatDate(b.accessUntil)
+  if (!b.full) return { label: 'Mod citire', sub: 'Alege un plan', tone: 'bad' }
+  switch (b.reason) {
+    case 'past_due':
+      return { label: 'Plată eșuată', sub: `Actualizează cardul până pe ${until}`, tone: 'bad' }
+    case 'trial':
+      return { label: b.daysLeft === 1 ? 'Ultima zi de probă' : `${b.daysLeft} zile de probă`, sub: `Până pe ${until}`, tone: (b.daysLeft ?? 0) <= 3 ? 'warn' : 'ok' }
+    case 'comp':
+      return { label: 'Acces gratuit', sub: `Până pe ${until}`, tone: 'ok' }
+    case 'credits': {
+      const c = b.credits
+      return {
+        label: c.balance === 1 ? '1 credit' : `${c.balance} credite`,
+        sub: c.balance === 0 ? 'Cumpără un pachet' : c.firstExpiry ? `Primele expiră pe ${formatDate(c.firstExpiry)}` : 'Disponibile',
+        tone: c.balance === 0 ? 'bad' : c.balance <= 3 ? 'warn' : 'ok',
+      }
+    }
+    default:
+      return b.cancelAtPeriodEnd
+        ? { label: 'Abonament anulat', sub: `Activ până pe ${formatDate(b.currentPeriodEnd)}`, tone: 'warn' }
+        : { label: `Abonament ${b.interval === 'year' ? 'anual' : 'lunar'}`, sub: `Reînnoire pe ${formatDate(b.currentPeriodEnd)}`, tone: 'ok' }
+  }
+}
+
 /** Tooltip pe butoanele de creare dezactivate în modul citire. */
 export const READ_ONLY_TITLE = 'Cabinetul este în modul citire — alegeți un abonament sau un pachet de credite pentru a adăuga date'
 

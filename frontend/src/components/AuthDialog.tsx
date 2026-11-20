@@ -4,6 +4,7 @@ import { authErrorMessage, MIN_PASSWORD_LENGTH, PASSWORD_REQUIREMENTS, passwordM
 import LogoMark from './LogoMark'
 import Modal from './Modal'
 import PasswordRules from './PasswordRules'
+import BtnLabel from './BtnLabel'
 
 /** Operațiunile cu parolă; le furnizează AppLayout, ca pagina publică să nu depindă direct de Firebase. */
 export interface PasswordAuth {
@@ -138,7 +139,7 @@ export default function AuthDialog({ auth, onGoogle, onClose }: { auth: Password
               {error && <div role="alert" style={{ color: 'var(--r600)', fontSize: '.8125rem' }}>{error}</div>}
               {info && <div role="status" style={{ color: 'var(--s600)', fontSize: '.8125rem' }}>{info}</div>}
               <button type="submit" className="btn btn-primary" style={WIDE_BTN} disabled={busy}>
-                {busy ? <span className="spin" /> : SUBMIT[mode]}
+                <BtnLabel busy={busy}>{SUBMIT[mode]}</BtnLabel>
               </button>
             </form>
 

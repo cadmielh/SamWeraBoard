@@ -4,6 +4,7 @@ import { choiceFromSuggestion, choicesToTags, summarize, tagForChoice, type Blan
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import type { ToastItem } from '../types'
 import Modal from './Modal'
+import BtnLabel from './BtnLabel'
 
 interface Props {
   file: File
@@ -76,7 +77,7 @@ function Row({ s, analysis, choice, onChange, onAskAi, aiPending, aiAsked, dupli
         {onAskAi && !aiAsked && (
           <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0, fontSize: '.7rem', padding: '.15rem .45rem' }}
             disabled={aiPending} onClick={() => onAskAi(s.id)} title="Cere sugestie AI doar pentru acest loc">
-            {aiPending ? <span className="spin" /> : '✨'}
+            <BtnLabel busy={aiPending}>✨</BtnLabel>
           </button>
         )}
       </div>

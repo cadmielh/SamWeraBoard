@@ -4,7 +4,11 @@ import type { User } from 'firebase/auth'
 import type { Workspace } from '../types'
 import ThemeToggleSwitch from './ThemeToggleSwitch'
 import LogoMark from './LogoMark'
-import { creditsState, formatDate } from '../lib/billing'
+import { planSummary } from '../lib/billing'
+import { useApp } from '../AppContext'
+import { preloadRoute } from '../routes'
+import { isPlainClick, withViewTransition } from '../lib/viewTransition'
+import BtnLabel from './BtnLabel'
 
 interface Props {
   user: User
@@ -52,16 +56,6 @@ function IconExtract() {
     </svg>
   )
 }
-function IconCard() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2.5" y="4.5" width="15" height="11" rx="2" />
-      <path d="M2.5 8.5h15" />
-      <path d="M5.5 12.5h3" />
-    </svg>
-  )
-}
-
 function IconUsers() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -124,6 +118,8 @@ function IconSignOut() {
 
 const COLLAPSE_KEY = 'samwera-sidebar-collapsed'
 
+
+
 const LEGAL_LINKS: [string, string][] = [
   ['/termeni', 'Termeni'],
   ['/confidentialitate', 'Confidențialitate'],
@@ -133,12 +129,21 @@ const LEGAL_LINKS: [string, string][] = [
 ]
 
 export default function Sidebar({ user, activeWorkspace, workspaces, userRole, isSuperAdmin, onSignOut, onWorkspaceChange, onWorkspaceRename }: Props) {
-  // Cabinet pe credite: soldul lângă „Abonament”, cu data primei expirări în tooltip.
-  const credits = creditsState(activeWorkspace?.billing)
-  const creditsTitle = credits.mode === 'credits'
-    ? `${credits.balance} credite${credits.firstExpiry ? ` · primele expiră pe ${formatDate(credits.firstExpiry)}` : ''}`
-    : null
+  // Starea planului (probă, credite, abonament): indicator jos în meniu, pentru administratori.
+  const { billing } = useApp()
+  const plan = planSummary(billing)
   const navigate = useNavigate()
+  // Legăturile din meniu: pagina începe să se descarce când mouse-ul (sau focusul) ajunge pe ea,
+  // iar la clic schimbarea de pagină trece printr-o tranziție scurtă a browserului.
+  const navProps = (path: string) => ({
+    onMouseEnter: () => preloadRoute(path),
+    onFocus: () => preloadRoute(path),
+    onClick: (e: React.MouseEvent) => {
+      if (!isPlainClick(e)) return
+      e.preventDefault()
+      withViewTransition(() => navigate(path))
+    },
+  })
   const initials = (user.displayName ?? user.email ?? '?')[0].toUpperCase()
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
@@ -293,7 +298,7 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
                   onClick={handleSubmit}
                   disabled={!inputVal.trim() || saving}
                 >
-                  {saving ? <span className="spin" /> : 'Salvează'}
+                  <BtnLabel busy={saving}>Salvează</BtnLabel>
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
@@ -313,27 +318,27 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
       <nav className="sidebar-nav">
         {!collapsed && <div className="sidebar-section">Meniu</div>}
 
-        <NavLink to="/" end title="Clienți" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+        <NavLink to="/" end {...navProps('/')} title="Clienți" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
           <IconClients />
           <span className="sidebar-nav-label">Clienți</span>
         </NavLink>
 
-        <NavLink to="/dosare" title="Dosare" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+        <NavLink to="/dosare" {...navProps('/dosare')} title="Dosare" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
           <IconDosare />
           <span className="sidebar-nav-label">Dosare</span>
         </NavLink>
 
-        <NavLink to="/sarcini" title="Sarcini" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+        <NavLink to="/sarcini" {...navProps('/sarcini')} title="Sarcini" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
           <IconSarcini />
           <span className="sidebar-nav-label">Sarcini</span>
         </NavLink>
 
-        <NavLink to="/extragere" title="Generare Documente" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+        <NavLink to="/extragere" {...navProps('/extragere')} title="Generare Documente" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
           <IconExtract />
           <span className="sidebar-nav-label">Generare Documente</span>
         </NavLink>
 
-        <NavLink to="/setari" title="Setări" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+        <NavLink to="/setari" {...navProps('/setari')} title="Setări" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
           <IconSettings />
           <span className="sidebar-nav-label">Setări</span>
         </NavLink>
@@ -341,22 +346,9 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
         {userRole === 'admin' && (
           <div style={{ marginTop: isSuperAdmin ? 0 : 'auto' }}>
             {!collapsed && <div className="sidebar-section">Administrare</div>}
-            <NavLink to="/utilizatori" title="Utilizatori" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+            <NavLink to="/utilizatori" {...navProps('/utilizatori')} title="Utilizatori" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconUsers />
               <span className="sidebar-nav-label">Utilizatori</span>
-            </NavLink>
-            <NavLink to="/abonament" title={creditsTitle ?? 'Abonament'} className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
-              <IconCard />
-              <span className="sidebar-nav-label">Abonament</span>
-              {!collapsed && credits.mode === 'credits' && (
-                // Doar numărul (bara e îngustă); textul complet e în tooltip-ul legăturii.
-                <span aria-label={creditsTitle ?? undefined} style={{ marginLeft: 'auto', flexShrink: 0, minWidth: '1.25rem', height: '1.25rem',
-                  padding: '0 .35rem', borderRadius: 'var(--r-full)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '.6875rem', fontWeight: 700, background: credits.balance <= 3 ? 'var(--y400)' : 'var(--p500)',
-                  color: credits.balance <= 3 ? '#422006' : '#fff' }}>
-                  {credits.balance}
-                </span>
-              )}
             </NavLink>
           </div>
         )}
@@ -364,13 +356,22 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
         {isSuperAdmin && (
           <div style={{ marginTop: userRole === 'admin' ? 0 : 'auto' }}>
             {!collapsed && <div className="sidebar-section">Super admin</div>}
-            <NavLink to="/super-admin" title="Super admin" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
+            <NavLink to="/super-admin" {...navProps('/super-admin')} title="Super admin" className={({ isActive }) => 'sidebar-nav-item' + (isActive ? ' active' : '')}>
               <IconShield />
               <span className="sidebar-nav-label">Super admin</span>
             </NavLink>
           </div>
         )}
       </nav>
+
+      {/* Starea planului: duce la Setări › Plan și credite. */}
+      {userRole === 'admin' && activeWorkspace && (
+        <NavLink to="/setari/plan" {...navProps('/setari/plan')} title={`${plan.label} · ${plan.sub}`}
+          className={`sidebar-plan${plan.tone === 'ok' ? '' : ` sidebar-plan--${plan.tone}`}`}>
+          <span className="sidebar-plan-dot" aria-hidden />
+          <span className="sidebar-plan-text"><strong>{plan.label}</strong><span>{plan.sub}</span></span>
+        </NavLink>
+      )}
 
       {/* Footer */}
       <div className="sidebar-footer">

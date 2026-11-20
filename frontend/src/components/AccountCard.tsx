@@ -6,6 +6,7 @@ import { clearDriveToken, ensureDriveToken, getDriveToken } from '../lib/driveAu
 import { changePassword, signOut } from '../lib/firebase'
 import ConfirmModal from './ConfirmModal'
 import PasswordRules from './PasswordRules'
+import BtnLabel from './BtnLabel'
 
 /** Un rând al cardului: titlu și o explicație scurtă în stânga, acțiunea în dreapta. */
 function Row({ title, desc, action }: { title: string; desc: ReactNode; action: ReactNode }) {
@@ -68,7 +69,7 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
       {error && <div role="alert" style={{ color: 'var(--r600)', fontSize: '.8125rem' }}>{error}</div>}
       <div style={{ display: 'flex', gap: '.5rem' }}>
         <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
-          {saving ? <span className="spin" /> : 'Salvează parola'}
+          <BtnLabel busy={saving}>Salvează parola</BtnLabel>
         </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onDone} disabled={saving}>Anulează</button>
       </div>
@@ -142,14 +143,14 @@ export default function AccountCard() {
           desc={driveConnected ? 'Conectat în acest tab; aplicația vede doar fișierele alese.' : 'Neconectat în acest tab; se conectează automat la nevoie.'}
           action={driveConnected
             ? <button className="btn btn-sm" onClick={disconnectDrive}>Deconectează</button>
-            : <button className="btn btn-sm" onClick={() => void connectDrive()} disabled={connecting}>{connecting ? <span className="spin spin-dark" /> : 'Conectează'}</button>}
+            : <button className="btn btn-sm" onClick={() => void connectDrive()} disabled={connecting}><BtnLabel busy={connecting} dark>Conectează</BtnLabel></button>}
         />
 
         <Row
           title="Sesiuni"
           desc="Pentru un dispozitiv pierdut sau un acces suspect."
           action={<button className="btn btn-sm" onClick={() => setConfirmRevoke(true)} disabled={revoking}>
-            {revoking ? <span className="spin spin-dark" /> : 'Deconectează peste tot'}
+            <BtnLabel busy={revoking} dark>Deconectează peste tot</BtnLabel>
           </button>}
         />
       </div>

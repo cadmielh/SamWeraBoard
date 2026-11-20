@@ -15,6 +15,7 @@ import DosarSarciniList from './dosare/DosarSarciniList'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import DateFieldInput from './DateFieldInput'
+import BtnLabel from './BtnLabel'
 
 interface Props {
   dosar: Dosar
@@ -91,7 +92,7 @@ function EditableRow({ label, value, onSave, type = 'text', multiline = false, s
           )}
           <button className="btn btn-ghost btn-xs" onClick={cancel} disabled={saving} title="Anulează">✕</button>
           <button className="btn btn-primary btn-xs" onClick={commit} disabled={saving} title="Salvează">
-            {saving ? <span className="spin" /> : '✓'}
+            <BtnLabel busy={saving}>✓</BtnLabel>
           </button>
         </div>
       </div>
@@ -179,7 +180,7 @@ export default function DosarView({ dosar, embedded, onClose, onEdit, onDelete, 
           <div className="cv2-section" style={{ background: 'var(--p50)', borderColor: 'var(--p200)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: '.75rem' }}>
             <span style={{ fontSize: '.8125rem', color: 'var(--p700)' }}>„{dosar.clientDenumireLibera}" nu e încă în registrul Clienți.</span>
             <button className="btn btn-outline-primary btn-xs" onClick={handleUpgradeToClient} disabled={creatingClient} style={{ flexShrink: 0 }}>
-              {creatingClient ? <span className="spin spin-dark" /> : '+ Creează client'}
+              <BtnLabel busy={creatingClient} dark>+ Creează client</BtnLabel>
             </button>
           </div>
         )}

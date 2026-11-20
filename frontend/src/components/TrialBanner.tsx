@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { formatDate, openPortal } from '../lib/billing'
+import BtnLabel from './BtnLabel'
 
 type Tone = 'info' | 'warn' | 'danger'
 
@@ -29,13 +30,13 @@ export default function TrialBanner() {
     }
   }
   const subscribeLink = isAdmin
-    ? <Link to="/abonament" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Alege un plan</Link>
+    ? <Link to="/setari/plan" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Alege un plan</Link>
     : null
   const buyLink = isAdmin
-    ? <Link to="/abonament" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Cumpără credite</Link>
+    ? <Link to="/setari/plan" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Cumpără credite</Link>
     : null
   const portalButton = isAdmin
-    ? <button className="btn btn-primary btn-sm" onClick={portal} disabled={opening}>{opening ? <span className="spin" /> : 'Actualizează plata'}</button>
+    ? <button className="btn btn-primary btn-sm" onClick={portal} disabled={opening}><BtnLabel busy={opening}>Actualizează plata</BtnLabel></button>
     : null
   const until = formatDate(billing.accessUntil)
   const days = billing.daysLeft ?? 0

@@ -6,7 +6,10 @@ import { inferTipClient } from '../types'
 import { useApp } from '../AppContext'
 import { useClienti, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from '../lib/clienti'
 import { EMPTY_ID_FIELDS, idFieldsToPersoana, persoanaToIDFields } from '../lib/idFields'
-import { revealClient } from '../lib/pii'
+import { clientNeedsReveal, revealClient } from '../lib/pii'
+import { warmUpApi } from '../lib/api'
+import BtnLabel from '../components/BtnLabel'
+import { Skeleton } from '../components/Skeleton'
 import UploadZone from '../components/UploadZone'
 import DriveFilePicker from '../components/DriveFilePicker'
 import FieldsForm from '../components/FieldsForm'
@@ -115,6 +118,11 @@ export default function GenerareDocumentePage() {
   // Fișa clientului așa cum a fost adusă la selectare (cu CNP/serie din vault) — baza de
   // comparație pentru „există modificări de salvat”; lista `clienti` are doar valori mascate.
   const selectedBaselineRef = useRef<Client | null>(null)
+  // Clientul tocmai ales, cât timp CNP-ul/seria lui vin din vault: apare imediat (nume, persoane), cu datele
+  // sensibile în curs de încărcare, ca selecția să nu pară ignorată. Contorul ignoră răspunsurile unei selecții
+  // mai vechi, dacă între timp s-a ales alt client.
+  const [pendingClient, setPendingClient] = useState<Client | null>(null)
+  const revealSeq = useRef(0)
   // Datele complete de client colectate prin ClientModal la Pasul 2 — nu se
   // salvează încă în Firestore (asta rămâne opțional, la Pasul 3, ca înainte),
   // doar alimentează TemplateFiller.
@@ -150,6 +158,32 @@ export default function GenerareDocumentePage() {
     () => searchParams.get('mode') === 'client' && !!searchParams.get('clientId')
   )
 
+  const selectWithReveal = useCallback((c: Client) => {
+    const seq = ++revealSeq.current
+    if (!clientNeedsReveal(c)) {
+      selectedBaselineRef.current = c
+      setPendingClient(null)
+      setSelectedClient(c)
+      return
+    }
+    setSelectedClient(null)
+    setPendingClient(null)
+    revealSeq.current++
+    setPendingClient(c)
+    // Pentru generare sunt necesare CNP/serie CI: se aduc din vault (cerere auditată).
+    revealClient(c, 'generate')
+      .then(hydrated => {
+        if (seq !== revealSeq.current) return
+        selectedBaselineRef.current = hydrated
+        setSelectedClient(hydrated)
+      })
+      .catch(() => { if (seq === revealSeq.current) toast('Nu s-au putut încărca datele sensibile ale clientului', 'err') })
+      .finally(() => { if (seq === revealSeq.current) setPendingClient(null) })
+  }, [toast])
+
+  // Pornirea la rece a serverului se suprapune cu alegerea clientului, nu se adaugă la ea.
+  useEffect(() => { warmUpApi() }, [])
+
   // Deep-link: navigare din ClientView (?clientId=...&mode=client) — se aplică
   // o singură dată, la intrarea în pagină. Fără gardă pe `hasStarted`, orice
   // schimbare ulterioară a listei `clienti` (ex. salvarea datelor editate în
@@ -166,13 +200,10 @@ export default function GenerareDocumentePage() {
     if (found) {
       setSourceMode('client')
       setHasStarted(true)
-      // Pentru generare sunt necesare CNP/serie CI: se aduc din vault (cerere auditată).
-      revealClient(found, 'generate')
-        .then(hydrated => { selectedBaselineRef.current = hydrated; setSelectedClient(hydrated) })
-        .catch(() => toast('Nu s-au putut încărca datele sensibile ale clientului', 'err'))
+      selectWithReveal(found)
     }
     setDeepLinkPending(false)
-  }, [searchParams, clienti, clientiLoading, hasStarted, deepLinkPending, toast])
+  }, [searchParams, clienti, clientiLoading, hasStarted, deepLinkPending, selectWithReveal])
 
   const startMode = (mode: SourceMode) => {
     setSourceMode(mode)
@@ -180,6 +211,8 @@ export default function GenerareDocumentePage() {
     setSourceFile('')
     setScannedPersons([])
     setSelectedClient(null)
+    setPendingClient(null)
+    revealSeq.current++
     setSocietateClientInput(null)
     setPfClientInput(null)
     setNewClientId(null)
@@ -195,6 +228,8 @@ export default function GenerareDocumentePage() {
     setSourceFile('')
     setScannedPersons([])
     setSelectedClient(null)
+    setPendingClient(null)
+    revealSeq.current++
     setSocietateClientInput(null)
     setPfClientInput(null)
     setNewClientId(null)
@@ -248,15 +283,7 @@ export default function GenerareDocumentePage() {
 
   // Selectarea nu mai schimbă pasul — verificarea apare inline, sub selector,
   // pe același ecran (Pasul 1).
-  const handleClientSelect = async (c: Client) => {
-    try {
-      const hydrated = await revealClient(c, 'generate')
-      selectedBaselineRef.current = hydrated
-      setSelectedClient(hydrated)
-    } catch {
-      toast('Nu s-au putut încărca datele sensibile ale clientului', 'err')
-    }
-  }
+  const handleClientSelect = selectWithReveal
 
   const handleMultiPersonContinue = (persons: ScannedPerson[], updatedClient: Client) => {
     const syncedFields: Partial<ClientInput> = {
@@ -678,7 +705,7 @@ export default function GenerareDocumentePage() {
                       clients={clienti}
                       loading={clientiLoading}
                       onSelect={handleClientSelect}
-                      value={selectedClient?.denumire}
+                      value={(pendingClient ?? selectedClient)?.denumire}
                     />
                     {clienti.length === 0 && !clientiLoading && (
                       <p style={{ fontSize: '.85rem', color: 'var(--s400)', marginTop: '.75rem' }}>
@@ -687,6 +714,8 @@ export default function GenerareDocumentePage() {
                     )}
                   </div>
                 </div>
+
+                {pendingClient && <PendingClientCard client={pendingClient} />}
 
                 {/* Verificare inline — apare imediat sub selector, fără schimbare de pas */}
                 {selectedClient && inferTipClient(selectedClient) === 'PF' && (
@@ -848,5 +877,34 @@ function LandingCard({ icon, title, desc, examples, bullets, onClick, accent = '
         Pornește <span style={{ fontSize: '1rem' }}>→</span>
       </div>
     </button>
+  )
+}
+
+/** Clientul ales, cât timp datele sensibile vin din vault: persoanele apar deja, CNP-ul și seria ca schelet,
+ *  iar „Continuă” așteaptă (fără CNP complet nu se poate genera). */
+function PendingClientCard({ client }: { client: Client }) {
+  const pf = inferTipClient(client) === 'PF'
+  const persons = pf
+    ? [client.titular].filter((p): p is NonNullable<typeof p> => !!p)
+    : [...(client.asociati ?? []), ...(client.administratori ?? [])]
+        .filter((p, i, all) => all.findIndex(q => `${q.prenume} ${q.nume}` === `${p.prenume} ${p.nume}`) === i)
+  return (
+    <div style={COMPACT_STYLE} className="card" aria-busy="true">
+      <div className="card-head">
+        <span className="card-title">{pf ? 'Verifică datele persoanei' : 'Verifică datele persoanelor'}</span>
+        <button className="btn btn-primary btn-sm" disabled><BtnLabel busy>Continuă la template →</BtnLabel></button>
+      </div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '.625rem' }}>
+        <div className="pii-pending" role="status"><span className="spin spin-dark" style={{ width: 14, height: 14 }} />Se încarcă datele de identitate ale clientului…</div>
+        {(persons.length ? persons : [null]).map((p, i) => (
+          <div key={i} className="persoana-card">
+            <div style={{ flex: 1 }}>
+              <div className="persoana-card-name">{p ? `${p.prenume} ${p.nume}`.trim() || 'Fără nume' : <Skeleton w={160} h={13} />}</div>
+              <div style={{ display: 'flex', gap: '.5rem', marginTop: '.35rem' }}><Skeleton w={140} h={10} /><Skeleton w={90} h={10} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

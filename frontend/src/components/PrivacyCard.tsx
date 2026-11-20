@@ -3,16 +3,14 @@ import { Link } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { apiJson } from '../lib/api'
 import { contactEmail } from '../lib/legalConfig'
-import DeleteAccountModal from './DeleteAccountModal'
 import IconExport from './IconExport'
-import IconTrash from './IconTrash'
+import BtnLabel from './BtnLabel'
 
-/** Cont și confidențialitate: acceptarea textelor legale de către cabinet, exportul datelor contului, ștergerea contului. */
+/** Date și confidențialitate: acceptarea textelor legale de către cabinet și exportul datelor contului.
+ *  Ștergerea contului stă separat, în DangerZoneCard. */
 export default function PrivacyCard() {
-  const { user, activeWorkspace, toast } = useApp()
-  const hasPassword = user.providerData.some(p => p.providerId === 'password')
+  const { activeWorkspace, toast } = useApp()
   const [exporting, setExporting] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const consent = activeWorkspace?.consent
 
   const exportData = async () => {
@@ -35,7 +33,7 @@ export default function PrivacyCard() {
   return (
     <div className="card">
       <div className="card-head">
-        <span className="card-title">🛡️ Cont și confidențialitate</span>
+        <span className="card-title">🛡️ Date și confidențialitate</span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '.75rem', fontSize: '.875rem', color: 'var(--s600)' }}>
         {activeWorkspace && (
@@ -51,19 +49,17 @@ export default function PrivacyCard() {
         </div>
 
         <div style={{ borderTop: '1px solid var(--s100)', paddingTop: '.75rem' }}>
-          Conform GDPR, poți descărca o copie a datelor contului tău sau îți poți șterge contul. Datele clienților aparțin cabinetului și sunt reglementate de DPA.
+          Conform GDPR, poți descărca oricând o copie a datelor contului tău. Datele clienților aparțin cabinetului și sunt reglementate de DPA.
         </div>
         <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
           <button className="btn btn-sm" onClick={() => void exportData()} disabled={exporting}>
-            {exporting ? <span className="spin spin-dark" /> : <><IconExport size={14} /> Exportă datele mele</>}
+            <BtnLabel busy={exporting} dark><IconExport size={14} /> Exportă datele mele</BtnLabel>
           </button>
-          <button className="btn btn-danger btn-sm" onClick={() => setDeleting(true)}><IconTrash size={14} /> Șterge contul</button>
         </div>
         <div>
           Pentru cereri privind datele personale: <a href={`mailto:${contactEmail()}`}>{contactEmail()}</a>
         </div>
       </div>
-      {deleting && <DeleteAccountModal hasPassword={hasPassword} onClose={() => setDeleting(false)} />}
     </div>
   )
 }

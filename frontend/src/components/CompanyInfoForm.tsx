@@ -15,6 +15,7 @@ import { campuriSchimbate, mesajCompletare } from '../lib/campuriAuto'
 import type { Durata } from '../lib/durata'
 import { parteSocialaError } from '../lib/cota'
 import { isoDateToRo } from '../lib/dates'
+import BtnLabel from './BtnLabel'
 
 export interface CompanyData {
   denumire: string
@@ -251,7 +252,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
           <button type="button" className="btn btn-outline-primary btn-sm"
             onClick={preiaAnaf} disabled={!value.codFiscal.trim() || anafLoading}
             title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-            {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
+            <BtnLabel busy={anafLoading} dark>🔍 ANAF</BtnLabel>
           </button>
         </div>
         {cifError && <span className="field-error">{cifError}</span>}

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 
 vi.mock('./firebase', () => ({ auth: { currentUser: null } }))
 
-import { assertWritable, billingAccess, creditsState, setWriteAccess, toDate } from './billing'
+import { assertWritable, billingAccess, creditsState, planSummary, setWriteAccess, toDate } from './billing'
 import { apiErrorMessage, SUBSCRIPTION_REQUIRED_EVENT } from './api'
 import type { WorkspaceBilling } from '../types'
 
@@ -98,5 +98,31 @@ describe('credite — oglinda lui billing.credit_mode / credit_balance', () => {
     const msg = apiErrorMessage({ error: 'credits_required' }, new Response(null, { status: 402 }), 'x')
     expect(msg).toMatch(/credite/)
     expect((dispatch.mock.calls[0][0] as CustomEvent).detail).toBe('credits')
+  })
+})
+
+describe('planSummary — indicatorul planului din meniu și din Setări', () => {
+  const lot = (remaining: number, days: number) => ({ id: `l${remaining}`, remaining, expiresAt: iso(days * DAY) })
+  it('mod citire și plată eșuată cer atenție (roșu)', () => {
+    expect(planSummary(billingAccess(b({}), NOW))).toMatchObject({ label: 'Mod citire', tone: 'bad' })
+    expect(planSummary(billingAccess(b({ accessUntil: iso(5 * DAY), subscriptionStatus: 'past_due' }), NOW)))
+      .toMatchObject({ label: 'Plată eșuată', tone: 'bad' })
+  })
+  it('proba: zilele rămase, galben în ultimele 3 zile', () => {
+    expect(planSummary(billingAccess(b({ accessUntil: iso(9 * DAY), trialEndsAt: iso(9 * DAY) }), NOW)))
+      .toMatchObject({ label: '9 zile de probă', tone: 'ok' })
+    expect(planSummary(billingAccess(b({ accessUntil: iso(2 * DAY), trialEndsAt: iso(2 * DAY) }), NOW)).tone).toBe('warn')
+    expect(planSummary(billingAccess(b({ accessUntil: iso(DAY), trialEndsAt: iso(DAY) }), NOW)).label).toBe('Ultima zi de probă')
+  })
+  it('credite: soldul, galben la cel mult 3', () => {
+    const at = (lots: ReturnType<typeof lot>[]) => planSummary(billingAccess(b({ accessUntil: iso(300 * DAY), credits: { lots, coveredUntil: null } }), NOW))
+    expect(at([lot(12, 300)])).toMatchObject({ label: '12 credite', tone: 'ok' })
+    expect(at([lot(3, 300)]).tone).toBe('warn')
+    expect(at([lot(1, 300)]).label).toBe('1 credit')
+  })
+  it('abonament activ sau anulat', () => {
+    const sub = { accessUntil: iso(30 * DAY), subscriptionStatus: 'active' as const, hasSubscription: true, interval: 'year' as const, currentPeriodEnd: iso(30 * DAY) }
+    expect(planSummary(billingAccess(b(sub), NOW))).toMatchObject({ label: 'Abonament anual', tone: 'ok' })
+    expect(planSummary(billingAccess(b({ ...sub, cancelAtPeriodEnd: true }), NOW))).toMatchObject({ label: 'Abonament anulat', tone: 'warn' })
   })
 })

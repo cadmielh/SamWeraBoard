@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, auth, signIn, signInPassword, registerPassword, resetPassword, resendVerification, signOut } from './lib/firebase'
@@ -18,6 +18,8 @@ import TrialBanner from './components/TrialBanner'
 import UpgradeModal from './components/UpgradeModal'
 import LandingPage from './pages/LandingPage'
 import type { PasswordAuth } from './components/AuthDialog'
+import { PageSkeleton } from './components/Skeleton'
+import { preloadMainRoutesWhenIdle } from './routes'
 
 const PASSWORD_AUTH: PasswordAuth = { signIn: signInPassword, register: registerPassword, reset: resetPassword }
 const RESEND_COOLDOWN_MS = 60_000
@@ -38,6 +40,10 @@ export default function AppLayout() {
 
   // Fără e-mail verificat regulile refuză orice citire, deci nici nu încercăm.
   const workspaceCtx = useWorkspace(user && emailVerified ? user.uid : null)
+
+  // Autentificat: paginile principale se descarcă în fundal, ca prima navigare să nu mai aștepte codul.
+  const signedIn = !!user && emailVerified
+  useEffect(() => { if (signedIn) preloadMainRoutesWhenIdle() }, [signedIn])
 
   // Auth listener
   useEffect(() => {
@@ -203,7 +209,7 @@ export default function AppLayout() {
         <div className="main-area">
           <ConsentGate onSignOut={handleSignOut} />
           <TrialBanner />
-          <Outlet />
+          <Suspense fallback={<PageSkeleton />}><Outlet /></Suspense>
         </div>
       </div>
       <UpgradeModal />

@@ -34,7 +34,7 @@ export default function UpgradeModal() {
       <div className="modal-footer">
         <button className="btn btn-ghost" onClick={close}>Închide</button>
         {userRole === 'admin' && (
-          <button className="btn btn-primary" onClick={() => { close(); navigate('/abonament') }}>Vezi abonamentul</button>
+          <button className="btn btn-primary" onClick={() => { close(); navigate('/setari/plan') }}>Vezi abonamentul</button>
         )}
       </div>
     </Modal>

@@ -12,6 +12,7 @@ import ObiectCereriiTags from './ObiectCereriiTags'
 import ResponsabilCombobox from './ResponsabilCombobox'
 import { IsoDateFieldInput } from './DateFieldInput'
 import Modal from './Modal'
+import BtnLabel from './BtnLabel'
 
 interface Props {
   initial: Dosar | null
@@ -148,7 +149,7 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
               <ClientLinkPicker clients={clienti} loading={clientiLoading} value={clientPickerValue} onSelectClient={selectClient} onFreeText={freeTextClient} />
               {canUpgradeToClient && (
                 <button type="button" className="btn btn-outline-primary btn-sm" style={{ marginTop: '.5rem' }} onClick={handleUpgradeToClient} disabled={creatingClient}>
-                  {creatingClient ? <span className="spin spin-dark" /> : `+ Creează client din „${form.clientDenumireLibera}"`}
+                  <BtnLabel busy={creatingClient} dark>{`+ Creează client din „${form.clientDenumireLibera}"`}</BtnLabel>
                 </button>
               )}
             </div>

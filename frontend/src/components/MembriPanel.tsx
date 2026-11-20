@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Workspace, WorkspaceRole } from '../types'
 import type { WorkspaceInvite } from '../lib/workspace'
 import { useApp } from '../AppContext'
+import BtnLabel from './BtnLabel'
 
 const ROLE_LABEL: Record<WorkspaceRole, string> = { admin: 'Administrator', member: 'Membru', viewer: 'Doar citire' }
 
@@ -136,7 +137,7 @@ export default function MembriPanel({ workspace }: Props) {
             <option value="admin">Admin</option>
           </select>
           <button className="btn btn-primary btn-sm" onClick={handleInvite} disabled={!inviteEmail.trim() || inviting}>
-            {inviting ? <span className="spin" /> : 'Trimite invitație'}
+            <BtnLabel busy={inviting}>Trimite invitație</BtnLabel>
           </button>
         </div>
         <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.5rem', margin: '.5rem 0 0' }}>

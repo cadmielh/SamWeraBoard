@@ -288,7 +288,7 @@ export default function NotificariPanel({ workspaceId, notificari, prefs, ctx, r
         <button
           type="button"
           className="notif-foot-link"
-          onClick={() => { onClose(false); navigate('/setari?notificari=1') }}
+          onClick={() => { onClose(false); navigate('/setari/notificari?notificari=1') }}
         >
           Setări notificări →
         </button>

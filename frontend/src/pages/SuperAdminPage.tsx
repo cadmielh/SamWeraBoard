@@ -16,6 +16,7 @@ import IconTrash from '../components/IconTrash'
 import type { BillingTime, Workspace } from '../types'
 import NotificariBell from '../components/NotificariBell'
 import { billingAccess, formatDate, toDate } from '../lib/billing'
+import BtnLabel from '../components/BtnLabel'
 
 const ROLE_LABEL: Record<'admin' | 'member' | 'viewer', string> = { admin: 'Admin', member: 'Membru', viewer: 'Doar citire' }
 
@@ -379,7 +380,7 @@ export default function SuperAdminPage() {
                   style={{ flex: 1 }}
                 />
                 <button className="btn btn-primary btn-sm" onClick={handleGrant} disabled={!email.trim() || granting}>
-                  {granting ? <span className="spin" /> : 'Adaugă'}
+                  <BtnLabel busy={granting}>Adaugă</BtnLabel>
                 </button>
               </div>
               {error && <div style={{ color: 'var(--r600)', fontSize: '.8125rem', marginTop: '.5rem' }}>{error}</div>}

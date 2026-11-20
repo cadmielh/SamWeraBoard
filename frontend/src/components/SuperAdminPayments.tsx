@@ -3,6 +3,7 @@ import { useApp } from '../AppContext'
 import { billingAccess, formatDate } from '../lib/billing'
 import { adminBillingPayments, adminMarkInvoiced, adminStripeFees, type AccountFee, type PaymentRow } from '../lib/superAdmin'
 import type { Workspace } from '../types'
+import BtnLabel from './BtnLabel'
 
 type Period = 'luna' | 'luna-trecuta' | 'an' | 'tot' | 'interval'
 type KindFilter = 'toate' | PaymentRow['kind']
@@ -287,7 +288,7 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
           <span className="card-title">💳 Încasări</span>
           <div style={{ display: 'flex', gap: '.5rem' }}>
             <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
-              {loading ? <span className="spin spin-dark" /> : 'Reîncarcă'}
+              <BtnLabel busy={loading} dark>Reîncarcă</BtnLabel>
             </button>
             <button className="btn btn-sm" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
           </div>

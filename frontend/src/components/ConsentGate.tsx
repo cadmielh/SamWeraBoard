@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { hasCurrentConsent } from '../lib/legal'
 import Modal from './Modal'
+import BtnLabel from './BtnLabel'
 
 /** Acceptarea termenilor și a DPA pentru spațiul de lucru activ.
  *  - Administratorul vede un ecran care blochează aplicația până acceptă (workspace-urile migrate
@@ -59,7 +60,7 @@ export default function ConsentGate({ onSignOut }: { onSignOut: () => void }) {
       <div className="modal-footer">
         <button className="btn btn-ghost" onClick={onSignOut} disabled={saving}>Deconectare</button>
         <button className="btn btn-primary" onClick={accept} disabled={!accepted || saving}>
-          {saving ? <span className="spin" /> : 'Accept și continui'}
+          <BtnLabel busy={saving}>Accept și continui</BtnLabel>
         </button>
       </div>
     </Modal>

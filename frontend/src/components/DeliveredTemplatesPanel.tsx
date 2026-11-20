@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { listDeliveredTemplates, revokeDeliveredTemplate, type DeliveredTemplate } from '../lib/api'
 import ConfirmModal from './ConfirmModal'
+import BtnLabel from './BtnLabel'
 
 /** Super admin: șabloanele livrate unui cabinet, cu retragerea unei livrări greșite. Lista (fără fișiere) se
  * încarcă doar la cerere, ca pagina cu toate cabinetele să nu facă o cerere pentru fiecare. */
@@ -35,7 +36,7 @@ export default function DeliveredTemplatesPanel({ workspaceId }: { workspaceId: 
     <div style={{ borderTop: '1px solid var(--s100)', marginTop: '.625rem', paddingTop: '.625rem', fontSize: '.8125rem' }}>
       {items === null ? (
         <button className="btn btn-ghost btn-sm" onClick={() => void load()} disabled={loading}>
-          {loading ? <span className="spin" /> : 'Șabloane livrate…'}
+          <BtnLabel busy={loading}>Șabloane livrate…</BtnLabel>
         </button>
       ) : items.length === 0 ? (
         <div className="card-sub">Niciun șablon livrat acestui cabinet.</div>

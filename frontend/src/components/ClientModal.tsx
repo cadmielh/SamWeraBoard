@@ -20,6 +20,7 @@ import CapitalSocialFields from './CapitalSocialFields'
 import { campuriSchimbate, mesajCompletare } from '../lib/campuriAuto'
 import MandatFields from './MandatFields'
 import DurataSocietateField, { DataInmatriculariiField } from './DurataSocietateField'
+import BtnLabel from './BtnLabel'
 
 interface Props {
   initial: Client | null
@@ -764,7 +765,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
                   <button type="button" className="btn btn-outline-primary btn-sm"
                     onClick={preiaAnaf} disabled={!form.codFiscal.trim() || anafLoading}
                     title="Preia date de la ANAF" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-                    {anafLoading ? <span className="spin spin-dark" /> : '🔍 ANAF'}
+                    <BtnLabel busy={anafLoading} dark>🔍 ANAF</BtnLabel>
                   </button>
                 </div>
                 {cifError && <span className="field-error">{cifError}</span>}

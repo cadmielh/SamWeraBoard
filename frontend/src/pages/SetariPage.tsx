@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Navigate, NavLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { FONT_OPTIONS } from '../lib/settings'
 import type { Theme } from '../lib/settings'
 import { useSettingsCtx } from '../SettingsCtx'
@@ -11,6 +12,11 @@ import { resolveFacturareConfig } from '../types'
 import type { FacturareConfig } from '../types'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import NotificariBell from '../components/NotificariBell'
+import PlanSection from '../components/PlanSection'
+import DangerZoneCard from '../components/DangerZoneCard'
+import ConfirmModal from '../components/ConfirmModal'
+import BtnLabel from '../components/BtnLabel'
+import { planSummary } from '../lib/billing'
 
 const THEME_OPTIONS: { key: Theme; label: string; desc: string }[] = [
   { key: 'light', label: 'Deschis', desc: 'Fundal alb, potrivit pentru lucru ziua' },
@@ -82,12 +88,22 @@ function RonField({ label, hint, value, onChange }: { label: string; hint: strin
   )
 }
 
-function FacturareConfigCard() {
+function FacturareConfigCard({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { activeWorkspace, workspaceCtx, toast } = useApp()
   const saved = resolveFacturareConfig(activeWorkspace?.facturareConfig)
   const [form, setForm] = useState<FacturareConfig>(saved)
   const [saving, setSaving] = useState(false)
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+
+  // Modificări nesalvate: pagina le semnalează la schimbarea secțiunii, iar browserul la închidere/reîncărcare.
+  useEffect(() => {
+    onDirtyChange(dirty)
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
 
   const set = <K extends keyof FacturareConfig>(key: K, val: number) => setForm(prev => ({ ...prev, [key]: val }))
 
@@ -105,127 +121,233 @@ function FacturareConfigCard() {
   }
 
   return (
+    <>
+      <div className="card">
+        <div className="card-head">
+          <span className="card-title">💰 Facturare Sami / Adi</span>
+        </div>
+        <div className="card-body">
+          <div className="card-sub" style={{ marginBottom: '.875rem' }}>
+            Cotele folosite la împărțirea profitului dosarelor cu semnătură electronică.
+          </div>
+          <div className="form-grid">
+            <PercentField label="Cota Sami — clienți Adi" hint="Ce revine lui Sami din dosarele clienților lui Adi" value={form.cotaSamiClientiAdi} onChange={v => set('cotaSamiClientiAdi', v)} />
+            <PercentField label="Cota Sami — clienți proprii" hint="Ce revine lui Sami din dosarele proprii" value={form.cotaSamiClientiProprii} onChange={v => set('cotaSamiClientiProprii', v)} />
+            <PercentField label="CAA per dosar (% din valoare)" hint="Contribuția CAA — mereu % din valoarea dosarului (calculul per dosar)" value={form.caaProcent} onChange={v => set('caaProcent', v)} />
+            <PercentField label="Impozit pe profit (Adi)" hint="Se aplică pe partea lui Adi (cuvenit Adi)" value={form.impozitProfitCota} onChange={v => set('impozitProfitCota', v)} />
+          </div>
+
+          <div className="form-subsection-label" style={{ marginTop: '1.25rem' }}>Sumar lunar — CAA reală, cu prag</div>
+          <div className="card-sub" style={{ marginTop: '.5rem', marginBottom: '.625rem' }}>
+            Folosite doar de cardul „Sumar lunar" — CAA lunară reală se calculează cu prag, nu ca simplul % de mai sus.
+          </div>
+          <div className="form-grid">
+            <RonField label="CAA — prag minim (RON/lună)" hint="Sub acest prag, CAA lunară e fixă (nu procentuală)" value={form.caaMin} onChange={v => set('caaMin', v)} />
+            <RonField label="CAA — plafon maxim (RON/lună)" hint="CAA lunară nu depășește această sumă" value={form.caaPlafon} onChange={v => set('caaPlafon', v)} />
+            <RonField label="Barou — taxă fixă (RON/lună)" hint="Taxă lunară fixă, doar în lunile cu venit" value={form.barouFix} onChange={v => set('barouFix', v)} />
+          </div>
+        </div>
+      </div>
+
+      {(dirty || saving) && (
+        <div className="unsaved-bar" role="region" aria-label="Modificări nesalvate">
+          <span>Ai modificări nesalvate.</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setForm(saved)} disabled={saving}>Renunță</button>
+          <button className="btn btn-primary btn-sm" onClick={() => void handleSave()} disabled={saving}>
+            <BtnLabel busy={saving}>Salvează</BtnLabel>
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+function AspectCard() {
+  const { theme, setTheme, font, setFont } = useSettingsCtx()
+  return (
     <div className="card">
       <div className="card-head">
-        <span className="card-title">💰 Facturare Sami / Adi</span>
+        <span className="card-title">🎨 Aspect</span>
       </div>
       <div className="card-body">
-        <div className="card-sub" style={{ marginBottom: '.875rem' }}>
-          Cotele folosite la împărțirea profitului dosarelor cu semnătură electronică.
-        </div>
-        <div className="form-grid">
-          <PercentField label="Cota Sami — clienți Adi" hint="Ce revine lui Sami din dosarele clienților lui Adi" value={form.cotaSamiClientiAdi} onChange={v => set('cotaSamiClientiAdi', v)} />
-          <PercentField label="Cota Sami — clienți proprii" hint="Ce revine lui Sami din dosarele proprii" value={form.cotaSamiClientiProprii} onChange={v => set('cotaSamiClientiProprii', v)} />
-          <PercentField label="CAA per dosar (% din valoare)" hint="Contribuția CAA — mereu % din valoarea dosarului (calculul per dosar)" value={form.caaProcent} onChange={v => set('caaProcent', v)} />
-          <PercentField label="Impozit pe profit (Adi)" hint="Se aplică pe partea lui Adi (cuvenit Adi)" value={form.impozitProfitCota} onChange={v => set('impozitProfitCota', v)} />
-        </div>
+        <div className="settings-section">
+          <div>
+            <div className="field-label" style={{ marginBottom: '.625rem' }}>Temă</div>
+            <div className="settings-option-grid">
+              {THEME_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`settings-swatch${theme === opt.key ? ' settings-swatch--active' : ''}`}
+                  aria-pressed={theme === opt.key}
+                  onClick={() => setTheme(opt.key)}
+                >
+                  <ThemeSwatchPreview theme={opt.key} />
+                  <div>
+                    <div className="settings-swatch-label">{opt.label}</div>
+                    <div className="card-sub" style={{ marginTop: '.15rem' }}>{opt.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
 
-        <div className="form-subsection-label" style={{ marginTop: '1.25rem' }}>Sumar lunar — CAA reală, cu prag</div>
-        <div className="card-sub" style={{ marginTop: '.5rem', marginBottom: '.625rem' }}>
-          Folosite doar de cardul „Sumar lunar" — CAA lunară reală se calculează cu prag, nu ca simplul % de mai sus.
+          <div style={{ marginTop: '1.25rem' }}>
+            <div className="field-label" style={{ marginBottom: '.625rem' }}>Font</div>
+            <div className="settings-option-grid">
+              {FONT_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  className={`settings-swatch${font === opt.key ? ' settings-swatch--active' : ''}`}
+                  aria-pressed={font === opt.key}
+                  onClick={() => setFont(opt.key)}
+                >
+                  <div className="settings-font-preview" style={{ fontFamily: opt.stack }}>Aa</div>
+                  <div>
+                    <div className="settings-swatch-label" style={{ fontFamily: opt.stack }}>{opt.label}</div>
+                    <div className="card-sub" style={{ marginTop: '.15rem', fontFamily: opt.stack }}>
+                      Popescu Ion SRL — CIF RO12345678
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="card-sub" style={{ marginTop: '1rem' }}>Se aplică imediat și se păstrează pe acest dispozitiv.</div>
         </div>
-        <div className="form-grid">
-          <RonField label="CAA — prag minim (RON/lună)" hint="Sub acest prag, CAA lunară e fixă (nu procentuală)" value={form.caaMin} onChange={v => set('caaMin', v)} />
-          <RonField label="CAA — plafon maxim (RON/lună)" hint="CAA lunară nu depășește această sumă" value={form.caaPlafon} onChange={v => set('caaPlafon', v)} />
-          <RonField label="Barou — taxă fixă (RON/lună)" hint="Taxă lunară fixă, doar în lunile cu venit" value={form.barouFix} onChange={v => set('barouFix', v)} />
-        </div>
-
-        <button className="btn btn-primary btn-sm" style={{ marginTop: '1rem' }} onClick={handleSave} disabled={!dirty || saving}>
-          {saving ? <span className="spin" /> : 'Salvează'}
-        </button>
       </div>
     </div>
   )
 }
 
-export default function SetariPage() {
-  const { theme, setTheme, font, setFont } = useSettingsCtx()
-  const { userRole, activeWorkspace, hasFeature } = useApp()
+type SectionKey = 'cont' | 'aspect' | 'notificari' | 'confidentialitate' | 'plan' | 'facturare' | 'jurnal' | 'stergere'
 
+interface Section {
+  key: SectionKey
+  label: string
+  title: string
+  desc: string
+  group: 'Personal' | 'Cabinet' | ''
+  danger?: boolean
+}
+
+export default function SetariPage() {
+  const { userRole, activeWorkspace, hasFeature, billing } = useApp()
+  const { sectiune } = useParams()
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const isAdmin = userRole === 'admin'
+  const cabinet = activeWorkspace?.name ? `„${activeWorkspace.name}”` : 'cabinetului'
+
+  // Secțiunile vizibile depind de rol și de funcțiile activate pentru cabinet.
+  const sections: Section[] = [
+    { key: 'cont', group: 'Personal', label: 'Cont și securitate', title: 'Cont și securitate', desc: 'Parola, conexiunea cu Google Drive și sesiunile deschise.' },
+    { key: 'aspect', group: 'Personal', label: 'Aspect', title: 'Aspect', desc: 'Tema și fontul aplicației.' },
+    ...(activeWorkspace && hasFeature('alerte')
+      ? [{ key: 'notificari', group: 'Personal', label: 'Notificări', title: 'Notificări', desc: 'Ce alerte primești și pe ce canale.' } as Section] : []),
+    { key: 'confidentialitate', group: 'Personal', label: 'Date și confidențialitate', title: 'Date și confidențialitate', desc: 'Textele legale acceptate și exportul datelor tale.' },
+    ...(activeWorkspace ? [{ key: 'plan', group: 'Cabinet', label: 'Plan și credite', title: 'Plan și credite', desc: `Abonamentul, creditele și datele de facturare ale ${cabinet}.` } as Section] : []),
+    ...(isAdmin && activeWorkspace && hasFeature('facturareSamiAdi')
+      ? [{ key: 'facturare', group: 'Cabinet', label: 'Facturare Sami / Adi', title: 'Facturare Sami / Adi', desc: 'Cotele de împărțire și pragurile pentru sumarul lunar.' } as Section] : []),
+    ...(isAdmin && activeWorkspace
+      ? [{ key: 'jurnal', group: 'Cabinet', label: 'Jurnal de acces', title: 'Jurnal de acces', desc: 'Cine a văzut sau a modificat date sensibile, și când.' } as Section] : []),
+    { key: 'stergere', group: '', label: 'Ștergerea contului', title: 'Zonă periculoasă', desc: 'Acțiuni ireversibile.', danger: true },
+  ]
+
+  // Modificări nesalvate în secțiunea curentă: schimbarea secțiunii cere confirmare.
+  const dirtyRef = useRef(false)
+  const [pendingPath, setPendingPath] = useState<string | null>(null)
+  const onDirtyChange = useCallback((d: boolean) => { dirtyRef.current = d }, [])
+
+  // Legături vechi: /setari?notificari=… (clopoțel) duc la secțiunea Notificări.
+  if (!sectiune) {
+    const target = params.get('notificari') && sections.some(s => s.key === 'notificari') ? 'notificari' : 'cont'
+    return <Navigate to={{ pathname: `/setari/${target}`, search: params.toString() ? `?${params}` : '' }} replace />
+  }
+  const current = sections.find(s => s.key === sectiune)
+  if (!current) return <Navigate to="/setari/cont" replace />
+
+  const plan = planSummary(billing)
+  const go = (e: React.MouseEvent, path: string) => {
+    if (!dirtyRef.current) return
+    e.preventDefault()
+    setPendingPath(path)
+  }
+
+  let content: ReactNode
+  switch (current.key) {
+    case 'cont': content = <AccountCard />; break
+    case 'aspect': content = <AspectCard />; break
+    // key=workspace id: editoarele nu rămân cu starea altui cabinet.
+    case 'notificari': content = activeWorkspace && <NotificariCard key={`notificari-${activeWorkspace.id}`} />; break
+    case 'confidentialitate': content = <PrivacyCard />; break
+    case 'plan': content = <PlanSection />; break
+    // key=workspace id — forțează remount la schimbarea workspace-ului activ, ca `form` să nu rămână cu valorile
+    // vechiului workspace (altfel Save ar suprascrie configul noului workspace cu date stale).
+    case 'facturare': content = activeWorkspace && <FacturareConfigCard key={activeWorkspace.id} onDirtyChange={onDirtyChange} />; break
+    // Jurnal de acces: key=workspace id ca să nu rămână intrările altui workspace.
+    case 'jurnal': content = activeWorkspace && <AuditLogCard key={activeWorkspace.id} />; break
+    case 'stergere': content = <DangerZoneCard />; break
+  }
+
+  const groups = ['Personal', 'Cabinet', ''] as const
   return (
     <div className="page--data">
       <div className="page-top">
         <div className="page-header">
           <div>
             <div className="page-title">Setări</div>
-            <div className="page-subtitle">{userRole === 'admin' ? 'Aspectul aplicației și jurnalul de acces' : 'Aspectul aplicației'}</div>
+            <div className="page-subtitle">Contul tău și setările {cabinet}</div>
           </div>
           <div className="page-actions"><NotificariBell /></div>
         </div>
       </div>
 
       <div className="page-body" style={{ overflowY: 'auto' }}>
-        <div className="settings-grid">
-          <AccountCard />
-          <PrivacyCard />
-
-          <div className="card">
-            <div className="card-head">
-              <span className="card-title">🎨 Aspect</span>
-            </div>
-            <div className="card-body">
-              <div className="settings-section">
-                <div>
-                  <div className="field-label" style={{ marginBottom: '.625rem' }}>Temă</div>
-                  <div className="settings-option-grid">
-                    {THEME_OPTIONS.map(opt => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        className={`settings-swatch${theme === opt.key ? ' settings-swatch--active' : ''}`}
-                        onClick={() => setTheme(opt.key)}
-                      >
-                        <ThemeSwatchPreview theme={opt.key} />
-                        <div>
-                          <div className="settings-swatch-label">{opt.label}</div>
-                          <div className="card-sub" style={{ marginTop: '.15rem' }}>{opt.desc}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label="Secțiuni setări">
+            {groups.map(g => {
+              const items = sections.filter(s => s.group === g)
+              if (!items.length) return null
+              return (
+                <div key={g || 'danger'} style={{ display: 'contents' }}>
+                  {g ? <div className="settings-nav-group">{g === 'Cabinet' ? 'Cabinet' : 'Personal'}</div> : <div className="settings-nav-group" aria-hidden>&nbsp;</div>}
+                  {items.map(s => (
+                    <NavLink key={s.key} to={`/setari/${s.key}`} onClick={e => go(e, `/setari/${s.key}`)}
+                      className={({ isActive }) => `settings-nav-item${s.danger ? ' settings-nav-item--danger' : ''}${isActive ? ' active' : ''}`}>
+                      {s.label}
+                      {/* Planul cere atenție (probă pe final, credite puține, plată eșuată): semnal lângă secțiune. */}
+                      {s.key === 'plan' && plan.tone !== 'ok' && (
+                        <span className={`settings-nav-badge${plan.tone === 'warn' ? ' settings-nav-badge--warn' : ''}`} title={`${plan.label} · ${plan.sub}`}>!</span>
+                      )}
+                    </NavLink>
+                  ))}
                 </div>
+              )
+            })}
+          </nav>
 
-                <div style={{ marginTop: '1.25rem' }}>
-                  <div className="field-label" style={{ marginBottom: '.625rem' }}>Font</div>
-                  <div className="settings-option-grid">
-                    {FONT_OPTIONS.map(opt => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        className={`settings-swatch${font === opt.key ? ' settings-swatch--active' : ''}`}
-                        onClick={() => setFont(opt.key)}
-                      >
-                        <div className="settings-font-preview" style={{ fontFamily: opt.stack }}>Aa</div>
-                        <div>
-                          <div className="settings-swatch-label" style={{ fontFamily: opt.stack }}>{opt.label}</div>
-                          <div className="card-sub" style={{ marginTop: '.15rem', fontFamily: opt.stack }}>
-                            Popescu Ion SRL — CIF RO12345678
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          <div key={current.key} className="settings-content">
+            <div className="settings-section-head">
+              <h2 style={current.danger ? { color: 'var(--r600)' } : undefined}>{current.title}</h2>
+              <p>{current.desc}</p>
             </div>
+            {content}
           </div>
-
-          {/* Jurnal de acces: doar administratorii; key=workspace id ca să nu rămână intrările altui workspace. */}
-          {userRole === 'admin' && activeWorkspace && <AuditLogCard key={activeWorkspace.id} />}
-
-          {/* key=workspace id — forțează remount la schimbarea workspace-ului activ,
-              ca `form` să nu rămână cu valorile vechiului workspace (altfel Save
-              ar suprascrie configul noului workspace cu date stale). */}
-          {userRole === 'admin' && activeWorkspace && hasFeature('facturareSamiAdi') && (
-            <div className="settings-grid-full"><FacturareConfigCard key={activeWorkspace.id} /></div>
-          )}
-
-          {/* Notificări: doar la cabinetele cu flag-ul `alerte`; key=workspace id, ca editoarele să nu rămână cu starea altui cabinet. */}
-          {activeWorkspace && hasFeature('alerte') && (
-            <NotificariCard key={`notificari-${activeWorkspace.id}`} />
-          )}
         </div>
       </div>
+
+      {pendingPath && (
+        <ConfirmModal
+          title="Pleci fără să salvezi?"
+          message="Modificările din această secțiune nu au fost salvate și se pierd."
+          confirmLabel="Pleacă fără salvare"
+          danger
+          onConfirm={() => { const p = pendingPath; setPendingPath(null); dirtyRef.current = false; navigate(p) }}
+          onCancel={() => setPendingPath(null)}
+        />
+      )}
     </div>
   )
 }

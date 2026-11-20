@@ -79,7 +79,7 @@ export default function CreditNotice({ clientId, clientName, onToast, onBlockedC
       display: 'flex', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap' }}>
       <span style={{ flex: '1 1 16rem' }}>{text}</span>
       {quote.mode === 'none' && userRole === 'admin' && (
-        <Link to="/abonament" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Cumpără credite</Link>
+        <Link to="/setari/plan" className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>Cumpără credite</Link>
       )}
     </div>
   )

@@ -21,6 +21,8 @@ import type { ExportColumnSpec } from '../lib/xlsxExport'
 import ExportRangeDialog, { type ExportRangeResult } from '../components/export/ExportRangeDialog'
 import Modal from '../components/Modal'
 import NotificariBell from '../components/NotificariBell'
+import { SkeletonRows } from '../components/Skeleton'
+import { withViewTransition } from '../lib/viewTransition'
 
 type ModalState = 'add' | Dosar | null
 /* Fila „active" = dosare în lucru (tot ce nu e arhivat), fila „incheiate" =
@@ -126,8 +128,11 @@ export default function DosarePage() {
   const openTab = useCallback((d: Dosar) => {
     setReturnTab(prev => (isListTab(tab) ? (tab as ListTab) : prev))
     setExtraDosare(prev => ({ ...prev, [d.id]: d }))
-    setOpenDosarIds(prev => prev.includes(d.id) ? prev : [...prev, d.id])
-    setTab(d.id)
+    // Deschiderea dosarului trece printr-o tranziție scurtă a browserului (lista → dosarul).
+    withViewTransition(() => {
+      setOpenDosarIds(prev => prev.includes(d.id) ? prev : [...prev, d.id])
+      setTab(d.id)
+    })
   }, [tab])
 
   const closeTab = useCallback((id: string) => {
@@ -501,10 +506,10 @@ export default function DosarePage() {
         </div>
 
         <div className="page-tabs page-tabs--lg">
-          <button className={`page-tab${tab === 'active' ? ' page-tab--active' : ''}`} onClick={() => setTab('active')}>Dosare în lucru</button>
+          <button className={`page-tab${tab === 'active' ? ' page-tab--active' : ''}`} onClick={() => withViewTransition(() => setTab('active'))}>Dosare în lucru</button>
           <button
             className={`page-tab${tab === 'incheiate' ? ' page-tab--active' : ''}`}
-            onClick={() => setTab('incheiate')}
+            onClick={() => withViewTransition(() => setTab('incheiate'))}
             data-tooltip='Ajung aici automat dosarele cu stadiul „Documente predate client" ȘI marcate „Facturat". Le lipsește oricare din cele două → rămân în „Dosare în lucru".'
           >
             Dosare încheiate
@@ -513,7 +518,7 @@ export default function DosarePage() {
             <button
               key={d.id}
               className={`page-tab${tab === d.id ? ' page-tab--active' : ''}`}
-              onClick={() => setTab(d.id)}
+              onClick={() => withViewTransition(() => setTab(d.id))}
             >
               <span className="page-tab__label">{d.clientDenumire || d.clientDenumireLibera}</span>
               <span className="page-tab__close" onClick={e => { e.stopPropagation(); closeTab(d.id) }}>×</span>
@@ -623,9 +628,7 @@ export default function DosarePage() {
             ) : tab === 'active' ? (
               <>
                 {loading && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
-                    <span className="spin spin-dark" style={{ width: 24, height: 24 }} />
-                  </div>
+                  <SkeletonRows />
                 )}
                 {!loading && processedDosare.length === 0 && (
                   <div className="empty-state">
@@ -670,9 +673,7 @@ export default function DosarePage() {
             ) : (
               <>
                 {loadingIncheiate && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
-                    <span className="spin spin-dark" style={{ width: 24, height: 24 }} />
-                  </div>
+                  <SkeletonRows />
                 )}
                 {!loadingIncheiate && processedDosareIncheiate.length === 0 && (
                   <div className="empty-state">

@@ -6,6 +6,7 @@ import type { Sarcina } from '../../types'
 import { fetchSarciniByDosar, moveSarcina, useSarcini } from '../../lib/sarcini'
 import { serializeObiecte, descriereObiecte } from '../../lib/dosarSarcini'
 import { useApp } from '../../AppContext'
+import BtnLabel from '../BtnLabel'
 
 interface Props {
   dosar: Dosar
@@ -136,7 +137,7 @@ export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
                 }
               }}
             >
-              {updatingStadiu ? <span className="spin" /> : 'Actualizează'}
+              <BtnLabel busy={updatingStadiu}>Actualizează</BtnLabel>
             </button>
           </div>
         </div>
@@ -173,7 +174,7 @@ export default function DosarSarciniList({ dosar, onUpdateStadiu }: Props) {
       })}
 
       <button type="button" className="btn btn-outline-primary btn-sm" onClick={handleQuickCreate} disabled={creating}>
-        {creating ? <span className="spin spin-dark" /> : '+ Sarcină nouă legată de acest dosar'}
+        <BtnLabel busy={creating} dark>+ Sarcină nouă legată de acest dosar</BtnLabel>
       </button>
     </div>
   )

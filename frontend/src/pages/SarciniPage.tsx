@@ -16,6 +16,8 @@ import ArchivedSarciniSection from '../components/sarcini/ArchivedSarciniSection
 import ClientDocSelector from '../components/ClientDocSelector'
 import Modal from '../components/Modal'
 import NotificariBell from '../components/NotificariBell'
+import BtnLabel from '../components/BtnLabel'
+import { SkeletonBoard } from '../components/Skeleton'
 
 type ModalState = 'add' | Sarcina | null
 /** 'mele'/'toate' sau uid-ul unui membru anume. */
@@ -299,9 +301,7 @@ export default function SarciniPage() {
         <div className="page-body" style={{ padding: '1.25rem 1.5rem', overflow: 'auto' }}>
           <div style={{ flex: '1 0 480px', display: 'flex', flexDirection: 'column' }}>
             {loading ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
-                <span className="spin spin-dark" style={{ width: 24, height: 24 }} />
-              </div>
+              <SkeletonBoard columns={3} />
             ) : (
               <KanbanBoard
                 workspaceId={workspaceId}
@@ -368,7 +368,7 @@ export default function SarciniPage() {
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={() => setSuggestDosar(null)}>Nu acum</button>
             <button className="btn btn-success" onClick={handleUpdateDosarStadiu} disabled={markingDosar}>
-              {markingDosar ? <span className="spin" /> : 'Actualizează dosarul'}
+              <BtnLabel busy={markingDosar}>Actualizează dosarul</BtnLabel>
             </button>
           </div>
         </Modal>

@@ -5,6 +5,7 @@ import { reauthenticate } from '../lib/firebase'
 import { adminDeleteWorkspace, adminDeletionPreview, type DeletionPreview } from '../lib/superAdmin'
 import IconTrash from './IconTrash'
 import Modal from './Modal'
+import BtnLabel from './BtnLabel'
 
 const COUNT_LABELS: Record<string, string> = {
   clienti: 'clienți', dosare: 'dosare', sarcini: 'sarcini', docTemplates: 'șabloane', auditLog: 'intrări în jurnal', membri: 'membri', 'invitații': 'invitații',
@@ -74,7 +75,7 @@ export default function DeleteWorkspaceModal({ workspaceId, name, onDeleted, onC
         <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Anulează</button>
         <button className="btn btn-danger" onClick={() => void remove()}
           disabled={busy || !preview || typed.trim() !== name.trim()}>
-          {busy ? <span className="spin" /> : <><IconTrash size={14} /> {immediate ? 'Șterge definitiv acum' : 'Programează ștergerea'}</>}
+          <BtnLabel busy={busy}><IconTrash size={14} /> {immediate ? 'Șterge definitiv acum' : 'Programează ștergerea'}</BtnLabel>
         </button>
       </div>
     </Modal>

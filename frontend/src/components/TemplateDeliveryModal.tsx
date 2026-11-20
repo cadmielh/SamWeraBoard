@@ -4,6 +4,7 @@ import { deliverTemplate, type DeliveryBlocker, type DeliveryWarnings } from '..
 import { formLinkOptions } from '../lib/templateChanges'
 import { listAllWorkspaces } from '../lib/workspace'
 import Modal from './Modal'
+import BtnLabel from './BtnLabel'
 
 const BLOCKER_LABELS: Record<DeliveryBlocker, string> = {
   personal_data: 'Documentul pare să conțină un CNP real. Șterge datele personale din document.',
@@ -159,10 +160,10 @@ export default function TemplateDeliveryModal({ template, sourceWorkspaceId, bui
       <div className="modal-footer">
         <button className="btn btn-ghost" onClick={onClose}>Renunță</button>
         <button className="btn btn-outline-primary" disabled={!canCheck} onClick={() => void run(true)}>
-          {busy && !checked ? <span className="spin" /> : 'Verifică'}
+          <BtnLabel busy={busy && !checked}>Verifică</BtnLabel>
         </button>
         <button className="btn btn-primary" disabled={busy || checked?.status !== 'ok'} onClick={() => void run(false)}>
-          {busy && checked ? <span className="spin" /> : 'Trimite'}
+          <BtnLabel busy={busy && checked}>Trimite</BtnLabel>
         </button>
       </div>
     </Modal>

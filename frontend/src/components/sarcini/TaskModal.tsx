@@ -10,6 +10,7 @@ import ResponsabilCombobox from '../ResponsabilCombobox'
 import { IsoDateFieldInput } from '../DateFieldInput'
 import Modal from '../Modal'
 import IconTrash from '../IconTrash'
+import BtnLabel from '../BtnLabel'
 
 interface Props {
   initial: Sarcina | null
@@ -206,7 +207,7 @@ export default function TaskModal({ initial, onSave, onClose, onDelete, prefillC
                   />
                   {canUpgradeToClient && (
                     <button type="button" className="btn btn-outline-primary btn-sm" style={{ marginTop: '.5rem' }} onClick={handleUpgradeToClient} disabled={creatingClient}>
-                      {creatingClient ? <span className="spin spin-dark" /> : `+ Creează client din „${form.clientDenumireLibera}"`}
+                      <BtnLabel busy={creatingClient} dark>{`+ Creează client din „${form.clientDenumireLibera}"`}</BtnLabel>
                     </button>
                   )}
                 </>

@@ -4,6 +4,7 @@ import {
   CATEGORY_LABELS, actionLabel, actorLabel, categoryOf, describe, fetchAudit, toCsv,
   type AuditEntry, type CategoryFilter,
 } from '../lib/audit'
+import BtnLabel from './BtnLabel'
 
 const PAGE = 100
 
@@ -143,7 +144,7 @@ export default function AuditLogCard() {
         {showOlder && hasMore && !loading && (
           <div style={{ marginTop: '.75rem', textAlign: 'center' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => void loadMore()} disabled={loadingMore}>
-              {loadingMore ? <span className="spin" /> : 'Încarcă mai multe'}
+              <BtnLabel busy={loadingMore}>Încarcă mai multe</BtnLabel>
             </button>
           </div>
         )}

@@ -39,7 +39,7 @@ export default function WorkspaceSetupPage() {
         navigate('/')
       } else {
         toast('Spațiu de lucru creat. Perioada de probă a fost deja folosită de acest cont: activați abonamentul pentru a lucra în el.', 'info')
-        navigate('/abonament')
+        navigate('/setari/plan')
       }
     } catch (e) {
       const code = (e as { code?: string }).code

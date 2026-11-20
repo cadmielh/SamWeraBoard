@@ -26,6 +26,7 @@ import { useApp } from '../AppContext'
 import Modal from './Modal'
 import BlankImportModal from './BlankImportModal'
 import TemplateDeliveryModal from './TemplateDeliveryModal'
+import BtnLabel from './BtnLabel'
 
 // Aceeași limită ca template_safety.MAX_STORED_BYTES (verificată și pe server, și în firestore.rules).
 const MAX_BASE64_BYTES = 500 * 1024  // 500 KB
@@ -665,7 +666,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                     <div style={{ display: 'flex', gap: '.375rem', flexWrap: 'wrap' }}>
                       <button className="btn btn-outline-primary btn-sm" onClick={() => handleDuplicateBuiltin(b)} disabled={duplicatingKey === b.key}
                         title="Creează o copie în „Șabloanele mele”, pe care o poți modifica">
-                        {duplicatingKey === b.key ? <span className="spin" /> : '📋 Duplică'}
+                        <BtnLabel busy={duplicatingKey === b.key}>📋 Duplică</BtnLabel>
                       </button>
                     </div>
                   </LibraryCard>
@@ -756,7 +757,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                       {canEdit && hasFile && (
                         <button className="btn btn-ghost btn-sm" onClick={() => startReplace(tpl)} disabled={replacingId === tpl.id}
                           title="Înlocuiește fișierul cu varianta modificată în Word (păstrează formularul)" style={{ fontSize: '.75rem' }}>
-                          {replacingId === tpl.id ? <span className="spin" /> : '⟳ Înlocuiește'}
+                          <BtnLabel busy={replacingId === tpl.id}>⟳ Înlocuiește</BtnLabel>
                         </button>
                       )}
                       {isSuperAdmin && hasFile && (
@@ -924,7 +925,7 @@ export default function TemplateLibrary({ templates, onAdd, onRemove, onClose, o
                         {gdocDocId ? `📄 ${gdocPickedName || 'Document ales'}` : 'Niciun document ales'}
                       </span>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={handlePickGdoc} disabled={pickingGdoc}>
-                        {pickingGdoc ? <span className="spin" /> : (gdocDocId ? 'Schimbă' : 'Alege din Drive')}
+                        <BtnLabel busy={pickingGdoc}>{(gdocDocId ? 'Schimbă' : 'Alege din Drive')}</BtnLabel>
                       </button>
                     </div>
                     <p style={{ fontSize: '.72rem', color: 'var(--s400)', marginTop: '.25rem' }}>

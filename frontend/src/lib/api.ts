@@ -155,6 +155,12 @@ async function endSessionIfInvalid(): Promise<void> {
   }
 }
 
+/** „Trezește” serverul (instanța poate porni la rece): o cerere fără date și fără autentificare, al cărei răspuns
+ * nu contează. Folosit la intrarea în pagini unde urmează o cerere grea, ca aceea să nu mai aștepte pornirea. */
+export function warmUpApi(): void {
+  fetch(`${BASE}/health`, { mode: "no-cors", cache: "no-store" }).catch(() => { /* doar încălzire */ });
+}
+
 /** Apel JSON către API (membri, invitații, audit, vault). Nu folosește token-ul Google — doar identitatea Firebase.
  * Aruncă Error cu `code` = codul de eroare al serverului (ex. "last_admin", "consent_required"). */
 export async function apiJson<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {

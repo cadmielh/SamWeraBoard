@@ -21,6 +21,8 @@ import IconPencil from '../components/IconPencil'
 import IconEye from '../components/IconEye'
 import IconExport from '../components/IconExport'
 import NotificariBell from '../components/NotificariBell'
+import { SkeletonRows } from '../components/Skeleton'
+import { withViewTransition } from '../lib/viewTransition'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -431,8 +433,11 @@ export default function ClientiPage() {
   }, [deleteConf, workspaceId, remove, toast, activeTab])
 
   const openTab = useCallback((c: Client) => {
-    setOpenClientIds(prev => prev.includes(c.id) ? prev : [...prev, c.id])
-    setActiveTab(c.id)
+    // Deschiderea fișei trece printr-o tranziție scurtă a browserului (lista → fișa clientului).
+    withViewTransition(() => {
+      setOpenClientIds(prev => prev.includes(c.id) ? prev : [...prev, c.id])
+      setActiveTab(c.id)
+    })
   }, [])
 
   // Deep-link din alerte: /?open=<clientId>&sectiune=<…>&pid=<pid> deschide fișa clientului ca filă, exact ca un
@@ -603,7 +608,7 @@ export default function ClientiPage() {
         <div className="page-tabs">
           <button
             className={`page-tab${activeTab === 'list' ? ' page-tab--active' : ''}`}
-            onClick={() => setActiveTab('list')}
+            onClick={() => withViewTransition(() => setActiveTab('list'))}
           >
             Listă
           </button>
@@ -611,7 +616,7 @@ export default function ClientiPage() {
             <button
               key={c.id}
               className={`page-tab${activeTab === c.id ? ' page-tab--active' : ''}`}
-              onClick={() => setActiveTab(c.id)}
+              onClick={() => withViewTransition(() => setActiveTab(c.id))}
             >
               <span className="page-tab__label">{c.denumire}</span>
               <span className="page-tab__close" onClick={e => { e.stopPropagation(); closeTab(c.id) }}>×</span>
@@ -736,9 +741,7 @@ export default function ClientiPage() {
             ) : (
               <>
                 {loading && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem' }}>
-                    <span className="spin spin-dark" style={{ width: 24, height: 24 }} />
-                  </div>
+                  <SkeletonRows />
                 )}
                 {!loading && processedClients.length === 0 && (
                   <div className="empty-state">

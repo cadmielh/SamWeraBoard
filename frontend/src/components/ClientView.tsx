@@ -14,6 +14,7 @@ import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
 import TermenBadge from './TermenBadge'
 import { durataFraza, stareDurataSocietate, stareMandat, termenText, termeneUrgente } from '../lib/durata'
+import BtnLabel from './BtnLabel'
 
 interface Props {
   client: Client
@@ -104,7 +105,7 @@ function EditableInfoRow({ label, value, onSave, type = 'text', multiline = fals
           )}
           <button className="btn btn-ghost btn-xs" onClick={cancel} disabled={saving} title="Anulează">✕</button>
           <button className="btn btn-primary btn-xs" onClick={commit} disabled={saving} title="Salvează">
-            {saving ? <span className="spin" /> : '✓'}
+            <BtnLabel busy={saving}>✓</BtnLabel>
           </button>
         </div>
       </div>
@@ -474,7 +475,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
                   Anulează
                 </button>
                 <button className="btn btn-primary btn-sm" onClick={handleSaveNotite} disabled={savingNotite}>
-                  {savingNotite ? <span className="spin" /> : 'Salvează'}
+                  <BtnLabel busy={savingNotite}>Salvează</BtnLabel>
                 </button>
               </div>
             </div>

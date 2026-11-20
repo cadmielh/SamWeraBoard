@@ -5,6 +5,7 @@ import { authErrorMessage } from '../lib/authErrors'
 import { reauthenticate, signOut } from '../lib/firebase'
 import IconTrash from './IconTrash'
 import Modal from './Modal'
+import BtnLabel from './BtnLabel'
 
 /** Cabinetele care blochează ștergerea (vezi workspaces_api.delete_account): proprietatea nu se poate transfera. */
 interface Blockers { owned: string[]; lastAdmin: string[] }
@@ -81,7 +82,7 @@ export default function DeleteAccountModal({ hasPassword, onClose }: { hasPasswo
         <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Anulează</button>
         <button className="btn btn-danger" onClick={() => void remove()}
           disabled={busy || typed.trim().toLowerCase() !== email || (hasPassword && !password)}>
-          {busy ? <span className="spin" /> : <><IconTrash size={14} /> Șterge contul</>}
+          <BtnLabel busy={busy}><IconTrash size={14} /> Șterge contul</BtnLabel>
         </button>
       </div>
     </Modal>
