@@ -17,7 +17,10 @@ import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
 import CustomPersonGroupField from './CustomPersonGroupField'
 import DateFieldInput from './DateFieldInput'
-import { useTemplates, logDocGeneration } from '../lib/templates'
+import { useTemplates, logDocGeneration, listRecentGenerations } from '../lib/templates'
+import { felLista, listaActe, denumireAct, OPERATIUNI, textLista } from '../lib/listeBife'
+import type { FelLista } from '../lib/listeBife'
+import ListaBifePanel from './ListaBifePanel'
 import { assertWritable } from '../lib/billing'
 import { asociatiCountMismatch, useBuiltinTemplates } from '../lib/builtinTemplates'
 import { applyTemplateOrder, builtinOrderKey, dedicatedFormKey, isDedicatedKey, matchesTemplateSearch, ownOrderKey, visibleBuiltins } from '../lib/templateChanges'
@@ -281,6 +284,8 @@ export default function TemplateFiller({
   // Cesiunea de părți sociale (CEDENT_1 → CESIONAR_1), per șablon: doar numărul de părți se introduce, restul se calculează
   // (vezi lib/cesiune.ts); `dinFisa` — calculul din fișa actuală, deși ea a fost deja actualizată după această cesiune.
   const [cesiuneState, setCesiuneState] = useState<Record<string, { parti: string; dinFisa: boolean }>>({})
+  // Câmpurile de tip listă alese din bife („operațiunea”, „lista actelor” — vezi lib/listeBife), per șablon și fel
+  const [listeState, setListeState] = useState<Record<string, Partial<Record<FelLista, string[]>>>>({})
   // Persoanele alese țin de firma curentă (ex. administratorul care semnează anexa) — la alt client se aleg din nou
   const [picksForClient, setPicksForClient] = useState(client?.id)
   if (picksForClient !== client?.id) {
@@ -288,6 +293,36 @@ export default function TemplateFiller({
     setCustomPersonPicks({})
     setCustomGroupPicks({})
     setCesiuneState({})
+    setListeState({})
+  }
+  // Actele generate pentru client în ultimele 30 de zile: bifate implicit în „lista actelor”
+  const [acteRecente, setActeRecente] = useState<{ clientId: string; nume: string[] } | null>(null)
+  useEffect(() => {
+    if (!workspaceId || !client?.id) return
+    let cancelled = false
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
+    listRecentGenerations(workspaceId, client.id, since)
+      .then(gens => { if (!cancelled) setActeRecente({ clientId: client.id!, nume: gens.map(g => g.templateName) }) })
+      .catch(() => { /* fără bife implicite */ })
+    return () => { cancelled = true }
+  }, [workspaceId, client?.id])
+  const asociatUnic = (client?.asociati?.length ?? 0) === 1
+  const optiuniActe = (id: string) => listaActe([
+    ...builtins.filter(b => builtinKey(b) !== id).map(b => b.name),
+    ...templates.filter(t => t.id !== id).map(t => t.name),
+  ], asociatUnic, activeWorkspace?.name)
+  const listaFor = (id: string, fel: FelLista) => {
+    const optiuni = fel === 'operatiune' ? OPERATIUNI : optiuniActe(id)
+    const recente = acteRecente?.clientId === client?.id ? (acteRecente?.nume ?? []) : []
+    const implicite = fel === 'acte'
+      ? optiuni.filter(o => recente.some(n => denumireAct(n, asociatUnic, activeWorkspace?.name) === o))
+      : []
+    const alese = listeState[id]?.[fel] ?? implicite
+    return { optiuni, alese, text: textLista(optiuni, alese) }
+  }
+  const listeValuesFor = (id: string): Record<string, string> => {
+    const op = listaFor(id, 'operatiune').text, acte = listaFor(id, 'acte').text
+    return { '{{CAMP_OPERATIUNE}}': op, '{{CAMP_OPERATIUNI}}': op, '{{CAMP_LISTA_ACTELOR}}': acte, '{{CAMP_LISTA_ACTE}}': acte }
   }
   type TplWithRoles = { id: string; repeatGroups?: string[]; repeatGroupFields?: Record<string, string[]>; placeholders?: string[] }
   // Un BuiltinTemplate n-are `id` (identificat prin `key`, vezi builtinKey) — formă minimă pentru
@@ -330,7 +365,7 @@ export default function TemplateFiller({
     const calc = calculCesiune(client, cedent, cesionar, parti, nota && !st.dinFisa ? nota.inainte : undefined)
     return { cedent, cesionar, st, parti, nota, calc }
   }
-  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...customPersonReplacementsFor(id), ...cesiuneFor(id).calc.values })
+  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...listeValuesFor(id), ...customPersonReplacementsFor(id), ...cesiuneFor(id).calc.values })
   const renderCesiunePanel = (id: string) => {
     const { cedent, cesionar, st, nota, calc } = cesiuneFor(id)
     const set = (patch: Partial<{ parti: string; dinFisa: boolean }>) => setCesiuneState(prev => ({ ...prev, [id]: { ...st, ...patch } }))
@@ -1007,7 +1042,9 @@ export default function TemplateFiller({
     // Modul de exercitare a mandatelor stă sub lista reprezentanților legali: decizia vine abia după ce se vede că
     // sunt cel puțin doi (shownPh îl scoate din `manualFields` sub 2 — vezi visibleManualPlaceholders).
     const showModExercitare = manualFields.includes(MOD_EXERCITARE_MANDATE)
-    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE && !auto.has(ph))
+    // Operațiunea înaintea listei actelor, ca în frază
+    const liste = manualFields.filter(ph => felLista(ph)).sort((a, b) => (felLista(a) === 'operatiune' ? 0 : 1) - (felLista(b) === 'operatiune' ? 0 : 1))
+    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE && !auto.has(ph) && !felLista(ph))
     const { pairs, rest } = pairManualDateFields(otherManualFields.filter(ph => !calculate.has(ph)))
     const boxStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }
     const titleStyle: CSSProperties = { fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }
@@ -1019,8 +1056,19 @@ export default function TemplateFiller({
       </div>
     )
     const renderField = (ph: string) => renderManualField(ph, undefined, auto.get(ph))
+    const renderLista = (ph: string) => {
+      const fel = felLista(ph)!
+      const { optiuni, alese, text } = listaFor(tpl.id, fel)
+      return (
+        <ListaBifePanel key={ph} id={`lista-${tpl.id}-${fel}`} titlu={fel === 'operatiune' ? 'Operațiunea' : 'Lista actelor'}
+          optiuni={optiuni} alese={alese} text={text}
+          nota={fel === 'acte' ? 'Propuse: actele generate pentru client în ultimele 30 de zile' : undefined}
+          onChange={v => setListeState(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [fel]: v } }))} />
+      )
+    }
     return (
       <>
+        {liste.map(renderLista)}
         {auto.size > 0 && (
           <div style={boxStyle}>
             <div style={titleStyle}>Autoturism</div>

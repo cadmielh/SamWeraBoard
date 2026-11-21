@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
-  query, orderBy, onSnapshot, serverTimestamp,
+  query, orderBy, onSnapshot, serverTimestamp, where, getDocs,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
@@ -70,4 +70,11 @@ export async function logDocGeneration(
     ...generation,
     generatedAt: generation.generatedAt ?? new Date().toISOString(),
   })
+}
+
+/** Documentele generate pentru client de la `sinceIso` încoace (generatedAt e ISO, deci comparabil ca text). */
+export async function listRecentGenerations(workspaceId: string, clientId: string, sinceIso: string): Promise<DocGeneration[]> {
+  const col = collection(db, 'workspaces', workspaceId, 'clienti', clientId, 'docGenerations')
+  const snap = await getDocs(query(col, where('generatedAt', '>=', sinceIso)))
+  return snap.docs.map(d => d.data() as DocGeneration)
 }
