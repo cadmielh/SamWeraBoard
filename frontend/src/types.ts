@@ -35,6 +35,7 @@ export interface DocTemplate {
   description: string
   type: 'docx' | 'gdoc'
   fileBase64?: string
+  placeholderContext?: Record<string, ContextCamp>
   fileName?: string
   driveFileId?: string
   placeholders?: string[]
@@ -67,6 +68,8 @@ export interface DocTemplate {
 
 // Șablon de bază, servit din backend (nu din Firestore) — aceeași formă ca
 // DocTemplate, minus câmpurile specifice unui document Firestore.
+export interface ContextCamp { before: string; after: string }
+
 export interface BuiltinTemplate {
   key: string
   version: number
@@ -80,6 +83,8 @@ export interface BuiltinTemplate {
   clauses: ClauseMeta[]
   repeatGroups: string[]
   repeatGroupFields?: Record<string, string[]>
+  /** Textul din jurul fiecărui câmp manual (CAMP_X → înainte/după), vezi doc_filler.placeholder_contexts_in_docx. */
+  placeholderContext?: Record<string, ContextCamp>
   // Prezent doar pentru type === 'pdf' — numele tuturor câmpurilor AcroForm
   // din PDF, în ordinea din document.
   pdfFields: string[]
@@ -92,6 +97,8 @@ export interface DocGeneration {
   generatedBy: string
   outputName: string
   driveLink?: string
+  /** Câmpurile manuale păstrabile, fără acolade (CAMP_X → valoare) — vezi lib/campuriMemorate. */
+  campuri?: Record<string, string>
 }
 
 export interface Persoana {

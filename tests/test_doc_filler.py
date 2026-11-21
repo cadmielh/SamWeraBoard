@@ -493,3 +493,40 @@ def test_fill_docx_still_fills_existing_footer():
     doc.save(buf)
     out = Document(io.BytesIO(df.fill_docx(buf.getvalue(), {"{{NUME}}": "Ion"})))
     assert out.sections[0].footer.paragraphs[0].text == "Subsol Ion"
+
+
+BIFA_TEMPLATE = [
+    "{{BIFA_SCOP_PREDARE}} la predare;",
+    "{{BIFA_SCOP_RESTITUIRE}} la restituire.",
+    "{{#BIFA_SCOP_PREDARE}}",
+    "AM PREDAT\tAM PRIMIT",
+    "{{/BIFA_SCOP_PREDARE}}",
+    "{{#BIFA_SCOP_RESTITUIRE}}",
+    "AM PRIMIT\tAM PREDAT",
+    "{{/BIFA_SCOP_RESTITUIRE}}",
+]
+
+
+def test_bifa_pastreaza_doar_blocul_variantei_alese():
+    from docx import Document
+    out = df.fill_docx(_build_docx(BIFA_TEMPLATE), {"{{BIFA_SCOP_PREDARE}}": "☐", "{{BIFA_SCOP_RESTITUIRE}}": "☒"})
+    texts = [p.text for p in Document(io.BytesIO(out)).paragraphs]
+    assert texts == ["☐ la predare;", "☒ la restituire.", "AM PRIMIT\tAM PREDAT"]
+
+
+def test_bifa_e_ceruta_ca_eticheta_nu_ca_bloc_repetitiv():
+    tpl = _build_docx(BIFA_TEMPLATE)
+    assert df.list_placeholders_in_docx(tpl) == ["{{BIFA_SCOP_PREDARE}}", "{{BIFA_SCOP_RESTITUIRE}}"]
+    assert "BIFA_SCOP_PREDARE" not in df.list_repeat_groups_in_docx(tpl)
+
+
+def test_contextul_campurilor_manuale():
+    tpl = _build_docx([
+        "CONTRACT NR. {{CAMP_NUMAR}}",
+        "Spațiul în suprafață de {{CAMP_SUPRAFATA}} mp, situat la adresa {{CAMP_ADRESA}}, aparținând {{SOCIETATE_DENUMIRE}}.",
+    ])
+    ctx = df.placeholder_contexts_in_docx(tpl)
+    assert set(ctx) == {"CAMP_NUMAR", "CAMP_SUPRAFATA", "CAMP_ADRESA"}
+    assert ctx["CAMP_SUPRAFATA"] == {"before": "Spațiul în suprafață de ",
+                                     "after": " mp, situat la adresa …, aparținând ….", }
+    assert ctx["CAMP_NUMAR"]["after"].endswith("¶ Spațiul în suprafață de … mp, situat la adresa …, aparținând ….")

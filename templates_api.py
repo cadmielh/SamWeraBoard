@@ -25,7 +25,7 @@ import authz
 import billing
 import ratelimit
 import template_safety
-from doc_filler import (list_clauses_in_docx, list_placeholders_in_docx, list_repeat_group_fields_in_docx,
+from doc_filler import (list_clauses_in_docx, list_placeholders_in_docx, placeholder_contexts_in_docx, list_repeat_group_fields_in_docx,
                         list_repeat_groups_in_docx)
 
 bp = Blueprint("templates", __name__)
@@ -68,7 +68,8 @@ def _meta(data: bytes) -> dict:
     """Etichetele, clauzele și blocurile repetitive, recalculate pe server."""
     try:
         return {"placeholders": list_placeholders_in_docx(data), "clauses": list_clauses_in_docx(data),
-                "repeatGroups": list_repeat_groups_in_docx(data), "repeatGroupFields": list_repeat_group_fields_in_docx(data)}
+                "repeatGroups": list_repeat_groups_in_docx(data), "repeatGroupFields": list_repeat_group_fields_in_docx(data),
+                "placeholderContext": placeholder_contexts_in_docx(data)}
     except Exception as e:  # noqa: BLE001 — document pe care python-docx nu-l poate citi
         print(f"[templates] citire eșuată ({type(e).__name__})")
         raise template_safety.TemplateRejected("invalid_template")
@@ -134,9 +135,39 @@ def duplicate_builtin():
         return _err("template_too_large", 400)
     meta = {k: base.get(k) or [] for k in ("placeholders", "clauses", "repeatGroups")}
     meta["repeatGroupFields"] = base.get("repeatGroupFields") or {}
+    meta["placeholderContext"] = base.get("placeholderContext") or {}
     tid = _create(principal, wid, base["bytes"], base.get("filename"), base, meta,
                   sourceKey=key, sourceVersion=int(base.get("version") or 0))
     return jsonify({"id": tid}), 201
+
+
+# ── Contextul câmpurilor manuale, pentru șabloanele încărcate înainte să existe ───────────────────────
+
+@bp.post("/templates/<tid>/context")
+def template_context(tid: str):
+    """Calculează și salvează `placeholderContext` (vezi doc_filler.placeholder_contexts_in_docx) pentru un șablon
+    care nu-l are încă; cele noi îl primesc la încărcare. Text din șablon, fără date de client."""
+    _principal, wid, _ws = authz.require_from_header("member")
+    if not _TID_RE.match(tid):
+        return _err("not_found", 404)
+    ref = _templates(wid).document(tid)
+    snap = ref.get()
+    cur = snap.to_dict() if snap.exists else None
+    if not cur or cur.get("type") != "docx" or not isinstance(cur.get("fileBase64"), str):
+        return _err("not_found", 404)
+    if isinstance(cur.get("placeholderContext"), dict):
+        return jsonify({"placeholderContext": cur["placeholderContext"]})
+    try:
+        ctx = placeholder_contexts_in_docx(base64.b64decode(cur["fileBase64"], validate=True))
+    except Exception as e:  # noqa: BLE001 — document pe care python-docx nu-l poate citi
+        print(f"[templates] context eșuat ({type(e).__name__})")
+        return _err("invalid_template", 400)
+    # Doar dacă șablonul nu s-a schimbat de la citire: un fișier înlocuit între timp își are deja contextul lui
+    try:
+        ref.update({"placeholderContext": ctx}, option=authz.db().write_option(last_update_time=snap.update_time))
+    except Exception:  # noqa: BLE001 — precondiție eșuată: nu suprascriem, contextul vine din fișierul nou
+        return _err("revision_conflict", 409)
+    return jsonify({"placeholderContext": ctx})
 
 
 # ── Înlocuirea fișierului ────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
+import { ensureTemplateContext, fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
+import ContextCampInfo from './ContextCampInfo'
 import { ensureDriveToken, getDriveToken } from '../lib/driveAuth'
 import type { IDFields, DriveTarget } from '../lib/api'
 import type { BuiltinTemplate, ClauseMeta, Client, DocTemplate, Persoana, ScannedPerson, ToastItem } from '../types'
@@ -17,7 +18,11 @@ import { personSex } from '../lib/sex'
 import CustomPersonField from './CustomPersonField'
 import CustomPersonGroupField from './CustomPersonGroupField'
 import DateFieldInput from './DateFieldInput'
-import { useTemplates, logDocGeneration, listRecentGenerations } from '../lib/templates'
+import { useTemplates, logDocGeneration, listLastGenerations } from '../lib/templates'
+import { campuriDePastrat, detaliuBifa, eticheta, grupuriBifa, memorieDinGenerari, propagaManual, sePastreaza, valoriBifa } from '../lib/campuriMemorate'
+import { DESTINATIE_DUPA_ADRESA, felAdresa, isAdresaSpatiu, optiuniAdresa, propunerePunctLucru } from '../lib/adresaSpatiu'
+import AdresaSpatiuField from './AdresaSpatiuField'
+import type { ValoareMemorata } from '../lib/campuriMemorate'
 import { felLista, listaActe, denumireAct, OPERATIUNI, textLista } from '../lib/listeBife'
 import type { FelLista } from '../lib/listeBife'
 import ListaBifePanel from './ListaBifePanel'
@@ -284,8 +289,10 @@ export default function TemplateFiller({
   // Cesiunea de părți sociale (CEDENT_1 → CESIONAR_1), per șablon: doar numărul de părți se introduce, restul se calculează
   // (vezi lib/cesiune.ts); `dinFisa` — calculul din fișa actuală, deși ea a fost deja actualizată după această cesiune.
   const [cesiuneState, setCesiuneState] = useState<Record<string, { parti: string; dinFisa: boolean }>>({})
-  // Câmpurile de tip listă alese din bife („operațiunea”, „lista actelor” — vezi lib/listeBife), per șablon și fel
+  // Câmpurile de tip listă alese din etichete („operațiunea”, „lista actelor” — vezi lib/listeBife), per șablon și fel
   const [listeState, setListeState] = useState<Record<string, Partial<Record<FelLista, string[]>>>>({})
+  // Alegerile din bife ({{BIFA_GRUP_VARIANTA}}, ex. predare/restituire la procesul-verbal), per șablon
+  const [bifeState, setBifeState] = useState<Record<string, Record<string, string>>>({})
   // Persoanele alese țin de firma curentă (ex. administratorul care semnează anexa) — la alt client se aleg din nou
   const [picksForClient, setPicksForClient] = useState(client?.id)
   if (picksForClient !== client?.id) {
@@ -294,18 +301,64 @@ export default function TemplateFiller({
     setCustomGroupPicks({})
     setCesiuneState({})
     setListeState({})
+    setBifeState({})
+    // Câmpurile manuale țin de clientul la care au fost scrise; la altul vin din istoricul lui (vezi manualFor)
+    setManualValues({})
   }
-  // Actele generate pentru client în ultimele 30 de zile: bifate implicit în „lista actelor”
-  const [acteRecente, setActeRecente] = useState<{ clientId: string; nume: string[] } | null>(null)
+  // Ultimele documente generate pentru client: actele din ultimele 30 de zile se propun în „lista actelor”, iar
+  // câmpurile manuale păstrate precompletează aceleași câmpuri (vezi lib/campuriMemorate)
+  const [istoric, setIstoric] = useState<{ clientId: string; acteRecente: string[]; memorie: Record<string, ValoareMemorata> } | null>(null)
   useEffect(() => {
     if (!workspaceId || !client?.id) return
     let cancelled = false
+    const cid = client.id
     const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
-    listRecentGenerations(workspaceId, client.id, since)
-      .then(gens => { if (!cancelled) setActeRecente({ clientId: client.id!, nume: gens.map(g => g.templateName) }) })
-      .catch(() => { /* fără bife implicite */ })
+    listLastGenerations(workspaceId, cid)
+      .then(gens => {
+        if (!cancelled) setIstoric({ clientId: cid, acteRecente: gens.filter(g => g.generatedAt >= since).map(g => g.templateName), memorie: memorieDinGenerari(gens) })
+      })
+      .catch(() => { /* fără propuneri din istoric */ })
     return () => { cancelled = true }
   }, [workspaceId, client?.id])
+  const istoricClient = istoric?.clientId === client?.id ? istoric : null
+  const placeholdersOf = (id: string): string[] =>
+    templates.find(t => t.id === id)?.placeholders ?? builtins.find(b => builtinKey(b) === id)?.placeholders ?? []
+  const manualFieldsOf = (id: string) => placeholdersOf(id).filter(isManualPlaceholder)
+  // Fraza din document în care intră un câmp manual — la cerere, din butonul „i” de lângă etichetă
+  const contextOf = (id: string, ph: string) =>
+    (templates.find(t => t.id === id)?.placeholderContext ?? builtins.find(b => builtinKey(b) === id)?.placeholderContext)?.[ph.replace(/^\{\{|\}\}$/g, '')]
+  // Șabloanele încărcate înainte de context îl primesc la prima deschidere (serverul îl calculează și îl salvează)
+  const contextCerut = useRef(new Set<string>())
+  useEffect(() => {
+    for (const t of templates) {
+      if (t.id !== activeKey && !selectedIds.has(t.id)) continue
+      if (t.type !== 'docx' || t.placeholderContext || contextCerut.current.has(t.id)) continue
+      if (!(t.placeholders ?? []).some(isManualPlaceholder)) continue
+      contextCerut.current.add(t.id)
+      ensureTemplateContext(t.id).catch(() => { /* fără context: câmpul rămâne ca înainte */ })
+    }
+  }, [templates, activeKey, selectedIds])
+  /** Valoarea păstrată de la o generare anterioară, cât timp câmpul n-a fost atins în această sesiune. */
+  const memorieFor = (id: string, ph: string): ValoareMemorata | undefined =>
+    manualValues[id]?.[ph] === undefined && sePastreaza(ph) && !felLista(ph) ? istoricClient?.memorie[ph] : undefined
+  /** Câmpurile manuale ale documentului: scrise acum, altfel păstrate, plus cele calculate din ele. */
+  const manualFor = (id: string): Record<string, string> => {
+    const fields = manualFieldsOf(id)
+    const merged: Record<string, string> = {}
+    for (const ph of fields) { const m = memorieFor(id, ph); if (m) merged[ph] = m.value }
+    Object.assign(merged, manualValues[id] ?? {})
+    return { ...merged, ...valoriCalculate(fields, merged) }
+  }
+  const bifeValuesFor = (id: string) => valoriBifa(grupuriBifa(placeholdersOf(id)), bifeState[id] ?? {}, manualFieldsOf(id))
+  const adreseClient = optiuniAdresa(client)
+  // O adresă nouă a spațiului se propune ca punct de lucru în fișă — nu și când documentul e pentru sediul social
+  const adresaProposalFor = (id: string): ClientPatchProposal[] => {
+    if (bifeState[id]?.DESTINATIE === 'SEDIU_SOCIAL') return []
+    const valori = manualFor(id)
+    const noi = new Set(manualFieldsOf(id).filter(isAdresaSpatiu).map(ph => valori[ph] ?? '')
+      .filter(v => felAdresa(v, adreseClient) === 'noua').map(v => v.trim()))
+    return [...noi].map(propunerePunctLucru)
+  }
   const asociatUnic = (client?.asociati?.length ?? 0) === 1
   const optiuniActe = (id: string) => listaActe([
     ...builtins.filter(b => builtinKey(b) !== id).map(b => b.name),
@@ -313,7 +366,7 @@ export default function TemplateFiller({
   ], asociatUnic, activeWorkspace?.name)
   const listaFor = (id: string, fel: FelLista) => {
     const optiuni = fel === 'operatiune' ? OPERATIUNI : optiuniActe(id)
-    const recente = acteRecente?.clientId === client?.id ? (acteRecente?.nume ?? []) : []
+    const recente = istoricClient?.acteRecente ?? []
     const implicite = fel === 'acte'
       ? optiuni.filter(o => recente.some(n => denumireAct(n, asociatUnic, activeWorkspace?.name) === o))
       : []
@@ -365,7 +418,7 @@ export default function TemplateFiller({
     const calc = calculCesiune(client, cedent, cesionar, parti, nota && !st.dinFisa ? nota.inainte : undefined)
     return { cedent, cesionar, st, parti, nota, calc }
   }
-  const repl = (id: string) => ({ ...replacements, ...(manualValues[id] ?? {}), ...listeValuesFor(id), ...customPersonReplacementsFor(id), ...cesiuneFor(id).calc.values })
+  const repl = (id: string) => ({ ...replacements, ...manualFor(id), ...listeValuesFor(id), ...bifeValuesFor(id), ...customPersonReplacementsFor(id), ...cesiuneFor(id).calc.values })
   const renderCesiunePanel = (id: string) => {
     const { cedent, cesionar, st, nota, calc } = cesiuneFor(id)
     const set = (patch: Partial<{ parti: string; dinFisa: boolean }>) => setCesiuneState(prev => ({ ...prev, [id]: { ...st, ...patch } }))
@@ -592,7 +645,7 @@ export default function TemplateFiller({
         await _logGeneration(tpl, outputName)
         maybePromptSaveClient()
       }
-      offerClientPatches(cs, cesiuneProposalFor(tpl, cs?.selectedClauses))
+      offerClientPatches(cs, [...cesiuneProposalFor(tpl, cs?.selectedClauses), ...adresaProposalFor(tpl.id)])
       if (form?.clientPatches) offerClientPatchList(form.clientPatches)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
@@ -831,6 +884,7 @@ export default function TemplateFiller({
         generatedBy: user.uid,
         outputName,
         driveLink,
+        campuri: campuriDePastrat(manualFieldsOf(tpl.id), manualFor(tpl.id), ph => campuriCalculate(manualFieldsOf(tpl.id)).has(ph) || !!felLista(ph)),
       })
     } catch { /* non-critical */ }
   }
@@ -1013,27 +1067,57 @@ export default function TemplateFiller({
     customRoles: { role: string; positions: number[] }[],
     customGroups: { role: string }[],
   ) => {
-    const manualValue = (ph: string) => manualValues[tpl.id]?.[ph] ?? ''
-    // Câmpurile calculate din altele (litere, data de sfârșit — vezi lib/campuriCalculate) se recalculează la fiecare schimbare
+    const valori = manualFor(tpl.id)
+    const manualValue = (ph: string) => valori[ph] ?? ''
+    // Câmpurile calculate din altele (litere, data de sfârșit — vezi lib/campuriCalculate) se recalculează în manualFor
     const calculate = campuriCalculate(manualFields)
-    const setManualValue = (ph: string, v: string) => setManualValues(prev => {
-      const cur = { ...prev[tpl.id], [ph]: v, ...completariAutoturism(manualFields, ph, v) }
-      return { ...prev, [tpl.id]: { ...cur, ...valoriCalculate(manualFields, cur) } }
-    })
+    // Ce se scrie aici trece și în celelalte documente bifate cu același câmp (vezi propagaManual)
+    const tinte = [...selectedIds].map(id => ({ id, fields: manualFieldsOf(id) }))
+    const bife = grupuriBifa(placeholdersOf(tpl.id))
+    const setManualValue = (ph: string, v: string) => {
+      const schimbari = { [ph]: v, ...completariAutoturism(manualFields, ph, v) }
+      setManualValues(prev => propagaManual(prev, tpl.id, schimbari, valori, tinte, (id, f) => manualFor(id)[f] ?? ''))
+      // Adresa din fișă propune destinația (sediul social → sediu social, punct de lucru → punct de lucru), dacă nu e aleasă
+      const fel = isAdresaSpatiu(ph) ? felAdresa(v, adreseClient) : null
+      const destinatie = fel === 'sediu' || fel === 'punct' ? DESTINATIE_DUPA_ADRESA[fel] : null
+      // Se schimbă și când destinația fusese propusă tot din adresă (cea de dinainte), nu și când a fost aleasă altfel
+      const felVechi = isAdresaSpatiu(ph) ? felAdresa(valori[ph] ?? '', adreseClient) : null
+      const propusaVechi = felVechi === 'sediu' || felVechi === 'punct' ? DESTINATIE_DUPA_ADRESA[felVechi] : null
+      const curenta = bifeState[tpl.id]?.DESTINATIE
+      if (destinatie && bife.some(g => g.grup === 'DESTINATIE' && g.variante.includes(destinatie)) && (!curenta || curenta === propusaVechi)) {
+        setBifeState(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], DESTINATIE: destinatie } }))
+      }
+    }
+    const info = (ph: string, value = manualValue(ph)) => {
+      const c = contextOf(tpl.id, ph)
+      return c ? <ContextCampInfo context={c} value={value} /> : null
+    }
+    const notaMemorie = (ph: string) => {
+      const m = memorieFor(tpl.id, ph)
+      return m && (
+        <div style={{ fontSize: '.72rem', color: 'var(--s400)', display: 'flex', gap: '.4rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span>Preluat din ultima generare a documentului: {m.templateName}, {new Date(m.generatedAt).toLocaleDateString('ro-RO')}</span>
+          <button type="button" className="btn btn-sm btn-ghost" style={{ padding: '0 .3rem', fontSize: '.72rem' }} onClick={() => setManualValue(ph, '')}>Golește</button>
+        </div>
+      )
+    }
     const auto = campuriAutoturism(manualFields)
     const renderManualField = (ph: string, style?: CSSProperties, spec?: CampAuto) => {
       const label = spec?.label ?? manualLabel(ph)
       const inputId = `manual-${tpl.id}-${ph}`
       if (isDateLabel(label)) {
-        return <DateFieldInput key={ph} id={inputId} label={label} value={manualValue(ph)} onChange={v => setManualValue(ph, v)} style={style} />
+        const input = <DateFieldInput key={ph} id={inputId} label={label} labelExtra={info(ph)} value={manualValue(ph)} onChange={v => setManualValue(ph, v)} style={style} />
+        const nota = notaMemorie(ph)
+        return nota ? <div key={ph} style={{ display: 'flex', flexDirection: 'column', ...style }}>{input}{nota}</div> : input
       }
       const avertisment = spec?.verifica?.(manualValue(ph))
       return (
         <div className="field" key={ph} style={style}>
-          <label className="field-label" htmlFor={inputId}>{label}</label>
+          <label className="field-label" htmlFor={inputId}>{label}{info(ph)}</label>
           <input id={inputId} className="field-input" value={manualValue(ph)} list={spec?.sugestii ? `${inputId}-sugestii` : undefined}
             inputMode={spec?.numeric ? 'decimal' : undefined}
             onChange={e => setManualValue(ph, spec?.majuscule ? e.target.value.toUpperCase() : e.target.value)} />
+          {notaMemorie(ph)}
           {spec?.sugestii && <datalist id={`${inputId}-sugestii`}>{spec.sugestii.map(o => <option key={o} value={o} />)}</datalist>}
           {avertisment && <div style={{ fontSize: '.75rem', color: 'var(--warn, #b45309)' }}>{avertisment}</div>}
         </div>
@@ -1044,7 +1128,10 @@ export default function TemplateFiller({
     const showModExercitare = manualFields.includes(MOD_EXERCITARE_MANDATE)
     // Operațiunea înaintea listei actelor, ca în frază
     const liste = manualFields.filter(ph => felLista(ph)).sort((a, b) => (felLista(a) === 'operatiune' ? 0 : 1) - (felLista(b) === 'operatiune' ? 0 : 1))
-    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE && !auto.has(ph) && !felLista(ph))
+    const adrese = manualFields.filter(isAdresaSpatiu)
+    const detalii = manualFields.filter(ph => detaliuBifa(ph, bife))
+    const otherManualFields = manualFields.filter(ph => ph !== MOD_EXERCITARE_MANDATE && !auto.has(ph) && !felLista(ph)
+      && !isAdresaSpatiu(ph) && !detalii.includes(ph))
     const { pairs, rest } = pairManualDateFields(otherManualFields.filter(ph => !calculate.has(ph)))
     const boxStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: '.375rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }
     const titleStyle: CSSProperties = { fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }
@@ -1061,13 +1148,36 @@ export default function TemplateFiller({
       const { optiuni, alese, text } = listaFor(tpl.id, fel)
       return (
         <ListaBifePanel key={ph} id={`lista-${tpl.id}-${fel}`} titlu={fel === 'operatiune' ? 'Operațiunea' : 'Lista actelor'}
-          optiuni={optiuni} alese={alese} text={text}
+          optiuni={optiuni} alese={alese} text={text} info={info(ph, text)}
           nota={fel === 'acte' ? 'Propuse: actele generate pentru client în ultimele 30 de zile' : undefined}
           onChange={v => setListeState(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [fel]: v } }))} />
       )
     }
     return (
       <>
+        {adrese.map(ph => (
+          <AdresaSpatiuField key={ph} id={`manual-${tpl.id}-${ph}`} label={manualLabel(ph)} value={manualValue(ph)}
+            optiuni={adreseClient} onChange={v => setManualValue(ph, v)} nota={notaMemorie(ph)} info={info(ph)} />
+        ))}
+        {bife.map(({ grup, variante }) => {
+          const aleasa = bifeState[tpl.id]?.[grup]
+          const detaliu = detalii.find(ph => detaliuBifa(ph, bife)?.grup === grup && detaliuBifa(ph, bife)?.varianta === aleasa)
+          return (
+            <Fragment key={grup}>
+              <div role="radiogroup" aria-label={eticheta(grup)} style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap', marginBottom: '.375rem' }}>
+                <span style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>{eticheta(grup)}</span>
+                {variante.map(v => (
+                  <button key={v} type="button" role="radio" aria-checked={aleasa === v}
+                    className={`btn btn-sm ${aleasa === v ? 'btn-primary' : 'btn-outline-primary'}`}
+                    onClick={() => setBifeState(prev => ({ ...prev, [tpl.id]: { ...prev[tpl.id], [grup]: v } }))}>
+                    {eticheta(v)}
+                  </button>
+                ))}
+              </div>
+              {detaliu && renderManualField(detaliu)}
+            </Fragment>
+          )
+        })}
         {liste.map(renderLista)}
         {auto.size > 0 && (
           <div style={boxStyle}>

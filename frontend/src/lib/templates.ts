@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
-  query, orderBy, onSnapshot, serverTimestamp, where, getDocs,
+  query, orderBy, onSnapshot, serverTimestamp, getDocs, limit,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
@@ -66,15 +66,18 @@ export async function logDocGeneration(
 ) {
   const col = collection(db, 'workspaces', workspaceId, 'clienti', clientId, 'docGenerations')
   assertWritable()
+  // Firestore refuză câmpurile `undefined` (ex. driveLink la un document descărcat, nu salvat în Drive): fără ele
+  // înregistrarea eșua în tăcere și generarea nu apărea în istoric
+  const data = Object.fromEntries(Object.entries(generation).filter(([, v]) => v !== undefined))
   await addDoc(col, {
-    ...generation,
+    ...data,
     generatedAt: generation.generatedAt ?? new Date().toISOString(),
   })
 }
 
-/** Documentele generate pentru client de la `sinceIso` încoace (generatedAt e ISO, deci comparabil ca text). */
-export async function listRecentGenerations(workspaceId: string, clientId: string, sinceIso: string): Promise<DocGeneration[]> {
+/** Ultimele `n` documente generate pentru client, cel mai nou primul. */
+export async function listLastGenerations(workspaceId: string, clientId: string, n = 50): Promise<DocGeneration[]> {
   const col = collection(db, 'workspaces', workspaceId, 'clienti', clientId, 'docGenerations')
-  const snap = await getDocs(query(col, where('generatedAt', '>=', sinceIso)))
+  const snap = await getDocs(query(col, orderBy('generatedAt', 'desc'), limit(n)))
   return snap.docs.map(d => d.data() as DocGeneration)
 }

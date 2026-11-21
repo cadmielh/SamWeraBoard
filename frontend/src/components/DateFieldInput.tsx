@@ -17,6 +17,8 @@ interface Props {
   showToday?: boolean
   /** Clasă în plus pe învelișul câmpului (ex. `auto-field`, câmp completat automat). */
   className?: string
+  /** Lângă etichetă (ex. butonul de context al unui câmp manual, ContextCampInfo). */
+  labelExtra?: React.ReactNode
 }
 
 /**
@@ -46,7 +48,7 @@ interface Props {
  * ștergerea era cea care „nu făcea ce trebuie"), în timp ce `keydown` e universal și comportamentul
  * lui e complet sub controlul nostru.
  */
-export default function DateFieldInput({ id, label, value, onChange, style, showToday = true, className }: Props) {
+export default function DateFieldInput({ id, label, value, onChange, style, showToday = true, className, labelExtra }: Props) {
   const textRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLInputElement>(null)
   const pendingCaretRef = useRef<number | null>(null)
@@ -163,7 +165,7 @@ export default function DateFieldInput({ id, label, value, onChange, style, show
 
   return (
     <div className={className ? `field ${className}` : 'field'} style={style}>
-      {label && <label className="field-label" htmlFor={id}>{label}</label>}
+      {label && <label className="field-label" htmlFor={id}>{label}{labelExtra}</label>}
       <div className="field-with-btn">
         <div style={{ position: 'relative', flex: 1 }}>
           <input

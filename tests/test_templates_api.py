@@ -301,3 +301,29 @@ def test_listarea_nu_intoarce_fisiere_si_retragerea_atinge_doar_livrarile(env):
     assert c.delete(f"/admin/workspaces/{DST}/templates/dlv_t1", headers=hdr("sa")).status_code == 200
     assert tpl(db, DST, "dlv_t1") is None
     assert any(a["action"] == "template.delivery_revoke" for a in audit_actions(db, DST))
+
+
+def test_contextul_campurilor_se_calculeaza_pentru_sabloanele_vechi(env):
+    c, db = env
+    add_tpl(db)                                                       # șablon vechi, fără placeholderContext
+    r = c.post("/templates/t1/context", headers=hdr("ana"))
+    assert r.status_code == 200
+    assert r.get_json()["placeholderContext"]["CAMP_NR"]["before"] == "Societatea …, "
+    assert "CAMP_NR" in tpl(db, SRC, "t1")["placeholderContext"]
+    assert c.post("/templates/t1/context", headers=hdr("cli2", OTHER)).status_code == 404
+    assert c.post("/templates/lipsa/context", headers=hdr("ana")).status_code == 404
+
+
+def test_contextul_nu_suprascrie_un_fisier_inlocuit_intre_timp(env, monkeypatch):
+    c, db = env
+    add_tpl(db)
+    calc = templates_api.placeholder_contexts_in_docx
+
+    def inlocuit_intre_timp(data):                                   # alt fișier salvat cât se calculează contextul
+        db.collection("workspaces").document(SRC).collection("docTemplates").document("t1").update(
+            {"placeholderContext": {"CAMP_NOU": {"before": "nou", "after": ""}}, "revision": 1})
+        return calc(data)
+
+    monkeypatch.setattr(templates_api, "placeholder_contexts_in_docx", inlocuit_intre_timp)
+    assert c.post("/templates/t1/context", headers=hdr("ana")).status_code == 409
+    assert list(tpl(db, SRC, "t1")["placeholderContext"]) == ["CAMP_NOU"]

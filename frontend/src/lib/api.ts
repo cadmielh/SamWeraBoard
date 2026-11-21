@@ -533,6 +533,10 @@ export async function createTemplate(file: File, fields: NewTemplateFields): Pro
   return data as { id: string };
 }
 
+/** Contextul câmpurilor manuale pentru un șablon încărcat înainte să existe (serverul îl și salvează în șablon). */
+export const ensureTemplateContext = (templateId: string) =>
+  apiJson<{ placeholderContext: Record<string, import('../types').ContextCamp> }>("POST", `/templates/${encodeURIComponent(templateId)}/context`)
+
 /** „Duplică”: copia unui șablon de bază, făcută pe server din fișierul original. */
 export const duplicateBuiltinTemplate = (key: string) => apiJson<{ id: string }>("POST", "/templates/from-builtin", { key })
 

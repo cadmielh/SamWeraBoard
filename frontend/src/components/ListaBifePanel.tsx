@@ -10,13 +10,15 @@ interface Props {
   /** Rezultatul, așa cum intră în document. */
   text: string
   nota?: string
+  /** Lângă titlu (ContextCampInfo). */
+  info?: React.ReactNode
 }
 
 const norm = (s: string) => s.trim().toLowerCase()
 
 /** Un câmp de tip listă („operațiunea”, „lista actelor” — vezi lib/listeBife): cele alese sunt etichete (ca la
  * „Obiectul cererii” din dosar), sugestiile rămase sunt pastile pe care se dă click; orice altceva se scrie + Enter. */
-export default function ListaBifePanel({ id, titlu, optiuni, alese, onChange, text, nota }: Props) {
+export default function ListaBifePanel({ id, titlu, optiuni, alese, onChange, text, nota, info }: Props) {
   const [query, setQuery] = useState('')
   const luate = new Set(alese.map(norm))
   const q = norm(query)
@@ -29,7 +31,7 @@ export default function ListaBifePanel({ id, titlu, optiuni, alese, onChange, te
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)', padding: '.625rem .75rem', marginBottom: '.375rem' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap' }}>
-        <label htmlFor={id} style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>{titlu}</label>
+        <label htmlFor={id} style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--s500)', letterSpacing: '.06em', textTransform: 'uppercase' }}>{titlu}{info}</label>
         {nota && <span style={{ fontSize: '.72rem', color: 'var(--s400)' }}>{nota}</span>}
       </div>
       <div className="tags-input-wrap">

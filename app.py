@@ -42,7 +42,7 @@ import billing_credits
 import ratelimit
 import local_extractor
 import azure_extractor
-from doc_filler import (fill_docx, list_placeholders_in_docx, list_clauses_in_docx, list_repeat_groups_in_docx,
+from doc_filler import (fill_docx, list_placeholders_in_docx, placeholder_contexts_in_docx, list_clauses_in_docx, list_repeat_groups_in_docx,
                         list_repeat_group_fields_in_docx)
 import blanks
 import ai_suggest
@@ -340,6 +340,7 @@ def _load_builtin_templates() -> dict[str, dict]:
                 "clauses": list_clauses_in_docx(file_bytes),
                 "repeatGroups": list_repeat_groups_in_docx(file_bytes),
                 "repeatGroupFields": list_repeat_group_fields_in_docx(file_bytes),
+                "placeholderContext": placeholder_contexts_in_docx(file_bytes),
             }
     return result
 

@@ -471,33 +471,42 @@ def _expand_clause_library(doc: Document, selected_tags: list[str] | None) -> No
 # alt loc din document (ex. semnătura cesionarului, sub hotărâri, doar când e bifată cesiunea) — păstrat fără marcaje
 # dacă clauza TAG e bifată, șters cu totul altfel. Câmpurile lui se cer în clauza respectivă (vezi list_clauses_in_docx).
 _CLAUSE_CONDITIONAL_RE = re.compile(r"^\{\{#CLAUZA_([A-Z0-9_]+)\}\}$")
+# {{#BIFA_GRUP_VARIANTA}}…{{/BIFA_GRUP_VARIANTA}}: păstrat doar când varianta e aleasă, adică {{BIFA_GRUP_VARIANTA}}
+# vine completat cu BIFA_ALEASA (ex. procesul-verbal: semnăturile „AM PREDAT / AM PRIMIT” la predare vs. restituire).
+BIFA_ALEASA = "☒"
 
 
-def _clause_conditional_blocks(paragraphs) -> list[tuple[str, list]]:
-    """[(tag, [marcaj început, …conținut…, marcaj final])] — blocurile {{#CLAUZA_TAG}} complete, în ordine."""
+def _clause_conditional_blocks(paragraphs, prefix: str = "CLAUZA_") -> list[tuple[str, list]]:
+    """[(tag, [marcaj început, …conținut…, marcaj final])] — blocurile {{#<prefix>TAG}} complete, în ordine."""
+    start_re = _CLAUSE_CONDITIONAL_RE if prefix == "CLAUZA_" else re.compile(rf"^\{{\{{#{prefix}([A-Z0-9_]+)\}}\}}$")
     blocks = []
     open_tag, current = None, []
     for p in paragraphs:
         text = _para_text(p)
-        m = _CLAUSE_CONDITIONAL_RE.match(text)
+        m = start_re.match(text)
         if open_tag is None and m:
             open_tag, current = m.group(1), [p]
         elif open_tag is not None:
             current.append(p)
-            if text == f"{{{{/CLAUZA_{open_tag}}}}}":
+            if text == f"{{{{/{prefix}{open_tag}}}}}":
                 blocks.append((open_tag, current))
                 open_tag = None
     return blocks
 
 
-def _expand_clause_conditionals(doc: Document, selected: set[str]) -> None:
+def _expand_clause_conditionals(doc: Document, selected: set[str], prefix: str = "CLAUZA_") -> None:
     containers = [doc.paragraphs] + [cell.paragraphs for table in _iter_all_tables(doc)
                                      for row in table.rows for cell in _row_distinct_cells(row)]
     for paragraphs in containers:
-        for tag, block in _clause_conditional_blocks(paragraphs):
+        for tag, block in _clause_conditional_blocks(paragraphs, prefix):
             for p in (block if tag not in selected else (block[0], block[-1])):
                 if p._p.getparent() is not None:
                     p._p.getparent().remove(p._p)
+
+
+def _expand_bifa_conditionals(doc: Document, replacements: dict[str, str]) -> None:
+    alese = {k[len("{{BIFA_"):-2] for k, v in replacements.items() if k.startswith("{{BIFA_") and v == BIFA_ALEASA}
+    _expand_clause_conditionals(doc, alese, "BIFA_")
 
 
 def _max_numbered_index(replacements: dict[str, str]) -> dict[str, int]:
@@ -835,6 +844,7 @@ def fill_docx(
     Returns the filled document as bytes.
     """
     doc = Document(io.BytesIO(template_bytes))
+    _expand_bifa_conditionals(doc, replacements)
     ctx = variants.sanitize_ctx(variant_ctx) if variant_ctx is not None else None
     # Marcajul {{ACORD_EXPLICIT}}: acordul automat doar unde șablonul scrie explicit ambele forme (vezi variants.py)
     explicit_only = _strip_explicit_marker(doc)
@@ -991,7 +1001,7 @@ def list_repeat_groups_in_doc(doc: Document) -> list[str]:
         for p in paragraphs:
             text = "".join(r.text for r in p.runs).strip()
             m = _REPEAT_GROUP_START_RE.match(text)
-            if m and m.group(1) != "CLAUZE" and not m.group(1).startswith("CLAUZA_"):
+            if m and m.group(1) != "CLAUZE" and not m.group(1).startswith(("CLAUZA_", "BIFA_")):
                 found.add(m.group(1))
 
     scan(doc.paragraphs)
@@ -1016,7 +1026,7 @@ def list_repeat_group_fields_in_docx(template_bytes: bytes) -> dict[str, list[st
         open_tag = None
         for text in texts:
             m = _REPEAT_GROUP_START_RE.match(text)
-            if m and m.group(1) != "CLAUZE" and not m.group(1).startswith("CLAUZA_"):
+            if m and m.group(1) != "CLAUZE" and not m.group(1).startswith(("CLAUZA_", "BIFA_")):
                 open_tag = m.group(1)
                 fields.setdefault(open_tag, set())
             elif open_tag and _end_marker_punct(text, f"{{{{/{open_tag}}}}}") is not None:
@@ -1050,6 +1060,8 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
             for match in pattern.findall(text):
                 if not marker_pattern.match(match) and match not in (EXPLICIT_AGREEMENT_MARKER, SEPARATOR_MARKER):
                     found.add(match)
+                elif match.startswith("{{#BIFA_"):        # blocul condițional se alege tot prin bifa lui
+                    found.add("{{" + match[3:])
 
     scan_paragraphs(doc.paragraphs)
     for table in _iter_all_tables(doc):
@@ -1058,6 +1070,57 @@ def list_placeholders_in_docx(template_bytes: bytes) -> list[str]:
                 scan_paragraphs(cell.paragraphs)
 
     return sorted(found)
+
+
+_CONTEXT_CHARS = 90
+_CONTEXT_MIN = 15
+_ANY_TAG_RE = re.compile(r"\{\{[^}]*\}\}")
+_MANUAL_TAG_RE = re.compile(r"\{\{CAMP_[A-Z0-9_]+\}\}")
+
+
+def _context_text(text: str) -> str:
+    """Textul din jurul unei etichete, cum îl citește omul: celelalte etichete devin „…”, marcajele de bloc dispar."""
+    return re.sub(r"\s+", " ", _ANY_TAG_RE.sub(lambda m: "" if m.group(0)[2:3] in "#/" else "…", text))
+
+
+def _clip(text: str, from_end: bool) -> str:
+    """Cel mult _CONTEXT_CHARS caractere, tăiate la un cuvânt întreg, cu „…” unde s-a tăiat."""
+    if len(text) <= _CONTEXT_CHARS:
+        return text
+    if from_end:
+        cut = text[-_CONTEXT_CHARS:]
+        return "…" + cut[cut.find(" ") + 1:] if " " in cut else "…" + cut
+    cut = text[:_CONTEXT_CHARS]
+    return (cut[:cut.rfind(" ")] if " " in cut else cut) + "…"
+
+
+def placeholder_contexts_in_docx(template_bytes: bytes) -> dict[str, dict[str, str]]:
+    """Pentru fiecare câmp manual ({{CAMP_X}} → cheia „CAMP_X”): textul de dinainte și de după prima lui apariție, ca
+    cel care completează să vadă unde intră valoarea. Când câmpul e aproape singur pe rând, se ia și paragraful vecin
+    nevid (separat prin „ ¶ ”). Doar text din șablon, fără date de client."""
+    doc = Document(io.BytesIO(template_bytes))
+    containers = [doc.paragraphs] + [cell.paragraphs for table in _iter_all_tables(doc)
+                                     for row in table.rows for cell in _row_distinct_cells(row)]
+    out: dict[str, dict[str, str]] = {}
+    for paragraphs in containers:
+        texts = [_para_text(p) for p in paragraphs]
+        for i, text in enumerate(texts):
+            for m in _MANUAL_TAG_RE.finditer(text):
+                key = m.group(0)[2:-2]
+                if key in out:
+                    continue
+                before = _context_text(text[:m.start()]).lstrip()
+                after = _context_text(text[m.end():]).rstrip()
+                if len(before.strip(" …")) < _CONTEXT_MIN:
+                    prev = next((_context_text(t).strip() for t in reversed(texts[:i]) if _context_text(t).strip(" …")), "")
+                    if prev:
+                        before = f"{prev} ¶ {before}"
+                if len(after.strip(" …")) < _CONTEXT_MIN:
+                    nxt = next((_context_text(t).strip() for t in texts[i + 1:] if _context_text(t).strip(" …")), "")
+                    if nxt:
+                        after = f"{after} ¶ {nxt}"
+                out[key] = {"before": re.sub("…+", "…", _clip(before, True)), "after": re.sub("…+", "…", _clip(after, False))}
+    return out
 
 
 #  Blocuri completate automat din fișa clientului (vezi lib/placeholders.ts: buildRepeatGroups) — într-o clauză

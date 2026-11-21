@@ -1094,6 +1094,22 @@ body {
 .lb-pill-plus { opacity:.6; margin-right:.2rem; }
 .lb-chip { font-size:.8rem; letter-spacing:0; font-weight:500; }
 
+/* ── Contextul unui câmp manual: „i” lângă etichetă, fraza din document la cerere (ContextCampInfo) ── */
+.ctx-info { position:relative; display:inline-flex; vertical-align:middle; margin-left:.3rem; }
+.ctx-info-btn {
+  width:.95rem; height:.95rem; border-radius:50%; border:1px solid var(--s300); background:transparent; color:var(--s400);
+  font:italic 600 .62rem/1 Georgia, serif; display:inline-flex; align-items:center; justify-content:center; padding:0; cursor:help;
+  transition:color var(--t), border-color var(--t);
+}
+.ctx-info-btn:hover, .ctx-info-btn:focus-visible, .ctx-info-btn[aria-expanded="true"] { color:var(--p600); border-color:var(--p500); }
+.ctx-info-pop {
+  position:absolute; z-index:50; top:calc(100% + .35rem); left:-.5rem; width:min(22rem, 80vw);
+  background:var(--surface); border:1px solid var(--s200); border-radius:var(--r-sm); box-shadow:var(--sh-md, 0 6px 20px rgba(0,0,0,.15));
+  padding:.5rem .65rem; font-size:.78rem; font-weight:400; line-height:1.45; color:var(--s600); text-transform:none; letter-spacing:0;
+  white-space:normal; text-align:left;
+}
+.ctx-info-mark { background:var(--p100); color:var(--p600); border-radius:3px; padding:0 .2rem; font-weight:600; }
+
 /* ── Kanban board (Sarcini) ── */
 .kanban-board { display:flex; gap:1rem; align-items:flex-start; height:100%; overflow-x:auto; padding-bottom:.5rem; }
 .kanban-col {

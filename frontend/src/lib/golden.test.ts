@@ -70,6 +70,10 @@ function payload(client: Partial<Client>) {
   // Reprezentantul din șabloanele cu rol propriu (ex. anexa hotărârii): primul administrator
   const admin = client.administratori?.[0]
   if (admin) Object.assign(replacements, customPersonReplacements('REPREZENTANT_SOCIETATE', 1, admin))
+  // Alegerea dintre variante ({{BIFA_GRUP_VARIANTA}}): procesul-verbal, la predare
+  Object.assign(replacements, { '{{BIFA_SCOP_PREDARE}}': '☒', '{{BIFA_SCOP_RESTITUIRE}}': '☐' })
+  Object.assign(replacements, { '{{BIFA_DESTINATIE_SEDIU_SOCIAL}}': '☒', '{{BIFA_DESTINATIE_SEDIU_PROFESIONAL}}': '☐',
+    '{{BIFA_DESTINATIE_PUNCT_DE_LUCRU}}': '☐', '{{BIFA_DESTINATIE_ALTA}}': '☐', '{{CAMP_ALTA_DESTINATIE}}': '______________' })
   const groups = buildRepeatGroups(opts)
   const { ctx } = buildVariantContext({ client, scannedPersons: [], idFields: null, replacements })
   return { tip: client.tipClient, replacements, groups, ctx }
