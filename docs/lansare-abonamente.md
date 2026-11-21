@@ -102,6 +102,8 @@ Codul pentru credite și pentru prețurile din 2027 e gata și testat (ramura `f
 28. **[Claude]** Verific webhook-ul, starea abonamentului, creditele și jurnalul lor.
 29. **[Tu]** Emiți facturile pentru cele două plăți și îți reglezi cabinetele din pilot din Super-admin: fiecare are acces gratuit până pe 31.12.2026. Dacă se abonează înainte, păstrează 200 RON/lună, iar prima plată vine după 31.12.
 
+**Stare 20 noiembrie 2026:** plățile sunt pornite, iar testele live cu coduri de 100% (0 RON) au reușit, la abonament și la credite. Încasările, comisioanele Stripe și facturile emise manual se urmăresc în Super-admin → Încasări.
+
 ## Partea 5: lansarea publică
 
 30. **[Făcut, 20.11.2026]** Plățile au pornit, iar înscrierea s-a deschis pentru toată lumea, fără MFA și fără reCAPTCHA (decizia proprietarului).
