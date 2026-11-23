@@ -5,6 +5,9 @@ import { billingAccess, formatDate } from '../lib/billing'
 import { adminBillingPayments, adminMarkInvoiced, adminStripeFees, type AccountFee, type PaymentRow } from '../lib/superAdmin'
 import type { Workspace } from '../types'
 import BtnLabel from './BtnLabel'
+import IconExport from './IconExport'
+import IconPlus from './IconPlus'
+import IconRefresh from './IconRefresh'
 import Modal from './Modal'
 
 type Period = 'luna' | 'luna-trecuta' | 'an' | 'tot' | 'interval'
@@ -309,11 +312,14 @@ export default function SuperAdminPayments({ workspaces, version = 0 }: { worksp
           <span className="card-title">💳 Încasări</span>
           <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
             <button className="btn btn-primary btn-sm" title="Abonament sau credite plătite prin transfer, numerar etc."
-              onClick={() => (wsFilter ? openManual(wsFilter) : setPicking(true))}>+ Încasare manuală</button>
-            <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
-              <BtnLabel busy={loading} dark>Reîncarcă</BtnLabel>
+              onClick={() => (wsFilter ? openManual(wsFilter) : setPicking(true))}><IconPlus />Încasare manuală</button>
+            <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}
+              title="Recitește lista din aplicație (ce a trimis deja Stripe + încasările manuale); nu sincronizează cu Stripe">
+              <IconRefresh /><BtnLabel busy={loading} dark>Actualizează lista</BtnLabel>
             </button>
-            <button className="btn btn-sm" onClick={exportCsv} disabled={!filtered.length}>Export CSV</button>
+            <button className="btn btn-sm" onClick={exportCsv} disabled={!filtered.length} title="Descarcă încasările filtrate, pentru contabil">
+              <IconExport />Export CSV
+            </button>
           </div>
         </div>
         <div className="card-body">
