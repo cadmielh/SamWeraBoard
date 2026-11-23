@@ -281,6 +281,7 @@
         "*.xlsx",
         ".emulator-data",
         ".emulator-data*",
+        ".fisiere-local",
         "firebase-export-*",
         "uploads",
         "migrare.zip",

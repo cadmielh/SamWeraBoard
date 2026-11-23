@@ -1,0 +1,360 @@
+"""Teste pentru fisiere_api.py (+ ștergerea clientului din pii_api.py) contra emulatorului Firestore.
+
+Rulare: tests/run_all.sh (sau `firebase emulators:exec --only firestore ... pytest tests/test_fisiere_api.py`).
+"""
+import base64
+import io
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"), reason="necesită emulatorul Firestore"
+)
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from flask import Flask  # noqa: E402
+from google.cloud import firestore as gcf  # noqa: E402
+
+import authz  # noqa: E402
+import fisiere  # noqa: E402
+import fisiere_api  # noqa: E402
+import pii_api  # noqa: E402
+import vault  # noqa: E402
+import workspaces_api  # noqa: E402
+
+CONSENT = {"tos": workspaces_api.TOS_VERSION, "dpa": workspaces_api.DPA_VERSION}
+CID = "clientAAAAAAAAAAA1"
+CID2 = "clientBBBBBBBBBBB2"
+PDF = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF"
+JPG = b"\xff\xd8\xff\xe0" + os.urandom(64)
+
+
+@pytest.fixture()
+def env(monkeypatch, tmp_path):
+    monkeypatch.setenv("VAULT_LOCAL_KEK", base64.b64encode(os.urandom(32)).decode())
+    monkeypatch.delenv("VAULT_KMS_KEY", raising=False)
+    monkeypatch.delenv("FISIERE_BUCKET", raising=False)
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.setenv("FISIERE_LOCAL_DIR", str(tmp_path))
+    vault._cache.clear()
+    client = gcf.Client(project="demo-samwera")
+    for coll in ("workspaces", "invitations", "users", "workspaceKeys", "trialClaims", "rateLimits"):
+        for d in client.collection(coll).stream():
+            client.recursive_delete(d.reference)
+    monkeypatch.setattr(authz, "db", lambda: client)
+
+    def fake_authenticate():
+        from flask import request
+        raw = request.headers.get("X-Test-User", "")
+        if not raw:
+            raise authz.AuthError(401)
+        uid, email = raw.split(":")
+        return authz.Principal(uid=uid, email=email, name=uid)
+
+    monkeypatch.setattr(authz, "authenticate", fake_authenticate)
+    app = Flask(__name__)
+    app.config["MAX_CONTENT_LENGTH"] = 15 * 1024 * 1024
+    for bp in (workspaces_api.bp, pii_api.bp, fisiere_api.bp):
+        app.register_blueprint(bp)
+    return app.test_client(), client, tmp_path
+
+
+def call(c, uid, method, url, wid=None, **kw):
+    hdr = {"X-Test-User": f"{uid}:{uid}@ex.ro"}
+    if wid:
+        hdr["X-Workspace-Id"] = wid
+    return getattr(c, method)(url, headers=hdr, **kw)
+
+
+def setup_ws(c, db, documente=True):
+    wid = call(c, "alice", "post", "/workspaces", json={"name": "Cabinet", "consent": CONSENT}).get_json()["id"]
+    ref = db.collection("workspaces").document(wid)
+    ref.update({
+        "members.bob": {"role": "member", "email": "bob@ex.ro"},
+        "members.vera": {"role": "viewer", "email": "vera@ex.ro"},
+        "features.documente": documente,
+    })
+    ref.collection("clienti").document(CID).set({"denumire": "Alfa SRL"})
+    ref.collection("clienti").document(CID2).set({"denumire": "Beta SRL"})
+    return wid
+
+
+def upload(c, uid, wid, data=PDF, name="act.pdf", cid=CID, folder=None, **form):
+    fields = {"fisier": (io.BytesIO(data), name), "clientId": cid, **form}
+    if folder:
+        fields["folderId"] = folder
+    return call(c, uid, "post", "/fisiere", wid, data=fields, content_type="multipart/form-data")
+
+
+def fisiere_db(db, wid, **where):
+    out = []
+    for s in db.collection("workspaces").document(wid).collection("fisiere").stream():
+        d = s.to_dict()
+        if all(d.get(k) == v for k, v in where.items()):
+            out.append({"id": s.id, **d})
+    return out
+
+
+def contor(db, wid):
+    return db.collection("workspaces").document(wid).collection("contoare").document("fisiere").get().to_dict() or {}
+
+
+def test_incarcare_descarcare_criptat(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    r = upload(c, "bob", wid, name="CI Ștefan.pdf")
+    assert r.status_code == 201, r.get_json()
+    f = r.get_json()["fisier"]
+    assert f["nume"] == "CI Ștefan.pdf" and f["mime"] == "application/pdf" and f["marime"] == len(PDF)
+    brut = (root / fisiere.cale(wid, f["id"])).read_bytes()
+    assert PDF not in brut
+
+    r = call(c, "vera", "get", f"/fisiere/{f['id']}/continut", wid)
+    assert r.status_code == 200 and r.data == PDF
+    assert r.headers["Content-Type"] == "application/pdf"
+    assert "attachment" in r.headers["Content-Disposition"] and "UTF-8''CI%20%C8%98tefan.pdf" in r.headers["Content-Disposition"]
+    assert r.headers["Cache-Control"] == "private, no-store"
+    assert "sandbox" in r.headers["Content-Security-Policy"]
+    assert contor(db, wid) == {"octeti": len(PDF), "numar": 1}
+
+    log = [s.to_dict() for s in db.collection("workspaces").document(wid).collection("auditLog").stream()]
+    actiuni = {e["action"] for e in log}
+    assert {"fisier.upload", "fisier.download"} <= actiuni
+    assert all("Ștefan" not in str(e.get("meta")) for e in log)        # numele fișierului nu ajunge în jurnal
+
+
+def test_roluri_si_functie_inactiva(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    assert upload(c, "vera", wid).status_code == 403                    # viewer: doar citire
+    assert upload(c, "mallory", wid).status_code == 403                 # nu e membru
+    wid2 = call(c, "carol", "post", "/workspaces", json={"name": "Altul", "consent": CONSENT}).get_json()["id"]
+    db.collection("workspaces").document(wid2).collection("clienti").document(CID).set({"denumire": "X"})
+    r = upload(c, "carol", wid2)
+    assert r.status_code == 403 and r.get_json()["error"] == "feature_disabled"
+
+
+def test_fisier_din_alt_cabinet_nu_e_accesibil(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid).get_json()["fisier"]["id"]
+    wid2 = call(c, "carol", "post", "/workspaces", json={"name": "Altul", "consent": CONSENT}).get_json()["id"]
+    db.collection("workspaces").document(wid2).update({"features.documente": True})
+    assert call(c, "carol", "get", f"/fisiere/{fid}/continut", wid2).status_code == 404
+    assert call(c, "carol", "delete", f"/fisiere/{fid}", wid2).status_code == 404
+
+
+def test_tip_refuzat_si_marime(env, monkeypatch):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    r = upload(c, "bob", wid, data=b"MZ\x90\x00" + b"\x00" * 100, name="factura.pdf")
+    assert r.status_code == 400 and r.get_json()["error"] == "tip_nepermis"
+    monkeypatch.setattr(fisiere, "MAX_BYTES", 100)
+    r = upload(c, "bob", wid, data=PDF + b"\x00" * 200)
+    assert r.status_code == 413 and r.get_json()["error"] == "fisier_prea_mare"
+    assert fisiere_db(db, wid) == []
+
+
+def test_client_inexistent(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    assert upload(c, "bob", wid, cid="clientZZZZZZZZZZZ9").status_code == 404
+
+
+def test_duplicat_si_nume_libere(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    assert upload(c, "bob", wid).status_code == 201
+    r = upload(c, "bob", wid, name="alt nume.pdf")
+    assert r.status_code == 409 and r.get_json()["error"] == "duplicat" and r.get_json()["existent"]["nume"] == "act.pdf"
+    r = upload(c, "bob", wid, duplicat="permite")
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "act (2).pdf"
+    r = upload(c, "bob", wid, data=JPG, name="ACT.jpg")
+    assert r.get_json()["fisier"]["nume"] == "ACT.jpg"
+    # același conținut la alt client nu e duplicat
+    assert upload(c, "bob", wid, cid=CID2).status_code == 201
+
+
+def test_cota_cabinetului(env, monkeypatch):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    monkeypatch.setattr(fisiere, "LIMITA_CABINET", len(PDF) + 10)
+    assert upload(c, "bob", wid).status_code == 201
+    r = upload(c, "bob", wid, data=JPG, name="a.jpg")
+    assert r.status_code == 409 and r.get_json()["error"] == "spatiu_depasit"
+
+
+def test_foldere_mutare_redenumire(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    r = call(c, "bob", "post", f"/clients/{CID}/documente/init", wid)
+    assert [f["nume"] for f in r.get_json()["foldere"]] == list(fisiere.FOLDERE_IMPLICITE)
+    assert call(c, "bob", "post", f"/clients/{CID}/documente/init", wid).get_json() == {"foldere": [], "init": False}
+    acte = next(f["id"] for f in r.get_json()["foldere"] if f["nume"] == "Acte identitate")
+
+    r = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": None, "nume": "acte IDENTITATE"})
+    assert r.status_code == 409 and r.get_json()["error"] == "nume_existent"
+    sub = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": acte, "nume": "2024"}).get_json()["folder"]
+
+    fid = upload(c, "bob", wid).get_json()["fisier"]["id"]
+    r = call(c, "bob", "patch", f"/fisiere/{fid}", wid, json={"folderId": sub["id"], "nume": "CI Ion"})
+    assert r.status_code == 200 and r.get_json()["fisier"]["nume"] == "CI Ion.pdf"
+    assert fisiere_db(db, wid)[0]["folderId"] == sub["id"]
+
+    # un folder al altui client nu poate fi țintă
+    alt = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID2, "parentId": None, "nume": "X"}).get_json()["folder"]
+    r = call(c, "bob", "patch", f"/fisiere/{fid}", wid, json={"folderId": alt["id"]})
+    assert r.status_code == 400 and r.get_json()["error"] == "folder_invalid"
+
+    # ciclu: folderul nu poate intra în propriul subfolder
+    r = call(c, "bob", "patch", f"/foldere/{acte}", wid, json={"parentId": sub["id"]})
+    assert r.status_code == 409 and r.get_json()["error"] == "folder_ciclu"
+
+    # numele ocupat în folderul țintă
+    upload(c, "bob", wid, data=JPG, name="CI Ion.pdf", folder=None)
+    r = call(c, "bob", "patch", f"/fisiere/{fid}", wid, json={"folderId": None})
+    assert r.status_code == 200      # „CI Ion.pdf.jpg” ≠ „CI Ion.pdf”
+    r = call(c, "bob", "patch", f"/fisiere/{fid}", wid, json={"nume": "CI Ion.pdf.jpg"})
+    assert r.status_code == 200 and r.get_json()["fisier"]["nume"] == "CI Ion.pdf.jpg.pdf"
+
+
+def test_adancime_maxima(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    parent = None
+    for i in range(fisiere.MAX_ADANCIME):
+        r = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": parent, "nume": f"n{i}"})
+        assert r.status_code == 201
+        parent = r.get_json()["folder"]["id"]
+    r = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": parent, "nume": "prea adânc"})
+    assert r.status_code == 409 and r.get_json()["error"] == "folder_prea_adanc"
+
+
+def test_stergere_folder_cu_continut(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    d = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": None, "nume": "Acte"}).get_json()["folder"]
+    s = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": d["id"], "nume": "Vechi"}).get_json()["folder"]
+    f1 = upload(c, "bob", wid, folder=d["id"]).get_json()["fisier"]["id"]
+    upload(c, "bob", wid, data=JPG, name="b.jpg", folder=s["id"])
+    keep = upload(c, "bob", wid, data=JPG + b"x", name="rad.jpg").get_json()["fisier"]["id"]
+
+    r = call(c, "bob", "delete", f"/foldere/{d['id']}", wid)
+    assert r.status_code == 409 and r.get_json() == {"error": "folder_negol", "fisiere": 2, "foldere": 1}
+    r = call(c, "bob", "delete", f"/foldere/{d['id']}?recursiv=1", wid)
+    assert r.status_code == 200
+    assert [f["id"] for f in fisiere_db(db, wid)] == [keep]
+    assert not (root / fisiere.cale(wid, f1)).exists()
+    assert contor(db, wid)["numar"] == 1
+
+
+def test_stergere_fisier_fara_abonament(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid).get_json()["fisier"]["id"]
+    db.collection("workspaces").document(wid).update({"billing.accessUntil": None, "billing.status": "expired"})
+    assert upload(c, "bob", wid, data=JPG, name="a.jpg").status_code == 402
+    assert call(c, "vera", "get", f"/fisiere/{fid}/continut", wid).status_code == 200
+    assert call(c, "bob", "delete", f"/fisiere/{fid}", wid).status_code == 200
+    assert not (root / fisiere.cale(wid, fid)).exists()
+    assert contor(db, wid) == {"octeti": 0, "numar": 0}
+
+
+def test_stergere_client_arhiveaza_implicit(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    d = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": None, "nume": "Acte"}).get_json()["folder"]
+    s = call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": d["id"], "nume": "2024"}).get_json()["folder"]
+    fid = upload(c, "bob", wid, folder=s["id"]).get_json()["fisier"]["id"]
+    other = upload(c, "bob", wid, cid=CID2).get_json()["fisier"]["id"]
+
+    r = call(c, "alice", "delete", f"/clients/{CID}", wid)
+    assert r.status_code == 200 and r.get_json()["fisiere"] == {"fisiere": 1, "mod": "arhiveaza"}
+    arh = fisiere_db(db, wid, arhivat=True)
+    assert len(arh) == 1 and arh[0]["id"] == fid
+    assert arh[0]["clientId"] is None and arh[0]["clientNume"] == "Alfa SRL" and arh[0]["cale"] == "Acte / 2024"
+    assert (root / fisiere.cale(wid, fid)).exists()
+    assert [s.id for s in db.collection("workspaces").document(wid).collection("foldere").stream()] == []
+    # arhivat: se descarcă, nu se mută, se șterge
+    assert call(c, "vera", "get", f"/fisiere/{fid}/continut", wid).data == PDF
+    assert call(c, "bob", "patch", f"/fisiere/{fid}", wid, json={"folderId": None}).status_code == 409
+    assert call(c, "bob", "delete", f"/fisiere/{fid}", wid).status_code == 200
+    assert fisiere_db(db, wid)[0]["id"] == other
+
+
+def test_stergere_client_cu_fisiere(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid).get_json()["fisier"]["id"]
+    r = call(c, "alice", "delete", f"/clients/{CID}?fisiere=sterge", wid)
+    assert r.status_code == 200 and r.get_json()["fisiere"]["mod"] == "sterge"
+    assert fisiere_db(db, wid) == []
+    assert not (root / fisiere.cale(wid, fid)).exists()
+    assert contor(db, wid) == {"octeti": 0, "numar": 0}
+
+
+def test_stergere_client_fara_documente_merge_si_fara_functie(env):
+    c, db, _ = env
+    wid = setup_ws(c, db, documente=False)
+    assert call(c, "alice", "delete", f"/clients/{CID}", wid).status_code == 200
+
+
+def test_foldere_implicite_ale_cabinetului(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    assert call(c, "bob", "put", "/fisiere/setari", wid, json={"foldereImplicite": ["Acte"]}).status_code == 403   # doar adminul
+    r = call(c, "alice", "put", "/fisiere/setari", wid, json={"foldereImplicite": ["acte", "ACTE"]})
+    assert r.status_code == 409 and r.get_json()["error"] == "nume_existent"
+    r = call(c, "alice", "put", "/fisiere/setari", wid, json={"foldereImplicite": ["  Contracte ", "Acte/vechi"]})
+    assert r.get_json()["foldereImplicite"] == ["Contracte", "Acte vechi"]
+    assert call(c, "alice", "put", "/fisiere/setari", wid, json={"foldereImplicite": ["x"] * 11}).status_code == 400
+
+    r = call(c, "bob", "post", f"/clients/{CID}/documente/init", wid)
+    assert sorted(f["nume"] for f in r.get_json()["foldere"]) == ["Acte vechi", "Contracte"]
+
+    # folderele șterse nu reapar; o listă nouă nu schimbă un client deja pregătit
+    for s in db.collection("workspaces").document(wid).collection("foldere").stream():
+        call(c, "bob", "delete", f"/foldere/{s.id}", wid)
+    call(c, "alice", "put", "/fisiere/setari", wid, json={"foldereImplicite": ["Nou"]})
+    assert call(c, "bob", "post", f"/clients/{CID}/documente/init", wid).get_json()["init"] is False
+    assert list(db.collection("workspaces").document(wid).collection("foldere").stream()) == []
+
+    # listă goală: clientul nou pornește fără foldere
+    call(c, "alice", "put", "/fisiere/setari", wid, json={"foldereImplicite": []})
+    assert call(c, "bob", "post", f"/clients/{CID2}/documente/init", wid).get_json() == {"foldere": [], "init": True}
+
+
+def test_init_cere_membru_si_client_existent(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    assert call(c, "vera", "post", f"/clients/{CID}/documente/init", wid).status_code == 403
+    assert call(c, "bob", "post", "/clients/clientZZZZZZZZZZZ9/documente/init", wid).status_code == 404
+
+
+def test_stergerea_clientului_sterge_marcajul(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    call(c, "bob", "post", f"/clients/{CID}/documente/init", wid)
+    call(c, "alice", "delete", f"/clients/{CID}", wid)
+    assert not db.collection("workspaces").document(wid).collection("documenteClienti").document(CID).get().exists
+
+
+def test_incarcare_in_timpul_stergerii_clientului_nu_lasa_orfani(env, monkeypatch):
+    """Clientul dispare între verificarea de la început și înregistrarea metadatelor: fișierul nu rămâne nicăieri."""
+    c, db, root = env
+    wid = setup_ws(c, db)
+    original = fisiere.salveaza
+
+    def salveaza_si_sterge_clientul(w, fid, data):
+        original(w, fid, data)
+        db.collection("workspaces").document(w).collection("clienti").document(CID).delete()
+
+    monkeypatch.setattr(fisiere, "salveaza", salveaza_si_sterge_clientul)
+    assert upload(c, "bob", wid).status_code == 404
+    assert fisiere_db(db, wid) == []
+    assert not any(p.is_file() for p in root.rglob("*"))
+    assert contor(db, wid) == {}

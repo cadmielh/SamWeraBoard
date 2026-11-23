@@ -1,0 +1,213 @@
+/* ── Documentele clienților (components/documente) ── */
+
+.doc-section { position: relative; container: doc / inline-size; }
+
+/* ── Fișa pe ecran lat: datele în stânga, documentele în coloana din dreapta (ImpartireDocumente) ── */
+.doc-split { flex: 1; min-height: 0; display: flex; }
+.doc-split-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Limitele în pixeli: coloana are cel puțin 280px, iar datele clientului cel puțin 480px. */
+.doc-split-aside { flex: 0 0 clamp(280px, var(--doc-latime, 25%), calc(100% - 480px)); min-width: 0; overflow-y: auto;
+  padding: .875rem 1.125rem .875rem .25rem; display: flex; flex-direction: column; }
+.doc-split.is-restrans .doc-split-aside { flex-basis: 56px; padding: .875rem .5rem; border-left: 1px solid var(--s200); }
+.doc-section--coloana { flex: 1; }          /* toată înălțimea coloanei primește fișiere trase */
+/* În coloană: titlul și „Restrânge” pe primul rând, acțiunile dedesubt. */
+.doc-section--coloana .doc-head { display: grid; grid-template-columns: 1fr auto; row-gap: .5rem; }
+.doc-section--coloana .doc-head-actions { grid-column: 1 / -1; grid-row: 2; }
+.doc-section--coloana .doc-restrange { grid-column: 2; grid-row: 1; }
+
+.doc-splitter { flex: 0 0 12px; position: relative; cursor: col-resize; touch-action: none; outline: none; }
+.doc-splitter::before { content: ''; position: absolute; top: .875rem; bottom: .875rem; left: 5px; width: 2px; border-radius: 1px;
+  background: transparent; transition: background var(--t); }
+.doc-splitter::after { content: ''; position: absolute; top: 50%; left: 3px; width: 6px; height: 32px; margin-top: -16px; border-radius: 3px;
+  background: var(--s300); opacity: 0; transition: opacity var(--t); }
+.doc-splitter:hover::before, .doc-splitter.is-active::before, .doc-splitter:focus-visible::before { background: var(--p500); }
+.doc-splitter:hover::after, .doc-splitter:focus-visible::after { opacity: 1; }
+.doc-splitter:focus-visible::after { background: var(--p500); }
+body.doc-redimensionare, body.doc-redimensionare * { cursor: col-resize !important; user-select: none !important; }
+
+/* Banda coloanei restrânse */
+.doc-rail { position: relative; display: flex; flex-direction: column; align-items: center; gap: .5rem; flex: 1; }
+.doc-rail-main { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: .5rem .25rem; border: none; background: none;
+  border-radius: var(--r-sm); cursor: pointer; color: var(--s700); font: inherit; }
+.doc-rail-main:hover { background: var(--surface-2); }
+.doc-rail-count { font-size: .75rem; font-weight: 700; color: var(--p700); background: var(--p100); border-radius: var(--r-full); padding: 0 .4rem; }
+.doc-rail-label { writing-mode: vertical-rl; text-orientation: upright; font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+  line-height: 1; text-transform: uppercase; color: var(--s500); }
+.doc-rail.is-drop { outline: 2px dashed var(--p500); outline-offset: 2px; border-radius: var(--r-sm); background: var(--p50); }
+
+/* Coloană îngustă: butoanele rămân doar cu iconiță, descărcarea rapidă trece în meniu. */
+@container doc (max-width: 380px) {
+  .doc-btn-text { display: none; }
+  .doc-btn.btn-sm { padding: .35rem .5rem; }
+  .doc-sort { max-width: 7.5rem; }
+  .doc-row-main { padding: .5rem .55rem; gap: .55rem; }
+  .doc-only-hover { display: none; }
+  .doc-head-size { display: none; }
+}
+.doc-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.doc-head-size { margin-left: .25rem; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.doc-head-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.doc-sort-grup { display: inline-flex; align-items: center; gap: .125rem; }
+.doc-sort { font: inherit; font-size: .78rem; color: var(--s600); background: var(--surface); border: 1.5px solid var(--btn-ghost-border);
+  border-radius: var(--r-sm); padding: .28rem .5rem; cursor: pointer; }
+.doc-meta { font-size: .75rem; color: var(--s500); }
+
+/* Fir de navigare */
+.doc-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: .125rem; font-size: .8125rem; margin-top: -.25rem; }
+.doc-crumb-wrap { display: inline-flex; align-items: center; gap: .125rem; min-width: 0; }
+.doc-crumb { background: none; border: none; font: inherit; color: var(--p600); cursor: pointer; padding: .15rem .3rem; border-radius: 6px;
+  max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-crumb:hover { background: var(--p50); }
+.doc-crumb[aria-current="page"] { color: var(--s800); font-weight: 600; cursor: default; background: none; }
+.doc-crumb-sep { color: var(--s400); }
+
+/* Listă */
+.doc-list { list-style: none; display: flex; flex-direction: column; border: 1px solid var(--s200); border-radius: var(--r-sm); overflow: visible; }
+.doc-row { display: flex; align-items: center; gap: .25rem; padding-right: .375rem; border-bottom: 1px solid var(--s100); transition: background var(--t); }
+.doc-row:last-child { border-bottom: none; }
+.doc-row:hover, .doc-row:focus-within { background: var(--surface-2); }
+.doc-row.is-busy { opacity: .6; }
+.doc-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: .75rem; padding: .55rem .75rem; background: none; border: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--r-sm); }
+.doc-row-main:focus-visible { outline: 2px solid var(--p500); outline-offset: -2px; }
+.doc-row--edit .doc-row-main { cursor: default; }
+.doc-row-text { display: flex; flex-direction: column; min-width: 0; }
+.doc-row-text .doc-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-name { font-size: .875rem; font-weight: 500; color: var(--s800); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-row--folder .doc-name { font-weight: 600; }
+.doc-row-actions { display: flex; align-items: center; gap: .125rem; flex-shrink: 0; }
+
+.doc-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px;
+  border: none; background: none; color: var(--s500); cursor: pointer; transition: background var(--t), color var(--t); }
+.doc-icon-btn:hover, .doc-icon-btn[aria-expanded="true"] { background: var(--s200); color: var(--s800); }
+.doc-icon-btn:focus-visible { outline: 2px solid var(--p500); outline-offset: 1px; }
+/* Descărcarea rapidă apare la trecerea cu mouse-ul (pe ecran tactil e mereu vizibilă, vezi mai jos). */
+.doc-only-hover { opacity: 0; }
+.doc-row:hover .doc-only-hover, .doc-row:focus-within .doc-only-hover { opacity: 1; }
+
+/* Iconițe */
+.doc-ico-folder { color: var(--a500); flex-shrink: 0; }
+.doc-ico-file { position: relative; display: inline-flex; flex-shrink: 0; width: 20px; height: 24px; color: var(--s500); }
+.doc-ico-tag { position: absolute; left: -3px; bottom: 2px; font-size: .5rem; font-weight: 800; letter-spacing: .02em; line-height: 1;
+  padding: 2px 3px; border-radius: 3px; color: #fff; background: var(--s500); }
+.doc-ico-file--pdf { color: var(--r500); }      .doc-ico-file--pdf .doc-ico-tag { background: var(--r500); }
+.doc-ico-file--imagine { color: var(--g600); }  .doc-ico-file--imagine .doc-ico-tag { background: var(--g600); }
+.doc-ico-file--word { color: var(--b600); }     .doc-ico-file--word .doc-ico-tag { background: var(--b600); }
+.doc-ico-file--excel { color: var(--g700); }    .doc-ico-file--excel .doc-ico-tag { background: var(--g700); }
+.doc-ico-file--prezentare { color: var(--o700); } .doc-ico-file--prezentare .doc-ico-tag { background: var(--o700); }
+.doc-ico-file--semnat { color: var(--p600); }   .doc-ico-file--semnat .doc-ico-tag { background: var(--p600); }
+:root[data-theme="dark"] .doc-ico-tag { color: var(--s50); }
+
+/* Editare pe loc */
+.doc-edit { flex: 1; display: flex; align-items: center; gap: .35rem; min-width: 0; }
+.doc-edit .field-input { padding: .35rem .6rem; font-size: .875rem; }
+.doc-edit-ext { font-size: .8125rem; color: var(--s500); flex-shrink: 0; }
+
+/* Meniu „⋯” */
+.doc-menu { position: relative; }
+.doc-menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 170px; padding: .3rem; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--s200); border-radius: var(--r-sm); box-shadow: var(--sh-lg); animation: slideUp .12s; }
+.doc-menu-item { text-align: left; font: inherit; font-size: .8125rem; color: var(--s700); background: none; border: none; padding: .45rem .65rem;
+  border-radius: 6px; cursor: pointer; }
+.doc-menu-item:hover, .doc-menu-item:focus-visible { background: var(--surface-2); outline: none; }
+.doc-menu-item--danger { color: var(--r600); }
+.doc-menu-item--danger:hover, .doc-menu-item--danger:focus-visible { background: var(--r50); }
+
+/* Stări goale */
+.doc-loading { display: flex; align-items: center; gap: .5rem; font-size: .8125rem; color: var(--s500); }
+.doc-empty { display: flex; flex-direction: column; align-items: center; gap: .5rem; text-align: center; padding: 1.5rem 1rem;
+  border: 1.5px dashed var(--s300); border-radius: var(--r-sm); background: var(--surface-2); }
+.doc-empty--folder { border: none; background: none; padding: 1.25rem 1rem; }
+.doc-empty-title { font-weight: 600; color: var(--s700); font-size: .9375rem; }
+.doc-empty-text { font-size: .8125rem; color: var(--s500); max-width: 34rem; }
+.doc-empty-hint { font-size: .75rem; color: var(--s400); }
+.doc-link { background: none; border: none; padding: 0; font: inherit; color: var(--p600); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+/* Tragere de fișiere peste secțiune */
+.doc-section.is-drop { border-color: var(--p500); }
+.doc-drop { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem;
+  border: 2px dashed var(--p500); border-radius: var(--r-md); background: color-mix(in srgb, var(--p50) 88%, transparent);
+  color: var(--p700); font-weight: 600; font-size: .9375rem; pointer-events: none; text-align: center; padding: 1rem; }
+
+/* Coada de încărcare */
+.doc-queue { border: 1px solid var(--s200); border-radius: var(--r-sm); background: var(--surface-2); padding: .5rem .75rem; display: flex; flex-direction: column; gap: .35rem; }
+.doc-queue-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .8125rem; font-weight: 600; color: var(--s700); }
+.doc-queue-list { list-style: none; display: flex; flex-direction: column; gap: .35rem; max-height: 14rem; overflow-y: auto; }
+.doc-queue-item { display: flex; flex-direction: column; gap: .25rem; }
+.doc-queue-row { display: flex; align-items: center; gap: .5rem; font-size: .8125rem; min-height: 26px; }
+.doc-queue-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--s700); }
+.doc-queue-ok { color: var(--g600); font-weight: 700; }
+.doc-queue-item--gata .doc-queue-name { color: var(--s500); }
+.doc-queue-msg { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; font-size: .75rem; color: var(--r600); }
+.doc-queue-msg--warn { color: var(--a800); }
+.doc-queue-btns { display: flex; gap: .35rem; }
+.doc-progress { height: 4px; border-radius: 2px; background: var(--s200); overflow: hidden; }
+.doc-progress > span { display: block; height: 100%; background: var(--p500); border-radius: 2px; transition: width .2s linear; }
+
+/* „Mută în…” */
+.doc-tree { list-style: none; display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.doc-tree-item { width: 100%; display: flex; align-items: center; gap: .5rem; padding: .45rem .75rem; border: 1.5px solid transparent; border-radius: var(--r-sm);
+  background: none; font: inherit; font-size: .875rem; color: var(--s700); text-align: left; cursor: pointer; }
+.doc-tree-item:hover:not(:disabled) { background: var(--surface-2); }
+.doc-tree-item.is-selected { border-color: var(--p500); background: var(--p50); color: var(--p700); }
+.doc-tree-item:disabled { cursor: not-allowed; opacity: .55; }
+.doc-tree-item .doc-ico-folder { width: 16px; height: 16px; }
+.doc-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-tree-note { font-size: .7rem; color: var(--s500); flex-shrink: 0; }
+
+/* Previzualizare */
+.doc-preview.modal-box { max-width: min(1100px, 96vw); height: min(92vh, 1000px); display: flex; flex-direction: column; }
+.doc-preview-head { gap: .75rem; padding: .75rem 1rem; }
+.doc-preview-title { display: flex; flex-direction: column; min-width: 0; }
+.doc-preview-title .modal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-preview-actions { display: flex; align-items: center; gap: .375rem; flex-shrink: 0; }
+.doc-preview-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--s100); border-radius: 0 0 var(--r-lg) var(--r-lg); overflow: auto; }
+.doc-preview-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.doc-preview-msg { display: flex; align-items: center; gap: .5rem; color: var(--s500); font-size: .875rem; padding: 2rem; text-align: center; }
+
+/* Alegerea de la ștergerea clientului (StergeClientModal) */
+.doc-choice-group { border: none; display: flex; flex-direction: column; gap: .5rem; }
+.doc-choice-group legend { font-size: .8125rem; font-weight: 600; color: var(--s700); margin-bottom: .5rem; }
+.doc-choice { display: flex; align-items: flex-start; gap: .625rem; padding: .625rem .75rem; border: 1.5px solid var(--s200); border-radius: var(--r-sm);
+  cursor: pointer; transition: border-color var(--t), background var(--t); }
+.doc-choice:hover { border-color: var(--s300); }
+.doc-choice input { margin-top: .2rem; accent-color: var(--p600); }
+.doc-choice > span { display: flex; flex-direction: column; gap: .125rem; font-size: .875rem; color: var(--s800); }
+.doc-choice-desc { font-size: .78rem; color: var(--s500); }
+.doc-choice.is-selected { border-color: var(--p500); background: var(--p50); }
+.doc-choice--danger.is-selected { border-color: var(--r500); background: var(--r50); }
+.doc-choice--danger input { accent-color: var(--r500); }
+
+/* Spațiu și Arhivă (Setări › Documente) */
+.doc-spatiu { display: flex; flex-direction: column; gap: .4rem; }
+.doc-spatiu-bar { height: 8px; border-radius: 4px; background: var(--s200); overflow: hidden; }
+.doc-spatiu-bar > span { display: block; height: 100%; background: var(--p500); border-radius: 4px; }
+.doc-spatiu-bar.is-warn > span { background: var(--a500); }
+.doc-spatiu-bar.is-full > span { background: var(--r500); }
+.doc-arhiva-grup { display: flex; flex-direction: column; gap: .35rem; }
+.doc-arhiva-client { font-size: .8125rem; font-weight: 700; color: var(--s700); display: flex; align-items: baseline; gap: .5rem; }
+
+@media (hover: none), (pointer: coarse) {
+  .doc-only-hover { opacity: 1; }
+  .doc-icon-btn { width: 38px; height: 38px; }
+}
+
+@media (max-width: 768px) {
+  .doc-head-actions { width: 100%; }
+  .doc-head-actions .btn { flex: 1; }
+  .doc-row-main { padding: .65rem .6rem; gap: .6rem; }
+  .doc-crumb { max-width: 10rem; }
+  .doc-preview.modal-box { max-width: 100vw; height: 100dvh; border-radius: 0; }
+  .doc-preview-body { border-radius: 0; }
+  .doc-menu-pop { min-width: 190px; }
+  .doc-menu-item { padding: .7rem .75rem; font-size: .875rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-menu-pop { animation: none; }
+  .doc-progress > span { transition: none; }
+}
+
+.doc-implicit-input { padding: .35rem .6rem; font-size: .875rem; }
+.doc-pdf { width: 100%; height: 100%; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; align-items: center; gap: .75rem; }
+.doc-pdf-page { display: block; background: #fff; box-shadow: var(--sh-md); border-radius: 2px; flex-shrink: 0; }

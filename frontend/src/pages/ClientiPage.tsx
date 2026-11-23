@@ -15,7 +15,7 @@ import { useApp } from '../AppContext'
 import { READ_ONLY_TITLE } from '../lib/billing'
 import ClientModal from '../components/ClientModalGate'
 import ClientView, { type ClientFocus } from '../components/ClientView'
-import Modal from '../components/Modal'
+import StergeClientModal, { type ModFisiere } from '../components/StergeClientModal'
 import IconTrash from '../components/IconTrash'
 import IconPencil from '../components/IconPencil'
 import IconEye from '../components/IconEye'
@@ -413,7 +413,7 @@ export default function ClientiPage() {
   // filtrat în rawDisplayed/openClients), dar scrierea reală în Firestore se
   // întâmplă abia când expiră toast-ul; "Anulează" doar scoate id-ul din
   // pendingDeleteIds — nimic n-a fost șters vreodată.
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback((fisiere: ModFisiere) => {
     if (!deleteConf || !workspaceId) return
     const id = deleteConf.id
     const denumire = deleteConf.denumire
@@ -423,7 +423,7 @@ export default function ClientiPage() {
     toast(`„${denumire}" a fost șters`, 'ok', {
       onExpire: async () => {
         try {
-          await remove(workspaceId, id)
+          await remove(workspaceId, id, fisiere)
           // rezultatele de căutare sunt un instantaneu separat — nu se actualizează singure la ștergere
           setSearchResults(prev => prev ? prev.filter(c => c.id !== id) : prev)
         } catch (err: unknown) {
@@ -843,24 +843,8 @@ export default function ClientiPage() {
         />
       )}
 
-      {deleteConf && (
-        <Modal onClose={() => setDeleteConf(null)} className="modal-box--sm" ariaLabel="Șterge client">
-            <div className="modal-head">
-              <span className="modal-title">Șterge client</span>
-              <button className="modal-close" onClick={() => setDeleteConf(null)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p style={{ color: 'var(--s600)', fontSize: '.9375rem' }}>
-                Ești sigur că vrei să ștergi <strong>{deleteConf.denumire}</strong>?
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setDeleteConf(null)}>Anulează</button>
-              <button className="btn" style={{ background: 'var(--r500)', color: '#fff' }} onClick={handleDelete}>
-                Șterge
-              </button>
-            </div>
-        </Modal>
+      {deleteConf && workspaceId && (
+        <StergeClientModal workspaceId={workspaceId} client={deleteConf} onConfirm={handleDelete} onCancel={() => setDeleteConf(null)} />
       )}
     </>
   )

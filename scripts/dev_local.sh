@@ -50,6 +50,8 @@ case "${1:-}" in
     export GCLOUD_PROJECT=samwera-board-eu
     export AUTH_DEV_VERIFY_ONLY=1
     export GOOGLE_APPLICATION_CREDENTIALS=/nonexistent/none.json
+    # Documentele clienților (fisiere.py): pe disc, criptate cu cheia locală a vault-ului; fără bucket de cloud.
+    export FISIERE_LOCAL_DIR="${FISIERE_LOCAL_DIR:-.fisiere-local}"
     exec .venv/bin/python app.py
     ;;
   emulators)
@@ -64,6 +66,7 @@ case "${1:-}" in
     export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
     export GCLOUD_PROJECT=demo-samwera
     export GOOGLE_APPLICATION_CREDENTIALS=/nonexistent/none.json
+    export FISIERE_LOCAL_DIR="${FISIERE_LOCAL_DIR:-.fisiere-local}"
     exec .venv/bin/python app.py
     ;;
   *)

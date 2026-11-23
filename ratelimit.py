@@ -39,6 +39,9 @@ LIMITS: dict[str, list[tuple[str, int, int]]] = {
     "billing_sync": [("workspace", 30, 3600)],
     # livrarea unui șablon către alt cabinet (super admin): acțiune rară, care scrie în cabinetul altcuiva
     "template_delivery": [("user", 30, 3600)],
+    # documentele clienților (fisiere_api.py): încărcare/mutare/ștergere, respectiv descărcare și previzualizare
+    "fisiere_scriere": [("user", 120, 60), ("workspace", 5000, 86400)],
+    "fisiere_citire": [("user", 120, 60)],
 }
 
 # Perioadă de probă fără abonament: limitează costul OCR/AI pe conturile care nu convertesc. Ferestrele sunt

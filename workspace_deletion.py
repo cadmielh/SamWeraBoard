@@ -17,7 +17,7 @@ GRACE_DAYS = 14          # DPA: ștergere în cel mult 30 de zile de la cerere
 PENDING = "pendingDeletion"
 ACCOUNTS = "accountDeletions"
 
-COUNTED = ("clienti", "dosare", "sarcini", "docTemplates", "auditLog")
+COUNTED = ("clienti", "dosare", "sarcini", "docTemplates", "fisiere", "auditLog")
 
 
 def cale_rol_membru(uid: str) -> str:
@@ -49,6 +49,10 @@ def run(db, wid: str, dry_run: bool = False, actor: str = "operator") -> dict:
         import billing_api                                        # 0) oprește încasarea (dacă nu s-a oprit la programare)
         billing_api.stripe_subscription_cancel(sub_id)
     ref.update({"status": "pendingDeletion"})                     # 1) acces blocat imediat
+    # 1b) documentele clienților, din stocare. Dacă eșuează, workspace-ul rămâne programat și ștergerea se reia a doua
+    #     zi; conținutul e oricum ilizibil după pasul 2.
+    import fisiere
+    fisiere.sterge_cabinet(wid)
     vault.destroy_workspace_key(wid)                              # 2) crypto-shredding
     db.recursive_delete(ref)                                      # 3) tot ce ține de workspace
     db.recursive_delete(acct_ref)                                 #    + datele de facturare din aplicație

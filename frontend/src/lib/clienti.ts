@@ -417,7 +417,7 @@ export function useClienti(workspaceId: string | null) {
     }
   }, [])
 
-  const remove = useCallback(async (_workspaceId: string, clientId: string) => {
+  const remove = useCallback(async (_workspaceId: string, clientId: string, fisiere: 'arhiveaza' | 'sterge' = 'arhiveaza') => {
     let removed: Client | undefined
     let removedAt = -1
     setClienti(prev => {
@@ -429,7 +429,7 @@ export function useClienti(workspaceId: string | null) {
     })
     try {
       // Ștergerea trece prin API: șterge în cascadă și vault-ul + istoricul generărilor.
-      await deleteClientOnServer(clientId)
+      await deleteClientOnServer(clientId, fisiere)
     } catch (err) {
       if (removed) {
         const r = removed

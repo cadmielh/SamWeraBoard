@@ -56,7 +56,8 @@ def seed(c):
 def test_dry_run_reports_counts_and_deletes_nothing(db):
     seed(db)
     r = dw.run(db, W, dry_run=True)
-    assert r["counts"] == {"clienti": 1, "dosare": 1, "sarcini": 1, "docTemplates": 1, "auditLog": 1, "membri": 1, "invitații": 1}
+    assert r["counts"] == {"clienti": 1, "dosare": 1, "sarcini": 1, "docTemplates": 1, "fisiere": 0, "auditLog": 1, "membri": 1,
+                           "invitații": 1}
     assert db.collection("workspaces").document(W).get().to_dict()["status"] == "active"
     assert db.collection("workspaceKeys").document(W).get().exists
 
@@ -84,6 +85,19 @@ def test_delete_removes_everything_of_the_workspace_and_nothing_else(db):
     assert vault.decrypt_record(OTHER, ocid, "person-aaaa-0001", token)["cnp"] == "1800101221144"
     assert db.collection("invitations").document("inv2").get().exists
     assert db.collection("users").document("uB").get().to_dict()["activeWorkspaceId"] == OTHER
+
+
+def test_delete_removes_the_workspace_documents_from_storage(db, monkeypatch, tmp_path):
+    import fisiere
+    monkeypatch.delenv("FISIERE_BUCKET", raising=False)
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.setenv("FISIERE_LOCAL_DIR", str(tmp_path))
+    seed(db)
+    fisiere.salveaza(W, "fidAAAAAAAAAAAA1", b"%PDF-1.7")
+    fisiere.salveaza(OTHER, "fidBBBBBBBBBBBB2", b"%PDF-1.7")
+    dw.run(db, W, actor="test")
+    assert not (tmp_path / fisiere.cale(W, "fidAAAAAAAAAAAA1")).exists()
+    assert fisiere.citeste(OTHER, "fidBBBBBBBBBBBB2") == b"%PDF-1.7"
 
 
 def test_missing_workspace_stops_with_a_clear_message(db):

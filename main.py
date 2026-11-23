@@ -71,6 +71,22 @@ def billing_webhook(req: https_fn.Request) -> https_fn.Response:
     return _dispatch(billing_webhook_app.app, environ)
 
 
+@https_fn.on_request(
+    region="europe-west3",
+    memory=2048,                # până la 16 transferuri de 15 MB, fiecare ținut în memorie de câteva ori (cerere, clar, criptat)
+    cpu=1,
+    timeout_sec=300,            # o încărcare de 15 MB pe o conexiune lentă
+    max_instances=10,
+    concurrency=16,
+    service_account=_runtime_sa,
+)
+def documente(req: https_fn.Request) -> https_fn.Response:
+    """Încărcările și descărcările de documente (fisiere_app.py), apelate direct de browser (`VITE_FILES_BASE`), separat
+    de funcția `api`, care are o singură cerere pe instanță și deservește OCR-ul."""
+    import fisiere_app
+    return _dispatch(fisiere_app.app, dict(req.environ))
+
+
 @scheduler_fn.on_schedule(
     schedule="every day 03:30",
     timezone=scheduler_fn.Timezone("Europe/Bucharest"),

@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('./api', () => ({ apiJson: vi.fn(async () => []) }))
 
 import { actionLabel, categoryOf, describe as describeEntry, toCsv, fetchAudit, type AuditEntry } from './audit'
+import sursa from '../../../fisiere_api.py?raw'
 import { apiJson } from './api'
 
 const E = (o: Partial<AuditEntry>): AuditEntry => ({
@@ -71,5 +72,24 @@ describe('fetchAudit', () => {
     await fetchAudit('ws1', { limit: 50, before: '2026-09-19T10:00:00+00:00' })
     const url = (apiJson as unknown as { mock: { calls: string[][] } }).mock.calls.at(-1)![1]
     expect(url).toBe('/workspaces/ws1/audit?limit=50&before=2026-09-19T10%3A00%3A00%2B00%3A00')
+  })
+})
+
+describe('documentele clienților', () => {
+  it('fiecare acțiune scrisă de fisiere_api.py are etichetă și categorie', () => {
+    const actiuni = [...sursa.matchAll(/audit\.log\([^"]*"([a-z_.]+)"/g)].map(m => m[1])
+    expect(actiuni.length).toBeGreaterThan(5)
+    for (const a of actiuni) {
+      expect(actionLabel(a), a).not.toBe(a)
+      expect(categoryOf(a), a).toBe('documente')
+    }
+  })
+  it('detalii fără nume de fișiere', () => {
+    expect(describeEntry(E({ action: 'fisier.upload', target: 'abcdef123456', meta: { client: 'cli999888', marime: 2048, tip: 'pdf' } }), nameOf))
+      .toBe('PDF · 2 KB · client …999888')
+    expect(describeEntry(E({ action: 'fisier.update', target: 'abc123456', meta: { redenumit: true, mutat: false } }), nameOf))
+      .toBe('redenumit · document …123456')
+    expect(describeEntry(E({ action: 'client.delete', target: 'cli111222', meta: { fisiere: 3, mod: 'arhiveaza' } }), nameOf))
+      .toBe('client …111222 · 3 documente arhivate')
   })
 })

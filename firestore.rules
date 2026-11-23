@@ -204,6 +204,29 @@ service cloud.firestore {
         allow create, delete: if false;
       }
 
+      // Documentele clienților (fisiere_api.py): metadatele se citesc direct (liste în timp real), dar se scriu DOAR
+      // prin server, care verifică tipul fișierului, cota și apartenența folderelor și ține jurnalul de acces.
+      // Conținutul (criptat) nu e în Firestore și nu e accesibil direct din browser.
+      match /fisiere/{fisierId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      match /foldere/{folderId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      // Contoare calculate de server (ex. spațiul ocupat de documente).
+      match /contoare/{contorId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      // Setările documentelor (folderele implicite ale clienților): citite de membri, scrise doar prin server (admin).
+      // `documenteClienti/{cid}` (marcajul „folderele implicite au fost create”) nu are reguli: doar server.
+      match /setari/{setareId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+
       // Jurnal de audit — scris exclusiv de server; citit doar de admini.
       match /auditLog/{entryId} {
         allow read: if isAdmin(wid);

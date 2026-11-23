@@ -116,3 +116,6 @@ firebase-export-*/
 # legătură simbolică folosită de Firebase CLI (către .venv)
 venv
 migrare.zip
+
+# Documentele clienților în dezvoltare locală (scripts/dev_local.sh)
+.fisiere-local/

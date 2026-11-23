@@ -16,6 +16,7 @@ MUST_IGNORE = [
     ".env", ".env.local", ".env.samwera-board-eu", "firebase-service-account.json",   # secrete/mediu (mediul se transmite din .env.<proiect>)
     "credentials.json", "token.json", ".emulator-data-google", "firebase-export-abc123",   # chei și date reale de test
     "migrare.zip", "firestore-debug.log",
+    ".fisiere-local/workspaces/w/fisiere/f",   # documentele clienților din dezvoltarea locală (scripts/dev_local.sh)
     "fisiere_template/SabloaneAvocatTavi", "fisiere_template/3 Hot AGA_original.docx", "fisiere_template/Facturare_Sami_Adi.xlsx",   # documente reale ale unor clienți (CNP, adrese), nefolosite de aplicație
     "fisiere_template/.golden/hotarare_aga--pj_doi_asociati.txt",   # versiunile salvate ale testului de regresie (tests/test_golden_templates.py)
     "fisiere_template/Șabloane Dorothea - Actus Consult/MODEL.docx",   # orice subfolder = șabloanele unui client, nu ale aplicației

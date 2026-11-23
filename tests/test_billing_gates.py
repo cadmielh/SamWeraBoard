@@ -24,6 +24,10 @@ GATED = {
     ("POST", "/template/placeholders"), ("POST", "/template/blanks"), ("POST", "/template/blanks/apply"),
     ("POST", "/template/blanks/ai-suggest"), ("PUT", "/clients/<cid>/pii"), ("POST", "/templates/<tid>/file"),
     ("POST", "/templates"), ("POST", "/templates/from-builtin"), ("POST", "/billing/credits/consume"),
+    # documentele clienților: încărcare, foldere, redenumire, mutare
+    ("POST", "/fisiere"), ("PATCH", "/fisiere/<fid>"), ("POST", "/foldere"), ("POST", "/clients/<cid>/documente/init"),
+    ("PUT", "/fisiere/setari"),
+    ("PATCH", "/foldere/<folder_id>"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
 # ștergerea GDPR a unui client, căutarea ANAF (necesară completării datelor de facturare) și abonarea.
@@ -31,6 +35,8 @@ UNGATED = {
     ("GET", "/templates/builtin"), ("GET", "/templates/builtin/<key>"), ("POST", "/audit/document"),
     ("GET", "/anaf/company"), ("GET", "/health"),
     ("GET", "/clients/<cid>/pii"), ("DELETE", "/clients/<cid>"),
+    # documentele rămân de descărcat și de șters (GDPR) și după expirarea accesului
+    ("GET", "/fisiere/<fid>/continut"), ("DELETE", "/fisiere/<fid>"), ("DELETE", "/foldere/<folder_id>"),
     ("POST", "/workspaces"), ("POST", "/workspaces/<wid>/consent"),
     ("PATCH", "/workspaces/<wid>/members/<uid>"), ("DELETE", "/workspaces/<wid>/members/<uid>"),
     ("POST", "/workspaces/<wid>/invites"), ("GET", "/workspaces/<wid>/invites"),

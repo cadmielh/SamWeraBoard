@@ -155,3 +155,30 @@ def decrypt_record(wid: str, cid: str, pid: str, token: str) -> dict:
         raise
     except Exception as e:
         raise VaultError("decrypt failed") from e
+
+
+# ── Fișiere (documentele clienților, fisiere_api.py) ─────────────────────────
+# Aceeași cheie a cabinetului; AAD = `fisier:wid:fid`, deci un obiect copiat sub alt id sau în alt cabinet nu se
+# mai decriptează. Ștergerea cheii (destroy_workspace_key) face ilizibile și fișierele.
+
+_FILE_MAGIC = b"CBF1"
+
+
+def _file_aad(wid: str, fid: str) -> bytes:
+    return f"fisier:{wid}:{fid}".encode()
+
+
+def encrypt_file(wid: str, fid: str, data: bytes) -> bytes:
+    nonce = os.urandom(12)
+    return _FILE_MAGIC + nonce + AESGCM(_get_dek(wid)).encrypt(nonce, data, _file_aad(wid, fid))
+
+
+def decrypt_file(wid: str, fid: str, blob: bytes) -> bytes:
+    try:
+        if blob[:4] != _FILE_MAGIC:
+            raise ValueError("format")
+        return AESGCM(_get_dek(wid)).decrypt(blob[4:16], blob[16:], _file_aad(wid, fid))
+    except VaultError:
+        raise
+    except Exception as e:
+        raise VaultError("decrypt failed") from e

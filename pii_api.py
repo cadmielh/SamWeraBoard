@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request
 import audit
 import authz
 import billing_credits
+import fisiere_api
 import vault
 
 bp = Blueprint("pii", __name__)
@@ -137,7 +138,8 @@ def write(cid: str):
 @bp.delete("/clients/<cid>")
 def delete_client(cid: str):
     """Șterge fișa clientului împreună cu tot ce ține de ea (vault, istoric generări). Doar administratorii;
-    clientul demo din ghidul „Primii pași” îl poate șterge și un membru (ghidul i-l propune la final)."""
+    clientul demo din ghidul „Primii pași” îl poate șterge și un membru (ghidul i-l propune la final).
+    Documentele clientului (fisiere_api.py): `?fisiere=sterge` le șterge, altfel trec în Arhiva cabinetului."""
     principal, wid, ws = authz.require_from_header("member")
     if not _ID_RE.match(cid):
         return _err("not_found", 404)
@@ -145,9 +147,15 @@ def delete_client(cid: str):
     snap = ref.get()
     if not snap.exists:
         return _err("not_found", 404)
+    data = snap.to_dict() or {}
     role = ((ws.get("members") or {}).get(principal.uid) or {}).get("role")
-    if role != "admin" and not billing_credits.is_demo_client(snap.to_dict() or {}):
+    if role != "admin" and not billing_credits.is_demo_client(data):
         return _err("forbidden", 403)
+    docs = fisiere_api.la_stergere_client(wid, cid, request.args.get("fisiere", ""), principal.uid,
+                                          str(data.get("denumire") or ""))
     authz.db().recursive_delete(ref)
-    audit.log(wid, principal.uid, "client.delete", cid)
-    return jsonify({"ok": True})
+    # O încărcare începută înainte de ștergere poate termina între arhivare și ștergerea fișei: încă o trecere, după.
+    tarzii = fisiere_api.la_stergere_client(wid, cid, request.args.get("fisiere", ""), principal.uid, str(data.get("denumire") or ""))
+    docs["fisiere"] += tarzii["fisiere"]
+    audit.log(wid, principal.uid, "client.delete", cid, {"fisiere": docs["fisiere"], "mod": docs["mod"]} if docs["fisiere"] else None)
+    return jsonify({"ok": True, "fisiere": docs})

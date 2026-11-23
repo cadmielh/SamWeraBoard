@@ -13,6 +13,7 @@ import type { FacturareConfig } from '../types'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import NotificariBell from '../components/NotificariBell'
 import PlanSection from '../components/PlanSection'
+import DocumenteSetari from '../components/documente/DocumenteSetari'
 import DangerZoneCard from '../components/DangerZoneCard'
 import MembriPanel from '../components/MembriPanel'
 import ConfirmModal from '../components/ConfirmModal'
@@ -281,7 +282,7 @@ function GeneralCard({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => voi
   )
 }
 
-type SectionKey = 'cont' | 'aspect' | 'notificari' | 'confidentialitate' | 'general' | 'membri' | 'plan' | 'facturare' | 'jurnal' | 'stergere'
+type SectionKey = 'cont' | 'aspect' | 'notificari' | 'confidentialitate' | 'general' | 'membri' | 'plan' | 'documente' | 'facturare' | 'jurnal' | 'stergere'
 
 interface Section {
   key: SectionKey
@@ -314,6 +315,8 @@ export default function SetariPage() {
         desc: isAdmin ? 'Colegii din cabinet, rolurile lor și invitațiile.' : 'Colegii din cabinet și rolurile lor.' } as Section,
     ] : []),
     ...(activeWorkspace ? [{ key: 'plan', icon: '💳', group: 'Cabinet', label: 'Plan și credite', title: 'Plan și credite', desc: `Abonamentul, creditele și datele de facturare ale ${cabinet}.` } as Section] : []),
+    ...(activeWorkspace && hasFeature('documente')
+      ? [{ key: 'documente', icon: '📁', group: 'Cabinet', label: 'Documente', title: 'Documente', desc: 'Spațiul folosit de documentele clienților și Arhiva.' } as Section] : []),
     ...(isAdmin && activeWorkspace && hasFeature('facturareSamiAdi')
       ? [{ key: 'facturare', icon: '💰', group: 'Cabinet', label: 'Facturare Sami / Adi', title: 'Facturare Sami / Adi', desc: 'Cotele de împărțire și pragurile pentru sumarul lunar.' } as Section] : []),
     ...(isAdmin && activeWorkspace
@@ -353,6 +356,7 @@ export default function SetariPage() {
       <div className="card"><div className="card-body"><MembriPanel key={activeWorkspace.id} workspace={activeWorkspace} readOnly={!isAdmin} /></div></div>
     ); break
     case 'plan': content = <PlanSection />; break
+    case 'documente': content = activeWorkspace && <DocumenteSetari key={activeWorkspace.id} />; break
     // key=workspace id — forțează remount la schimbarea workspace-ului activ, ca `form` să nu rămână cu valorile
     // vechiului workspace (altfel Save ar suprascrie configul noului workspace cu date stale).
     case 'facturare': content = activeWorkspace && <FacturareConfigCard key={activeWorkspace.id} onDirtyChange={onDirtyChange} />; break

@@ -152,7 +152,7 @@ export function GhidStergeDemo() {
   const sterge = async () => {
     setBusy(true)
     try {
-      await deleteClientOnServer(id)
+      await deleteClientOnServer(id, 'sterge')       // documentele de probă nu merită păstrate în Arhivă
       toast('Clientul demo a fost șters. Acum poți lucra cu clienții tăi.', 'ok')
       ghid.raspundeDemo(false)
     } catch (e) {

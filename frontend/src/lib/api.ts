@@ -134,12 +134,49 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Formularul dedicat ales nu există.";
     case "name_required":
       return "Introdu un nume pentru șablon.";
+    // ── Documentele clienților (fisiere_api.py) ──
+    case "feature_disabled":
+      return "Documentele clienților nu sunt încă activate pentru acest cabinet.";
+    case "storage_unavailable":
+      return "Stocarea documentelor este temporar indisponibilă. Încearcă din nou în câteva minute.";
+    case "fisier_prea_mare":
+      return "Fișierul depășește 15 MB.";
+    case "fisier_gol":
+      return "Fișierul este gol.";
+    case "tip_nepermis":
+      return "Tipul fișierului nu este acceptat. Încarcă PDF, imagini, documente Word, Excel, XML sau text.";
+    case "fisier_macro":
+      return "Documentul conține macro-uri și nu poate fi păstrat. Salvează-l ca document obișnuit (.docx/.xlsx) și încearcă din nou.";
+    case "spatiu_depasit":
+      return "Cabinetul a atins limita de spațiu pentru documente (10 GB). Șterge documente vechi sau scrie-ne pentru mai mult spațiu.";
+    case "nume_existent":
+      return "Există deja un element cu acest nume în folder.";
+    case "nume_invalid":
+      return "Numele nu este valid.";
+    case "folder_invalid":
+      return "Folderul nu mai există. Reîmprospătează lista și încearcă din nou.";
+    case "folder_ciclu":
+      return "Un folder nu poate fi mutat în propriul subfolder.";
+    case "folder_prea_adanc":
+      return "S-a atins numărul maxim de niveluri de foldere (6).";
+    case "prea_multe_foldere":
+      return "Clientul are deja numărul maxim de foldere (200).";
+    case "fisier_indisponibil":
+      return "Conținutul fișierului nu mai este disponibil.";
+    case "arhivat":
+      return "Documentele din Arhivă nu pot fi mutate în foldere.";
+    case "folder_negol":
+      return "Folderul a primit conținut nou între timp. Verifică și confirmă din nou ștergerea.";
     default:
       return data?.error ?? fallback;
   }
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
+/** Încărcările și descărcările de documente merg direct la funcția dedicată `documente` (main.py), cu mai multe transferuri
+ * pe instanță, fără plafonul de timp al Hosting-ului. Fără VITE_FILES_BASE (dezvoltare locală): același server ca OCR-ul. */
+export const FILES_BASE = import.meta.env.VITE_FILES_BASE ?? OCR_BASE;
+
+export async function authHeaders(): Promise<Record<string, string>> {
   const idToken = await auth.currentUser!.getIdToken();
   return {
     "X-Firebase-Token": idToken,

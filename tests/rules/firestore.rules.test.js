@@ -479,3 +479,30 @@ test('preferinteAlerte: forme invalide sunt refuzate', async () => {
 test('alerteConfig: nu mai există reguli de cabinet, nici adminul nu-l poate scrie', async () => {
   await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1), { alerteConfig: {} }))
 })
+
+// ── Documentele clienților (fisiere_api.py) ──────────────────────────────────
+test('documente: membrii (inclusiv viewer) citesc metadatele; nimeni nu le scrie din browser', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore()
+    await setDoc(doc(db, 'workspaces', W1, 'fisiere', 'f1'), { clientId: 'c1', nume: 'act.pdf', marime: 10 })
+    await setDoc(doc(db, 'workspaces', W1, 'foldere', 'd1'), { clientId: 'c1', parentId: null, nume: 'Acte' })
+    await setDoc(doc(db, 'workspaces', W1, 'contoare', 'fisiere'), { octeti: 10, numar: 1 })
+  })
+  for (const uid of [ADMIN, MEMBER, VIEWER]) {
+    await assertSucceeds(getDocs(query(collection(ctx(uid), 'workspaces', W1, 'fisiere'), where('clientId', '==', 'c1'))))
+    await assertSucceeds(getDoc(doc(ctx(uid), 'workspaces', W1, 'foldere', 'd1')))
+    await assertSucceeds(getDoc(doc(ctx(uid), 'workspaces', W1, 'contoare', 'fisiere')))
+  }
+  await assertFails(getDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'fisiere', 'f1')))
+  await assertFails(getDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'contoare', 'fisiere')))
+  await assertFails(setDoc(doc(ctx(ADMIN), 'workspaces', W1, 'fisiere', 'f2'), { clientId: 'c1', nume: 'x.pdf' }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1, 'fisiere', 'f1'), { nume: 'y.pdf' }))
+  await assertFails(deleteDoc(doc(ctx(ADMIN), 'workspaces', W1, 'fisiere', 'f1')))
+  await assertFails(setDoc(doc(ctx(MEMBER), 'workspaces', W1, 'foldere', 'd2'), { clientId: 'c1', nume: 'Nou' }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1, 'contoare', 'fisiere'), { octeti: 0 }))
+  // folderele implicite ale cabinetului: citite de membri, scrise doar prin server
+  await assertSucceeds(getDoc(doc(ctx(VIEWER), 'workspaces', W1, 'setari', 'documente')))
+  await assertFails(getDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'setari', 'documente')))
+  await assertFails(setDoc(doc(ctx(ADMIN), 'workspaces', W1, 'setari', 'documente'), { foldereImplicite: ['X'] }))
+  await assertFails(getDoc(doc(ctx(ADMIN), 'workspaces', W1, 'documenteClienti', 'c1')))
+})

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Client, Persoana } from '../types'
 import { fetchPii, type PiiMap } from '../lib/pii'
@@ -12,6 +12,9 @@ import { sumCota, isCotaTotalValid, valoareParteSociala } from '../lib/cota'
 import IconTrash from './IconTrash'
 import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
+import ClientDocumente from './documente/ClientDocumente'
+import ImpartireDocumente from './documente/ImpartireDocumente'
+import { useApp } from '../AppContext'
 import TermenBadge from './TermenBadge'
 import { durataFraza, stareDurataSocietate, stareMandat, termenText, termeneUrgente } from '../lib/durata'
 import BtnLabel from './BtnLabel'
@@ -32,6 +35,8 @@ interface Props {
 export interface ClientFocus { sectiune: string; pid?: string }
 
 const FOCUS_MS = 2000
+// De la această lățime a fișei, documentele stau într-o coloană în dreapta; sub ea, în fluxul fișei.
+const LATIME_COLOANA_DOCUMENTE = 1100
 
 const SUBTIP_LABELS: Record<string, string> = {
   PFA: 'PFA',
@@ -219,7 +224,22 @@ function PersoanaCard({ p, pii, onReveal, showMandat, focused }: { p: Persoana; 
 
 export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onSaveField, embedded, focus }: Props) {
   const navigate = useNavigate()
+  const { hasFeature } = useApp()
   const rootRef = useRef<HTMLDivElement>(null)
+
+  // Lățimea fișei (nu a ferestrei): fișa poate sta într-un panou. Măsurată înainte de prima afișare, ca să nu sară.
+  // Starea ține doar pragul, nu pixelii: redimensionarea rerandează fișa doar când se schimbă așezarea.
+  const [fisaLata, setFisaLata] = useState(false)
+  useLayoutEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    setFisaLata(el.getBoundingClientRect().width >= LATIME_COLOANA_DOCUMENTE)
+    const ro = new ResizeObserver(([e]) => setFisaLata(e.contentRect.width >= LATIME_COLOANA_DOCUMENTE))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const documente = hasFeature('documente')
+  const documenteInColoana = documente && !!embedded && fisaLata
   // pid-ul evidențiat acum (link din alerte); se stinge singur după FOCUS_MS.
   const [focusPid, setFocusPid] = useState<string | null>(null)
 
@@ -370,9 +390,19 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
       </div>
 
       {/* ── Body ── */}
+      {documenteInColoana
+        ? <ImpartireDocumente client={client}>{renderBody()}</ImpartireDocumente>
+        : renderBody()}
+    </div>
+  )
+
+  function renderBody() {
+    return (
       <div className="cv2-body">
 
         <ClientDosareSarcini client={client} />
+
+        {documente && !documenteInColoana && <ClientDocumente client={client} />}
 
         {/* ── Bloc Date persoană (CI) — orice PF ── */}
         {isPF && client.titular && (
@@ -546,6 +576,6 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
           </div>
         )}
       </div>
-    </div>
-  )
+    )
+  }
 }

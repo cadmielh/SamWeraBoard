@@ -18,7 +18,7 @@ export type CategoryFilter = 'toate' | AuditCategory
 export const CATEGORY_LABELS: Record<CategoryFilter, string> = {
   toate: 'Toate acțiunile',
   date: 'Date personale și clienți',
-  documente: 'Documente generate',
+  documente: 'Documente',
   membri: 'Membri și invitații',
   cont: 'Cont și spațiu de lucru',
 }
@@ -33,6 +33,14 @@ const ACTIONS: Record<string, { label: string; category: AuditCategory }> = {
   'template.replace': { label: 'Înlocuire fișier șablon', category: 'documente' },
   'template.deliver': { label: 'Șablon pregătit, primit de la Cabinio', category: 'documente' },
   'template.delivery_revoke': { label: 'Șablon pregătit, retras de Cabinio', category: 'documente' },
+  'fisier.upload': { label: 'Încărcare document', category: 'documente' },
+  'fisier.download': { label: 'Deschidere document', category: 'documente' },
+  'fisier.update': { label: 'Redenumire / mutare document', category: 'documente' },
+  'fisier.delete': { label: 'Ștergere document', category: 'documente' },
+  'folder.create': { label: 'Folder nou', category: 'documente' },
+  'folder.update': { label: 'Modificare folder', category: 'documente' },
+  'folder.delete': { label: 'Ștergere folder', category: 'documente' },
+  'fisiere.setari': { label: 'Foldere implicite modificate', category: 'documente' },
   'member.role_change': { label: 'Schimbare rol', category: 'membri' },
   'member.remove': { label: 'Eliminare membru', category: 'membri' },
   'invite.create': { label: 'Invitație trimisă', category: 'membri' },
@@ -109,7 +117,25 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
         ...(m.reportedBy === 'client' ? ['raportat de browser'] : []),    // generat direct în Google Docs, fără să treacă prin server
       ].join(' · ')
     case 'client.delete':
-      return `client ${shortId(e.target)}`
+      return [
+        `client ${shortId(e.target)}`,
+        ...(num(m.fisiere) ? [`${num(m.fisiere)} ${num(m.fisiere) === 1 ? 'document' : 'documente'} ${m.mod === 'sterge' ? 'șterse' : 'arhivate'}`] : []),
+      ].join(' · ')
+    case 'fisier.upload':
+      return [str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `client ${shortId(str(m.client) || null)}`]
+        .filter(Boolean).join(' · ')
+    case 'fisier.download':
+      return `${m.scop === 'previzualizare' ? 'previzualizare' : 'descărcare'} · document ${shortId(e.target)}`
+    case 'fisier.update':
+      return [m.redenumit ? 'redenumit' : '', m.mutat ? 'mutat' : '', `document ${shortId(e.target)}`].filter(Boolean).join(' · ')
+    case 'fisier.delete':
+      return `document ${shortId(e.target)}`
+    case 'folder.create':
+      return `client ${shortId(str(m.client) || null)}`
+    case 'folder.delete':
+      return `${num(m.fisiere)} ${num(m.fisiere) === 1 ? 'document' : 'documente'} · ${num(m.foldere)} ${num(m.foldere) === 1 ? 'folder' : 'foldere'}`
+    case 'fisiere.setari':
+      return `${num(m.foldere)} foldere implicite`
     case 'member.role_change':
       return `${e.target ? nameOf(e.target) : '—'} → ${ROLE_LABELS[str(m.role)] ?? (str(m.role) || '—')}`
     case 'member.remove':

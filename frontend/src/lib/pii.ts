@@ -143,6 +143,7 @@ export function savePii(clientId: string, vault: VaultWrite): Promise<unknown> {
   return apiJson('PUT', `/clients/${clientId}/pii`, vault)
 }
 
-export function deleteClientOnServer(clientId: string): Promise<unknown> {
-  return apiJson('DELETE', `/clients/${clientId}`)
+/** `fisiere`: ce se întâmplă cu documentele clientului — implicit trec în Arhiva cabinetului (fisiere_api.py). */
+export function deleteClientOnServer(clientId: string, fisiere: 'arhiveaza' | 'sterge' = 'arhiveaza'): Promise<unknown> {
+  return apiJson('DELETE', `/clients/${clientId}?fisiere=${fisiere}`)
 }
