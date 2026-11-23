@@ -519,7 +519,7 @@ export default function DosarePage() {
               <button className="btn btn-ghost" onClick={() => setShowExportDialog(isListTab(tab) ? tab : returnTab)} aria-label="Exportă">
                 <IconExport /> <span className="btn-label">Exportă</span>
               </button>
-              <button className="btn btn-primary page-fab" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Dosar nou</button>
+              <button className="btn btn-primary page-fab" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE} data-ghid="dosar-add">+ Dosar nou</button>
               <NotificariBell />
             </div>
           </div>
@@ -670,6 +670,11 @@ export default function DosarePage() {
                     <div className="empty-state-text">
                       {searchQuery || hasActiveFiltersOrSort ? 'Niciun dosar nu corespunde filtrelor active.' : 'Nu există dosare înregistrate.'}
                     </div>
+                    {!searchQuery && !hasActiveFiltersOrSort && (
+                      <p className="empty-state-hint">
+                        Un dosar ține la un loc lucrarea pentru un client: stadiul, termenele, onorariul și sarcinile legate de ea.
+                      </p>
+                    )}
                     {!searchQuery && !hasActiveFiltersOrSort && (
                       <button className="btn btn-primary" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Adaugă primul dosar</button>
                     )}

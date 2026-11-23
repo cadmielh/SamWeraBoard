@@ -26,6 +26,8 @@ import { withViewTransition } from '../lib/viewTransition'
 import { useIsMobile } from '../lib/useIsMobile'
 import { useMobileBack } from '../lib/useMobileBack'
 import { IconBack } from '../components/NavIcons'
+import BtnLabel from '../components/BtnLabel'
+import { useClientDemo } from '../lib/useGhid'
 
 /* ── Column definitions ── */
 interface ColDef {
@@ -316,6 +318,7 @@ type DeleteState = null | Client
 export default function ClientiPage() {
   const { user, activeWorkspace, toast, canEdit } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
+  const demo = useClientDemo()
 
   const { clienti, listati, loading, loadingMore, hasMore, loadMore, search, ensureLoaded, add, update, remove, legacyRawById } = useClienti(workspaceId)
 
@@ -610,7 +613,7 @@ export default function ClientiPage() {
               <button className="btn btn-ghost" onClick={() => setShowExportDialog(true)} aria-label="Exportă">
                 <IconExport /> <span className="btn-label">Exportă</span>
               </button>
-              <button className="btn btn-primary page-fab" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
+              <button className="btn btn-primary page-fab" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE} data-ghid="client-add">
                 + <span className="btn-label">Adaugă client</span><span className="btn-label-m">Client</span>
               </button>
               <NotificariBell />
@@ -771,9 +774,22 @@ export default function ClientiPage() {
                         : 'Nu există clienți înregistrați.'}
                     </div>
                     {!searchQuery && !hasActiveFiltersOrSort && (
-                      <button className="btn btn-primary" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
-                        + Adaugă primul client
-                      </button>
+                      <>
+                        <p className="empty-state-hint">
+                          Pentru o firmă scrii doar CUI-ul și datele vin de la ANAF; pentru o persoană, scanezi buletinul.
+                          Din fișa clientului generezi apoi documentele, completate automat.
+                        </p>
+                        <div className="empty-state-actions">
+                          <button className="btn btn-primary" onClick={() => setModal('add')} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>
+                            + Adaugă primul client
+                          </button>
+                          {canEdit && (
+                            <button className="btn btn-ghost" onClick={() => void demo.creeaza()} disabled={demo.busy}>
+                              <BtnLabel busy={demo.busy} dark>Încearcă cu un client demo</BtnLabel>
+                            </button>
+                          )}
+                        </div>
+                      </>
                     )}
                     {hasActiveFiltersOrSort && (
                       <button className="btn btn-ghost btn-sm" onClick={resetAll}>

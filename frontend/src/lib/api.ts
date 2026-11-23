@@ -4,6 +4,7 @@ import { pickAgain } from "./picker";
 import { SESSION_ENDED_CODES } from "./authErrors";
 import type { BuiltinTemplate, ClauseMeta } from "../types";
 import type { VariantContext } from './variants'
+import { marcheazaPas } from './ghidPornire'
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5001";
 // OCR calls go directly to Cloud Run to bypass Firebase Hosting's 60s proxy timeout
@@ -212,6 +213,7 @@ export async function extractFile(file: File, source: "upload" | "drive" = "uplo
   if (!res.ok) {
     throw new Error(apiErrorMessage(data, res, "Extraction failed"));
   }
+  marcheazaPas("scan");
   return data as IDFields;
 }
 
@@ -262,6 +264,7 @@ async function postFillDocx(fd: FormData, drive: DriveTarget | null | undefined,
     throw new Error(apiErrorMessage(err, res, "Fill failed"));
   }
   notifyCredits(res.headers.get("X-Credits"));
+  marcheazaPas("generare");
   const blob = await res.blob();
   const warnings = parseVariantWarnings(res.headers.get("X-Variant-Warnings"));
   if (!drive) return { blob, warnings };
@@ -499,6 +502,7 @@ export async function fillPdfFromBuiltinTemplate(
     throw new Error(apiErrorMessage(err, res, "Fill failed"));
   }
   notifyCredits(res.headers.get("X-Credits"));
+  marcheazaPas("generare");
   return res.blob();
 }
 
@@ -530,6 +534,7 @@ export async function createTemplate(file: File, fields: NewTemplateFields): Pro
   const res = await fetch(`${BASE}/templates`, { method: "POST", headers: await authHeaders(), body: fd });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(apiErrorMessage(data as { error?: string }, res, "Salvarea șablonului a eșuat"));
+  marcheazaPas("sablon");
   return data as { id: string };
 }
 
@@ -538,7 +543,8 @@ export const ensureTemplateContext = (templateId: string) =>
   apiJson<{ placeholderContext: Record<string, import('../types').ContextCamp> }>("POST", `/templates/${encodeURIComponent(templateId)}/context`)
 
 /** „Duplică”: copia unui șablon de bază, făcută pe server din fișierul original. */
-export const duplicateBuiltinTemplate = (key: string) => apiJson<{ id: string }>("POST", "/templates/from-builtin", { key })
+export const duplicateBuiltinTemplate = (key: string) =>
+  apiJson<{ id: string }>("POST", "/templates/from-builtin", { key }).then(r => { marcheazaPas("sablon"); return r })
 
 /** Problemele care blochează livrarea unui șablon (template_safety.inspect_content). */
 export type DeliveryBlocker = "personal_data" | "comments" | "tracked_changes" | "custom_properties"
@@ -605,5 +611,6 @@ export async function fillGdoc(
     fields: Object.values(upperFields).filter(Boolean).length,
     cnp: Object.entries(upperFields).some(([k, v]) => v && k.includes("CNP")),
   });
+  marcheazaPas("generare");
   return { doc_id: out.docId, link: out.link };
 }

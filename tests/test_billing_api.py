@@ -601,6 +601,21 @@ def test_consume_once_per_firm_within_window(credits_env):
     assert consumed_for == {"Firma X SRL", "Firma Y SRL"}     # citite acum din fișa clientului
 
 
+def test_demo_client_never_consumes(credits_env):
+    c, db, stripe, wid = credits_env
+    clients = db.collection("workspaces").document(wid).collection("clienti")
+    clients.document("clientDemo0001").set(
+        {"denumire": "DEMO EXEMPLU SRL", "codFiscal": "99999999", "nrRegistrul": "J40/9999/2020"})
+    # Fără niciun credit: clientul demo tot se poate genera, fără consum.
+    assert billing_credits.consume(wid, "clientDemo0001", "bob", "d") == {"mode": "unlimited"}
+    assert call(c, wid, "bob", "get", "/billing/credits/quote?clientId=clientDemo0001").get_json()["mode"] == "unlimited"
+    assert not list(db.collection("billingAccounts").document(wid).collection("creditLedger").stream())
+    # Trecut pe date reale (alt CUI), nu mai e demo.
+    clients.document("clientDemo0001").update({"codFiscal": "RO18547290"})
+    with pytest.raises(authz.CreditsRequired):
+        billing_credits.consume(wid, "clientDemo0001", "bob", "d")
+
+
 def test_window_expiry_consumes_again(credits_env):
     c, db, stripe, wid = credits_env
     with_details(c, wid)

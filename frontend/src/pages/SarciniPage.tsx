@@ -281,7 +281,7 @@ export default function SarciniPage() {
               <div className="page-subtitle">Board de lucru — dosare ONRC și orice altă sarcină</div>
             </div>
             <div className="page-actions">
-              <button className="btn btn-primary page-fab" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE}>+ Sarcină</button>
+              <button className="btn btn-primary page-fab" onClick={() => { setPrefillClient(undefined); setModal('add') }} disabled={!canEdit} title={canEdit ? undefined : READ_ONLY_TITLE} data-ghid="sarcina-add">+ Sarcină</button>
               <NotificariBell />
             </div>
           </div>

@@ -6,6 +6,7 @@ import { withViewTransition } from '../lib/viewTransition'
 import ThemeToggleSwitch from '../components/ThemeToggleSwitch'
 import NotificariBell from '../components/NotificariBell'
 import { IconSettings, IconShield, IconSignOut } from '../components/NavIcons'
+import { progresGhid, useGhidVizibil } from '../lib/useGhid'
 
 const LEGAL_LINKS: [string, string][] = [
   ['/termeni', 'Termeni'],
@@ -29,6 +30,7 @@ function Chevron() {
  */
 export default function MaiMultPage() {
   const { user, activeWorkspace, userRole, billing, isSuperAdmin, workspaceCtx, signOut } = useApp()
+  const ghid = useGhidVizibil()
   const isMobile = useIsMobile()
   const navigate = useNavigate()
   // Pe desktop totul e deja în bara laterală (ex. adresa deschisă de pe telefon, apoi pe calculator).
@@ -95,6 +97,19 @@ export default function MaiMultPage() {
                 <Chevron />
               </a>
             )}
+            {ghid?.activ && (() => {
+              const { facuti, total } = progresGhid(ghid)
+              return (
+                <button type="button" className="more-row" onClick={ghid.deschide}>
+                  <span className="ghid-inel" style={{ '--p': facuti / total } as React.CSSProperties} aria-hidden />
+                  <span className="more-row-label">
+                    <strong>Primii pași</strong>
+                    <small>{facuti === total ? 'Gata!' : `${facuti} din ${total} făcuți`}</small>
+                  </span>
+                  <Chevron />
+                </button>
+              )
+            })()}
             <a href="/setari" onClick={go('/setari')} className="more-row">
               <span className="more-row-icon"><IconSettings /></span>
               <span className="more-row-label">Setări</span>

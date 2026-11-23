@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import type { CaenActivitate, Persoana, ToastItem } from '../types'
 import { fetchAnafCompany } from '../lib/api'
+import { marcheazaPas } from '../lib/ghidPornire'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { formatAdresa, parseAdresa, stripAdresaLabel, extractJudet, type AdresaStructurata } from '../lib/adresa'
@@ -111,6 +112,7 @@ const CompanyInfoForm = forwardRef<CompanyInfoFormHandle, Props>(function Compan
     try {
       const result = await fetchAnafCompany(value.codFiscal)
       if (!result.found) { onToast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
+      marcheazaPas('anaf')
       const c = result.adresaSediuComponente
       const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)
       const dinDetalii = c?.detaliiAdresa ? parseAdresa(c.detaliiAdresa) : null

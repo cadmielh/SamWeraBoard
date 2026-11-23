@@ -121,7 +121,7 @@ export default function MembriPanel({ workspace, readOnly }: Props) {
       </div>
 
       {/* Invite form */}
-      {!readOnly && <div style={{ background: 'var(--s50)', border: '1px solid var(--s200)', borderRadius: 'var(--r-md)', padding: '1rem' }}>
+      {!readOnly && <div data-ghid="membri-invite" style={{ background: 'var(--s50)', border: '1px solid var(--s200)', borderRadius: 'var(--r-md)', padding: '1rem' }}>
         <div style={{ fontWeight: 700, fontSize: '.875rem', color: 'var(--s700)', marginBottom: '.75rem' }}>
           Invită utilizator
         </div>

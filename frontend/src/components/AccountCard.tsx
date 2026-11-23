@@ -7,6 +7,7 @@ import { changePassword, signOut } from '../lib/firebase'
 import ConfirmModal from './ConfirmModal'
 import PasswordRules from './PasswordRules'
 import BtnLabel from './BtnLabel'
+import { progresGhid, useGhidVizibil } from '../lib/useGhid'
 
 /** Un rând al cardului: titlu și o explicație scurtă în stânga, acțiunea în dreapta. */
 function Row({ title, desc, action }: { title: string; desc: ReactNode; action: ReactNode }) {
@@ -80,6 +81,7 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
 /** Contul utilizatorului: parolă, conexiunea cu Google Drive și sesiunile deschise. */
 export default function AccountCard() {
   const { user, toast } = useApp()
+  const ghid = useGhidVizibil()
   const hasPassword = user.providerData.some(p => p.providerId === 'password')
   const hasGoogle = user.providerData.some(p => p.providerId === 'google.com')
   const [driveConnected, setDriveConnected] = useState(() => !!getDriveToken())
@@ -129,6 +131,13 @@ export default function AccountCard() {
             {user.email} · Autentificare cu {[hasGoogle && 'Google', hasPassword && 'parolă'].filter(Boolean).join(' și ') || 'cont extern'}
           </div>
         </div>
+
+        {ghid && (
+          <Row title="Ghid de pornire"
+            desc={<>Pașii de bază, cu „Arată-mi” la fiecare: scanarea buletinului, generarea, firma după CUI, dosare și sarcini.
+              {' '}{(({ facuti, total }) => facuti === total ? 'Parcurs în întregime.' : `${facuti} din ${total} făcuți.`)(progresGhid(ghid))}</>}
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={ghid.deschide}>Deschide ghidul</button>} />
+        )}
 
         {hasPassword && (
           <>

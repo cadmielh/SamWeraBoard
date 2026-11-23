@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 
 import audit
 import authz
+import billing_credits
 import vault
 
 bp = Blueprint("pii", __name__)
@@ -135,13 +136,18 @@ def write(cid: str):
 
 @bp.delete("/clients/<cid>")
 def delete_client(cid: str):
-    """Șterge fișa clientului împreună cu tot ce ține de ea (vault, istoric generări)."""
-    principal, wid, _ = authz.require_from_header("admin")
+    """Șterge fișa clientului împreună cu tot ce ține de ea (vault, istoric generări). Doar administratorii;
+    clientul demo din ghidul „Primii pași” îl poate șterge și un membru (ghidul i-l propune la final)."""
+    principal, wid, ws = authz.require_from_header("member")
     if not _ID_RE.match(cid):
         return _err("not_found", 404)
     ref = _client_ref(wid, cid)
-    if not ref.get().exists:
+    snap = ref.get()
+    if not snap.exists:
         return _err("not_found", 404)
+    role = ((ws.get("members") or {}).get(principal.uid) or {}).get("role")
+    if role != "admin" and not billing_credits.is_demo_client(snap.to_dict() or {}):
+        return _err("forbidden", 403)
     authz.db().recursive_delete(ref)
     audit.log(wid, principal.uid, "client.delete", cid)
     return jsonify({"ok": True})

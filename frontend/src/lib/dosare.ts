@@ -7,6 +7,7 @@ import {
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
+import { marcheazaPas } from './ghidPornire'
 import type { Dosar, DosarInput, StadiuDosar } from '../types'
 
 const PAGE_SIZE = 100
@@ -135,6 +136,7 @@ export function useDosare(workspaceId: string | null) {
       assertWritable()
       const ref = await addDoc(dosareCol(workspaceId), payload)
       setDosare(prev => prev.map(d => d.id === tempId ? { ...d, id: ref.id } : d))
+      marcheazaPas('dosar')
       return ref.id
     } catch (err) {
       setDosare(prev => prev.filter(d => d.id !== tempId))

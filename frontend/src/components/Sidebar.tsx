@@ -9,6 +9,7 @@ import { useApp } from '../AppContext'
 import { preloadRoute } from '../routes'
 import { isPlainClick, withViewTransition } from '../lib/viewTransition'
 import BtnLabel from './BtnLabel'
+import { GhidIntrare } from './GhidPornire'
 import { IconClients, IconDosare, IconSarcini, IconExtract, IconSettings, IconShield, IconSignOut } from './NavIcons'
 
 interface Props {
@@ -283,6 +284,8 @@ export default function Sidebar({ user, activeWorkspace, workspaces, userRole, i
           </div>
         )}
       </nav>
+
+      <GhidIntrare />
 
       {/* Starea planului: duce la Setări › Plan și credite. */}
       {userRole === 'admin' && activeWorkspace && (

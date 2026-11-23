@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
+import { marcheazaPas } from './ghidPornire'
 import type { DocTemplate, DocGeneration } from '../types'
 
 function templatesCol(workspaceId: string) {
@@ -41,6 +42,7 @@ export function useTemplates(workspaceId: string | null) {
       createdAt: serverTimestamp(),
       createdBy: uid,
     })
+    marcheazaPas('sablon')
   }, [])
 
   const remove = useCallback(async (workspaceId: string, templateId: string) => {

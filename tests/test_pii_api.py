@@ -239,6 +239,17 @@ def test_delete_client_cascades_and_requires_admin(env):
     assert call(c, "alice", "delete", f"/clients/{CID}", wid=wid).status_code == 404
 
 
+def test_member_may_delete_only_the_demo_client(env):
+    c, db = env
+    wid = setup_ws(c, db)
+    cref = db.collection("workspaces").document(wid).collection("clienti").document(CID)
+    cref.set({"denumire": "DEMO EXEMPLU SRL", "codFiscal": "99999999", "nrRegistrul": "J40/9999/2020"})
+    assert call(c, "bob", "delete", f"/clients/{CID}", wid=wid).status_code == 200   # member, client demo
+    assert not cref.get().exists
+    cref.set({"denumire": "DEMO EXEMPLU SRL", "codFiscal": "RO18547290", "nrRegistrul": "J40/9999/2020"})
+    assert call(c, "bob", "delete", f"/clients/{CID}", wid=wid).status_code == 403   # nu mai e demo
+
+
 # ── Ramura Cloud KMS (cu client simulat: emulatorul nu are KMS) ──────────────
 class _FakeKms:
     """Simulează KeyManagementServiceClient: „criptează” prin XOR și verifică AAD."""

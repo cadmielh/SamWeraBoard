@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import type { Client, Persoana, TipClient, SubtipPF } from '../types'
 import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, missingCompanyFields, type ClientInput } from '../lib/clienti'
 import { fetchAnafCompany } from '../lib/api'
+import { marcheazaPas } from '../lib/ghidPornire'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { equalShare, sumCota, isCotaTotalValid, parteSocialaError, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
@@ -202,6 +203,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     try {
       const result = await fetchAnafCompany(form.codFiscal)
       if (!result.found) { toast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
+      marcheazaPas('anaf')
       const merge = (prev: ClientInput): ClientInput => {
         const c = result.adresaSediuComponente
         const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)
@@ -757,7 +759,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
               {/* Cod fiscal cu buton ANAF */}
               <div className="field">
                 <label className="field-label">Cod fiscal (CIF) {!isPF && !form.inInfiintare && <span style={{ color: 'var(--r500)' }}>*</span>}</label>
-                <div className="field-with-btn">
+                <div className="field-with-btn" data-ghid="client-anaf">
                   <input ref={codFiscalRef} className="field-input" placeholder={form.inInfiintare ? INFIINTARE_PLACEHOLDER : 'ex: RO12345678'}
                     value={form.codFiscal} onChange={e => set('codFiscal', e.target.value)}
                     aria-invalid={!!cifError} />

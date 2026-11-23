@@ -9,6 +9,7 @@ import { clearDriveToken, setDriveLoginHint, setDriveToken } from './lib/driveAu
 import { billingAccess, setWriteAccess } from './lib/billing'
 import { hasFeature as hasFeatureFn, type FeatureKey } from './lib/features'
 import { applyPendingSuperAdminGrant } from './lib/superAdmin'
+import { useGhidPornire } from './lib/ghidPornire'
 import type { ToastItem } from './types'
 import { AppCtx, type AppContextType } from './AppContext'
 import Sidebar from './components/Sidebar'
@@ -17,6 +18,7 @@ import Toast from './components/Toast'
 import ConsentGate from './components/ConsentGate'
 import TrialBanner from './components/TrialBanner'
 import UpgradeModal from './components/UpgradeModal'
+import { GhidIndiciu, GhidPanou, GhidStergeDemo } from './components/GhidPornire'
 import LandingPage from './pages/LandingPage'
 import type { PasswordAuth } from './components/AuthDialog'
 import { PageSkeleton } from './components/Skeleton'
@@ -41,6 +43,10 @@ export default function AppLayout() {
 
   // Fără e-mail verificat regulile refuză orice citire, deci nici nu încercăm.
   const workspaceCtx = useWorkspace(user && emailVerified ? user.uid : null)
+
+  // Apelat înaintea ramurilor de încărcare/autentificare de mai jos (regula hook-urilor).
+  const ghidWorkspace = user && emailVerified ? workspaceCtx.activeWorkspace : null
+  const ghid = useGhidPornire(user?.uid ?? null, ghidWorkspace, (user && ghidWorkspace?.members[user.uid]?.role) || null)
 
   // Autentificat: paginile principale se descarcă în fundal, ca prima navigare să nu mai aștepte codul.
   const signedIn = !!user && emailVerified
@@ -193,6 +199,7 @@ export default function AppLayout() {
     isSuperAdmin,
     workspaceCtx,
     signOut: handleSignOut,
+    ghid,
   }
 
   return (
@@ -216,6 +223,9 @@ export default function AppLayout() {
         <MobileTabBar />
       </div>
       <UpgradeModal />
+      <GhidPanou />
+      <GhidIndiciu />
+      <GhidStergeDemo />
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>
   )

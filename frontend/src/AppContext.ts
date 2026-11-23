@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import type { useWorkspace } from './lib/workspace'
 import type { FeatureKey } from './lib/features'
 import type { BillingAccess } from './lib/billing'
+import type { GhidPornire } from './lib/ghidPornire'
 import type { ToastItem, Workspace } from './types'
 
 type WorkspaceReturn = ReturnType<typeof useWorkspace>
@@ -23,6 +24,8 @@ export interface AppContextType {
   workspaceCtx: WorkspaceReturn
   /** Deconectare — din bara laterală pe desktop, din ecranul „Mai mult” pe telefon. */
   signOut: () => void
+  /** Ghidul „Primii pași” al utilizatorului în cabinetul activ — vezi lib/ghidPornire.ts. */
+  ghid: GhidPornire
 }
 
 export const AppCtx = createContext<AppContextType | null>(null)

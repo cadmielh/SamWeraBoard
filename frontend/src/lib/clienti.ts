@@ -4,12 +4,12 @@ import {
   query, where, orderBy, limit, startAfter, getDocs,
   serverTimestamp, deleteField,
 } from 'firebase/firestore'
-import type { QueryDocumentSnapshot, DocumentSnapshot, DocumentData } from 'firebase/firestore'
+import type { QueryDocumentSnapshot, DocumentSnapshot, DocumentData, DocumentReference } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
 import type { Client, Persoana } from '../types'
 import { EMPTY_ADRESA, formatAdresa, parseAdresa, type AdresaStructurata } from './adresa'
-import { sanitizeForSave, savePii, deleteClientOnServer } from './pii'
+import { sanitizeForSave, savePii, deleteClientOnServer, type VaultWrite } from './pii'
 import { VALOARE_PARTE_SOCIALA_DEFAULT, parteSocialaError } from './cota'
 import { confirmaAprobarea } from './durata'
 
@@ -87,6 +87,45 @@ function resolveDisplayName(data: ClientInput): string {
 
 function clientiCol(workspaceId: string) {
   return collection(db, 'workspaces', workspaceId, 'clienti')
+}
+
+interface ClientNou { ref: DocumentReference; payload: Record<string, unknown>; vault: VaultWrite | null }
+
+/** Documentul unui client nou, gata de scris (id-ul e deja alocat). */
+function pregatesteClientNou(workspaceId: string, rawData: ClientInput, uid: string): ClientNou {
+  // CNP/serie CI nu ajung în documentul Firestore: se separă și se trimit criptate
+  // către vault (vezi lib/pii.ts); în document rămân doar `pid` și variantele mascate.
+  const { data, vault } = sanitizeForSave(resolveInfiintare(rawData, null), null)
+  const displayName = resolveDisplayName(data)
+  const payload: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(data)) {
+    if (v !== undefined) payload[k] = v
+  }
+  // Apărare împotriva unui apelant care trimite din greșeală un Client complet
+  // (cu id/createdAt/createdBy proprii) în loc de ClientInput — acele câmpuri
+  // nu trebuie stocate niciodată ca date în document, doar derivate mai jos.
+  delete payload.id
+  delete payload.createdAt
+  delete payload.createdBy
+  payload.denumire = displayName
+  payload.denumireLower = displayName.toLowerCase()
+  payload.createdAt = serverTimestamp()
+  payload.createdBy = uid
+  return { ref: doc(clientiCol(workspaceId)), payload, vault: vault ?? null }
+}
+
+async function scrieClientNou({ ref, payload, vault }: ClientNou): Promise<string> {
+  // Vault întâi: dacă scrierea documentului eșuează, rămâne cel mult o înregistrare
+  // criptată orfană (inaccesibilă), niciodată un document fără datele lui sensibile.
+  if (vault) await savePii(ref.id, vault)
+  assertWritable()
+  await setDoc(ref, payload)
+  return ref.id
+}
+
+/** Creează un client în afara listei de pe pagina Clienți (ex. clientul demo din ghid). Întoarce id-ul. */
+export function creeazaClient(workspaceId: string, rawData: ClientInput, uid: string): Promise<string> {
+  return scrieClientNou(pregatesteClientNou(workspaceId, rawData, uid))
 }
 
 /** Denumirea e identificator unic per workspace — verifică dacă mai există un client cu aceeași denumire. */
@@ -331,36 +370,13 @@ export function useClienti(workspaceId: string | null) {
   // eșuează, modificarea locală se anulează și eroarea e retrimisă mai
   // departe (apelantul își păstrează exact același catch/toast ca înainte).
   const add = useCallback(async (workspaceId: string, rawData: ClientInput, uid: string) => {
-    // CNP/serie CI nu ajung în documentul Firestore: se separă și se trimit criptate
-    // către vault (vezi lib/pii.ts); în document rămân doar `pid` și variantele mascate.
-    const { data, vault } = sanitizeForSave(resolveInfiintare(rawData, null), null)
-    const displayName = resolveDisplayName(data)
-    const payload: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(data)) {
-      if (v !== undefined) payload[k] = v
-    }
-    // Apărare împotriva unui apelant care trimite din greșeală un Client complet
-    // (cu id/createdAt/createdBy proprii) în loc de ClientInput — acele câmpuri
-    // nu trebuie stocate niciodată ca date în document, doar derivate mai jos.
-    delete payload.id
-    delete payload.createdAt
-    delete payload.createdBy
-    payload.denumire = displayName
-    payload.denumireLower = displayName.toLowerCase()
-    payload.createdAt = serverTimestamp()
-    payload.createdBy = uid
-
-    const ref = doc(clientiCol(workspaceId))
+    const nou = pregatesteClientNou(workspaceId, rawData, uid)
     const tempId = `temp-${crypto.randomUUID()}`
-    setClienti(prev => [{ ...(payload as unknown as Client), id: tempId, createdAt: new Date().toISOString() }, ...prev])
+    setClienti(prev => [{ ...(nou.payload as unknown as Client), id: tempId, createdAt: new Date().toISOString() }, ...prev])
     try {
-      // Vault întâi: dacă scrierea documentului eșuează, rămâne cel mult o înregistrare
-      // criptată orfană (inaccesibilă), niciodată un document fără datele lui sensibile.
-      if (vault) await savePii(ref.id, vault)
-      assertWritable()
-      await setDoc(ref, payload)
-      setClienti(prev => prev.map(c => c.id === tempId ? { ...c, id: ref.id } : c))
-      return ref.id
+      const id = await scrieClientNou(nou)
+      setClienti(prev => prev.map(c => c.id === tempId ? { ...c, id } : c))
+      return id
     } catch (err) {
       setClienti(prev => prev.filter(c => c.id !== tempId))
       throw err

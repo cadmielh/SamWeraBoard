@@ -49,7 +49,7 @@ export default function UploadZone({ onExtracted, onToast, onShowDrivePicker, on
   }
 
   return (
-    <div className="card">
+    <div className="card" data-ghid="scan-upload">
       <div className="card-head">
         <span className="card-title">
           <span className="step-chip">1</span>

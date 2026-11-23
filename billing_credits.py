@@ -11,6 +11,7 @@ sub `billingAccounts/{wid}/`: `creditLots` (pachetele, imuabile), `creditFirms` 
 from __future__ import annotations
 
 import random
+import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,20 @@ import billing
 
 class ClientNotFound(LookupError):
     """Clientul nu există în cabinet (sau id invalid)."""
+
+
+# Clientul demo din ghidul „Primii pași” (frontend/src/lib/clientDemo.ts — ținute sincron): generările pentru el
+# nu consumă credite. Se recunoaște după toate trei datele fictive: o fișă schimbată pe date reale (alt CUI, altă
+# denumire sau alt număr de registru) nu mai e demo și consumă normal, deci excepția nu poate acoperi o firmă reală.
+DEMO_DENUMIRE = "demo exemplu srl"
+DEMO_CUI = "99999999"
+DEMO_NR_REGISTRU = "J40/9999/2020"
+
+
+def is_demo_client(client: dict) -> bool:
+    name = re.sub(r"\s+", " ", str(client.get("denumire") or "")).strip().lower()
+    return (name == DEMO_DENUMIRE and billing.normalize_cui(client.get("codFiscal") or "") == DEMO_CUI
+            and str(client.get("nrRegistrul") or "").strip().upper() == DEMO_NR_REGISTRU)
 
 
 def _acct_ref(wid: str):
@@ -56,6 +71,8 @@ def quote(wid: str, ws: dict, cid: str | None) -> dict:
         snap = _client_ref(wid, cid).get()
         if not snap.exists:
             raise ClientNotFound()
+        if is_demo_client(snap.to_dict() or {}):
+            return {"mode": "unlimited"}
         firm = _acct_ref(wid).collection("creditFirms").document(billing.firm_key(cid, snap.to_dict() or {})).get()
         until = billing.to_utc((firm.to_dict() or {}).get("coveredUntil")) if firm.exists else None
         if until and until > now:
@@ -82,6 +99,8 @@ def consume(wid: str, cid: str | None, uid: str, document: str) -> dict:
         client_snap = _client_ref(wid, cid).get(transaction=txn)
         if not client_snap.exists:
             raise ClientNotFound()
+        if is_demo_client(client_snap.to_dict() or {}):
+            return {"mode": "unlimited"}
         firm_ref = _acct_ref(wid).collection("creditFirms").document(billing.firm_key(cid, client_snap.to_dict() or {}))
         firm = firm_ref.get(transaction=txn)
         until = billing.to_utc((firm.to_dict() or {}).get("coveredUntil")) if firm.exists else None

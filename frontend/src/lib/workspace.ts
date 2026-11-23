@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore'
 import { db } from './firebase'
 import { apiJson } from './api'
+import { marcheazaPas } from './ghidPornire'
 import { TOS_VERSION, DPA_VERSION } from './legal'
 import type { FacturareConfig, Workspace, WorkspaceRole } from '../types'
 import type { FeatureKey } from './features'
@@ -143,6 +144,7 @@ export function useWorkspace(uid: string | null) {
 
   const inviteMember = useCallback(async (workspaceId: string, email: string, role: WorkspaceRole) => {
     await apiJson('POST', `/workspaces/${workspaceId}/invites`, { email: email.trim().toLowerCase(), role })
+    marcheazaPas('coleg')
   }, [])
 
   const listWorkspaceInvites = useCallback(

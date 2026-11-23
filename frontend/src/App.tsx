@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import AppLayout from './AppLayout'
 import ClientiPage from './pages/ClientiPage'
 import MaiMultPage from './pages/MaiMultPage'
@@ -13,6 +13,12 @@ function AbonamentRedirect() {
   return <Navigate to={{ pathname: '/setari/plan', search }} replace />
 }
 
+/** Un link către alt client (ex. clientul demo creat din ghid) repornește generarea, chiar dacă pagina e deja deschisă. */
+function GenerareRoute() {
+  const [searchParams] = useSearchParams()
+  return <GenerareDocumentePage key={searchParams.get('clientId') ?? ''} />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -22,7 +28,7 @@ export default function App() {
           <Route index element={<ClientiPage />} />
           <Route path="dosare" element={<DosarePage />} />
           <Route path="sarcini" element={<SarciniPage />} />
-          <Route path="extragere" element={<GenerareDocumentePage />} />
+          <Route path="extragere" element={<GenerareRoute />} />
           <Route path="workspace/setup" element={<WorkspaceSetupPage />} />
           {/* Utilizatorii s-au mutat în Setări › Membri. */}
           <Route path="utilizatori" element={<Navigate to="/setari/membri" replace />} />

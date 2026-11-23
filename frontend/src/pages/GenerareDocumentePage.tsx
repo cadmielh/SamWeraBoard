@@ -407,7 +407,7 @@ export default function GenerareDocumentePage() {
           </div>
           <div className="page-actions">
             {workspaceId && (
-              <button className="btn btn-ghost" onClick={() => setLibraryOpen(true)} aria-label="Șabloane">
+              <button className="btn btn-ghost" onClick={() => setLibraryOpen(true)} aria-label="Șabloane" data-ghid="gen-sabloane">
                 {/* line-height 1: emoji-ul nu mai înalță butonul față de celelalte din antet */}
                 <span aria-hidden="true" style={{ lineHeight: 1 }}>📁</span> <span className="btn-label">Șabloane</span>
               </button>
@@ -506,6 +506,7 @@ export default function GenerareDocumentePage() {
                   'Generează și arhivează documentele',
                 ]}
                 onClick={() => startMode('client')}
+                ghid="gen-client"
               />
 
               {/* Card 2: Entitate nouă — PJ */}
@@ -536,6 +537,7 @@ export default function GenerareDocumentePage() {
                   'Opțional: salvează ca client nou',
                 ]}
                 onClick={() => startMode('buletin')}
+                ghid="gen-pf"
               />
             </div>
           </div>
@@ -834,7 +836,7 @@ export default function GenerareDocumentePage() {
 // accent — familia de culoare (indigo implicit, albastru pentru PF, verde
 // pentru PJ), aceeași convenție ca în restul aplicației, ca alegerea să se
 // simtă imediat, dintr-o privire, nu doar din text.
-function LandingCard({ icon, title, desc, examples, bullets, onClick, accent = 'p' }: {
+function LandingCard({ icon, title, desc, examples, bullets, onClick, accent = 'p', ghid }: {
   icon: string
   title: string
   desc: string
@@ -842,10 +844,13 @@ function LandingCard({ icon, title, desc, examples, bullets, onClick, accent = '
   bullets: string[]
   onClick: () => void
   accent?: 'p' | 'b' | 'g'
+  /** Ancora indiciului din ghidul „Primii pași” (vezi lib/ghidPornire.ts). */
+  ghid?: string
 }) {
   const [hovered, setHovered] = useState(false)
   return (
     <button
+      data-ghid={ghid}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

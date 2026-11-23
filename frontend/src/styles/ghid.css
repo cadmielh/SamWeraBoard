@@ -1,0 +1,103 @@
+/* ══ Ghidul „Primii pași” (components/GhidPornire.tsx) ══════════════════════════════════════════════
+   Panoul plutește în dreapta-jos, deasupra paginii dar sub ferestrele modale; indiciul „Arată-mi”
+   stă peste tot (și peste modale), fiindcă poate arăta un câmp dintr-un formular deschis. */
+
+.ghid-panou {
+  position:fixed; right:1rem; bottom:1rem; z-index:195; width:380px; max-height:calc(100vh - 2rem);
+  display:flex; flex-direction:column; overflow:hidden;
+  background:var(--surface); border:1px solid var(--border, var(--s200)); border-radius:var(--r-lg);
+  box-shadow:var(--sh-xl, var(--sh-lg)); animation:ghidUrca .2s var(--ease, ease-out);
+}
+@keyframes ghidUrca { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+
+.ghid-cap { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; padding:1rem 1rem .625rem; }
+.ghid-cap h2 { margin:0; font-size:1rem; font-weight:800; color:var(--s900); }
+.ghid-cap p { margin:.15rem 0 0; font-size:.78rem; color:var(--s500); }
+.ghid-x {
+  border:0; background:none; color:var(--s400); font-size:1.35rem; line-height:1; padding:.1rem .3rem; cursor:pointer; border-radius:var(--r-sm);
+}
+.ghid-x:hover { color:var(--s700); background:var(--s100); }
+
+.ghid-bara { height:4px; margin:0 1rem .5rem; border-radius:var(--r-full); background:var(--s100); overflow:hidden; }
+.ghid-bara span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg, var(--p500), var(--g500)); transition:width .4s var(--ease, ease-out); }
+
+.ghid-pasi { list-style:none; margin:0; padding:.25rem .5rem; overflow-y:auto; }
+.ghid-pas { display:flex; align-items:flex-start; gap:.625rem; padding:.55rem .5rem; border-radius:var(--r-sm); }
+.ghid-pas:hover { background:var(--s50); }
+.ghid-bifa {
+  flex-shrink:0; width:20px; height:20px; margin-top:1px; border-radius:50%; border:1.5px solid var(--s300);
+  display:flex; align-items:center; justify-content:center; color:#fff;
+}
+.ghid-pas--facut .ghid-bifa { border-color:var(--g500); background:var(--g500); animation:ghidBifa .3s var(--ease, ease-out); }
+@keyframes ghidBifa { 50% { transform:scale(1.2); } }
+.ghid-pas-text { flex:1; min-width:0; }
+.ghid-pas-titlu { display:flex; flex-wrap:wrap; align-items:center; gap:.375rem; font-size:.84rem; font-weight:650; color:var(--s800, var(--s900)); }
+.ghid-pas--facut .ghid-pas-titlu { color:var(--s400); font-weight:500; text-decoration:line-through; text-decoration-color:var(--s300); }
+.ghid-pas-desc { margin-top:.15rem; font-size:.76rem; line-height:1.45; color:var(--s500); }
+.ghid-eticheta {
+  font-size:.62rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase;
+  padding:.1rem .4rem; border-radius:var(--r-full); background:var(--p50); color:var(--p600);
+}
+.ghid-eticheta--admin { background:var(--s100); color:var(--s500); }
+.ghid-arata { flex-shrink:0; align-self:center; }
+
+.ghid-demo {
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem;
+  margin:.25rem 1rem .5rem; padding:.6rem .75rem; border-radius:var(--r-md);
+  background:var(--p50); font-size:.78rem; color:var(--s700);
+}
+
+.ghid-subsol {
+  display:flex; align-items:center; gap:.5rem; padding:.5rem 1rem .75rem; border-top:1px solid var(--s100);
+  font-size:.72rem; color:var(--s400);
+}
+
+/* Intrarea din bara laterală: aceeași formă ca indicatorul planului, cu un inel de progres în loc de punct. */
+button.ghid-intrare { width:calc(100% - 1.5rem); font:inherit; font-size:.75rem; text-align:left; cursor:pointer; }
+.ghid-inel {
+  --p:0; flex-shrink:0; width:16px; height:16px; border-radius:50%;
+  background:conic-gradient(var(--p500) calc(var(--p) * 360deg), var(--s200) 0);
+  -webkit-mask:radial-gradient(circle, transparent 4.5px, #000 5px); mask:radial-gradient(circle, transparent 4.5px, #000 5px);
+}
+.sidebar--collapsed button.ghid-intrare { width:34px; }
+.ghid-intrare--discret { border-style:dashed; background:transparent; }
+
+/* Indiciul „Arată-mi” */
+.ghid-chenar {
+  position:fixed; z-index:10001; pointer-events:none; border-radius:var(--r-md);
+  box-shadow:0 0 0 2px var(--p500), 0 0 0 6px color-mix(in srgb, var(--p500) 25%, transparent);
+  animation:ghidPuls 1.6s ease-in-out infinite; transition:top .15s, left .15s, width .15s, height .15s;
+}
+@keyframes ghidPuls {
+  50% { box-shadow:0 0 0 2px var(--p500), 0 0 0 10px color-mix(in srgb, var(--p500) 10%, transparent); }
+}
+.ghid-indiciu {
+  position:fixed; z-index:10002; padding:.75rem .875rem; border-radius:var(--r-md);
+  background:var(--s900); color:var(--s50); box-shadow:var(--sh-lg); animation:fadeIn .15s;
+}
+:root[data-theme="dark"] .ghid-indiciu { background:var(--p600); color:#fff; }
+.ghid-indiciu--liber { left:50%; bottom:1.25rem; width:min(360px, calc(100vw - 2rem)); transform:translateX(-50%); }
+.ghid-indiciu-pas { font-size:.68rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.7; }
+.ghid-indiciu p { margin:.3rem 0 .6rem; font-size:.84rem; line-height:1.45; }
+.ghid-indiciu-act { display:flex; justify-content:flex-end; gap:.375rem; }
+.ghid-indiciu .btn-ghost { color:inherit; border-color:color-mix(in srgb, currentColor 30%, transparent); background:transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ghid-panou, .ghid-chenar, .ghid-pas--facut .ghid-bifa { animation:none; }
+}
+
+/* Telefon: foaie de jos, deasupra barei de navigare. */
+@media (max-width: 768px) {
+  .ghid-backdrop { position:fixed; inset:0; z-index:194; background:var(--backdrop); animation:fadeIn .15s; }
+  .ghid-panou {
+    left:0; right:0; bottom:var(--tabbar-space); width:auto; max-height:calc(100dvh - var(--tabbar-space) - 3rem);
+    border-radius:var(--r-lg) var(--r-lg) 0 0; border-bottom:0;
+  }
+  .ghid-arata { min-height:36px; }
+  .ghid-indiciu--liber { bottom:calc(var(--tabbar-space) + 1rem); }
+}
+
+/* Ecranele goale (Clienți, Dosare): o frază despre ce faci acolo și acțiunile de pornire. */
+.empty-state-hint { max-width:440px; margin:0; font-size:.84rem; line-height:1.55; color:var(--s500); }
+.empty-state-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:.5rem; }
+

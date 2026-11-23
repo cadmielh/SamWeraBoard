@@ -7,6 +7,7 @@ import {
 import type { QueryDocumentSnapshot, DocumentData, Unsubscribe } from 'firebase/firestore'
 import { db } from './firebase'
 import { assertWritable } from './billing'
+import { marcheazaPas } from './ghidPornire'
 import type { Sarcina, SarcinaInput, SarcinaStatus } from '../types'
 import { startOfWeek } from './dateWeek'
 
@@ -77,6 +78,7 @@ export function useSarcini(workspaceId: string | null) {
     if (data.status === 'finalizat') payload.completedAt = serverTimestamp()
     assertWritable()
     const ref = await addDoc(sarciniCol(workspaceId), payload)
+    marcheazaPas('sarcina')
     return ref.id
   }, [])
 

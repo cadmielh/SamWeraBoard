@@ -5,6 +5,7 @@ import { areUrgente, contorNoi, useNotificari, usePreferinteAlerte, type Context
 import NotificariPanel from './NotificariPanel'
 import NotificariAplicatiePanel from './NotificariAplicatiePanel'
 import { useNotificariAplicatie } from '../lib/notificariAplicatie'
+import { marcheazaPas } from '../lib/ghidPornire'
 import '../styles/notificari.css'
 
 function IconBell() {
@@ -107,6 +108,7 @@ export default function NotificariBell() {
   const urgent = (activ && areUrgente(notificari, prefs, ctx)) || noiApp.some(n => n.severitate === 'urgent')
   const deschide = () => {
     if (!open) setSursa(!activ || (noiApp.length > 0 && nrCabinet === 0) ? 'aplicatie' : 'cabinet')
+    if (!open && activ) marcheazaPas('alerte')
     setOpen(o => !o)
   }
   const comutator = isSuperAdmin && activ ? (
@@ -127,6 +129,7 @@ export default function NotificariBell() {
         ref={btnRef}
         type="button"
         className={`page-bell${open ? ' page-bell--open' : ''}`}
+        data-ghid="notif-bell"
         onClick={deschide}
         aria-expanded={open}
         aria-haspopup="dialog"

@@ -14,6 +14,7 @@ import {
 } from '../lib/alerteCatalog'
 import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import type { WorkspaceMember } from '../types'
+import { marcheazaPas } from '../lib/ghidPornire'
 import ConfirmModal from './ConfirmModal'
 import '../styles/notificari.css'
 
@@ -253,14 +254,14 @@ export default function NotificariCard() {
   }, [tinta])
 
   const salveaza = (fn: (p: PreferinteAlerte) => PreferinteAlerte) => {
-    actualizeaza(fn).catch(() => toast('Nu am putut salva. Încearcă din nou.', 'err'))
+    actualizeaza(fn).then(() => marcheazaPas('alerte')).catch(() => toast('Nu am putut salva. Încearcă din nou.', 'err'))
   }
 
   const deLaCine = areFiltruDeLaCine(role, user.uid, membri)
   const modificat = role !== null && areModificari(prefs, role)
 
   return (
-    <div className="card notif-card" ref={cardRef} id="notificari">
+    <div className="card notif-card" ref={cardRef} id="notificari" data-ghid="notif-setari">
       <div className="card-head">
         <span className="card-title">🔔 Notificări</span>
         {modificat && (
