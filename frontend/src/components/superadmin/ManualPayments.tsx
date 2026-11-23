@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatDate, toDate } from '../../lib/billing'
 import {
   adminCancelManualPayment, adminManualPayments, adminRecordManualPayment,
@@ -36,13 +36,20 @@ const fmt = (iso: string | null) => formatDate(toDate(iso))
 const short = (iso: string | null) => toDate(iso)?.toLocaleDateString('ro-RO') ?? '—'
 
 /** Încasările plătite în afara Stripe (transfer, numerar): abonament pe o perioadă sau pachet de credite. */
-export default function ManualPayments({ workspaceId, billing, onChange }: {
+export default function ManualPayments({ workspaceId, billing, onChange, startOpen = false }: {
   workspaceId: string
   billing: WorkspaceBilling | undefined
   onChange: (b: WorkspaceBilling) => void
+  startOpen?: boolean
 }) {
   const [payments, setPayments] = useState<ManualPayment[] | null>(null)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(startOpen)
+  const formRef = useRef<HTMLDivElement>(null)
+
+  // Deschis din Încasări: formularul e mai jos în panou, îl aducem în vedere.
+  useEffect(() => {
+    if (startOpen) formRef.current?.scrollIntoView?.({ block: 'center' })
+  }, [startOpen])
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
@@ -71,14 +78,14 @@ export default function ManualPayments({ workspaceId, billing, onChange }: {
         <span>abonament sau credite plătite prin transfer, numerar etc.</span>
       </div>
       {open && (
-        <ManualForm workspaceId={workspaceId} billing={billing}
+        <div ref={formRef}><ManualForm workspaceId={workspaceId} billing={billing}
           onSaved={(p, b) => {
             setOpen(false)
             saved(p, b, p.kind === 'subscription'
               ? `Abonament înregistrat: acces până pe ${fmt(p.periodEnd)}.`
               : `${p.credits} credite adăugate.`)
           }}
-          onError={setError} />
+          onError={setError} /></div>
       )}
       {payments && payments.length > 0 && (
         <ManualList workspaceId={workspaceId} payments={payments}

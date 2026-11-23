@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { billingAccess, formatDate } from '../lib/billing'
 import { adminBillingPayments, adminMarkInvoiced, adminStripeFees, type AccountFee, type PaymentRow } from '../lib/superAdmin'
 import type { Workspace } from '../types'
 import BtnLabel from './BtnLabel'
+import Modal from './Modal'
 
 type Period = 'luna' | 'luna-trecuta' | 'an' | 'tot' | 'interval'
 type KindFilter = 'toate' | PaymentRow['kind']
@@ -92,8 +94,10 @@ function csv(rows: PaymentRow[]): string {
 
 /** Tabloul de încasări din super admin: abonamente, pachete de credite, rambursări și dispute, cu filtre, totaluri,
  *  evidența facturilor emise manual în SmartBill și export CSV pentru contabil. Sursa: evenimentele Stripe primite. */
-export default function SuperAdminPayments({ workspaces }: { workspaces: Workspace[] }) {
+export default function SuperAdminPayments({ workspaces, version = 0 }: { workspaces: Workspace[]; version?: number }) {
   const { toast } = useApp()
+  const [, setParams] = useSearchParams()
+  const [picking, setPicking] = useState(false)
   const [rows, setRows] = useState<PaymentRow[] | null>(null)
   const [feesUnavailable, setFeesUnavailable] = useState(false)
   const [accountFees, setAccountFees] = useState<{ items: AccountFee[]; unavailable: boolean } | null>(null)
@@ -115,7 +119,7 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
       .catch(e => { if (!cancelled) toast((e as Error).message, 'err') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [reloadKey, toast])
+  }, [reloadKey, version, toast])
   const load = () => { setLoading(true); setReloadKey(k => k + 1) }
 
   // Comisioanele contului (Billing, dispute) pentru perioada aleasă; nu țin de un cabinet anume.
@@ -199,11 +203,18 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
     URL.revokeObjectURL(url)
   }
 
+  // Formularul stă în fișa cabinetului (Abonament): o deschidem peste Încasări, cu formularul deja deschis.
+  const openManual = (wid: string) => {
+    setPicking(false)
+    setParams(prev => { const n = new URLSearchParams(prev); n.set('cabinet', wid); n.set('incasare', '1'); return n })
+  }
+
   const updateRow = (r: PaymentRow, invoice: PaymentRow['invoice']) =>
     setRows(prev => (prev ?? []).map(x => (x.id === r.id && x.kind === r.kind ? { ...x, invoice } : x)))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {picking && <PickWorkspace workspaces={workspaces} onPick={openManual} onClose={() => setPicking(false)} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))', gap: '.75rem' }}>
         <Tile label="Încasat brut" value={ron(totals.income)}
           sub={<>
@@ -296,7 +307,9 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
       <div className="card">
         <div className="card-head" style={{ flexWrap: 'wrap', gap: '.5rem' }}>
           <span className="card-title">💳 Încasări</span>
-          <div style={{ display: 'flex', gap: '.5rem' }}>
+          <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary btn-sm" title="Abonament sau credite plătite prin transfer, numerar etc."
+              onClick={() => (wsFilter ? openManual(wsFilter) : setPicking(true))}>+ Încasare manuală</button>
             <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
               <BtnLabel busy={loading} dark>Reîncarcă</BtnLabel>
             </button>
@@ -403,6 +416,41 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
 }
 
 /** Evidența facturii emise manual: număr + „Marchează facturat”, sau numărul existent cu posibilitatea de anulare. */
+/** Alegerea cabinetului pentru o încasare manuală: căutare după nume sau e-mail. */
+function PickWorkspace({ workspaces, onPick, onClose }: { workspaces: Workspace[]; onPick: (id: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState('')
+  const needle = q.trim().toLowerCase()
+  const list = workspaces
+    .filter(w => w.status !== 'pendingDeletion')
+    .filter(w => !needle || w.name.toLowerCase().includes(needle)
+      || Object.values(w.members ?? {}).some(m => (m.email ?? '').toLowerCase().includes(needle)))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ro'))
+  return (
+    <Modal onClose={onClose} ariaLabel="Alege cabinetul" boxStyle={{ maxWidth: '28rem', width: '100%' }}>
+      <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: 'var(--s900)' }}>Încasare manuală</div>
+          <div style={{ fontSize: '.8125rem', color: 'var(--s500)' }}>Pentru ce cabinet? Se deschide fișa lui, cu formularul.</div>
+        </div>
+        <input className="field-input" autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Caută: cabinet sau e-mail"
+          aria-label="Caută cabinetul" onKeyDown={e => { if (e.key === 'Enter' && list.length === 1) onPick(list[0].id) }} />
+        <div className="pick-ws-list" role="listbox" aria-label="Cabinete">
+          {list.slice(0, 50).map(w => {
+            const admin = Object.values(w.members ?? {}).find(m => m.role === 'admin')?.email
+            return (
+              <button key={w.id} type="button" role="option" aria-selected={false} className="pick-ws-item" onClick={() => onPick(w.id)}>
+                <span>{w.name}</span>
+                {admin && <small>{admin}</small>}
+              </button>
+            )
+          })}
+          {list.length === 0 && <div style={{ color: 'var(--s500)', fontSize: '.8125rem', padding: '.5rem' }}>Niciun cabinet găsit.</div>}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function InvoiceCell({ row, onChange }: { row: PaymentRow; onChange: (inv: PaymentRow['invoice']) => void }) {
   const { toast } = useApp()
   const [editing, setEditing] = useState(false)

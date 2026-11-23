@@ -56,6 +56,8 @@ export default function SuperAdminPage() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('toate')
   const [sort, setSort] = useState<Sort>('activitate')
+  // Crește la orice schimbare de abonament din panou: tabloul de încasări se reîncarcă (ex. o încasare manuală nouă).
+  const [billingVersion, setBillingVersion] = useState(0)
 
   const [grants, setGrants] = useState<SuperAdminGrant[]>([])
   const [grantsLoading, setGrantsLoading] = useState(true)
@@ -320,7 +322,7 @@ export default function SuperAdminPage() {
 
       <div className="page-body" style={{ overflowY: 'auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 1120, margin: '0 auto', width: '100%' }}>
-          {pageTab === 'incasari' && <SuperAdminPayments workspaces={workspaces} />}
+          {pageTab === 'incasari' && <SuperAdminPayments workspaces={workspaces} version={billingVersion} />}
 
           {pageTab === 'cabinete' && (<>
             <div className="sa-kpis sa-kpis--top">
@@ -504,15 +506,16 @@ export default function SuperAdminPage() {
 
       {openRow && (
         <WorkspaceDrawer
-          key="drawer"
+          key={params.get('incasare') ? 'drawer-incasare' : 'drawer'}
+          manualPayment={!!params.get('incasare')}
           w={openRow.w}
           activity={openRow.act}
           activityLoading={activityLoading}
           cuiSeenName={cuiSeen[openRow.w.id] ? (workspaces.find(x => x.id === cuiSeen[openRow.w.id])?.name ?? cuiSeen[openRow.w.id]) : null}
           onPrev={openIndex > 0 ? () => openAt(openIndex - 1) : undefined}
           onNext={openIndex >= 0 && openIndex < visible.length - 1 ? () => openAt(openIndex + 1) : undefined}
-          onClose={() => setParam('cabinet', null)}
-          onBillingChange={b => setWorkspaces(prev => prev.map(x => x.id === openRow.w.id ? { ...x, billing: b } : x))}
+          onClose={() => setParams(prev => { const n = new URLSearchParams(prev); n.delete('cabinet'); n.delete('incasare'); return n })}
+          onBillingChange={b => { setWorkspaces(prev => prev.map(x => x.id === openRow.w.id ? { ...x, billing: b } : x)); setBillingVersion(v => v + 1) }}
           onToggleFeature={(key, enabled) => handleToggleFeature(openRow.w.id, key, enabled)}
           onRestore={() => handleRestoreWorkspace(openRow.w)}
           onDelete={() => setDeleting(openRow.w)}

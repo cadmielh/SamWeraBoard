@@ -11,10 +11,12 @@ const REASON_LABEL: Record<string, string> = {
 
 /** Starea abonamentului unui cabinet + acțiunile super adminului (prelungire probă, acces gratuit, încasări manuale,
  *  resincronizare). */
-export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
+export default function SuperAdminBilling({ workspaceId, billing, onChange, manualOpen = false }: {
   workspaceId: string
   billing: WorkspaceBilling | undefined
   onChange: (b: WorkspaceBilling) => void
+  /** Formularul de încasare manuală deschis de la început. */
+  manualOpen?: boolean
 }) {
   const [days, setDays] = useState('7')
   const [until, setUntil] = useState('')
@@ -108,7 +110,7 @@ export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
 
         <span style={{ ...ROW_LABEL, alignSelf: 'start', paddingTop: '.3rem' }}>Încasare manuală</span>
         <div style={{ ...ROW, flexDirection: 'column', alignItems: 'stretch' }}>
-          <ManualPayments workspaceId={workspaceId} billing={billing} onChange={onChange} />
+          <ManualPayments workspaceId={workspaceId} billing={billing} onChange={onChange} startOpen={manualOpen} />
         </div>
 
         <span style={ROW_LABEL}>Stripe</span>

@@ -17,7 +17,7 @@ type Tab = 'activitate' | 'abonament' | 'membri' | 'sabloane' | 'setari'
 /** Panoul lateral al unui cabinet din super admin: activitate, abonament, membri, șabloane livrate, setări.
  *  Lista rămâne în spate; ↑/↓ (sau butoanele din antet) trec la cabinetul anterior/următor. */
 export default function WorkspaceDrawer({ w, activity, activityLoading, cuiSeenName, onPrev, onNext, onClose,
-  onBillingChange, onToggleFeature, onRestore, onDelete }: {
+  onBillingChange, onToggleFeature, onRestore, onDelete, manualPayment = false }: {
   w: Workspace
   activity: WorkspaceActivity | undefined
   activityLoading: boolean
@@ -30,8 +30,10 @@ export default function WorkspaceDrawer({ w, activity, activityLoading, cuiSeenN
   onToggleFeature: (key: FeatureKey, enabled: boolean) => Promise<void>
   onRestore: () => Promise<void>
   onDelete: () => void
+  /** Deschis din Încasări › „Încasare manuală”: direct pe Abonament, cu formularul deschis. */
+  manualPayment?: boolean
 }) {
-  const [tab, setTab] = useState<Tab>('activitate')
+  const [tab, setTab] = useState<Tab>(manualPayment ? 'abonament' : 'activitate')
   const [range, setRange] = useState<30 | 90>(30)
   // Starea fiecărei bife de funcție: salvarea și eventuala eroare apar lângă ea, nu în altă parte a paginii.
   const [flagState, setFlagState] = useState<Record<string, { saving?: boolean; saved?: boolean; error?: string }>>({})
@@ -138,7 +140,7 @@ export default function WorkspaceDrawer({ w, activity, activityLoading, cuiSeenN
           {cuiSeenName && (
             <div role="status" className="drawer-alert drawer-alert--warn">Acest CUI a mai avut o perioadă de probă în cabinetul „{cuiSeenName}”.</div>
           )}
-          <SuperAdminBilling workspaceId={w.id} billing={w.billing} onChange={onBillingChange} />
+          <SuperAdminBilling workspaceId={w.id} billing={w.billing} onChange={onBillingChange} manualOpen={manualPayment} />
         </>)}
 
         {tab === 'membri' && (

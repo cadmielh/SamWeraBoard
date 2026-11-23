@@ -146,3 +146,10 @@
   .manual-row { grid-template-columns:1fr auto; }
   .manual-row-date, .manual-row-action { grid-column:1 / -1; }
 }
+
+/* Alegerea cabinetului pentru o încasare manuală (din Încasări). */
+.pick-ws-list { display:flex; flex-direction:column; max-height:min(22rem, 55vh); overflow-y:auto; border:1px solid var(--s100); border-radius:var(--r-sm); }
+.pick-ws-item { display:flex; flex-direction:column; align-items:flex-start; gap:.1rem; text-align:left; border:none; background:transparent; font:inherit; font-size:.875rem; color:var(--s800); padding:.5rem .75rem; cursor:pointer; }
+.pick-ws-item + .pick-ws-item { border-top:1px solid var(--s100); }
+.pick-ws-item:hover, .pick-ws-item:focus-visible { background:var(--p50); outline:none; }
+.pick-ws-item small { color:var(--s500); font-size:.75rem; }
