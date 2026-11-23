@@ -153,3 +153,10 @@
 .pick-ws-item + .pick-ws-item { border-top:1px solid var(--s100); }
 .pick-ws-item:hover, .pick-ws-item:focus-visible { background:var(--p50); outline:none; }
 .pick-ws-item small { color:var(--s500); font-size:.75rem; }
+
+/* Antete de tabel sortabile (Încasări): clic = sortare, încă un clic = sens invers. */
+.th-sort { display:inline-flex; align-items:center; gap:.25rem; border:none; background:none; padding:0; font:inherit; font-weight:600; color:inherit; cursor:pointer; white-space:nowrap; }
+.th-sort:hover, .th-sort.is-active { color:var(--s800); }
+.th-sort-arrow { font-size:.7rem; opacity:.35; }
+.th-sort.is-active .th-sort-arrow { opacity:1; color:var(--p500); }
+.th-sort:focus-visible { outline:2px solid var(--p500); outline-offset:2px; border-radius:3px; }

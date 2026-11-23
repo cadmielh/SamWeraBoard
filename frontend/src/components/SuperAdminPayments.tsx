@@ -13,6 +13,16 @@ import Modal from './Modal'
 type Period = 'luna' | 'luna-trecuta' | 'an' | 'tot' | 'interval'
 type KindFilter = 'toate' | PaymentRow['kind']
 type InvoiceFilter = 'toate' | 'de-facturat' | 'facturat'
+type SortKey = 'at' | 'cabinet' | 'facturare' | 'ce' | 'amount' | 'fee' | 'net' | 'invoice'
+type Sort = { key: SortKey; dir: 'asc' | 'desc' }
+
+const COLUMNS: { key: SortKey; label: string; right?: boolean }[] = [
+  { key: 'at', label: 'Data' }, { key: 'cabinet', label: 'Cabinet' }, { key: 'facturare', label: 'Facturare' },
+  { key: 'ce', label: 'Ce' }, { key: 'amount', label: 'Brut', right: true }, { key: 'fee', label: 'Comision', right: true },
+  { key: 'net', label: 'Net', right: true }, { key: 'invoice', label: 'Factură SmartBill' },
+]
+// Textele încep crescător (A→Z), datele și sumele descrescător (cele mai noi / mai mari întâi).
+const TEXT_KEYS: SortKey[] = ['cabinet', 'facturare', 'ce', 'invoice']
 
 const KIND_LABEL: Record<PaymentRow['kind'], string> = {
   subscription: 'Abonament', credits: 'Credite', refund: 'Rambursare', dispute: 'Dispută',
@@ -69,6 +79,29 @@ function describe(r: PaymentRow): string {
   return 'Rambursare'
 }
 
+/** Ordinea tabelului (și a exportului). Egalitățile se departajează după dată, cele mai noi întâi. */
+function sortRows(rows: PaymentRow[], { key, dir }: Sort): PaymentRow[] {
+  const invoiceRank = (r: PaymentRow) => (needsInvoice(r) ? 0 : r.invoice?.status === 'manual' ? 1 : 2)   // de facturat, facturat, nu e cazul
+  const value = (r: PaymentRow): string | number => {
+    switch (key) {
+      case 'at': return r.at ?? ''
+      case 'cabinet': return r.workspaceName
+      case 'facturare': return r.billingName
+      case 'ce': return `${KIND_LABEL[r.kind]} ${describe(r)}`
+      case 'amount': return r.amount
+      case 'fee': return r.fee ?? 0
+      case 'net': return r.net ?? r.amount
+      case 'invoice': return invoiceRank(r)
+    }
+  }
+  const sign = dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const va = value(a), vb = value(b)
+    const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'ro', { sensitivity: 'base' })
+    return c !== 0 ? c * sign : (b.at ?? '').localeCompare(a.at ?? '')
+  })
+}
+
 /** Intervalul [de la, până la) pentru filtrul de perioadă, în ora locală. */
 function periodRange(p: Period, from: string, to: string, now: Date): [Date | null, Date | null] {
   const y = now.getFullYear(), m = now.getMonth()
@@ -113,6 +146,7 @@ export default function SuperAdminPayments({ workspaces, version = 0 }: { worksp
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('toate')
   const [wsFilter, setWsFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<Sort>({ key: 'at', dir: 'desc' })
   const [now] = useState(() => new Date())
 
   useEffect(() => {
@@ -155,6 +189,10 @@ export default function SuperAdminPayments({ workspaces, version = 0 }: { worksp
   const filtered = useMemo(() => scoped.filter(r =>
     invoiceFilter === 'de-facturat' ? needsInvoice(r) : invoiceFilter === 'facturat' ? r.invoice?.status === 'manual' : true,
   ), [scoped, invoiceFilter])
+  const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort])
+  const toggleSort = (key: SortKey) => setSort(prev => prev.key === key
+    ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: TEXT_KEYS.includes(key) ? 'asc' : 'desc' })
 
   const totals = useMemo(() => {
     const sum = (f: (r: PaymentRow) => boolean) => filtered.filter(f).reduce((n, r) => n + r.amount, 0)
@@ -198,7 +236,7 @@ export default function SuperAdminPayments({ workspaces, version = 0 }: { worksp
   }, [workspaces, now])
 
   const exportCsv = () => {
-    const url = URL.createObjectURL(new Blob([csv(filtered)], { type: 'text/csv;charset=utf-8' }))
+    const url = URL.createObjectURL(new Blob([csv(sorted)], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
     a.download = `incasari-cabinio-${new Date().toISOString().slice(0, 10)}.csv`
@@ -364,18 +402,22 @@ export default function SuperAdminPayments({ workspaces, version = 0 }: { worksp
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.8125rem' }}>
                 <thead>
                   <tr style={{ color: 'var(--s500)', textAlign: 'left' }}>
-                    <th style={TH}>Data</th>
-                    <th style={TH}>Cabinet</th>
-                    <th style={TH}>Facturare</th>
-                    <th style={TH}>Ce</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Brut</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Comision</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Net</th>
-                    <th style={TH}>Factură SmartBill</th>
+                    {COLUMNS.map(c => {
+                      const active = sort.key === c.key
+                      return (
+                        <th key={c.key} style={{ ...TH, textAlign: c.right ? 'right' : 'left' }}
+                          aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                          <button type="button" className={`th-sort${active ? ' is-active' : ''}`} onClick={() => toggleSort(c.key)}>
+                            {c.label}
+                            <span className="th-sort-arrow" aria-hidden>{active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                          </button>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(r => (
+                  {sorted.map(r => (
                     <tr key={`${r.kind}:${r.workspaceId}:${r.id}`} style={{ borderTop: '1px solid var(--s100)', color: 'var(--s700)', verticalAlign: 'top' }}>
                       <td style={{ ...TD, whiteSpace: 'nowrap' }}>{r.at ? new Date(r.at).toLocaleDateString('ro-RO') : '—'}</td>
                       <td style={TD}>{r.workspaceName || <span style={{ color: 'var(--s400)' }}>cabinet șters</span>}</td>
@@ -389,7 +431,7 @@ export default function SuperAdminPayments({ workspaces, version = 0 }: { worksp
                         </span>
                         {r.source === 'manual' && <span className="chip chip-muted" style={{ marginRight: '.375rem' }}>Manual</span>}
                         <span style={{ color: 'var(--s600)' }}>{describe(r).replace(/^(Abonament|Rambursare)\s?/, '')}</span>
-                        {r.stripeCustomerId && (
+                        {r.stripeCustomerId && r.source !== 'manual' && (
                           <div><a href={`https://dashboard.stripe.com/customers/${r.stripeCustomerId}`} target="_blank" rel="noreferrer"
                             style={{ fontSize: '.75rem' }}>Vezi în Stripe ↗</a></div>
                         )}
