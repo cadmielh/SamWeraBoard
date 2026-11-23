@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../AppContext'
-import { hasCurrentConsent } from '../lib/legal'
+import { SCHIMBARI_LEGALE, hasCurrentConsent } from '../lib/legal'
 import Modal from './Modal'
 import BtnLabel from './BtnLabel'
 
@@ -48,6 +48,13 @@ export default function ConsentGate({ onSignOut }: { onSignOut: () => void }) {
           Spațiul de lucru <strong>{activeWorkspace.name}</strong> conține date personale ale clienților dumneavoastră (inclusiv CNP).
           Pentru a continua, în calitate de administrator, confirmați termenii și acordul de prelucrare a datelor (DPA).
         </p>
+        {/* Acceptase o versiune anterioară: spunem ce s-a schimbat, ca reacceptarea să nu fie oarbă. */}
+        {activeWorkspace.consent?.dpa && (
+          <p style={{ color: 'var(--s700)', fontSize: '.8125rem', lineHeight: 1.5, marginBottom: '.75rem', padding: '.625rem .75rem',
+            background: 'var(--surface-2)', border: '1px solid var(--s200)', borderRadius: 'var(--r-sm)' }}>
+            <strong>Ce s-a schimbat:</strong> {SCHIMBARI_LEGALE}
+          </p>
+        )}
         <label style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-start', fontSize: '.8125rem', color: 'var(--s600)', lineHeight: 1.45 }}>
           <input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} style={{ marginTop: '.2rem' }} />
           <span>

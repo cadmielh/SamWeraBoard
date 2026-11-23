@@ -15,7 +15,7 @@ export function TermeniPage() {
     <LegalLayout title="Termeni și condiții">
       <H>1. Serviciul și părțile</H>
       <P>Cabinio („Serviciul”) este o aplicație web pentru cabinete de contabilitate, avocatură și consultanță: gestionarea
-        clienților și a dosarelor, extragerea datelor din acte de identitate și generarea de documente (inclusiv pentru ONRC).
+        clienților și a dosarelor, extragerea datelor din acte de identitate, păstrarea documentelor clienților și generarea de documente (inclusiv pentru ONRC).
         Serviciul este furnizat de {providerName()} („Furnizorul”). Cabinetul care își creează un spațiu de lucru și folosește Serviciul
         („Operatorul” sau „Cabinetul”) acceptă acești termeni prin bifarea acceptării din aplicație, prin administratorul spațiului.</P>
       <H>2. Conturi și spații de lucru</H>
@@ -45,9 +45,10 @@ export function TermeniPage() {
         <li>La încetarea abonamentului sau a perioadei de probă, șabloanele livrate rămân în spațiul de lucru, în același regim ca restul datelor (punctul 8).</li>
       </UL>
       <H>5. Datele clienților Cabinetului</H>
-      <P>Pentru datele personale ale clienților introduse în aplicație (inclusiv CNP și date din acte de identitate), Cabinetul este operator, iar
+      <P>Pentru datele personale ale clienților introduse în aplicație (inclusiv CNP, date și copii ale actelor de identitate și celelalte documente încărcate), Cabinetul este operator, iar
         Furnizorul este împuternicit, potrivit <Link to="/dpa">Acordului de prelucrare a datelor (DPA)</Link>. Cabinetul răspunde de temeiul legal al prelucrării,
-        de informarea persoanelor vizate și de acuratețea datelor. Nu introduceți categorii speciale de date (ex. date privind sănătatea) în aplicație.</P>
+        de informarea persoanelor vizate și de acuratețea datelor. Nu introduceți categorii speciale de date (ex. date privind sănătatea) în aplicație, nici în documentele încărcate.
+        Documentele se păstrează cât timp Cabinetul le ține în aplicație; spațiul inclus în abonament este de 10 GB pentru fiecare spațiu de lucru.</P>
       <H>6. Utilizare acceptabilă</H>
       <P>Este interzisă utilizarea Serviciului pentru activități ilegale, accesarea datelor altor spații de lucru, ocolirea măsurilor de securitate,
         automatizarea abuzivă a cererilor sau suprasolicitarea infrastructurii. Furnizorul poate suspenda accesul în caz de abuz sau risc de securitate.</P>
@@ -132,7 +133,7 @@ export function ConfidentialitatePage() {
         sunteți client al unui cabinet, cererile privind datele dumneavoastră se adresează cabinetului, care este operatorul acestora. Aveți dreptul să depuneți
         plângere la Autoritatea Națională de Supraveghere a Prelucrării Datelor cu Caracter Personal (ANSPDCP).</P>
       <H>Unde sunt prelucrate datele</H>
-      <P>Datele clienților cabinetelor (baza de date, serverele aplicației, cheile de criptare, recunoașterea textului din acte, sugestiile AI pentru șabloane) sunt prelucrate în Spațiul Economic
+      <P>Datele clienților cabinetelor (baza de date, documentele păstrate, serverele aplicației, cheile de criptare, recunoașterea textului din acte, sugestiile AI pentru șabloane) sunt prelucrate în Spațiul Economic
         European. Autentificarea (Firebase Authentication, Google) poate implica transferuri în afara SEE, pe baza clauzelor contractuale standard și/sau a Cadrului
         UE–SUA privind protecția datelor. Jurnalele tehnice ale serverului (erori, timpi de răspuns) nu conțin date personale ale clienților: valorile cum este CNP-ul
         nu sunt scrise în ele. Detalii despre măsuri: <Link to="/securitate">Securitate</Link>.</P>
@@ -148,26 +149,28 @@ export function DpaPage() {
         Operatorului, și completează <Link to="/termeni">Termenii și condițiile</Link>.</P>
       <H>1. Obiect, natură, scop, durată</H>
       <P>Împuternicitul prelucrează date personale în numele Operatorului exclusiv pentru furnizarea aplicației: stocarea fișelor de clienți, extragerea datelor din acte de
-        identitate, generarea documentelor și evidența dosarelor. Durata: cât timp spațiul de lucru este activ, plus perioada de ștergere de la punctul 3.</P>
+        identitate, păstrarea documentelor încărcate de Operator (de exemplu copii ale actelor de identitate, dovezi de sediu, contracte), generarea documentelor și evidența dosarelor. Durata: cât timp spațiul de lucru este activ, plus perioada de ștergere de la punctul 3.</P>
       <P>La cererea Operatorului, Împuternicitul pregătește și șabloane din documentele trimise de acesta (vezi <Link to="/termeni">Termenii și condițiile</Link>, punctul 4).
         Documentele se trimit fără date personale; dacă le conțin totuși, Împuternicitul le prelucrează doar în acest scop, nu le folosește în alt mod și nu păstrează
         copii după livrarea șablonului în spațiul de lucru al Operatorului. Înainte de livrare, aplicația refuză automat documentele care conțin un CNP valid, comentarii
         sau modificări urmărite și elimină din proprietățile documentului autorul și titlul.</P>
       <H>2. Categorii de date și persoane vizate</H>
       <P>Persoane vizate: clienții Operatorului, asociați, administratori și reprezentanți ai acestora. Date: nume, CNP, serie și număr act de identitate, data și locul nașterii,
-        adresă, cetățenie, date de contact, date ale societăților și ale dosarelor.</P>
+        adresă, cetățenie, date de contact, date ale societăților și ale dosarelor, precum și documentele încărcate de Operator, care pot conține aceste date și imaginea titularului
+        unui act de identitate. Împuternicitul nu analizează conținutul documentelor păstrate; verifică doar tipul fișierului, pentru siguranța aplicației.</P>
       <H>3. Obligațiile Împuternicitului</H>
       <UL>
         <li>Prelucrează datele numai pe baza instrucțiunilor documentate ale Operatorului (inclusiv prin utilizarea funcțiilor aplicației) și îl informează dacă o instrucțiune
           încalcă legea.</li>
         <li>Asigură confidențialitatea persoanelor autorizate să acceseze datele.</li>
         <li>Aplică măsuri tehnice și organizatorice adecvate, descrise pe pagina <Link to="/securitate">Securitate</Link>, inclusiv criptarea la nivel de câmp a CNP și a seriei
-          actului de identitate, cu chei separate pentru fiecare spațiu de lucru.</li>
+          actului de identitate și criptarea documentelor încărcate, cu chei separate pentru fiecare spațiu de lucru.</li>
         <li>Notifică Operatorul fără întârziere nejustificată, în principiu în cel mult 48 de ore de la luarea la cunoștință, despre orice încălcare a securității datelor.</li>
         <li>Sprijină Operatorul în îndeplinirea cererilor persoanelor vizate (acces, rectificare, ștergere, portabilitate) și în evaluările de impact, prin funcțiile aplicației și, la cerere,
           prin informațiile necesare.</li>
         <li>La încetarea acordului sau la cererea Operatorului, șterge datele din aplicație în cel mult 30 de zile, cu excepția celor pe care legea îi impune să le păstreze;
-          datele șterse pot rămâne recuperabile în mecanismul de recuperare a bazei de date (7 zile) și în eventualele copii de siguranță, care expiră automat în cel mult 35 de zile de la ștergere.</li>
+          datele șterse pot rămâne recuperabile în mecanismul de recuperare a bazei de date (7 zile), documentele șterse în mecanismul de ștergere temporară al stocării
+          (7 zile, criptate), iar ambele în eventualele copii de siguranță, care expiră automat în cel mult 35 de zile de la ștergere.</li>
         <li>Pune la dispoziția Operatorului informațiile necesare pentru a demonstra respectarea acordului și permite audituri rezonabile, cu preaviz și în timpul programului normal de lucru.</li>
       </UL>
       <H>4. Sub-împuterniciți</H>
@@ -187,7 +190,7 @@ export function DpaPage() {
 
 export function SubImputernicitiPage() {
   const rows: [string, string, string, string][] = [
-    ['Google Cloud / Firebase (Firestore, Cloud Functions, Cloud KMS)', 'Găzduirea aplicației, baza de date, serverele aplicației și cheile de criptare', 'Toate datele din aplicație (datele sensibile, criptate)', 'UE — Frankfurt (europe-west3)'],
+    ['Google Cloud / Firebase (Firestore, Cloud Functions, Cloud Storage, Cloud KMS)', 'Găzduirea aplicației, baza de date, păstrarea documentelor încărcate, serverele aplicației și cheile de criptare', 'Toate datele din aplicație (datele sensibile și documentele, criptate cu cheia spațiului de lucru)', 'UE — Frankfurt (europe-west3)'],
     ['Firebase Hosting (rețeaua de distribuție Google)', 'Livrarea fișierelor statice ale aplicației (cod, fonturi, imagini); nu conțin date din aplicație', 'Adresa IP a vizitatorului (jurnale tehnice ale rețelei)', 'Rețea globală de distribuție'],
     ['Google Cloud Logging (jurnale tehnice)', 'Jurnalele de funcționare ale serverului (erori, timpi de răspuns), fără valori ale datelor clienților; păstrare 30 de zile', 'Adresa IP, momentul și ruta apelată; nu CNP, nume sau alte date din fișele clienților', 'UE (Frankfurt, europe-west3); doar jurnalele de administrare ale furnizorului rămân în locația „global”'],
     ['Firebase Authentication (Google)', 'Autentificarea utilizatorilor', 'Date de cont (nume, e-mail, identificator; hash-ul parolei, pentru conturile cu parolă)', 'Global; clauze contractuale standard / Cadrul UE–SUA'],
@@ -227,10 +230,10 @@ export function SubImputernicitiPage() {
 
 const CADRU_LEGAL: [string, string][] = [
   ['Regulamentul (UE) 2016/679 (GDPR), art. 28 — împuternicit', 'Acord de prelucrare (DPA) acceptat în aplicație de administratorul fiecărui spațiu de lucru, versionat, cu dovada acceptării (moment, versiune, adresă IP). Fără acceptare, serverul refuză scanarea actelor și accesul la CNP.'],
-  ['GDPR, art. 32 — securitatea prelucrării', 'Criptare la nivel de câmp pentru CNP și serie CI, izolare între spații de lucru, acces pe roluri, jurnal de activitate, chei în KMS, teste automate ale regulilor de acces (secțiunea „În vigoare”).'],
-  ['GDPR, art. 5 — minimizare și limitarea stocării', 'Imaginile actelor nu se stochează; istoricul extragerilor păstrează doar sursa și data, 30 de zile; jurnalul de activitate ~13 luni; ștergerea unui client elimină în cascadă și datele sensibile.'],
+  ['GDPR, art. 32 — securitatea prelucrării', 'Criptare la nivel de câmp pentru CNP și serie CI, criptarea documentelor încărcate, izolare între spații de lucru, acces pe roluri, jurnal de activitate, chei în KMS, teste automate ale regulilor de acces (secțiunea „În vigoare”).'],
+  ['GDPR, art. 5 — minimizare și limitarea stocării', 'Imaginile trimise la scanare nu se stochează; documentele se păstrează doar dacă Cabinetul le încarcă și cât timp le ține; istoricul extragerilor păstrează doar sursa și data, 30 de zile; jurnalul de activitate ~13 luni; ștergerea unui client elimină în cascadă și datele sensibile, iar documentele lui se șterg sau trec în Arhivă, la alegerea Cabinetului.'],
   ['Legea nr. 190/2018, art. 4 — număr național de identificare (CNP)', 'Garanții tehnice și organizatorice specifice: CNP criptat separat de restul fișei, citire doar prin server și înregistrată, perioade de stocare definite, fără CNP în jurnalele tehnice.'],
-  ['GDPR, cap. V — transferuri în afara SEE', 'Datele clienților rămân în SEE (baza de date, serverele și sugestiile AI pentru șabloane: Frankfurt; recunoașterea textului: Suedia). Singura excepție declarată este autentificarea, procesată de Google (clauze contractuale standard / Cadrul UE–SUA).'],
+  ['GDPR, cap. V — transferuri în afara SEE', 'Datele clienților rămân în SEE (baza de date, documentele, serverele și sugestiile AI pentru șabloane: Frankfurt; recunoașterea textului: Suedia). Singura excepție declarată este autentificarea, procesată de Google (clauze contractuale standard / Cadrul UE–SUA).'],
   ['GDPR, art. 33 — încălcări ale securității datelor', 'Furnizorul notifică Operatorul fără întârziere nejustificată, în principiu în 48 de ore; Operatorul are, potrivit GDPR, 72 de ore pentru notificarea ANSPDCP.'],
 ]
 
@@ -242,8 +245,8 @@ export function SecuritatePage() {
 
       <H>Unde sunt datele</H>
       <UL>
-        <li><strong>Baza de date, serverele aplicației și cheile de criptare</strong>: Uniunea Europeană — Google Cloud, regiunea Frankfurt (europe-west3).</li>
-        <li><strong>Recunoașterea textului din acte</strong> (OCR): Microsoft Azure, regiunea Suedia (Sweden Central), UE. Aplicația nu stochează imaginea. Azure păstrează temporar, criptate și în aceeași regiune, fișierul trimis și rezultatul analizei, cel mult 24 de ore, apoi le șterge automat; <strong>aplicația cere ștergerea lor imediat după procesare</strong>. Azure nu le folosește pentru antrenarea modelelor.</li>
+        <li><strong>Baza de date, documentele păstrate, serverele aplicației și cheile de criptare</strong>: Uniunea Europeană — Google Cloud, regiunea Frankfurt (europe-west3).</li>
+        <li><strong>Recunoașterea textului din acte</strong> (OCR): Microsoft Azure, regiunea Suedia (Sweden Central), UE. Scanarea nu stochează imaginea. Azure păstrează temporar, criptate și în aceeași regiune, fișierul trimis și rezultatul analizei, cel mult 24 de ore, apoi le șterge automat; <strong>aplicația cere ștergerea lor imediat după procesare</strong>. Azure nu le folosește pentru antrenarea modelelor.</li>
         <li><strong>Sugestiile AI pentru șabloane</strong> (opționale, doar la cererea utilizatorului): Google Cloud Vertex AI, regiunea Frankfurt (europe-west3), UE. Se trimit doar fragmente de text din jurul locurilor libere ale șablonului, niciodată un fragment care conține un CNP valid; Google nu le folosește pentru antrenarea modelelor.</li>
         <li><strong>Fișierele statice ale aplicației</strong> (cod, fonturi, imagini, fără date personale) sunt distribuite prin rețeaua Google, iar <strong>autentificarea</strong> (Google) este procesată de Google, cu clauze contractuale standard / Cadrul UE–SUA. <strong>Jurnalele tehnice ale infrastructurii</strong> (adresă IP, moment, ruta apelată; fără valori ale datelor clienților) sunt stocate în UE (Frankfurt) — vezi <Link to="/sub-imputerniciti">Sub-împuterniciți</Link> și <Link to="/confidentialitate">Confidențialitate</Link>.</li>
       </UL>
@@ -274,7 +277,11 @@ export function SecuritatePage() {
         <li><strong>Criptare în tranzit și la stocare</strong>: conexiuni HTTPS cu HSTS; datele din baza de date sunt criptate la stocare de furnizorul de infrastructură.</li>
         <li><strong>Izolare între spații de lucru</strong>: accesul este verificat pe server și în regulile bazei de date; fiecare cerere e legată de un spațiu și de un rol (administrator, membru, doar citire). Regulile sunt verificate prin teste automate.</li>
         <li><strong>Acces minim la Google Drive</strong>: aplicația vede doar fișierele create de ea sau alese explicit de utilizator prin fereastra Google (permisiunea „drive.file”), nu tot Drive-ul; tokenul Google rămâne în browser și nu ajunge pe serverele Furnizorului.</li>
-        <li><strong>Imaginile actelor de identitate nu sunt stocate de aplicație</strong>: se procesează în memorie, iar după extragere cerem la Azure ștergerea imediată a fișierului trimis și a rezultatului (ștergerea automată, în cel mult 24 de ore, rămâne plasa de siguranță).</li>
+        <li><strong>Scanarea nu păstrează imaginile actelor de identitate</strong>: se procesează în memorie, iar după extragere cerem la Azure ștergerea imediată a fișierului trimis și a rezultatului (ștergerea automată, în cel mult 24 de ore, rămâne plasa de siguranță).</li>
+        <li><strong>Documentele clienților</strong> (doar cele pe care Cabinetul alege să le încarce): criptate pe server (AES-256-GCM) cu cheia spațiului de lucru înainte de stocare,
+          într-un spațiu de stocare din Frankfurt fără acces public; nu se pot citi direct din browser, ci doar prin server, iar fiecare deschidere e înregistrată în jurnal.
+          Tipul fișierului se verifică după conținut (se refuză executabilele, arhivele și documentele cu macro-uri). La ștergerea spațiului de lucru, documentele se șterg,
+          iar cheia lui se distruge.</li>
         <li><strong>Invitații cu acceptare explicită</strong>: nimeni nu este adăugat automat într-un spațiu; invitațiile expiră după 14 zile.</li>
         <li><strong>Jurnal de activitate</strong> scris exclusiv de server (nu poate fi modificat din aplicație), vizibil administratorilor, păstrat aproximativ 13 luni.</li>
         <li><strong>Autentificare</strong> prin conturi Google sau cu e-mail și parolă (minimum 12 caractere, cu litere mari și mici, cifre și caractere speciale), doar cu e-mail verificat; sesiunile revocate sunt respinse, iar utilizatorul își poate încheia singur sesiunile de pe toate dispozitivele. Rolul de administrator al platformei funcționează doar în sesiuni Google.</li>
@@ -282,7 +289,7 @@ export function SecuritatePage() {
         <li><strong>Fără date personale în jurnalele tehnice</strong> și mesaje de eroare generice către utilizatori.</li>
         <li><strong>Recuperare la un moment anterior</strong> a bazei de date (ultimele 7 zile) și protecție împotriva ștergerii accidentale a bazei de date.</li>
         <li><strong>Procedură scrisă de răspuns la incidente</strong>, cu responsabilități și termene: evaluare în 24 de ore, notificarea cabinetelor în principiu în 48 de ore, registru al incidentelor și exercițiu anual.</li>
-        <li><strong>Ștergerea unui client</strong> elimină în cascadă fișa, datele sensibile din vault și istoricul generărilor.</li>
+        <li><strong>Ștergerea unui client</strong> elimină în cascadă fișa, datele sensibile din vault și istoricul generărilor; documentele lui se șterg sau trec în Arhiva cabinetului, la alegerea utilizatorului.</li>
         <li><strong>Protecții de aplicație</strong>: antete de securitate (HSTS, protecție împotriva încadrării în alte pagini, politică de referrer), CORS restrictiv, limitarea cererilor pe utilizator și pe spațiu de lucru (protejează costul de procesare și încetinește un acces abuziv), validarea intrărilor, secrete păstrate în Google Secret Manager, fonturi și resurse găzduite local (fără urmărire de terți).</li>
       </UL>
 

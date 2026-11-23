@@ -11,9 +11,9 @@ const FAQ: [string, string][] = [
   ['Cine are acces la datele clienților mei?',
     'Utilizatorii cabinetului dumneavoastră, după rol. Aplicația nu oferă furnizorului acces la fișele clienților, la CNP-uri sau la jurnalul de acces. Accesul excepțional (de exemplu pentru depanare) are loc doar la cererea scrisă a cabinetului și se consemnează.'],
   ['Unde sunt stocate datele?',
-    'Baza de date, serverul, cheile de criptare și jurnalele tehnice sunt în Frankfurt. Citirea actelor rulează în Suedia. Autentificarea și rețeaua care livrează fișierele aplicației sunt servicii globale ale Google, declarate în pagina Sub-împuterniciți.'],
+    'Baza de date, documentele păstrate, serverul, cheile de criptare și jurnalele tehnice sunt în Frankfurt. Citirea actelor rulează în Suedia. Autentificarea și rețeaua care livrează fișierele aplicației sunt servicii globale ale Google, declarate în pagina Sub-împuterniciți.'],
   ['Se păstrează imaginile buletinelor scanate?',
-    'Nu. Imaginea este trimisă la citire, iar procesatorul o șterge imediat după analiză. În fișa clientului rămân doar datele extrase, CNP-ul fiind criptat separat.'],
+    'Nu, la scanare: imaginea este trimisă la citire, iar procesatorul o șterge imediat după analiză. În fișa clientului rămân doar datele extrase, CNP-ul fiind criptat separat. Un act pe care alegeți să-l păstrați în documentele clientului se stochează criptat cu cheia cabinetului, în Frankfurt, până îl ștergeți.'],
   ['Ce se întâmplă dacă vreau să plec?',
     'Datele se exportă la cerere, iar cabinetul se șterge integral în 30 de zile, conform acordului de prelucrare (DPA).'],
   ['La ce documente accesează aplicația din Google Drive?',
@@ -61,7 +61,7 @@ const SECURITY: Card[] = [
   { icon: 'lock', title: 'CNP și serie criptate separat', text: 'Fiecare cabinet are propria cheie de criptare. În aplicație datele apar mascate; afișarea completă se face la cerere.' },
   { icon: 'layers', title: 'Izolare între cabinete', text: 'Un cabinet nu poate accesa datele altuia. Regulile de acces sunt testate automat.' },
   { icon: 'log', title: 'Jurnal de acces', text: 'Administratorul vede cine a afișat un CNP, a scanat un act, a generat un document sau a șters un client.' },
-  { icon: 'fileX', title: 'Imaginea actului nu se păstrează', text: 'Procesatorul șterge imaginea imediat după citire; rămân doar datele extrase.' },
+  { icon: 'fileX', title: 'Scanarea nu păstrează imaginea', text: 'Procesatorul șterge imaginea imediat după citire. Actele pe care alegeți să le păstrați se stochează criptat, cu cheia cabinetului.' },
   { icon: 'trash', title: 'Ștergere reală', text: 'Un client se șterge complet, iar la încetarea contractului cabinetul se șterge în 30 de zile.' },
 ]
 
