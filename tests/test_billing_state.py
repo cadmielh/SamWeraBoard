@@ -295,3 +295,28 @@ def test_credit_cabinets_get_trial_quotas():
     subscribed = {**b, "hasSubscription": True}
     assert billing.quota_tier(ws(subscribed), NOW) == "standard"
     assert billing.quota_tier(ws(billing.no_trial(NOW)), NOW) == "standard"   # fără acces: cotele nu mai contează
+
+
+def test_manual_subscription_gives_full_access_without_credits_and_carries_to_checkout():
+    until = NOW + 40 * DAY
+    b = billing.set_manual(billing.no_trial(NOW), until, NOW)
+    assert b["status"] == "manual" and billing.access_until(ws(b)) == until
+    assert billing.credit_mode(b, NOW) == "unlimited" and billing.quota_tier(ws(b), NOW) == "standard"
+    # Abonare prin Stripe în timpul perioadei plătite manual: prima plată vine la sfârșitul ei.
+    assert billing.trial_end_for_checkout(ws(b), NOW) == int(until.timestamp())
+    assert billing.finalize(b, until + DAY)["status"] == "expired"
+    assert billing.set_manual(b, None, NOW)["status"] == "none"
+
+
+def test_live_stripe_subscription_status_wins_over_manual():
+    b = billing.set_manual(billing.no_trial(NOW), NOW + 10 * DAY, NOW)
+    b = billing.with_subscription(b, sub("active", start=NOW, end=NOW + 30 * DAY), NOW)
+    assert b["status"] == "active" and b["manualUntil"] == NOW + 10 * DAY
+
+
+def test_remove_lot_takes_only_that_lot():
+    b = billing.add_credits(billing.no_trial(NOW), "a", 5, NOW + 100 * DAY, NOW)
+    b = billing.add_credits(b, "b", 3, NOW + 200 * DAY, NOW)
+    b, removed = billing.remove_lot(b, "b", NOW)
+    assert removed == 3 and billing.credit_balance(b, NOW) == 5
+    assert billing.remove_lot(b, "missing", NOW)[1] == 0

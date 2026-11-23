@@ -120,3 +120,29 @@
 
 /* Momentul calculului statisticilor + reîmprospătarea la cerere. */
 .sa-stats-bar { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.75rem; font-size:.75rem; color:var(--s500); }
+
+/* Încasări manuale (fișa cabinetului › Abonament): formular compact + istoric. */
+.manual-form { display:flex; flex-direction:column; gap:.5rem; padding:.75rem; border:1px solid var(--s200); border-radius:var(--r-md); background:var(--s50); }
+.manual-form-row { display:grid; grid-template-columns:6rem minmax(0,1fr); gap:.5rem; align-items:center; }
+.manual-form-label { font-weight:600; color:var(--s700); font-size:.75rem; }
+.manual-form-fields { display:flex; align-items:center; gap:.375rem .5rem; flex-wrap:wrap; color:var(--s600); font-size:.8125rem; min-width:0; }
+.manual-form-pair { display:inline-flex; align-items:center; gap:.375rem; }
+.manual-form .field-input { width:auto; padding:.3rem .5rem; font-size:.8125rem; min-height:0; }
+.manual-form input[type="date"].field-input { width:8.75rem; }
+.manual-form-hint { color:var(--s500); font-size:.72rem; flex:1 1 14rem; line-height:1.4; }
+.manual-list { display:flex; flex-direction:column; border:1px solid var(--s100); border-radius:var(--r-sm); }
+.manual-row { display:grid; grid-template-columns:5.5rem minmax(0,1fr) auto auto; gap:.75rem; align-items:center; padding:.45rem .625rem; font-size:.8125rem; color:var(--s700); }
+.manual-row + .manual-row { border-top:1px solid var(--s100); }
+.manual-row-date { color:var(--s500); font-size:.75rem; font-variant-numeric:tabular-nums; }
+.manual-row-what small { display:block; color:var(--s500); font-size:.72rem; overflow-wrap:anywhere; }
+.manual-row-amount { font-variant-numeric:tabular-nums; font-weight:600; color:var(--s900); white-space:nowrap; }
+.manual-row--canceled .manual-row-what, .manual-row--canceled .manual-row-amount { text-decoration:line-through; color:var(--s400); }
+@media (max-width: 640px) {
+  /* Eticheta deasupra acțiunilor: coloana de alături ar fi prea îngustă pentru formular. */
+  .sa-billing-grid { grid-template-columns:1fr !important; row-gap:.25rem !important; }
+  .sa-billing-grid > span:not(:first-child) { margin-top:.5rem; }
+  .manual-form-row { grid-template-columns:1fr; gap:.25rem; }
+  .manual-form-label:empty { display:none; }
+  .manual-row { grid-template-columns:1fr auto; }
+  .manual-row-date, .manual-row-action { grid-column:1 / -1; }
+}

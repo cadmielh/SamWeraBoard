@@ -48,6 +48,10 @@ UNGATED = {
     ("POST", "/admin/billing/payments/<wid>/<kind>/<pid>/invoice"),
     ("GET", "/admin/billing/overview"), ("GET", "/admin/activity"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
     ("POST", "/admin/workspaces/<wid>/billing/comp"), ("POST", "/admin/workspaces/<wid>/billing/sync"),
+    ("GET", "/admin/workspaces/<wid>/billing/manual"), ("POST", "/admin/workspaces/<wid>/billing/manual"),
+    ("POST", "/admin/workspaces/<wid>/billing/manual/<pid>/cancel"),
+    # Contextul câmpurilor unui șablon vechi: cache derivat din fișier, necesar și pentru a citi formularul.
+    ("POST", "/templates/<tid>/context"),
     # super admin: livrarea cere acces activ la cabinetul ȚINTĂ (billing.has_full_access), nu la cel al apelantului
     ("POST", "/admin/workspaces/<target>/templates"), ("GET", "/admin/workspaces/<wid>/delivered-templates"),
     ("DELETE", "/admin/workspaces/<wid>/templates/<tid>"),

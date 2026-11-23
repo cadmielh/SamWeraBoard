@@ -23,6 +23,7 @@ TZ = ZoneInfo("Europe/Bucharest")
 ZILE_FACTURARE = 5          # o încasare fără factură emisă după atâtea zile apare în notificări
 ZILE_INACTIV_PLATITOR = 14
 ZILE_PROBA_SE_INCHEIE = 3
+ZILE_MANUAL_EXPIRA = 7       # abonamentul plătit manual nu se reînnoiește singur: aviz ca plata să fie cerută la timp
 _SISTEM = {"stripe", "system", ""}
 
 
@@ -174,7 +175,7 @@ def zilnic(db, acum: datetime | None = None) -> dict:
     """Notificările care depind de trecerea timpului. Idempotent: cheile conțin ziua sau termenul."""
     acum = acum or datetime.now(timezone.utc)
     zi = acum.astimezone(TZ).strftime("%Y-%m-%d")
-    rezultat = {"proba": 0, "expirate": 0, "inactivi": 0, "nefacturate": 0}
+    rezultat = {"proba": 0, "manuale": 0, "expirate": 0, "inactivi": 0, "nefacturate": 0}
 
     for snap in db.collection("workspaces").limit(2000).stream():
         ws = snap.to_dict() or {}
@@ -190,6 +191,8 @@ def zilnic(db, acum: datetime | None = None) -> dict:
         access = billing.to_utc(b.get("accessUntil"))
         are_sub = bool(b.get("hasSubscription"))
         credite = billing.credit_balance(b, acum)
+        manual_until = billing.to_utc(b.get("manualUntil"))
+        are_manual = bool(manual_until and manual_until > acum)
 
         # Proba se încheie în cel mult 3 zile, fără abonament și fără credite: o singură dată per sfârșit de probă.
         if (trial_end and not are_sub and credite == 0 and access and access <= trial_end + timedelta(minutes=1)
@@ -201,6 +204,16 @@ def zilnic(db, acum: datetime | None = None) -> dict:
                      link=_link_cabinet(wid), wid=wid):
                 rezultat["proba"] += 1
 
+        # Abonament plătit manual care expiră în cel mult 7 zile, fără abonament Stripe: o dată per dată de sfârșit.
+        if are_manual and not are_sub and manual_until <= acum + timedelta(days=ZILE_MANUAL_EXPIRA):
+            zile = max(1, -(-(manual_until - acum) // timedelta(days=1)))
+            if emite(_cheie("abonament_manual_expira", wid, manual_until.strftime("%Y%m%d")), "bani",
+                     f"Abonament manual expiră în {zile} {'zi' if zile == 1 else 'zile'}: {nume}",
+                     f"{email + ' · ' if email else ''}plătit prin transfer/numerar, nu se reînnoiește singur · "
+                     f"acces până pe {manual_until.astimezone(TZ).strftime('%d.%m.%Y')}", severitate="atentie",
+                     link=_link_cabinet(wid), wid=wid):
+                rezultat["manuale"] += 1
+
         # Accesul s-a încheiat în ultimele 24 de ore (probă sau plată), fără reînnoire: cabinetul e acum în citire.
         if access and acum - timedelta(days=1) <= access < acum and not are_sub:
             if emite(_cheie("acces_expirat", wid, access.strftime("%Y%m%d")), "conversie",
@@ -210,7 +223,7 @@ def zilnic(db, acum: datetime | None = None) -> dict:
                 rezultat["expirate"] += 1
 
         # Cabinet plătitor care nu mai lucrează: semnal de pierdere, cel mult o dată pe săptămână.
-        if billing.has_full_access(ws, acum) and (are_sub or credite > 0):
+        if billing.has_full_access(ws, acum) and (are_sub or are_manual or credite > 0):
             ultima = _ultima_actiune(db, wid)
             if ultima and acum - ultima >= timedelta(days=ZILE_INACTIV_PLATITOR):
                 sapt = acum.astimezone(TZ).strftime("%G-W%V")
@@ -232,6 +245,12 @@ def zilnic(db, acum: datetime | None = None) -> dict:
         if (d.get("source") == "purchase" and (d.get("amountPaid") or 0) > 0
                 and (d.get("invoice") or {}).get("status") in (None, "pending") and creat and creat < prag):
             total, suma = total + 1, suma + (d.get("amountPaid") or 0)
+    for doc in db.collection_group("manualPayments").stream():
+        d = doc.to_dict() or {}
+        platita = billing.to_utc(d.get("paidAt"))
+        if ((d.get("amount") or 0) > 0 and not d.get("canceledAt")
+                and (d.get("invoice") or {}).get("status") in (None, "pending") and platita and platita < prag):
+            total, suma = total + 1, suma + (d.get("amount") or 0)
     if total and emite(_cheie("nefacturate", zi), "facturare",
                        f"{total} {'încasare nefacturată' if total == 1 else 'încasări nefacturate'} de peste {ZILE_FACTURARE} zile",
                        f"Total {ron(suma)} · marchează factura emisă din Încasări", severitate="urgent",

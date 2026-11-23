@@ -375,7 +375,8 @@ def as_root(c, method, url, **kw):
 def test_admin_actions_require_super_admin(env):
     c, db, _, wid = env
     for url in (f"/admin/workspaces/{wid}/billing/extend-trial", f"/admin/workspaces/{wid}/billing/comp",
-                f"/admin/workspaces/{wid}/billing/sync"):
+                f"/admin/workspaces/{wid}/billing/sync", f"/admin/workspaces/{wid}/billing/manual",
+                f"/admin/workspaces/{wid}/billing/manual/man_{'0' * 20}/cancel"):
         assert as_root(c, "post", url, json={"days": 5}).status_code == 403
     assert as_root(c, "get", "/admin/billing/overview").status_code == 403
     assert call(c, wid, "alice", "post", f"/admin/workspaces/{wid}/billing/extend-trial", json={"days": 5}).status_code == 403
@@ -778,3 +779,72 @@ def test_admin_stripe_fees_lists_billing_and_dispute_fees(credits_env, monkeypat
         raise billing_api.BillingUnavailable("PermissionError")
     monkeypatch.setattr(billing_api, "stripe_account_fees", forbidden)
     assert call(c, wid, "root", "get", "/admin/billing/stripe-fees").get_json() == {"items": [], "unavailable": True}
+
+
+# ── Încasări manuale ─────────────────────────────────────────────────────────
+
+def _day(offset: int) -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=offset)).date().isoformat()
+
+
+def manual(c, wid, **body):
+    base = {"kind": "subscription", "amount": 200, "method": "transfer", "paidAt": _day(0),
+            "periodStart": _day(0), "periodEnd": _day(30), "interval": "month"}
+    return as_root(c, "post", f"/admin/workspaces/{wid}/billing/manual", json={**base, **body})
+
+
+def test_manual_subscription_records_payment_grants_access_and_cancels(credits_env):
+    c, db, _, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    assert call(c, wid, "alice", "post", f"/admin/workspaces/{wid}/billing/manual", json={}).status_code == 403
+    for bad in ({"amount": -1}, {"amount": True}, {"method": "crypto"}, {"kind": "x"}, {"paidAt": _day(5)},
+                {"periodEnd": _day(-1)}, {"periodStart": "2026-02-31"}, {"interval": "week"}, {"invoiceNumber": "x" * 61}):
+        assert manual(c, wid, **bad).status_code == 400, bad
+    r = manual(c, wid, amount=199.99, invoiceNumber=" CAB 12 ", note="ordin de plată 77")
+    assert r.status_code == 200, r.get_json()
+    p, b = r.get_json()["payment"], r.get_json()["billing"]
+    assert p["amount"] == 19999 and p["invoice"]["status"] == "manual" and p["invoice"]["number"] == "CAB 12"
+    assert b["status"] == "manual" and b["manualUntil"][:10] >= _day(29)
+    assert billing.has_full_access({"billing": billing_of(db, wid)})
+    # A doua perioadă, mai lungă: accesul se întinde; anularea ei îl readuce la prima.
+    second = manual(c, wid, periodStart=_day(31), periodEnd=_day(395), interval="year", amount=2000).get_json()["payment"]
+    assert billing.to_utc(billing_of(db, wid)["manualUntil"]).date().isoformat() == _day(395)
+    assert len(as_root(c, "get", f"/admin/workspaces/{wid}/billing/manual").get_json()["payments"]) == 2
+    r = as_root(c, "post", f"/admin/workspaces/{wid}/billing/manual/{second['id']}/cancel", json={"reason": "greșeală"})
+    assert r.status_code == 200 and r.get_json()["payment"]["canceledAt"]
+    assert billing.to_utc(billing_of(db, wid)["manualUntil"]).date().isoformat() == _day(30)
+    # Plățile anulate nu apar în Încasări; cea valabilă apare fără comision.
+    rows = [r for r in as_root(c, "get", "/admin/billing/payments").get_json()["rows"] if r.get("source") == "manual" and r["workspaceId"] == wid]
+    assert [(r["kind"], r["amount"], r["fee"], r["net"]) for r in rows] == [("subscription", 19999, 0, 19999)]
+    assert as_root(c, "post", f"/admin/workspaces/{wid}/billing/manual/man_{'0' * 20}/cancel", json={}).status_code == 404
+
+
+def test_manual_credit_sale_adds_lot_and_cancel_removes_remaining(credits_env):
+    c, db, _, wid = credits_env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    assert manual(c, wid, kind="credits", credits=0).status_code == 400
+    r = manual(c, wid, kind="credits", credits=30, amount=750, method="numerar")
+    assert r.status_code == 200
+    pid = r.get_json()["payment"]["id"]
+    assert billing.credit_balance(billing_of(db, wid)) == 30
+    row = next(x for x in as_root(c, "get", "/admin/billing/payments").get_json()["rows"] if x.get("source") == "manual" and x["workspaceId"] == wid)
+    assert row["kind"] == "credits" and row["credits"] == 30 and row["invoice"]["status"] == "pending"
+    # Factura se marchează la fel ca la Stripe, pe tipul „manual”.
+    r = as_root(c, "post", f"/admin/billing/payments/{wid}/manual/{pid}/invoice", json={"number": "CAB 13"})
+    assert r.status_code == 200
+    billing_credits.consume(wid, "clientFirmaX01", "alice", "doc")
+    as_root(c, "post", f"/admin/workspaces/{wid}/billing/manual/{pid}/cancel", json={})
+    assert billing.credit_balance(billing_of(db, wid)) == 0
+    ledger = [d.to_dict() for d in db.collection("billingAccounts").document(wid).collection("creditLedger").stream()]
+    assert any(e["kind"] == "adjust" and e["amount"] == -29 for e in ledger)
+    assert not any(x.get("source") == "manual" and x["workspaceId"] == wid for x in as_root(c, "get", "/admin/billing/payments").get_json()["rows"])
+
+
+def test_manual_subscription_refused_while_stripe_would_renew(env):
+    c, db, stripe, wid = env
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    cust = _customer(c, db, stripe, wid)
+    stripe.add_sub(cust, "active", wid)                     # plătit 30 de zile, se reînnoiește
+    call(c, wid, "alice", "post", "/billing/sync", json={})
+    assert manual(c, wid, periodEnd=_day(90)).get_json()["error"] == "stripe_subscription_active"
+    assert manual(c, wid, periodEnd=_day(10)).status_code == 200   # acoperit de perioada Stripe: nu se dublează

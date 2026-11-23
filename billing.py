@@ -1,4 +1,5 @@
-"""Starea abonamentului unui cabinet (trial, abonament Stripe, acces gratuit acordat de super admin).
+"""Starea abonamentului unui cabinet (trial, abonament Stripe, abonament plătit manual, acces gratuit acordat de
+super admin).
 
 Sursa unică de adevăr pentru acces e `workspaces/{wid}.billing.accessUntil` (moment UTC): cât timp
 `acum < accessUntil`, cabinetul are acces complet; după, trece în citire + export. Regulile Firestore
@@ -140,7 +141,8 @@ def quota_tier(ws: dict | None, now: datetime | None = None) -> str:
     Altfel 'standard'."""
     b = (ws or {}).get("billing") or {}
     trial_end = to_utc(b.get("trialEndsAt"))
-    if b.get("hasSubscription") or (to_utc(b.get("compUntil")) or EPOCH) > _now(now):
+    if (b.get("hasSubscription") or (to_utc(b.get("compUntil")) or EPOCH) > _now(now)
+            or (to_utc(b.get("manualUntil")) or EPOCH) > _now(now)):
         return "standard"
     if trial_end and trial_end > _now(now):
         return "trial"
@@ -151,7 +153,7 @@ def unlimited_until(b: dict | None) -> datetime | None:
     """Până când are cabinetul acces nelimitat (probă, acces gratuit sau abonament) — fără consum de credite."""
     b = b or {}
     dates = [t for t in (to_utc(b.get("trialEndsAt")), to_utc(b.get("compUntil")),
-                         to_utc(b.get("subscriptionAccessUntil"))) if t]
+                         to_utc(b.get("subscriptionAccessUntil")), to_utc(b.get("manualUntil"))) if t]
     return max(dates) if dates else None
 
 
@@ -160,6 +162,7 @@ def finalize(b: dict, now: datetime | None = None) -> dict:
     now = _now(now)
     trial_end = to_utc(b.get("trialEndsAt"))
     comp_until = to_utc(b.get("compUntil"))
+    manual_until = to_utc(b.get("manualUntil"))
     credits_until = credits_access_until(b)
     candidates = [t for t in (unlimited_until(b), credits_until) if t]
     out = dict(b)
@@ -168,6 +171,8 @@ def finalize(b: dict, now: datetime | None = None) -> dict:
     sub_status = b.get("subscriptionStatus")
     if sub_status in LIVE_SUB_STATUSES:
         status = "trialing" if sub_status == "trialing" else sub_status
+    elif manual_until and manual_until > now:
+        status = "manual"
     elif comp_until and comp_until > now:
         status = "comp"
     elif trial_end and trial_end > now:
@@ -176,7 +181,7 @@ def finalize(b: dict, now: datetime | None = None) -> dict:
         status = "credits"
     elif sub_status == "canceled":
         status = "canceled"
-    elif trial_end or comp_until or sub_status or b.get("credits"):
+    elif trial_end or comp_until or manual_until or sub_status or b.get("credits"):
         status = "expired"
     else:
         status = "none"
@@ -188,7 +193,7 @@ def finalize(b: dict, now: datetime | None = None) -> dict:
 def _empty() -> dict:
     return {
         "plan": "standard", "interval": None,
-        "trialEndsAt": None, "compUntil": None, "compReason": None,
+        "trialEndsAt": None, "compUntil": None, "compReason": None, "manualUntil": None,
         "subscriptionStatus": None, "subscriptionAccessUntil": None,
         "currentPeriodEnd": None, "graceUntil": None,
         "cancelAtPeriodEnd": False, "hasSubscription": False,
@@ -219,6 +224,14 @@ def set_comp(prev: dict | None, until: datetime | None, reason: str | None, now:
     b = {**_empty(), **(prev or {})}
     b["compUntil"] = to_utc(until)
     b["compReason"] = (reason or None) if until else None
+    return finalize(b, now)
+
+
+def set_manual(prev: dict | None, until: datetime | None, now: datetime | None = None) -> dict:
+    """Abonament plătit manual (transfer, numerar), înregistrat de super admin: acces până la `until`, calculat din
+    încasările manuale neanulate (vezi billing_manual.py). None = fără abonament manual."""
+    b = {**_empty(), **(prev or {})}
+    b["manualUntil"] = to_utc(until)
     return finalize(b, now)
 
 
@@ -286,12 +299,14 @@ def with_subscription(prev: dict | None, sub: dict | None, now: datetime | None 
 
 
 def trial_end_for_checkout(ws: dict | None, now: datetime | None = None) -> int | None:
-    """Zilele gratuite rămase (probă sau acces gratuit dat de super-admin) se păstrează la abonare: prima
+    """Zilele gratuite rămase (probă, acces gratuit dat de super-admin sau abonament plătit manual) se păstrează la
+    abonare: prima
     plată vine la sfârșitul lor, doar dacă mai sunt cel puțin 48h; altfel plata se încasează imediat.
     Plafonat la limita Stripe pentru `trial_end` (730 de zile). Secunde Unix, cum le cere Stripe."""
     b = (ws or {}).get("billing") or {}
     now = _now(now)
-    free_until = max((d for d in (to_utc(b.get("trialEndsAt")), to_utc(b.get("compUntil"))) if d), default=None)
+    free_until = max((d for d in (to_utc(b.get("trialEndsAt")), to_utc(b.get("compUntil")),
+                                  to_utc(b.get("manualUntil"))) if d), default=None)
     if free_until and free_until - now >= MIN_TRIAL_CARRY:
         return int(min(free_until, now + MAX_TRIAL_CARRY).timestamp())
     return None
@@ -383,6 +398,18 @@ def remove_credits(prev: dict | None, amount: int, now: datetime | None = None) 
         if not left:
             break
     return _with_lots(prev, lots, now)
+
+
+def remove_lot(prev: dict | None, lot_id: str, now: datetime | None = None) -> tuple[dict, int]:
+    """Scoate creditele rămase dintr-un pachet anume (ex. o vânzare manuală anulată). Întoarce (billing, câte s-au
+    scos); creditele deja consumate din el rămân consumate."""
+    now = _now(now)
+    lots = [dict(lot) for lot in live_lots(prev, now)]
+    removed = 0
+    for lot in lots:
+        if lot["id"] == lot_id:
+            removed, lot["remaining"] = int(lot["remaining"]), 0
+    return _with_lots(prev, lots, now), removed
 
 
 def firm_key(cid: str, client: dict) -> str:

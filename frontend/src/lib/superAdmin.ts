@@ -64,6 +64,51 @@ export const adminSetComp = (workspaceId: string, until: string | null, reason?:
 export const adminCredits = (workspaceId: string, amount: number, reason: string) =>
   apiJson<{ billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/credits`, { amount, reason })
 
+// ── Încasări manuale (transfer, numerar) — vezi billing_manual.py ─────────────
+export type ManualMethod = 'transfer' | 'numerar' | 'card' | 'altele'
+
+export interface ManualPayment {
+  id: string
+  kind: 'subscription' | 'credits'
+  /** Bani (RON × 100). */
+  amount: number
+  method: ManualMethod
+  note: string | null
+  paidAt: string | null
+  periodStart: string | null
+  periodEnd: string | null
+  interval: 'month' | 'year' | null
+  credits: number | null
+  createdAt: string | null
+  canceledAt: string | null
+  cancelReason: string | null
+  invoice: { status: string | null; number: string | null; at: string | null }
+}
+
+/** Datele trimise: sumă în RON, date AAAA-LL-ZZ (ora României). */
+export interface ManualPaymentInput {
+  kind: 'subscription' | 'credits'
+  amount: number
+  method: ManualMethod
+  paidAt: string
+  note?: string
+  invoiceNumber?: string
+  periodStart?: string
+  periodEnd?: string
+  interval?: 'month' | 'year' | null
+  credits?: number
+}
+
+export const adminManualPayments = (workspaceId: string) =>
+  apiJson<{ payments: ManualPayment[] }>('GET', `/admin/workspaces/${workspaceId}/billing/manual`)
+
+export const adminRecordManualPayment = (workspaceId: string, input: ManualPaymentInput) =>
+  apiJson<{ payment: ManualPayment; billing: WorkspaceBilling }>('POST', `/admin/workspaces/${workspaceId}/billing/manual`, input)
+
+export const adminCancelManualPayment = (workspaceId: string, paymentId: string, reason: string) =>
+  apiJson<{ payment: ManualPayment; billing: WorkspaceBilling }>(
+    'POST', `/admin/workspaces/${workspaceId}/billing/manual/${paymentId}/cancel`, { reason })
+
 // ── Încasări (tabloul din super admin) ───────────────────────────────────────
 export interface PaymentRow {
   id: string
@@ -86,6 +131,10 @@ export interface PaymentRow {
   status?: string
   reason?: string
   invoice?: { status: string | null; number: string | null; at: string | null }
+  /** Încasare înregistrată manual (transfer, numerar): fără Stripe, fără comision. */
+  source?: 'manual'
+  method?: ManualMethod | null
+  note?: string | null
   /** Din tranzacția de sold Stripe (bani): brut, comisionul Stripe și net; lipsesc până se pot citi. */
   gross?: number
   fee?: number
@@ -120,7 +169,7 @@ export const adminStripeFees = (from?: string, to?: string) => {
 /** Factura emisă manual în SmartBill: `number` = seria și numărul; `null` o demarchează. */
 export const adminMarkInvoiced = (row: PaymentRow, number: string | null) =>
   apiJson<{ ok: boolean; invoice: NonNullable<PaymentRow['invoice']> }>(
-    'POST', `/admin/billing/payments/${row.workspaceId}/${row.kind}/${row.id}/invoice`, { number })
+    'POST', `/admin/billing/payments/${row.workspaceId}/${row.source === 'manual' ? 'manual' : row.kind}/${row.id}/invoice`, { number })
 
 export interface DeletionPreview { counts: Record<string, number>; subscription: boolean; graceDays: number }
 

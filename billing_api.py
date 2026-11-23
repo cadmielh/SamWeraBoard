@@ -24,6 +24,7 @@ import authz
 import superadmin_alerte
 import billing
 import billing_credits
+import billing_manual
 
 bp = Blueprint("billing", __name__)
 webhook_bp = Blueprint("billing_webhook", __name__)
@@ -763,7 +764,7 @@ def admin_overview():
     return jsonify(out)
 
 
-_PAYMENT_KINDS = {"subscription": "invoices", "credits": "creditLots"}
+_PAYMENT_KINDS = {"subscription": "invoices", "credits": "creditLots", "manual": "manualPayments"}
 # Comisioanele se citesc din Stripe o singură dată pe plată și se păstrează în documentul ei; la o încărcare a tabloului
 # se fac cel mult atâtea citiri noi (restul la următoarea), ca pagina să rămână rapidă.
 _FEE_LOOKUPS_PER_LOAD = 25
@@ -834,6 +835,18 @@ def admin_payments():
                      "pack": d.get("pack"), "credits": d.get("amount"),
                      "invoice": {"status": inv.get("status") or ("pending" if amount > 0 else "skipped"),
                                  "number": inv.get("number"), "at": _iso(inv.get("issuedAt"))}})
+    for doc in db.collection_group("manualPayments").stream():
+        d = doc.to_dict() or {}
+        if d.get("canceledAt"):
+            continue
+        inv, amount = d.get("invoice") or {}, d.get("amount") or 0
+        # Fără Stripe, fără comision: brut = net.
+        rows.append({**base(doc, d.get("kind") or "subscription"), "source": "manual", "method": d.get("method"),
+                     "note": d.get("note"), "at": _iso(d.get("paidAt")), "amount": amount, "currency": "ron",
+                     "gross": amount, "fee": 0, "net": amount, "interval": d.get("interval"),
+                     "periodStart": _iso(d.get("periodStart")), "periodEnd": _iso(d.get("periodEnd")),
+                     "credits": d.get("credits"),
+                     "invoice": {"status": inv.get("status"), "number": inv.get("number"), "at": _iso(inv.get("issuedAt"))}})
     for doc in db.collection_group("refunds").stream():
         d = doc.to_dict() or {}
         rows.append({**base(doc, "refund"), "at": _iso(d.get("at")), "amount": -(d.get("amountRefunded") or 0),
@@ -970,6 +983,104 @@ def admin_credits(wid: str):
     elif billing_credits.remove(wid, -amount, reason, principal.uid) is None:
         return _err("insufficient_credits", 409)
     return jsonify({"billing": serialize_billing((authz.load_workspace(wid) or {}).get("billing"))})
+
+
+_MAX_MANUAL_RON = 1_000_000
+_MAX_MANUAL_PERIOD = timedelta(days=3 * 366)
+
+
+def _manual_payment_input(body: dict, b: dict) -> tuple[dict | None, str | None]:
+    """Validează o încasare manuală. (date, None) sau (None, cod de eroare)."""
+    kind, method = body.get("kind"), body.get("method")
+    if kind not in billing_manual.KINDS:
+        return None, "invalid_kind"
+    if method not in billing_manual.METHODS:
+        return None, "invalid_method"
+    amount = body.get("amount")
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or not 0 <= amount <= _MAX_MANUAL_RON:
+        return None, "invalid_amount"
+    paid_raw = body.get("paidAt")
+    try:
+        paid_at = _start_of_day_ro(paid_raw) if isinstance(paid_raw, str) and _DATE_RE.match(paid_raw) else None
+    except ValueError:
+        paid_at = None
+    if not paid_at or paid_at > datetime.now(timezone.utc) + timedelta(days=1):
+        return None, "invalid_paid_at"
+    number = body.get("invoiceNumber")
+    if number is not None and (not isinstance(number, str) or len(number.strip()) > 60):
+        return None, "invalid_number"
+    out = {"kind": kind, "method": method, "amount": round(amount * 100), "paidAt": paid_at,
+           "note": str(body.get("note") or "").strip()[:200], "invoiceNumber": (number or "").strip() or None}
+    if kind == "credits":
+        credits = body.get("credits")
+        if isinstance(credits, bool) or not isinstance(credits, int) or not 1 <= credits <= 1000:
+            return None, "invalid_credits"
+        return {**out, "credits": credits}, None
+    start_raw, end_raw, interval = body.get("periodStart"), body.get("periodEnd"), body.get("interval")
+    if interval not in (None, *billing.INTERVALS):
+        return None, "invalid_interval"
+    try:
+        if not all(isinstance(v, str) and _DATE_RE.match(v) for v in (start_raw, end_raw)):
+            raise ValueError
+        start, end = _start_of_day_ro(start_raw), _end_of_day_ro(end_raw)
+    except ValueError:
+        return None, "invalid_period"
+    if end <= start or end - start > _MAX_MANUAL_PERIOD:
+        return None, "invalid_period"
+    # Abonament Stripe care s-ar reînnoi în perioada plătită manual: clientul ar plăti de două ori.
+    period_end = billing.to_utc(b.get("currentPeriodEnd"))
+    if b.get("hasSubscription") and not b.get("cancelAtPeriodEnd") and (not period_end or period_end < end):
+        return None, "stripe_subscription_active"
+    return {**out, "periodStart": start, "periodEnd": end, "interval": interval}, None
+
+
+def _serialize_manual(p: dict) -> dict:
+    inv = p.get("invoice") or {}
+    return {
+        "id": p["id"], "kind": p.get("kind"), "amount": p.get("amount", 0), "method": p.get("method"),
+        "note": p.get("note"), "paidAt": _iso(p.get("paidAt")), "periodStart": _iso(p.get("periodStart")),
+        "periodEnd": _iso(p.get("periodEnd")), "interval": p.get("interval"), "credits": p.get("credits"),
+        "createdAt": _iso(p.get("createdAt")), "canceledAt": _iso(p.get("canceledAt")),
+        "cancelReason": p.get("cancelReason"),
+        "invoice": {"status": inv.get("status"), "number": inv.get("number"), "at": _iso(inv.get("issuedAt"))},
+    }
+
+
+@bp.get("/admin/workspaces/<wid>/billing/manual")
+def admin_manual_list(wid: str):
+    authz.require_super_admin()
+    if not authz.valid_wid(wid):
+        return _err("not_found", 404)
+    return jsonify({"payments": [_serialize_manual(p) for p in billing_manual.list_payments(wid)]})
+
+
+@bp.post("/admin/workspaces/<wid>/billing/manual")
+def admin_manual_record(wid: str):
+    """Încasare manuală: abonament pe o perioadă sau pachet de credite, cu suma încasată (RON)."""
+    principal = authz.require_super_admin()
+    ws = authz.load_workspace(wid) if authz.valid_wid(wid) else None
+    if ws is None:
+        return _err("not_found", 404)
+    data, error = _manual_payment_input(_body(), ws.get("billing") or {})
+    if error:
+        return _err(error, 409 if error == "stripe_subscription_active" else 400)
+    payment = billing_manual.record(wid, data, principal.uid)
+    if payment is None:
+        return _err("not_found", 404)
+    return jsonify({"payment": _serialize_manual(payment),
+                    "billing": serialize_billing((authz.load_workspace(wid) or {}).get("billing"))})
+
+
+@bp.post("/admin/workspaces/<wid>/billing/manual/<pid>/cancel")
+def admin_manual_cancel(wid: str, pid: str):
+    principal = authz.require_super_admin()
+    if not authz.valid_wid(wid) or not re.fullmatch(r"man_[a-f0-9]{20}", pid):
+        return _err("not_found", 404)
+    payment = billing_manual.cancel(wid, pid, str(_body().get("reason") or "").strip()[:120], principal.uid)
+    if payment is None:
+        return _err("not_found", 404)
+    return jsonify({"payment": _serialize_manual(payment),
+                    "billing": serialize_billing((authz.load_workspace(wid) or {}).get("billing"))})
 
 
 @bp.post("/admin/workspaces/<wid>/billing/sync")

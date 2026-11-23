@@ -61,6 +61,10 @@ export default function TrialBanner() {
       ? 'Perioada de probă se încheie azi.'
       : `Perioadă de probă: mai ai ${days} zile (până pe ${until}).`
     action = subscribeLink
+  } else if (billing.reason === 'manual' && (billing.manualDaysLeft ?? 99) <= 14) {
+    tone = 'warn'
+    text = `Abonamentul cabinetului se încheie pe ${formatDate(billing.manualUntil)}.`
+    action = subscribeLink
   } else if (billing.reason === 'comp' && days <= 14) {
     tone = 'warn'
     text = `Accesul gratuit al cabinetului se încheie pe ${until}.`

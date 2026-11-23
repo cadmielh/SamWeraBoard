@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { billingAccess, formatDate, toDate } from '../lib/billing'
 import { adminCredits, adminExtendTrial, adminSetComp, adminSyncBilling } from '../lib/superAdmin'
 import type { WorkspaceBilling } from '../types'
+import ManualPayments from './superadmin/ManualPayments'
 
 const REASON_LABEL: Record<string, string> = {
-  trial: 'Perioadă de probă', subscription: 'Abonament', past_due: 'Plată eșuată', comp: 'Acces gratuit', credits: 'Credite',
+  trial: 'Perioadă de probă', subscription: 'Abonament', past_due: 'Plată eșuată', manual: 'Abonament manual', comp: 'Acces gratuit', credits: 'Credite',
   expired: 'Mod citire',
 }
 
-/** Starea abonamentului unui cabinet + acțiunile super adminului (prelungire probă, acces gratuit, resincronizare). */
+/** Starea abonamentului unui cabinet + acțiunile super adminului (prelungire probă, acces gratuit, încasări manuale,
+ *  resincronizare). */
 export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
   workspaceId: string
   billing: WorkspaceBilling | undefined
@@ -24,6 +26,7 @@ export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
   const [creditReason, setCreditReason] = useState('')
   const access = billingAccess(billing)
   const compUntil = toDate(billing?.compUntil)
+  const manualUntil = toDate(billing?.manualUntil ?? null)
   const trialEnd = toDate(billing?.trialEndsAt)
   // Pe un abonament plătit, proba nu mai contează (accesul vine din plată); în Stripe se mută doar un trial activ.
   const paying = !!billing?.hasSubscription && billing.subscriptionStatus !== 'trialing'
@@ -53,13 +56,14 @@ export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
         <span style={{ color: 'var(--s600)' }}>
           {access.full ? `acces complet până pe ${formatDate(access.accessUntil)} (${access.daysLeft} zile)` : 'fără acces complet'}
           {access.hasSubscription && ` · abonament ${access.interval === 'year' ? 'anual' : 'lunar'}`}
+          {manualUntil && ` · plătit manual până pe ${formatDate(manualUntil)}`}
           {compUntil && ` · gratuit până pe ${formatDate(compUntil)}${billing?.compReason ? ` (${billing.compReason})` : ''}`}
           {trialEnd && ` · probă până pe ${formatDate(trialEnd)}`}
           {access.credits.balance > 0 &&
             ` · ${access.credits.balance} credite${access.credits.firstExpiry ? ` (primele expiră pe ${formatDate(access.credits.firstExpiry)})` : ''}`}
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: '.75rem', rowGap: '.5rem', alignItems: 'center' }}>
+      <div className="sa-billing-grid" style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: '.75rem', rowGap: '.5rem', alignItems: 'center' }}>
         <span style={ROW_LABEL}>Perioadă de probă</span>
         <div style={ROW}>
           <span>Prelungește cu</span>
@@ -102,6 +106,11 @@ export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
           </button>
         </div>
 
+        <span style={{ ...ROW_LABEL, alignSelf: 'start', paddingTop: '.3rem' }}>Încasare manuală</span>
+        <div style={{ ...ROW, flexDirection: 'column', alignItems: 'stretch' }}>
+          <ManualPayments workspaceId={workspaceId} billing={billing} onChange={onChange} />
+        </div>
+
         <span style={ROW_LABEL}>Stripe</span>
         <div style={ROW}>
           <button className="btn btn-ghost btn-sm" disabled={busy} title="Recitește abonamentul direct din Stripe"
@@ -109,7 +118,7 @@ export default function SuperAdminBilling({ workspaceId, billing, onChange }: {
         </div>
       </div>
       <div style={{ color: 'var(--s500)', fontSize: '.75rem', marginTop: '.375rem', display: 'flex', alignItems: 'center', gap: '.375rem' }}>
-        Accesul complet ține până la cea mai îndepărtată dintre: sfârșitul probei, accesul gratuit, abonamentul plătit și creditele.
+        Accesul complet ține până la cea mai îndepărtată dintre: sfârșitul probei, accesul gratuit, abonamentul plătit (Stripe sau manual) și creditele.
         <button type="button" onClick={() => setInfoOpen(o => !o)} aria-expanded={infoOpen}
           aria-label="Cum funcționează butoanele" title="Cum funcționează butoanele"
           style={{ width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--s300)', background: infoOpen ? 'var(--s100)' : 'transparent',
@@ -133,6 +142,9 @@ const HELP_ROWS: [string, string][] = [
   ['Acordă gratuitatea — abonament activ, care s-ar reînnoi', 'Acces gratuit. Dacă data e după sfârșitul perioadei plătite, următoarea plată Stripe se mută la sfârșitul gratuității (nu se încasează nimic între timp). Dacă perioada plătită acoperă deja data, Stripe nu se modifică.'],
   ['Retrage gratuitatea', 'Șterge accesul gratuit; rămâne cel din probă sau abonament. Dacă plata fusese amânată, se încasează acum (sau la sfârșitul probei inițiale, dacă mai ține).'],
   ['Dă / Scade creditele', 'Un număr pozitiv adaugă credite gratuite, valabile 12 luni (bonus, compensație). Un număr negativ scade din credite, începând cu cele care expiră ultimele, de exemplu după o rambursare făcută din Stripe. Motivul apare în istoricul creditelor cabinetului.'],
+  ['Înregistrează o încasare — abonament', 'Plată primită în afara Stripe (transfer, numerar) pentru o perioadă: clientul are „Abonament activ” până la sfârșitul ei, fără consum de credite. Mai multe perioade se adună (accesul ține până la cea mai târzie). Nu se reînnoiește singur: primești notificare cu 7 zile înainte. Refuzat dacă un abonament Stripe s-ar reînnoi în aceeași perioadă (plată dublă).'],
+  ['Înregistrează o încasare — credite', 'Pachet de credite vândut în afara Stripe: creditele intră imediat în sold, valabile 12 luni.'],
+  ['Anulează (încasare manuală)', 'Pentru o încasare greșită: rămâne în istoric ca anulată și dispare din Încasări. La abonament, accesul se recalculează din celelalte perioade; la credite, se scot creditele rămase din pachet (cele consumate rămân consumate).'],
   ['Resincronizează abonamentul', 'Recitește abonamentul direct din Stripe, de exemplu dacă s-a pierdut un webhook.'],
 ]
 

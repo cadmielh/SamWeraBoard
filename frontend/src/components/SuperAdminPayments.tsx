@@ -22,6 +22,7 @@ const FEE_TYPE: Record<string, string> = {
 
 /** Tooltip-ul comisionului unei plăți: defalcarea de la Stripe, procentul efectiv și calculul netului. */
 function feeTooltip(r: PaymentRow): string | undefined {
+  if (r.source === 'manual') return 'Încasare înregistrată manual, în afara Stripe: fără comision.'
   if (r.fee === undefined || r.net === undefined) return undefined
   const gross = r.gross ?? r.amount
   const lines = (r.feeDetails ?? []).map(d => `${FEE_TYPE[d.type ?? ''] ?? d.description ?? d.type}: ${ron(d.amount)}`)
@@ -41,11 +42,18 @@ const ACCOUNT_FEE_LABEL: Record<AccountFee['category'], string> = {
 }
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+const MANUAL_METHOD: Record<string, string> = { transfer: 'transfer bancar', numerar: 'numerar', card: 'card (POS)', altele: 'altă metodă' }
+
 const isIncome = (r: PaymentRow) => r.kind === 'subscription' || r.kind === 'credits'
 /** Încasare care cere factură emisă manual și nu o are încă (plățile de 0 RON nu se facturează). */
 const needsInvoice = (r: PaymentRow) => isIncome(r) && r.amount > 0 && r.invoice?.status !== 'manual'
 
 function describe(r: PaymentRow): string {
+  if (r.source === 'manual') {
+    const what = r.kind === 'credits' ? `Pachet ${r.credits} credite`
+      : `Abonament${r.periodStart && r.periodEnd ? ` ${formatDate(new Date(r.periodStart))} – ${formatDate(new Date(r.periodEnd))}` : ''}`
+    return [what, MANUAL_METHOD[r.method ?? ''] ?? 'manual', r.note].filter(Boolean).join(' · ')
+  }
   if (r.kind === 'subscription') {
     const iv = r.interval === 'year' ? 'anual' : r.interval === 'month' ? 'lunar' : null
     const period = r.periodStart && r.periodEnd ? `${formatDate(new Date(r.periodStart))} – ${formatDate(new Date(r.periodEnd))}` : null
@@ -166,7 +174,7 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
 
   // Starea cabinetelor (din documentele workspace, deja încărcate de pagină).
   const states = useMemo(() => {
-    const out = { monthly: 0, yearly: 0, credits: 0, trial: 0, comp: 0, readOnly: 0 }
+    const out = { monthly: 0, yearly: 0, manual: 0, credits: 0, trial: 0, comp: 0, readOnly: 0 }
     for (const w of workspaces) {
       const a = billingAccess(w.billing, now)
       if (!a.full) out.readOnly++
@@ -174,6 +182,7 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
         if (a.interval === 'year') out.yearly++
         else out.monthly++
       }
+      else if (a.reason === 'manual') out.manual++
       else if (a.reason === 'credits') out.credits++
       else if (a.reason === 'trial') out.trial++
       else if (a.reason === 'comp') out.comp++
@@ -275,6 +284,7 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
           <strong style={{ color: 'var(--s800)' }}>Cabinete acum:</strong>
           <span>{states.monthly} abonamente lunare</span>
           <span>{states.yearly} anuale</span>
+          {states.manual > 0 && <span>{states.manual} plătite manual</span>}
           <span>{states.credits} pe credite</span>
           <span>{states.trial} în probă</span>
           <span>{states.comp} cu acces gratuit</span>
@@ -358,6 +368,7 @@ export default function SuperAdminPayments({ workspaces }: { workspaces: Workspa
                         <span className={`chip ${r.kind === 'refund' || r.kind === 'dispute' ? 'chip-muted' : 'chip-primary'}`} style={{ marginRight: '.375rem' }}>
                           {KIND_LABEL[r.kind]}
                         </span>
+                        {r.source === 'manual' && <span className="chip chip-muted" style={{ marginRight: '.375rem' }}>Manual</span>}
                         <span style={{ color: 'var(--s600)' }}>{describe(r).replace(/^(Abonament|Rambursare)\s?/, '')}</span>
                         {r.stripeCustomerId && (
                           <div><a href={`https://dashboard.stripe.com/customers/${r.stripeCustomerId}`} target="_blank" rel="noreferrer"

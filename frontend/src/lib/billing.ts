@@ -14,9 +14,9 @@ export function toDate(v: BillingTime | undefined): Date | null {
   return typeof v.toDate === 'function' ? v.toDate() : null
 }
 
-export type AccessReason = 'trial' | 'subscription' | 'past_due' | 'comp' | 'credits' | 'expired'
+export type AccessReason = 'trial' | 'subscription' | 'past_due' | 'manual' | 'comp' | 'credits' | 'expired'
 
-/** 'unlimited' = probă, acces gratuit sau abonament (nu se consumă credite). Oglinda billing.credit_mode. */
+/** 'unlimited' = probă, acces gratuit sau abonament, și cel plătit manual (nu se consumă credite). Oglinda billing.credit_mode. */
 export type CreditMode = 'unlimited' | 'credits' | 'none'
 
 export interface CreditsState {
@@ -42,7 +42,7 @@ export function creditsState(b: WorkspaceBilling | undefined, now: Date = new Da
   const lots = liveLots(b, now)
   const balance = lots.reduce((n, l) => n + l.remaining, 0)
   const coveredUntil = toDate(b?.credits?.coveredUntil)
-  const unlimited = [b?.trialEndsAt, b?.compUntil].map(toDate).some(d => d && d.getTime() > now.getTime())
+  const unlimited = [b?.trialEndsAt, b?.compUntil, b?.manualUntil].map(toDate).some(d => d && d.getTime() > now.getTime())
     || (!!b?.hasSubscription && !!toDate(b?.accessUntil) && toDate(b?.accessUntil)!.getTime() > now.getTime())
   const mode: CreditMode = unlimited ? 'unlimited'
     : balance > 0 || (!!coveredUntil && coveredUntil.getTime() > now.getTime()) ? 'credits' : 'none'
@@ -62,6 +62,10 @@ export interface BillingAccess {
   cancelAtPeriodEnd: boolean
   interval: 'month' | 'year' | null
   currentPeriodEnd: Date | null
+  /** Sfârșitul abonamentului plătit manual (transfer, numerar), dacă există. */
+  manualUntil: Date | null
+  /** Zile întregi rămase din abonamentul manual (rotunjit în sus); null fără el. */
+  manualDaysLeft: number | null
   credits: CreditsState
 }
 
@@ -72,10 +76,12 @@ export function billingAccess(b: WorkspaceBilling | undefined, now: Date = new D
   const sub = b?.subscriptionStatus
   const compUntil = toDate(b?.compUntil)
   const trialEnd = toDate(b?.trialEndsAt)
+  const manualUntil = toDate(b?.manualUntil)
   let reason: AccessReason = 'expired'
   if (full) {
     if (sub === 'past_due') reason = 'past_due'
     else if (sub === 'active' || sub === 'trialing') reason = 'subscription'
+    else if (manualUntil && manualUntil.getTime() > now.getTime()) reason = 'manual'
     else if (compUntil && compUntil.getTime() > now.getTime()) reason = 'comp'
     else if (trialEnd && trialEnd.getTime() > now.getTime()) reason = 'trial'
     else reason = 'credits'
@@ -89,6 +95,8 @@ export function billingAccess(b: WorkspaceBilling | undefined, now: Date = new D
     cancelAtPeriodEnd: !!b?.cancelAtPeriodEnd,
     interval: b?.interval ?? null,
     currentPeriodEnd: toDate(b?.currentPeriodEnd),
+    manualUntil,
+    manualDaysLeft: manualUntil && manualUntil.getTime() > now.getTime() ? Math.ceil((manualUntil.getTime() - now.getTime()) / DAY_MS) : null,
     credits: creditsState(b, now),
   }
 }
@@ -110,6 +118,10 @@ export function planSummary(b: BillingAccess): PlanSummary {
       return { label: 'Plată eșuată', sub: `Actualizează cardul până pe ${until}`, tone: 'bad' }
     case 'trial':
       return { label: b.daysLeft === 1 ? 'Ultima zi de probă' : `${b.daysLeft} zile de probă`, sub: `Până pe ${until}`, tone: (b.daysLeft ?? 0) <= 3 ? 'warn' : 'ok' }
+    case 'manual': {
+      const cr = b.credits.balance > 0 ? ` · ${b.credits.balance === 1 ? '1 credit' : `${b.credits.balance} credite`}` : ''
+      return { label: 'Abonament activ', sub: `Până pe ${formatDate(b.manualUntil)}${cr}`, tone: (b.manualDaysLeft ?? 99) <= 7 ? 'warn' : 'ok' }
+    }
     case 'comp':
       return { label: 'Acces gratuit', sub: `Până pe ${until}`, tone: 'ok' }
     case 'credits': {
@@ -225,7 +237,7 @@ export async function startCreditsCheckout(pack: CreditPack): Promise<void> {
 
 export interface CreditLedgerEntry {
   id: string
-  kind: 'purchase' | 'grant' | 'consume' | 'adjust'
+  kind: 'purchase' | 'manual' | 'grant' | 'consume' | 'adjust'
   amount: number
   at: string | null
   uid?: string

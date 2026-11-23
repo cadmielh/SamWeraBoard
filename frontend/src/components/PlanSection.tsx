@@ -126,8 +126,8 @@ export default function PlanSection() {
 
   if (!activeWorkspace) return null
   const raw = activeWorkspace.billing
-  // Oglinda billing.trial_end_for_checkout: zilele gratuite rămase (probă sau acces gratuit) se păstrează.
-  const freeUntil = [toDate(raw?.trialEndsAt), toDate(raw?.compUntil)]
+  // Oglinda billing.trial_end_for_checkout: zilele rămase (probă, acces gratuit, abonament plătit manual) se păstrează.
+  const freeUntil = [toDate(raw?.trialEndsAt), toDate(raw?.compUntil), toDate(raw?.manualUntil)]
     .reduce<Date | null>((a, d) => (d && (!a || d > a) ? d : a), null)
   const freeCarries = !!freeUntil && freeUntil.getTime() - openedAt >= 48 * 3600_000
   const prices = overview?.prices
@@ -232,7 +232,7 @@ export default function PlanSection() {
   // Suma de pe butonul de plată; abonamentul cu zile gratuite rămase nu se încasează acum.
   const payLabel = !choice || !prices || !packs ? 'Continuă spre plată'
     : choice.kind === 'pack' ? `Plătește ${packs[choice.pack].ron} RON`
-      : freeCarries && (billing.reason === 'trial' || billing.reason === 'comp') ? 'Activează abonamentul'
+      : freeCarries && (billing.reason === 'trial' || billing.reason === 'comp' || billing.reason === 'manual') ? 'Activează abonamentul'
         : `Plătește ${choice.interval === 'month' ? prices.month : prices.year} RON`
 
   // Butonul principal din cardul planului: portalul (abonament activ) sau deschiderea ofertelor.
@@ -281,7 +281,7 @@ export default function PlanSection() {
                       <span>
                         {billing.hasSubscription && billing.cancelAtPeriodEnd
                           ? `se folosesc după ${formatDate(billing.currentPeriodEnd)}`
-                          : billing.hasSubscription ? 'nu se consumă cât abonamentul e activ' : 'se folosesc după perioada gratuită'}
+                          : billing.hasSubscription || billing.reason === 'manual' ? 'nu se consumă cât abonamentul e activ' : 'se folosesc după perioada gratuită'}
                         {billing.credits.firstExpiry ? ` · primele expiră pe ${formatDate(billing.credits.firstExpiry)}` : ''}
                       </span>
                     </button>
@@ -411,9 +411,9 @@ export default function PlanSection() {
                 </div>
                 {overviewError ? <LoadError message={overviewError} onRetry={retryOverview} />
                   : !overview ? <Skeleton h={88} r={8} /> : detailsBlock}
-                {choice.kind === 'sub' && freeCarries && (billing.reason === 'trial' || billing.reason === 'comp') && (
+                {choice.kind === 'sub' && freeCarries && (billing.reason === 'trial' || billing.reason === 'comp' || billing.reason === 'manual') && (
                   <p style={{ color: 'var(--g700)', fontSize: '.8125rem', margin: '1rem 0 0' }}>
-                    {billing.reason === 'trial' ? 'Zilele de probă rămase se păstrează' : 'Accesul gratuit rămas se păstrează'}: prima plată se face pe {formatDate(freeUntil)}.
+                    {billing.reason === 'trial' ? 'Zilele de probă rămase se păstrează' : billing.reason === 'manual' ? 'Perioada deja plătită se păstrează' : 'Accesul gratuit rămas se păstrează'}: prima plată se face pe {formatDate(freeUntil)}.
                   </p>
                 )}
                 <div style={{ marginTop: '1rem' }}>
@@ -487,6 +487,8 @@ function HeroValue({ billing: b }: { billing: ReturnType<typeof useApp>['billing
       return <div className="plan-hero-value"><AnimatedNumber value={b.credits.balance} /><small>{b.credits.balance === 1 ? 'credit' : 'credite'}</small></div>
     case 'trial':
       return <div className="plan-hero-value">{b.daysLeft}<small>{b.daysLeft === 1 ? 'zi de probă' : 'zile de probă'}</small></div>
+    case 'manual':
+      return <div className="plan-hero-value">Activ<small>abonament</small></div>
     case 'comp':
       return <div className="plan-hero-value">Acces gratuit</div>
     case 'past_due':
@@ -758,6 +760,8 @@ function statusText(b: ReturnType<typeof useApp>['billing']): string {
       return `Ultima plată a eșuat. Stripe reîncearcă automat; actualizați cardul până pe ${until} ca să păstrați accesul complet.`
     case 'trial':
       return `Perioadă de probă până pe ${until}. Toate funcțiile sunt disponibile.`
+    case 'manual':
+      return `Documente nelimitate. Abonament activ până pe ${formatDate(b.manualUntil)}.`
     case 'comp':
       return `Cabinetul are acces gratuit până pe ${until}.`
     case 'credits':
@@ -773,13 +777,13 @@ function statusText(b: ReturnType<typeof useApp>['billing']): string {
 }
 
 const LEDGER_LABEL: Record<string, string> = {
-  purchase: 'Pachet cumpărat', grant: 'Credite gratuite', consume: 'Consum', adjust: 'Ajustare',
+  purchase: 'Pachet cumpărat', manual: 'Pachet cumpărat', grant: 'Credite gratuite', consume: 'Consum', adjust: 'Ajustare',
 }
 
 /** Detaliul unui rând din istoric (client și document la consum, motiv și valabilitate la intrări). */
 function ledgerDetail(e: CreditsOverview['ledger'][number], members: Record<string, { email?: string }>): string {
   if (e.kind === 'consume') return [e.clientName ?? 'client șters', e.document, e.uid ? members[e.uid]?.email : null].filter(Boolean).join(' · ')
-  if (e.kind === 'purchase' || e.kind === 'grant') {
+  if (e.kind === 'purchase' || e.kind === 'manual' || e.kind === 'grant') {
     return [e.reason, e.expiresAt ? `valabile până pe ${formatDate(toDate(e.expiresAt))}` : null].filter(Boolean).join(' · ')
   }
   return e.reason ?? ''

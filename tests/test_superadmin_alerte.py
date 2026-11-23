@@ -108,3 +108,18 @@ def test_daily_uninvoiced_summary(db):
     assert sa.zilnic(db, NOW)["nefacturate"] == 2
     x = next(iter(notificari(db).values()))
     assert x["titlu"] == "2 încasări nefacturate de peste 5 zile" and "950 RON" in x["text"]
+
+
+def test_daily_manual_subscription_ending_and_uninvoiced_manual_payment(db):
+    ws(db, "wManAAAAAAAAAAAAAAAA", {"manualUntil": NOW + 5 * DAY, "accessUntil": NOW + 5 * DAY, "hasSubscription": False}, name="Transfer")
+    ws(db, "wFarAAAAAAAAAAAAAAAA", {"manualUntil": NOW + 30 * DAY, "accessUntil": NOW + 30 * DAY, "hasSubscription": False}, name="Departe")
+    acct = db.collection("billingAccounts").document("wManAAAAAAAAAAAAAAAA")
+    acct.collection("manualPayments").document("man_1").set({"kind": "subscription", "amount": 20000, "paidAt": NOW - 10 * DAY,
+                                                             "invoice": {"status": "pending"}, "canceledAt": None})
+    acct.collection("manualPayments").document("man_2").set({"kind": "subscription", "amount": 20000, "paidAt": NOW - 10 * DAY,
+                                                             "invoice": {"status": "pending"}, "canceledAt": NOW})   # anulată
+    r = sa.zilnic(db, NOW)
+    assert r["manuale"] == 1 and r["nefacturate"] == 1
+    x = next(x for x in notificari(db).values() if x["titlu"].startswith("Abonament manual"))
+    assert x["titlu"] == "Abonament manual expiră în 5 zile: Transfer" and x["categorie"] == "bani"
+    assert sa.zilnic(db, NOW)["manuale"] == 0      # o singură dată per dată de sfârșit

@@ -27,7 +27,7 @@ type Filter = 'toate' | AccessReason | 'inactiv' | 'cui' | 'stergere'
 type Sort = 'activitate' | 'creat' | 'expirare' | 'nume'
 
 const STATUS_LABEL: Record<string, string> = {
-  trial: 'Probă', subscription: 'Abonament', past_due: 'Plată eșuată', comp: 'Gratuit', credits: 'Credite', expired: 'Mod citire',
+  trial: 'Probă', subscription: 'Abonament', past_due: 'Plată eșuată', manual: 'Abonament manual', comp: 'Gratuit', credits: 'Credite', expired: 'Mod citire',
 }
 const DAY = 86_400_000
 
@@ -265,7 +265,7 @@ export default function SuperAdminPage() {
     total: live.length,
     active7: live.filter(r => r.eng.daysSince !== null && r.eng.daysSince <= 7).length,
     trial: live.filter(r => r.access.full && r.access.reason === 'trial').length,
-    paying: live.filter(r => r.access.full && (r.access.reason === 'subscription' || r.access.reason === 'credits' || r.access.reason === 'past_due')).length,
+    paying: live.filter(r => r.access.full && (r.access.reason === 'subscription' || r.access.reason === 'manual' || r.access.reason === 'credits' || r.access.reason === 'past_due')).length,
     docs30: live.reduce((n, r) => n + (last30(r.act)?.documents ?? 0), 0),
   }
   // Seria agregată: câte cabinete au avut activitate în fiecare din ultimele 30 de zile.
@@ -284,10 +284,12 @@ export default function SuperAdminPage() {
     trialEnding: live.filter(r => r.access.full && r.access.reason === 'trial' && (r.access.daysLeft ?? 99) <= 7)
       .sort((a, b) => (a.access.daysLeft ?? 0) - (b.access.daysLeft ?? 0)),
     pastDue: live.filter(r => r.access.reason === 'past_due'),
+    // Abonamentul plătit manual nu se reînnoiește singur: plata se cere înainte de expirare.
+    manualEnding: live.filter(r => r.access.reason === 'manual' && (r.access.manualDaysLeft ?? 99) <= 7),
     quietTrial: live.filter(r => r.access.full && r.access.reason === 'trial' && r.eng.key !== 'activ' && r.eng.key !== 'nou'),
     expiredRecently: live.filter(r => r.w.billing && !r.access.full && r.access.accessUntil && now.getTime() - r.access.accessUntil.getTime() <= 14 * DAY),
   }
-  const watchCount = watch.trialEnding.length + watch.pastDue.length + watch.quietTrial.length + watch.expiredRecently.length
+  const watchCount = watch.trialEnding.length + watch.pastDue.length + watch.manualEnding.length + watch.quietTrial.length + watch.expiredRecently.length
   const counts = (f: Filter) => rows.filter(r => matches(r, f)).length
 
   const openIndex = openId ? visible.findIndex(r => r.w.id === openId) : -1
@@ -362,6 +364,8 @@ export default function SuperAdminPage() {
                     note={r => `${r.access.daysLeft === 1 ? 'ultima zi' : `${r.access.daysLeft} zile`} · ${r.eng.label.toLowerCase()}`} />
                   <WatchGroup title="Plată eșuată" rows={watch.pastDue} onOpen={id => setParam('cabinet', id)}
                     note={r => `acces până pe ${formatDate(r.access.accessUntil)}`} />
+                  <WatchGroup title="Abonament manual expiră în cel mult 7 zile" rows={watch.manualEnding} onOpen={id => setParam('cabinet', id)}
+                    note={r => `până pe ${formatDate(r.access.manualUntil)} · de cerut plata`} />
                   <WatchGroup title="În probă, dar nu lucrează" rows={watch.quietTrial} onOpen={id => setParam('cabinet', id)}
                     note={r => r.eng.daysSince === null ? 'nicio acțiune' : `ultima acțiune acum ${r.eng.daysSince} zile`} />
                   <WatchGroup title="Au trecut în modul citire (14 zile)" rows={watch.expiredRecently} onOpen={id => setParam('cabinet', id)}
@@ -384,7 +388,7 @@ export default function SuperAdminPage() {
               </div>
               <div className="card-body">
                 <div className="sa-filters" role="group" aria-label="Filtrează după stare">
-                  {([['toate', 'Toate'], ['trial', 'Probă'], ['credits', 'Credite'], ['subscription', 'Abonament'], ['past_due', 'Plată eșuată'],
+                  {([['toate', 'Toate'], ['trial', 'Probă'], ['credits', 'Credite'], ['subscription', 'Abonament'], ['manual', 'Manual'], ['past_due', 'Plată eșuată'],
                     ['comp', 'Gratuit'], ['expired', 'Mod citire'], ['inactiv', 'Inactive'], ['cui', 'CUI refolosit'], ['stergere', 'În ștergere']] as [Filter, string][])
                     .map(([f, label]) => {
                       const n = counts(f)
@@ -576,6 +580,7 @@ function WorkspaceRow({ r, cuiWarning, activityLoading, active, onOpen }: {
   else if (!access.full) detail = 'fără acces complet'
   else if (access.reason === 'credits') detail = `${access.credits.balance} credite${access.credits.firstExpiry ? ` · expiră ${formatDate(access.credits.firstExpiry)}` : ''}`
   else if (access.reason === 'subscription') detail = `${access.interval === 'year' ? 'anual' : 'lunar'} · ${access.cancelAtPeriodEnd ? 'se încheie' : 'plata'} ${formatDate(access.currentPeriodEnd)}`
+  else if (access.reason === 'manual') detail = `plătit manual · până pe ${formatDate(access.manualUntil)}`
   else if (access.reason === 'trial') detail = `${access.daysLeft} ${access.daysLeft === 1 ? 'zi rămasă' : 'zile rămase'}`
   else detail = `până pe ${formatDate(access.accessUntil)}`
   const tone = !access.full ? 'chip chip-muted' : access.reason === 'past_due' ? 'badge badge-inactiv' : access.reason === 'trial' ? 'chip chip-primary' : 'chip chip-success'

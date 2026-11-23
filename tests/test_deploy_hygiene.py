@@ -20,7 +20,7 @@ MUST_IGNORE = [
     "fisiere_template/.golden/hotarare_aga--pj_doi_asociati.txt",   # versiunile salvate ale testului de regresie (tests/test_golden_templates.py)
     "fisiere_template/Șabloane Dorothea - Actus Consult/MODEL.docx",   # orice subfolder = șabloanele unui client, nu ale aplicației
 ]
-MUST_SHIP = ["app.py", "main.py", "authz.py", "billing.py", "billing_api.py", "billing_credits.py", "billing_webhook_app.py", "vault.py", "ratelimit.py", "workspace_deletion.py", "templates_api.py", "activity_api.py", "superadmin_alerte.py", "template_safety.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
+MUST_SHIP = ["app.py", "main.py", "authz.py", "billing.py", "billing_api.py", "billing_credits.py", "billing_manual.py", "billing_webhook_app.py", "vault.py", "ratelimit.py", "workspace_deletion.py", "templates_api.py", "activity_api.py", "superadmin_alerte.py", "template_safety.py", "variants.py", "blanks.py", "doc_filler.py", "requirements.txt",
              "fisiere_template/registry.json", "fonts/DejaVuSans.ttf", "local_extractor.py"]
 
 

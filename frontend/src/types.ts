@@ -256,12 +256,14 @@ export type BillingTime = { toDate: () => Date } | string | null
  * acum < accessUntil; după, cabinetul e în citire + export. `status` e doar pentru afișare. */
 export interface WorkspaceBilling {
   plan: string
-  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'comp' | 'credits' | 'expired' | 'none'
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'manual' | 'comp' | 'credits' | 'expired' | 'none'
   interval: 'month' | 'year' | null
   accessUntil: BillingTime
   trialEndsAt: BillingTime
   compUntil: BillingTime
   compReason: string | null
+  /** Abonament plătit manual (transfer, numerar), înregistrat de super admin; lipsește la cabinetele mai vechi. */
+  manualUntil?: BillingTime
   subscriptionStatus: string | null
   currentPeriodEnd: BillingTime
   graceUntil: BillingTime

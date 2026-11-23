@@ -38,6 +38,17 @@ describe('billingAccess — oglinda lui billing.has_full_access', () => {
     expect(billingAccess(b({ accessUntil: iso(5 * DAY), subscriptionStatus: 'past_due' }), NOW).reason).toBe('past_due')
     expect(billingAccess(b({ accessUntil: iso(60 * DAY), compUntil: iso(60 * DAY) }), NOW).reason).toBe('comp')
   })
+  it('abonament plătit manual: motiv propriu, fără consum de credite, zilele rămase din el', () => {
+    const lots = [{ id: 'l', remaining: 5, expiresAt: iso(300 * DAY) }]
+    const a = billingAccess(b({ accessUntil: iso(300 * DAY), manualUntil: iso(20 * DAY), credits: { lots, coveredUntil: null } }), NOW)
+    expect(a).toMatchObject({ full: true, reason: 'manual', manualDaysLeft: 20 })
+    expect(a.credits.mode).toBe('unlimited')
+    expect(planSummary(a)).toMatchObject({ label: 'Abonament activ', tone: 'ok' })
+    expect(planSummary(billingAccess(b({ accessUntil: iso(5 * DAY), manualUntil: iso(5 * DAY) }), NOW)).tone).toBe('warn')
+    // Stripe activ are prioritate la afișare.
+    expect(billingAccess(b({ accessUntil: iso(30 * DAY), manualUntil: iso(10 * DAY), subscriptionStatus: 'active', hasSubscription: true }), NOW).reason)
+      .toBe('subscription')
+  })
   it('toDate respinge valori nevalide', () => {
     expect(toDate('nu e dată')).toBeNull()
     expect(toDate(null)).toBeNull()
