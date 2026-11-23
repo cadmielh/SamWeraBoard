@@ -304,9 +304,11 @@ async function postFillDocx(fd: FormData, drive: DriveTarget | null | undefined,
   marcheazaPas("generare");
   const blob = await res.blob();
   const warnings = parseVariantWarnings(res.headers.get("X-Variant-Warnings"));
-  if (!drive) return { blob, warnings };
-  const up = await driveUpload(blob, fileNameFrom(res, outputName || "document.docx"), DOCX_MIME, drive.folderId ?? null, drive.token);
-  return { name: up.name, link: up.webViewLink, warnings };
+  const name = fileNameFrom(res, outputName || "document.docx");
+  if (!drive) return { blob, name, warnings };
+  const up = await driveUpload(blob, name, DOCX_MIME, drive.folderId ?? null, drive.token);
+  // Fișierul rămâne și în rezultat: copia din documentele clientului se face și când documentul merge în Drive.
+  return { blob, name: up.name, link: up.webViewLink, warnings };
 }
 
 function docxForm(fields: Record<string, string>, outputName?: string, groups?: Record<string, Record<string, string>[]>, selectedClauses?: string[], rowGroups?: Record<string, Record<string, string>[]>, upperKeys = false, variantCtx?: VariantContext): FormData {

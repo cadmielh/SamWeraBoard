@@ -342,7 +342,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
                 <span className="doc-row-text">
                   <span className="doc-name">{f.nume}</span>
                   <span className="doc-meta">
-                    {[formatMarime(f.marime), f.createdAt ? formatDateRo(f.createdAt) : '', numeMembru(f.createdBy)].filter(Boolean).join(' · ')}
+                    {[f.sursa === 'generat' ? 'generat' : '', formatMarime(f.marime), f.createdAt ? formatDateRo(f.createdAt) : '', numeMembru(f.createdBy)]
+                      .filter(Boolean).join(' · ')}
                   </span>
                 </span>
               </button>

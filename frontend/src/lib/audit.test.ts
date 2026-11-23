@@ -87,6 +87,8 @@ describe('documentele clienților', () => {
   it('detalii fără nume de fișiere', () => {
     expect(describeEntry(E({ action: 'fisier.upload', target: 'abcdef123456', meta: { client: 'cli999888', marime: 2048, tip: 'pdf' } }), nameOf))
       .toBe('PDF · 2 KB · client …999888')
+    expect(describeEntry(E({ action: 'fisier.upload', target: 'x', meta: { client: 'cli999888', marime: 4096, tip: 'docx', sursa: 'generat' } }), nameOf))
+      .toBe('copie document generat · DOCX · 4 KB · client …999888')
     expect(describeEntry(E({ action: 'fisier.update', target: 'abc123456', meta: { redenumit: true, mutat: false } }), nameOf))
       .toBe('redenumit · document …123456')
     expect(describeEntry(E({ action: 'client.delete', target: 'cli111222', meta: { fisiere: 3, mod: 'arhiveaza' } }), nameOf))

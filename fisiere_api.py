@@ -181,10 +181,17 @@ def incarca():
     upload = request.files.get("fisier")
     cid = request.form.get("clientId", "")
     folder_id = request.form.get("folderId") or None
+    # Copia unui document generat (faza 2): folderul îl alege cabinetul, iar fișierul e marcat ca generat.
+    generat = request.form.get("destinatie") == "generate"
     if upload is None:
         return _err("fisier_lipsa", 400)
     if not _client_exista(wid, cid):
         return _err("not_found", 404)
+    if generat:
+        # Prima operație pe documentele clientului poate fi o copie generată: întâi folderele implicite (altfel, la
+        # deschiderea fișei, clientul n-ar mai fi gol și n-ar mai primi folderele), apoi folderul copiilor.
+        pregateste_client(wid, cid, principal.uid)
+        folder_id = _folder_generate(wid, cid, principal.uid)
     _folder_valid(wid, cid, folder_id)
     data = upload.read(fisiere.MAX_BYTES + 1)
     if len(data) > fisiere.MAX_BYTES:
@@ -196,7 +203,7 @@ def incarca():
         return _err("spatiu_depasit", 409)
 
     sha = hashlib.sha256(data).hexdigest()
-    if request.form.get("duplicat") != "permite":
+    if not generat and request.form.get("duplicat") != "permite":
         q = (_col_fisiere(wid).where(filter=FieldFilter("clientId", "==", cid))
              .where(filter=FieldFilter("sha256", "==", sha)).limit(1))
         for s in q.stream():
@@ -209,7 +216,7 @@ def incarca():
     client_ref = _ws(wid).collection("clienti").document(cid)
     meta = {
         "clientId": cid, "folderId": folder_id, "nume": nume, "mime": tip.mime, "marime": len(data), "sha256": sha,
-        "sursa": "incarcat", "stare": "acceptat", "arhivat": False,
+        "sursa": "generat" if generat else "incarcat", "stare": "acceptat", "arhivat": False,
         "createdAt": _now(), "createdBy": principal.uid, "updatedAt": _now(),
     }
     # Metadatele se scriu într-o tranzacție care citește și fișa clientului: dacă între timp clientul a fost șters, fișierul
@@ -230,7 +237,8 @@ def incarca():
         fisiere.sterge(wid, ref.id)
         return _err("not_found", 404)
     _schimba_contor(wid, len(data), 1)
-    audit.log(wid, principal.uid, "fisier.upload", ref.id, {"client": cid, "marime": len(data), "tip": tip.ext})
+    audit.log(wid, principal.uid, "fisier.upload", ref.id,
+              {"client": cid, "marime": len(data), "tip": tip.ext, **({"sursa": "generat"} if generat else {})})
     return jsonify({"fisier": _out_fisier(ref.id, meta)}), 201
 
 
@@ -404,21 +412,56 @@ def foldere_implicite(wid: str) -> list[str]:
     return [n for n in lista if isinstance(n, str)] if isinstance(lista, list) else list(fisiere.FOLDERE_IMPLICITE)
 
 
+def folder_generate_nume(wid: str) -> str:
+    snap = _setari(wid).get()
+    nume = (snap.to_dict() or {}).get("folderGenerate") if snap.exists else None
+    return nume if isinstance(nume, str) and nume.strip() else fisiere.FOLDER_GENERATE
+
+
+def _folder_generate(wid: str, cid: str, uid: str) -> str:
+    """Folderul copiilor documentelor generate, în rădăcina clientului; dacă lipsește (nu s-a creat sau a fost șters),
+    se creează acum: utilizatorul a cerut explicit păstrarea copiei."""
+    nume = folder_generate_nume(wid)
+    foldere = _foldere_client(wid, cid)
+    for fid, d in foldere.items():
+        if d.get("parentId") is None and fisiere.cheie_nume(d.get("nume", "")) == fisiere.cheie_nume(nume):
+            return fid
+    if len(foldere) >= fisiere.MAX_FOLDERE_CLIENT:
+        raise fisiere.FisierRefuzat("prea_multe_foldere")
+    ref = _col_foldere(wid).document()
+    ref.create({"clientId": cid, "parentId": None, "nume": nume, "createdAt": _now(), "createdBy": uid})
+    return ref.id
+
+
 @bp.put("/fisiere/setari")
 def seteaza_foldere_implicite():
+    """Setările cabinetului: lista folderelor implicite și/sau folderul copiilor documentelor generate."""
     principal, wid, _ = _require("admin", billing=True, limit="fisiere_scriere")
-    lista = _body().get("foldereImplicite")
-    if not isinstance(lista, list) or len(lista) > fisiere.MAX_FOLDERE_IMPLICITE:
+    body = _body()
+    patch: dict = {}
+    if "foldereImplicite" in body:
+        lista = body.get("foldereImplicite")
+        if not isinstance(lista, list) or len(lista) > fisiere.MAX_FOLDERE_IMPLICITE:
+            return _err("invalid_body", 400)
+        curate: list[str] = []
+        for raw in lista:
+            nume = fisiere.nume_folder(raw)
+            if any(fisiere.cheie_nume(n) == fisiere.cheie_nume(nume) for n in curate):
+                return _err("nume_existent", 409)
+            curate.append(nume)
+        patch["foldereImplicite"] = curate
+    if "folderGenerate" in body:
+        patch["folderGenerate"] = fisiere.nume_folder(body.get("folderGenerate"))
+    if not patch:
         return _err("invalid_body", 400)
-    curate: list[str] = []
-    for raw in lista:
-        nume = fisiere.nume_folder(raw)
-        if any(fisiere.cheie_nume(n) == fisiere.cheie_nume(nume) for n in curate):
-            return _err("nume_existent", 409)
-        curate.append(nume)
-    _setari(wid).set({"foldereImplicite": curate, "updatedAt": _now(), "updatedBy": principal.uid}, merge=True)
-    audit.log(wid, principal.uid, "fisiere.setari", None, {"foldere": len(curate)})
-    return jsonify({"foldereImplicite": curate})
+    _setari(wid).set({**patch, "updatedAt": _now(), "updatedBy": principal.uid}, merge=True)
+    meta = {}
+    if "foldereImplicite" in patch:
+        meta["foldere"] = len(patch["foldereImplicite"])
+    if "folderGenerate" in patch:
+        meta["folderGenerate"] = True        # doar faptul că s-a schimbat, fără nume
+    audit.log(wid, principal.uid, "fisiere.setari", None, meta)
+    return jsonify(patch)
 
 
 @bp.post("/clients/<cid>/documente/init")
@@ -428,21 +471,27 @@ def initializeaza_client(cid: str):
     principal, wid, _ = _require("member", billing=True)
     if not _client_exista(wid, cid):
         return _err("not_found", 404)
+    create = pregateste_client(wid, cid, principal.uid)
+    return jsonify({"foldere": create or [], "init": create is not None})
+
+
+def pregateste_client(wid: str, cid: str, uid: str) -> list[dict] | None:
+    """Folderele implicite, o singură dată per client. None = clientul fusese deja pregătit (nimic de făcut)."""
     try:
-        _marcaj_client(wid, cid).create({"initLa": _now(), "initDe": principal.uid})
+        _marcaj_client(wid, cid).create({"initLa": _now(), "initDe": uid})
     except gexc.AlreadyExists:
-        return jsonify({"foldere": [], "init": False})
+        return None
     foldere = _foldere_client(wid, cid)
     create = []
     for nume in foldere_implicite(wid):
         if _nume_folder_ocupat(foldere, None, nume):
             continue
         ref = _col_foldere(wid).document()
-        meta = {"clientId": cid, "parentId": None, "nume": nume, "createdAt": _now(), "createdBy": principal.uid}
+        meta = {"clientId": cid, "parentId": None, "nume": nume, "createdAt": _now(), "createdBy": uid}
         ref.create(meta)
         foldere[ref.id] = meta
         create.append(_out_folder(ref.id, meta))
-    return jsonify({"foldere": create, "init": True})
+    return create
 
 
 @bp.patch("/foldere/<folder_id>")

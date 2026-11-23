@@ -38,6 +38,19 @@ Implementare faza 1: `fisiere.py` (tip după conținut, nume, stocare), `fisiere
 - **Previzualizare PDF cu pdf.js** (`pdfjs-dist` 4.10.38, `PdfViewer.tsx`), încărcat doar la prima previzualizare (bucăți separate,
   ~330 KB + worker). Fără `eval`, fără XFA și fără strat de adnotări, deci linkurile și scripturile din PDF nu rulează. CSP-ul nu s-a schimbat.
 
+## Faza 2: copia documentelor generate (implementată 24 nov 2026, necomisă)
+
+- În fereastra „Unde salvezi documentul?” apare bifa **„Păstrează o copie în documentele clientului”**: nebifată implicit,
+  doar pentru un client salvat, cu funcția `documente` activă și drept de scriere. Merge cu ambele destinații (calculator sau
+  Drive): fișierul .docx generat rămâne în browser și se încarcă și în documentele clientului (`destinatie=generate`).
+- Folderul copiilor îl alege cabinetul în Setări › Documente („Documente generate” implicit; `setari/documente.folderGenerate`).
+  Serverul îl găsește în rădăcina clientului (fără deosebire de majuscule) sau îl creează. Înainte, pregătește clientul cu
+  folderele implicite, dacă nu fusese pregătit (altfel o copie ca primă operație ar fi lăsat clientul fără ele).
+- Copiile sunt marcate `sursa: "generat"` (în listă: „generat”; în jurnal: „copie document generat”) și nu trec prin verificarea
+  de duplicat: fiecare generare e o versiune nouă („… (2).docx”).
+- O copie eșuată nu oprește generarea: utilizatorul primește documentul și un mesaj că, de data asta, copia nu s-a păstrat.
+- Nu se aplică șabloanelor Google Docs (nu produc un .docx în browser) și generărilor fără client salvat; fereastra spune asta.
+
 ## Audit (24 nov 2026), corectat
 
 - Transferurile au funcție proprie (`documente`, `fisiere_app.py`: 2 GiB, 16 cereri pe instanță), ca o coadă de fișiere să nu

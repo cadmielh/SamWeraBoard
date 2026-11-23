@@ -358,3 +358,47 @@ def test_incarcare_in_timpul_stergerii_clientului_nu_lasa_orfani(env, monkeypatc
     assert fisiere_db(db, wid) == []
     assert not any(p.is_file() for p in root.rglob("*"))
     assert contor(db, wid) == {}
+
+
+def _docx():
+    import io as _io
+    import zipfile as _zf
+    buf = _io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("word/document.xml", "<w/>")
+    return buf.getvalue()
+
+
+def test_copie_document_generat_in_folderul_cabinetului(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    doc = _docx()
+    # clientul nu are încă foldere: folderul copiilor se creează la nevoie
+    r = upload(c, "bob", wid, data=doc, name="Act constitutiv.docx", destinatie="generate")
+    assert r.status_code == 201, r.get_json()
+    f = r.get_json()["fisier"]
+    foldere = {s.id: s.to_dict() for s in db.collection("workspaces").document(wid).collection("foldere").stream()}
+    assert foldere[f["folderId"]]["nume"] == "Documente generate" and foldere[f["folderId"]]["parentId"] is None
+    assert f["sursa"] == "generat"
+    # clientul a fost pregătit cu folderele implicite, deci deschiderea fișei nu mai are ce crea
+    assert sorted(d["nume"] for d in foldere.values()) == sorted(fisiere.FOLDERE_IMPLICITE)
+    assert call(c, "bob", "post", f"/clients/{CID}/documente/init", wid).get_json()["init"] is False
+    # o nouă generare cu același conținut nu e tratată ca duplicat: se păstrează ca versiune nouă
+    r = upload(c, "bob", wid, data=doc, name="Act constitutiv.docx", destinatie="generate")
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Act constitutiv (2).docx"
+    assert len([s for s in db.collection("workspaces").document(wid).collection("foldere").stream()]) == 3
+
+
+def test_folderul_copiilor_se_alege_in_setari(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    r = call(c, "alice", "put", "/fisiere/setari", wid, json={"folderGenerate": " Generate/2026 "})
+    assert r.status_code == 200 and r.get_json() == {"folderGenerate": "Generate 2026"}
+    # lista implicită rămâne neatinsă când se schimbă doar folderul copiilor
+    assert "foldereImplicite" not in db.collection("workspaces").document(wid).collection("setari").document("documente").get().to_dict()
+    call(c, "bob", "post", "/foldere", wid, json={"clientId": CID, "parentId": None, "nume": "generate 2026"})
+    f = upload(c, "bob", wid, data=_docx(), name="x.docx", destinatie="generate").get_json()["fisier"]
+    d = db.collection("workspaces").document(wid).collection("foldere").document(f["folderId"]).get().to_dict()
+    assert d["nume"] == "generate 2026"          # folderul existent, găsit fără deosebire de majuscule
+    assert call(c, "alice", "put", "/fisiere/setari", wid, json={}).status_code == 400

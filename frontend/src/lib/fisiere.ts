@@ -282,17 +282,31 @@ export function useSpatiuDocumente(workspaceId: string | null) {
   return stare?.wid === workspaceId ? stare : null
 }
 
-/** Folderele implicite ale cabinetului (null cât se încarcă). */
-export function useFoldereImplicite(workspaceId: string | null): string[] | null {
-  const [stare, setStare] = useState<{ wid: string; lista: string[] } | null>(null)
+export const FOLDER_GENERATE = 'Documente generate'
+
+export interface SetariDocumente {
+  /** Folderele create automat la fiecare client. */
+  foldereImplicite: string[]
+  /** Folderul în care se păstrează copiile documentelor generate. */
+  folderGenerate: string
+}
+
+/** Setările documentelor ale cabinetului (null cât se încarcă); lipsă = implicitele. */
+export function useSetariDocumente(workspaceId: string | null): SetariDocumente | null {
+  const [stare, setStare] = useState<{ wid: string; v: SetariDocumente } | null>(null)
   useEffect(() => {
     if (!workspaceId) return
+    const implicite = { foldereImplicite: [...FOLDERE_IMPLICITE], folderGenerate: FOLDER_GENERATE }
     return onSnapshot(doc(db, 'workspaces', workspaceId, 'setari', 'documente'), snap => {
-      const lista = snap.data()?.foldereImplicite
-      setStare({ wid: workspaceId, lista: Array.isArray(lista) ? lista.filter((x): x is string => typeof x === 'string') : [...FOLDERE_IMPLICITE] })
-    }, () => setStare({ wid: workspaceId, lista: [...FOLDERE_IMPLICITE] }))
+      const d = snap.data()
+      setStare({ wid: workspaceId, v: {
+        foldereImplicite: Array.isArray(d?.foldereImplicite)
+          ? d.foldereImplicite.filter((x: unknown): x is string => typeof x === 'string') : implicite.foldereImplicite,
+        folderGenerate: typeof d?.folderGenerate === 'string' && d.folderGenerate.trim() ? d.folderGenerate : FOLDER_GENERATE,
+      } })
+    }, () => setStare({ wid: workspaceId, v: implicite }))
   }, [workspaceId])
-  return stare?.wid === workspaceId ? stare.lista : null
+  return stare?.wid === workspaceId ? stare.v : null
 }
 
 /** Pentru întrebarea de la ștergerea clientului: are documente? */
@@ -318,7 +332,11 @@ function eroare(mesaj: string, code?: string, status?: number, extra?: Partial<E
 
 /** Încărcare cu progres (XMLHttpRequest: `fetch` nu raportează progresul trimiterii). */
 export async function incarcaFisier(
-  p: { workspaceId: string; clientId: string; folderId: string | null; file: File; permiteDuplicat?: boolean },
+  p: {
+    workspaceId: string; clientId: string; folderId: string | null; file: File; permiteDuplicat?: boolean
+    /** `generate`: copia unui document generat, în folderul ales de cabinet (serverul îl găsește sau îl creează). */
+    destinatie?: 'generate'
+  },
   onProgress?: (fractie: number) => void,
   signal?: AbortSignal,
 ): Promise<Fisier> {
@@ -331,6 +349,7 @@ export async function incarcaFisier(
   fd.append('clientId', p.clientId)
   if (p.folderId) fd.append('folderId', p.folderId)
   if (p.permiteDuplicat) fd.append('duplicat', 'permite')
+  if (p.destinatie) fd.append('destinatie', p.destinatie)
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${FILES_BASE}/fisiere`)
@@ -386,8 +405,13 @@ export const creeazaFolder = (clientId: string, parentId: string | null, nume: s
 /** Creează folderele implicite ale cabinetului la client, o singură dată (serverul ține marcajul). */
 export const initDocumenteClient = (clientId: string) =>
   apiJson<{ foldere: Folder[]; init: boolean }>('POST', `/clients/${encodeURIComponent(clientId)}/documente/init`)
-export const salveazaFoldereImplicite = (foldereImplicite: string[]) =>
-  apiJson<{ foldereImplicite: string[] }>('PUT', '/fisiere/setari', { foldereImplicite }).then(r => r.foldereImplicite)
+export const salveazaSetariDocumente = (patch: Partial<SetariDocumente>) =>
+  apiJson<Partial<SetariDocumente>>('PUT', '/fisiere/setari', patch)
+
+/** Păstrează în documentele clientului o copie a unui document generat (în folderul ales de cabinet). */
+export const pastreazaCopieGenerata = (workspaceId: string, clientId: string, blob: Blob, nume: string) =>
+  incarcaFisier({ workspaceId, clientId, folderId: null, destinatie: 'generate',
+    file: new File([blob], nume, { type: blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }) })
 export const redenumesteFolder = (id: string, nume: string) => apiJson('PATCH', `/foldere/${encodeURIComponent(id)}`, { nume })
 export const mutaFolder = (id: string, parentId: string | null) => apiJson('PATCH', `/foldere/${encodeURIComponent(id)}`, { parentId })
 export const stergeFolder = (id: string, recursiv: boolean) =>

@@ -32,6 +32,8 @@ MAX_FOLDERE_CLIENT = 200
 # Setări › Documente (`workspaces/{wid}/setari/documente.foldereImplicite`); fără setare, se folosesc acestea.
 FOLDERE_IMPLICITE = ("Acte identitate", "Documente generate", "Primite de la client")
 MAX_FOLDERE_IMPLICITE = 10
+# Folderul în care se păstrează copiile documentelor generate (setabil: `setari/documente.folderGenerate`).
+FOLDER_GENERATE = "Documente generate"
 
 
 class FisierRefuzat(ValueError):

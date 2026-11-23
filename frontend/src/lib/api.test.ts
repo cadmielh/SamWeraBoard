@@ -89,7 +89,8 @@ describe('salvarea în Drive din browser', () => {
     expect(name).toBe('completat_Act Popescu.docx')
     expect(folder).toBe('folder12345')
     expect(token).toBe('ya29.google')
-    expect(r).toEqual({ name: 'completat_Act Popescu.docx', link: 'https://drive.google.com/x' })
+    expect(r).toMatchObject({ name: 'completat_Act Popescu.docx', link: 'https://drive.google.com/x' })
+    expect(r.blob).toBeInstanceOf(Blob)        // păstrat pentru copia din documentele clientului
   })
 
   it('fără antet cu numele fișierului (CORS local) folosește numele dorit', async () => {

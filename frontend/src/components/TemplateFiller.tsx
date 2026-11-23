@@ -34,6 +34,7 @@ import TemplateFolderHeader from './TemplateFolderHeader'
 import { useApp } from '../AppContext'
 import { EMPTY_CLIENT, denumireExists, missingRegistrationFields, useClienti, type ClientInput } from '../lib/clienti'
 import DriveFolderPicker from './DriveFolderPicker'
+import { pastreazaCopieGenerata } from '../lib/fisiere'
 import TemplateLibrary from './TemplateLibrary'
 import ClientModal from './ClientModal'
 import CreditNotice from './CreditNotice'
@@ -106,7 +107,7 @@ export default function TemplateFiller({
   onToast, onBack, onClientSaved, stepNumber = 3,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
-  const { activeWorkspace } = useApp()
+  const { activeWorkspace, hasFeature, canEdit } = useApp()
   const { builtins: allBuiltins } = useBuiltinTemplates()
   // La generare apar doar șabloanele de bază pe care adminul cabinetului nu le-a ascuns (biblioteca le arată pe toate).
   const hiddenBuiltins = activeWorkspace?.hiddenBuiltins
@@ -131,7 +132,7 @@ export default function TemplateFiller({
   // Destinația documentului se alege la generare (fereastra „Unde salvezi documentul?”), nu dintr-o bifă permanentă.
   // Alegerea se ține într-un ref, ca handlerele async să o vadă imediat după închiderea ferestrei. Încărcarea în Drive
   // se face din browser, cu tokenul utilizatorului (nu trece prin serverul nostru).
-  const destRef = useRef<{ drive: boolean; folderId: string | null }>({ drive: false, folderId: null })
+  const destRef = useRef<{ drive: boolean; folderId: string | null; copie: boolean }>({ drive: false, folderId: null, copie: false })
   const driveTarget = (): DriveTarget | null => destRef.current.drive ? { token: getDriveToken(), folderId: destRef.current.folderId } : null
   const [showFolderPicker, setShowFolderPicker] = useState(false)
   // Lățimea coloanei cu șabloane, reglabilă prin tragerea mânerului (preferință locală, ținută în browser).
@@ -172,6 +173,19 @@ export default function TemplateFiller({
   }
   const [destDialogOpen, setDestDialogOpen] = useState(false)
   const [destChoice, setDestChoice] = useState<'local' | 'drive'>('local')
+  // Copia în documentele clientului (faza 2 a documentelor): doar la bifă, doar pentru un client salvat, cu funcția activă.
+  const [pastreazaCopie, setPastreazaCopie] = useState(false)
+  const clientIdSalvat = client?.id ?? null
+  const poatePastraCopie = !!clientIdSalvat && hasFeature('documente') && canEdit
+  const pastreazaCopia = async (blob: Blob | undefined, nume: string) => {
+    if (!blob || !destRef.current.copie || !clientIdSalvat || !activeWorkspace) return
+    try {
+      await pastreazaCopieGenerata(activeWorkspace.id, clientIdSalvat, blob, nume)
+      onToast('Copia a fost păstrată în documentele clientului.', 'ok')
+    } catch (err) {
+      onToast(`Documentul s-a generat, dar copia nu s-a păstrat în documentele clientului: ${(err as Error).message}`, 'err')
+    }
+  }
   const destResolver = useRef<((ok: boolean) => void) | null>(null)
   const batchDestChosen = useRef(false)
   const askDestination = (): Promise<boolean> => {
@@ -188,7 +202,10 @@ export default function TemplateFiller({
         return
       }
     }
-    if (ok) destRef.current = { drive: destChoice === 'drive', folderId: destChoice === 'drive' ? (driveFolder?.id ?? null) : null }
+    if (ok) destRef.current = {
+      drive: destChoice === 'drive', folderId: destChoice === 'drive' ? (driveFolder?.id ?? null) : null,
+      copie: poatePastraCopie && pastreazaCopie,
+    }
     setDestDialogOpen(false)
     setShowFolderPicker(false)
     destResolver.current?.(ok)
@@ -645,6 +662,7 @@ export default function TemplateFiller({
         await _logGeneration(tpl, outputName)
         maybePromptSaveClient()
       }
+      await pastreazaCopia(result.blob, outputName)
       offerClientPatches(cs, [...cesiuneProposalFor(tpl, cs?.selectedClauses), ...adresaProposalFor(tpl.id)])
       if (form?.clientPatches) offerClientPatchList(form.clientPatches)
     } catch (err: unknown) {
@@ -686,6 +704,7 @@ export default function TemplateFiller({
         onToast(`Se descarcă: ${outputName}`, 'ok')
         maybePromptSaveClient()
       }
+      await pastreazaCopia(result.blob, outputName)
       offerClientPatches(cs)
     } catch (err: unknown) {
       onToast((err as Error).message ?? 'Generare eșuată', 'err')
@@ -732,6 +751,7 @@ export default function TemplateFiller({
         URL.revokeObjectURL(url)
         onToast(`Se descarcă: ${outputName}`, 'ok')
       }
+      await pastreazaCopia(result.blob, outputName)
       maybePromptSaveClient()
       if (form.clientPatches) offerClientPatchList(form.clientPatches)
     } catch (err: unknown) {
@@ -1765,8 +1785,22 @@ export default function TemplateFiller({
                 )}
               </div>
             )}
+            {poatePastraCopie && (
+              <label style={{
+                display: 'flex', gap: '.625rem', alignItems: 'flex-start', cursor: 'pointer', padding: '.625rem .75rem',
+                border: '1.5px solid var(--s200)', borderRadius: 'var(--r-sm)', marginTop: '.125rem',
+              }}>
+                <input type="checkbox" checked={pastreazaCopie} onChange={e => setPastreazaCopie(e.target.checked)} style={{ marginTop: '.2rem' }} />
+                <span>
+                  <div style={{ fontWeight: 600, fontSize: '.875rem', color: 'var(--s800)' }}>Păstrează o copie în documentele clientului</div>
+                  <div style={{ fontSize: '.78rem', color: 'var(--s500)' }}>
+                    Fișierul Word se salvează și în fișa clientului, criptat, în folderul pentru documente generate.
+                  </div>
+                </span>
+              </label>
+            )}
             <div style={{ fontSize: '.72rem', color: 'var(--s400)' }}>
-              Șabloanele Google Doc se creează întotdeauna direct în Drive, indiferent de alegere.
+              Șabloanele Google Doc se creează întotdeauna direct în Drive, indiferent de alegere{poatePastraCopie ? ', și nu se copiază în documentele clientului' : ''}.
             </div>
           </div>
           <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--s200)', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>

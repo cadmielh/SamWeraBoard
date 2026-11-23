@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
-  LIMITA_CABINET, MAX_FOLDERE_IMPLICITE, descarcaFisier, formatMarime, previzualizabil, salveazaFoldereImplicite, stergeFisier,
-  useArhiva, useFoldereImplicite, useSpatiuDocumente, type Fisier,
+  LIMITA_CABINET, MAX_FOLDERE_IMPLICITE, descarcaFisier, formatMarime, previzualizabil, salveazaSetariDocumente, stergeFisier,
+  useArhiva, useSetariDocumente, useSpatiuDocumente, type Fisier,
 } from '../../lib/fisiere'
 import BtnLabel from '../BtnLabel'
 import ConfirmModal from '../ConfirmModal'
@@ -82,6 +82,7 @@ export default function DocumenteSetari() {
       </div>
 
       <FoldereImpliciteCard />
+      <FolderGenerateCard />
 
       <div className="card">
         <div className="card-head">
@@ -153,7 +154,7 @@ export default function DocumenteSetari() {
  * fost încă deschise (cei pregătiți își păstrează folderele, pe care le pot redenumi sau șterge). */
 function FoldereImpliciteCard() {
   const { activeWorkspace, userRole, canEdit, toast } = useApp()
-  const salvate = useFoldereImplicite(activeWorkspace?.id ?? null)
+  const salvate = useSetariDocumente(activeWorkspace?.id ?? null)?.foldereImplicite ?? null
   const editabil = userRole === 'admin' && canEdit
   const [lista, setLista] = useState<string[] | null>(null)       // ciorna; null = fără modificări
   const [busy, setBusy] = useState(false)
@@ -167,7 +168,7 @@ function FoldereImpliciteCard() {
     if (new Set(chei).size !== chei.length) { toast('Două foldere au același nume.', 'err'); return }
     setBusy(true)
     try {
-      await salveazaFoldereImplicite(curate)
+      await salveazaSetariDocumente({ foldereImplicite: curate })
       setLista(null)
       toast('Folderele implicite au fost salvate.', 'ok')
     } catch (e) {
@@ -222,6 +223,63 @@ function FoldereImpliciteCard() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/** Folderul în care se păstrează copiile documentelor generate (bifa „Păstrează o copie…” de la generare). Dacă nu
+ * există la client, serverul îl creează la prima copie. */
+function FolderGenerateCard() {
+  const { activeWorkspace, userRole, canEdit, toast } = useApp()
+  const salvat = useSetariDocumente(activeWorkspace?.id ?? null)?.folderGenerate ?? null
+  const editabil = userRole === 'admin' && canEdit
+  const [ciorna, setCiorna] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const valoare = ciorna ?? salvat ?? ''
+  const modificat = ciorna !== null && ciorna.trim() !== salvat
+
+  const salveaza = async () => {
+    if (!valoare.trim()) { toast('Alege un nume pentru folder.', 'err'); return }
+    setBusy(true)
+    try {
+      await salveazaSetariDocumente({ folderGenerate: valoare.trim() })
+      setCiorna(null)
+      toast('Folderul documentelor generate a fost salvat.', 'ok')
+    } catch (e) {
+      toast((e as Error).message, 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head"><span className="card-title">Documente generate</span></div>
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '.75rem' }}>
+        <div className="card-sub" style={{ marginTop: 0 }}>
+          La generare, poți bifa „Păstrează o copie în documentele clientului”. Copia (.docx) ajunge în folderul de mai jos;
+          dacă clientul nu îl are, se creează automat.
+        </div>
+        {salvat === null
+          ? <div className="doc-loading"><span className="spin spin-dark" /> Se încarcă…</div>
+          : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.625rem', flexWrap: 'wrap' }}>
+              <IconFolder />
+              {editabil
+                ? <input className="field-input doc-implicit-input" style={{ flex: 1, minWidth: '12rem' }} value={valoare} maxLength={80}
+                    aria-label="Folderul documentelor generate" onChange={e => setCiorna(e.target.value)} />
+                : <span className="doc-name">{salvat}</span>}
+              {modificat && (
+                <>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCiorna(null)} disabled={busy}>Renunță</button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={salveaza} disabled={busy}>
+                    <BtnLabel busy={busy}>Salvează</BtnLabel>
+                  </button>
+                </>
+              )}
+            </div>
+          )}
       </div>
     </div>
   )

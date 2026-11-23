@@ -122,7 +122,7 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
         ...(num(m.fisiere) ? [`${num(m.fisiere)} ${num(m.fisiere) === 1 ? 'document' : 'documente'} ${m.mod === 'sterge' ? 'șterse' : 'arhivate'}`] : []),
       ].join(' · ')
     case 'fisier.upload':
-      return [str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `client ${shortId(str(m.client) || null)}`]
+      return [m.sursa === 'generat' ? 'copie document generat' : '', str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `client ${shortId(str(m.client) || null)}`]
         .filter(Boolean).join(' · ')
     case 'fisier.download':
       return `${m.scop === 'previzualizare' ? 'previzualizare' : 'descărcare'} · document ${shortId(e.target)}`
