@@ -17,7 +17,12 @@ export type PasGhid = 'scan' | 'generare' | 'anaf' | 'dosar' | 'sarcina' | 'docu
 
 /** Un indiciu „Arată-mi”: elementul [data-ghid=țintă] e evidențiat cu textul alăturat. Indiciile se succed:
  * următorul apare după clic pe țintă (ex. butonul care deschide formularul, apoi câmpul din formular). */
-export interface IndiciuGhid { tinta: string; text: string }
+export interface IndiciuGhid {
+  tinta: string
+  text: string
+  /** Ținta e o zonă de lucru, nu un buton (ex. board-ul): clicurile din ea nu trec mai departe, doar „Următorul”. */
+  doarCuButon?: boolean
+}
 
 export interface DefinitiePas {
   key: PasGhid
@@ -88,12 +93,14 @@ export const PASI_GHID: DefinitiePas[] = [
     key: 'sarcina', ruta: '/sarcini',
     titlu: 'Mută o sarcină pe board',
     descriere: 'Sarcinile, și cele create odată cu un dosar, trec prin Deschis → În lucru → Finalizat; cele finalizate ajung în arhivă.',
+    // Întâi faci o sarcină, apoi o muți (asta bifează pasul), apoi afli unde ajung cele finalizate.
     indicii: [
-      { tinta: 'sarcini-board', text: 'Fiecare coloană e o stare: Deschis, În lucru, Finalizat. Muți o sarcină trăgând cardul în altă coloană '
-        + 'sau cu butoanele de pe card: „▶ În lucru”, „✓ Finalizează”.' },
+      { tinta: 'sarcina-add', text: 'Începe cu o sarcină: apasă aici, dă-i un titlu și un termen (primești alertă înainte să expire). '
+        + 'Sarcinile create odată cu un dosar apar și ele pe board.' },
+      { tinta: 'sarcini-board', doarCuButon: true, text: 'Acum mut-o: trage cardul în altă coloană sau folosește butoanele de pe el, „▶ În lucru” și '
+        + '„✓ Finalizează”. Fiecare coloană e o stare: Deschis, În lucru, Finalizat.' },
       { tinta: 'sarcini-arhiva', text: 'Sarcinile finalizate trec singure aici, în arhivă, la finalul săptămânii. Cu „🗄 Arhivează” de pe card '
         + 'le muți imediat; din arhivă le poți readuce pe board.' },
-      { tinta: 'sarcina-add', text: 'Pentru o sarcină nouă apeși aici. Pune-i un termen: primești alertă înainte să expire.' },
     ],
   },
   {
@@ -248,7 +255,8 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
       if (stareRef.current?.pasi?.[pas]) return
       setStare(s => ({ ...s, pasi: { ...s?.pasi, [pas]: new Date().toISOString() } }))
       salveaza({ pasi: { [pas]: new Date().toISOString() } })
-      setIndiciu(i => (i?.pas.key === pas ? null : i))
+      // Pasul făcut înaintea ultimului indiciu (ex. sarcina mutată, mai e de aflat de arhivă): indiciile continuă.
+      setIndiciu(i => (i?.pas.key === pas && i.index + 1 >= i.pas.indicii.length ? null : i))
       if (!stareRef.current?.ascuns) setRedeschide(true)
     }
     window.addEventListener(EVENIMENT, onPas)

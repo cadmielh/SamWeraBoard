@@ -95,7 +95,7 @@ export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmat
   useEffect(() => {
     if (!curent) return
     const onClick = (e: MouseEvent) => {
-      if (!tintaRef.current?.contains(e.target as Node)) return
+      if (curent.doarCuButon || !tintaRef.current?.contains(e.target as Node)) return
       if (areUrmator) onUrmator()
       else if (incheieLaUltimulClic) onOpreste()
     }
