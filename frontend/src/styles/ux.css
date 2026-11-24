@@ -216,3 +216,17 @@
 .settings-facts { display:grid; grid-template-columns:repeat(auto-fit, minmax(10rem, 1fr)); gap:.75rem 1.25rem; margin:0; }
 .settings-facts dt { font-size:.75rem; font-weight:600; color:var(--s500); }
 .settings-facts dd { margin:.1rem 0 0; color:var(--s900); font-size:.875rem; }
+
+/* Noutăți („Ce e nou”, Setări › Noutăți) */
+.noutati-modal.modal-box { max-width: 520px; }
+.noutati-lista { display: flex; flex-direction: column; gap: 1rem; }
+.noutate { display: flex; gap: .875rem; align-items: flex-start; }
+.noutate + .noutate { padding-top: 1rem; border-top: 1px solid var(--s100); }
+.noutate-icon { font-size: 1.4rem; line-height: 1; width: 2.25rem; height: 2.25rem; flex-shrink: 0; display: flex; align-items: center;
+  justify-content: center; border-radius: var(--r-sm); background: var(--p50); }
+.noutate-corp { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.noutate-titlu { font-size: .95rem; font-weight: 700; color: var(--s800); margin: 0; }
+.noutate-data { font-size: .75rem; color: var(--s400); }
+.noutate-text { font-size: .875rem; color: var(--s600); line-height: 1.5; margin: 0; }
+.noutate-actiune { align-self: flex-start; margin-top: .25rem; }
+.noutati-istoric { font-size: .78rem; color: var(--s400); margin: 0; }

@@ -115,6 +115,11 @@ export default function MaiMultPage() {
               <span className="more-row-label">Setări</span>
               <Chevron />
             </a>
+            <a href="/setari/noutati" onClick={go('/setari/noutati')} className="more-row">
+              <span className="more-row-icon" aria-hidden>✨</span>
+              <span className="more-row-label">Noutăți</span>
+              <Chevron />
+            </a>
             {isSuperAdmin && (
               <a href="/super-admin" onClick={go('/super-admin')} className="more-row">
                 <span className="more-row-icon"><IconShield /></span>

@@ -14,6 +14,7 @@ import { blurNumberInputOnWheel } from '../lib/inputEvents'
 import NotificariBell from '../components/NotificariBell'
 import PlanSection from '../components/PlanSection'
 import DocumenteSetari from '../components/documente/DocumenteSetari'
+import { NoutatiIstoric } from '../components/Noutati'
 import DangerZoneCard from '../components/DangerZoneCard'
 import MembriPanel from '../components/MembriPanel'
 import ConfirmModal from '../components/ConfirmModal'
@@ -282,7 +283,7 @@ function GeneralCard({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => voi
   )
 }
 
-type SectionKey = 'cont' | 'aspect' | 'notificari' | 'confidentialitate' | 'general' | 'membri' | 'plan' | 'documente' | 'facturare' | 'jurnal' | 'stergere'
+type SectionKey = 'cont' | 'aspect' | 'noutati' | 'notificari' | 'confidentialitate' | 'general' | 'membri' | 'plan' | 'documente' | 'facturare' | 'jurnal' | 'stergere'
 
 interface Section {
   key: SectionKey
@@ -306,6 +307,7 @@ export default function SetariPage() {
   const sections: Section[] = [
     { key: 'cont', icon: '👤', group: 'Personal', label: 'Cont și securitate', title: 'Cont și securitate', desc: 'Parola, conexiunea cu Google Drive și sesiunile deschise.' },
     { key: 'aspect', icon: '🎨', group: 'Personal', label: 'Aspect', title: 'Aspect', desc: 'Tema și fontul aplicației.' },
+    { key: 'noutati', icon: '✨', group: 'Personal', label: 'Noutăți', title: 'Noutăți', desc: 'Ce s-a adăugat recent în aplicație.' },
     ...(activeWorkspace && hasFeature('alerte')
       ? [{ key: 'notificari', icon: '🔔', group: 'Personal', label: 'Notificări', title: 'Notificări', desc: 'Ce alerte primești și pe ce canale.' } as Section] : []),
     { key: 'confidentialitate', icon: '🛡️', group: 'Personal', label: 'Date și confidențialitate', title: 'Date și confidențialitate', desc: 'Textele legale acceptate și exportul datelor tale.' },
@@ -348,6 +350,7 @@ export default function SetariPage() {
   switch (current.key) {
     case 'cont': content = <AccountCard />; break
     case 'aspect': content = <AspectCard />; break
+    case 'noutati': content = <NoutatiIstoric />; break
     // key=workspace id: editoarele nu rămân cu starea altui cabinet.
     case 'notificari': content = activeWorkspace && <NotificariCard key={`notificari-${activeWorkspace.id}`} />; break
     case 'confidentialitate': content = <PrivacyCard />; break
