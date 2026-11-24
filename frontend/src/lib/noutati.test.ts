@@ -2,6 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./firebase', () => ({ db: {} }))
 
+// Testele rulează în Node: o sesiune de tab simplă, în memorie.
+const sesiune = new Map<string, string>()
+vi.stubGlobal('sessionStorage', {
+  getItem: (k: string) => sesiune.get(k) ?? null,
+  setItem: (k: string, v: string) => { sesiune.set(k, v) },
+  removeItem: (k: string) => { sesiune.delete(k) },
+})
+
 import { NOUTATI, deAnuntat, noutatiVizibile, opresteTur, pornesteTur, turAcum, urmatorulPasTur, type Noutate } from './noutati'
 
 const N = (o: Partial<Noutate>): Noutate => ({ id: 'x', data: '2026-11-24', icon: '•', titlu: 'T', text: 't', ...o })
@@ -51,6 +59,14 @@ describe('turul „Arată-mi cum”', () => {
     expect(turAcum()).toMatchObject({ index: 1 })
     urmatorulPasTur()
     expect(turAcum()).toBeNull()
+  })
+  it('pasul curent se păstrează în sesiune (o reîncărcare nu pierde turul), iar la oprire se șterge', () => {
+    const n = NOUTATI.find(x => x.tur)!
+    pornesteTur(n)
+    urmatorulPasTur()
+    expect(JSON.parse(sessionStorage.getItem('cabinio:tur-noutate')!)).toEqual({ id: n.id, index: 1 })
+    opresteTur()
+    expect(sessionStorage.getItem('cabinio:tur-noutate')).toBeNull()
   })
   it('un anunț fără tur nu pornește nimic; „Închide” oprește oricând', () => {
     pornesteTur(N({ id: 'simplu' }))

@@ -107,9 +107,30 @@ export function useNoutatiVazute(uid: string | null) {
 // ── Turul activ „Arată-mi cum” ──────────────────────────────────────────────
 // În afara componentelor: pornit din fereastra „Ce e nou” (care se închide) sau din istoric, continuă după navigare.
 
-let tur: { noutate: Noutate; index: number } | null = null
+// Pasul curent se ține și în sesiunea tabului: o reîncărcare a paginii (manuală sau a aplicației) nu pierde turul.
+const CHEIE_TUR = 'cabinio:tur-noutate'
+
+function turSalvat(): { noutate: Noutate; index: number } | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(CHEIE_TUR) ?? 'null') as { id?: string; index?: number } | null
+    const noutate = NOUTATI.find(n => n.id === v?.id)
+    const index = Number(v?.index)
+    return noutate?.tur && Number.isInteger(index) && index >= 0 && index < noutate.tur.pasi.length ? { noutate, index } : null
+  } catch {
+    return null
+  }
+}
+
+let tur: { noutate: Noutate; index: number } | null = typeof window === 'undefined' ? null : turSalvat()
 const ascultatoriTur = new Set<() => void>()
-const seteazaTur = (t: typeof tur) => { tur = t; ascultatoriTur.forEach(l => l()) }
+const seteazaTur = (t: typeof tur) => {
+  tur = t
+  try {
+    if (t) sessionStorage.setItem(CHEIE_TUR, JSON.stringify({ id: t.noutate.id, index: t.index }))
+    else sessionStorage.removeItem(CHEIE_TUR)
+  } catch { /* fără stocare: turul ține doar până la reîncărcare */ }
+  ascultatoriTur.forEach(l => l())
+}
 
 export function pornesteTur(n: Noutate) { if (n.tur?.pasi.length) seteazaTur({ noutate: n, index: 0 }) }
 export function urmatorulPasTur() { if (tur) seteazaTur(tur.index + 1 < (tur.noutate.tur?.pasi.length ?? 0) ? { ...tur, index: tur.index + 1 } : null) }
