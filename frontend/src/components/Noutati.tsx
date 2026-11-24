@@ -129,7 +129,7 @@ export function TurNoutate() {
   return (
     <IndiciuEvidentiat
       titlu={tur.noutate.titlu} indicii={pasi} index={tur.index} ruta={tur.noutate.tur.ruta}
-      onUrmator={urmatorulPasTur} onOpreste={opresteTur}
+      onUrmator={urmatorulPasTur} onOpreste={opresteTur} incheieLaUltimulClic
       actiuni={<>
         {!ultimul && <button type="button" className="btn btn-ghost btn-xs" onClick={opresteTur}>Închide</button>}
         <button type="button" className="btn btn-primary btn-xs" onClick={ultimul ? opresteTur : urmatorulPasTur}>

@@ -30,6 +30,8 @@ interface Props {
   onOpreste: () => void
   /** Butoanele din bulă (ex. „Toți pașii” + „Am înțeles” la ghid, „Următorul” la turul unei noutăți). */
   actiuni: ReactNode
+  /** Clicul pe ținta ultimului indiciu încheie (utilizatorul a făcut ce i s-a arătat), ca la turul unei noutăți. */
+  incheieLaUltimulClic?: boolean
 }
 
 /**
@@ -38,11 +40,13 @@ interface Props {
  * Dacă ținta nu apare (ex. ești la alt pas), textul rămâne afișat jos, fără chenar. Folosit de ghidul „Primii pași”
  * și de turul „Arată-mi cum” al unei noutăți, ca cele două să arate și să se poarte la fel.
  */
-export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmator, onOpreste, actiuni }: Props) {
+export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmator, onOpreste, actiuni, incheieLaUltimulClic }: Props) {
   const curent = indicii[index] ?? null
   const areUrmator = index + 1 < indicii.length
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [faraTinta, setFaraTinta] = useState(false)
+  // O fereastră deschisă (previzualizare, confirmare): indiciul nu se desenează peste ea; reapare după închidere.
+  const [subFereastra, setSubFereastra] = useState(false)
   const tintaRef = useRef<Element | null>(null)
   const { pathname } = useLocation()
 
@@ -55,6 +59,7 @@ export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmat
     let derulat = false
     let raf = 0
     const tick = () => {
+      setSubFereastra(!!document.querySelector('.modal-backdrop'))
       const el = [...document.querySelectorAll(`[data-ghid="${curent.tinta}"]`)]
         .find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }) ?? null
       tintaRef.current = el
@@ -87,15 +92,17 @@ export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmat
   useEffect(() => {
     if (!curent) return
     const onClick = (e: MouseEvent) => {
-      if (areUrmator && tintaRef.current?.contains(e.target as Node)) onUrmator()
+      if (!tintaRef.current?.contains(e.target as Node)) return
+      if (areUrmator) onUrmator()
+      else if (incheieLaUltimulClic) onOpreste()
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpreste() }
     document.addEventListener('click', onClick, true)
     window.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('click', onClick, true); window.removeEventListener('keydown', onKey) }
-  }, [curent, areUrmator, onUrmator, onOpreste])
+  }, [curent, areUrmator, onUrmator, onOpreste, incheieLaUltimulClic])
 
-  if (!curent || (!rect && !faraTinta)) return null
+  if (!curent || subFereastra || (!rect && !faraTinta)) return null
 
   const pozitie = rect ? pozitioneaza(rect) : null
   return (
