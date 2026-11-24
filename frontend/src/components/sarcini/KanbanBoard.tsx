@@ -48,6 +48,9 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
   const [activeId, setActiveId] = useState<string | null>(null)
   const [justCompletedId, setJustCompletedId] = useState<string | null>(null)
   const draggingRef = useRef(false)
+  // Coloana din care a pornit cardul: handleDragOver îl mută deja în `columns` cât e tras, deci la final
+  // `columns` nu mai spune de unde a plecat (fără asta, mutarea între coloane nu se salva niciodată).
+  const coloanaStartRef = useRef<SarcinaStatus | null>(null)
 
   useEffect(() => {
     if (draggingRef.current) return
@@ -94,6 +97,7 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
 
   const handleDragStart = (e: DragStartEvent) => {
     draggingRef.current = true
+    coloanaStartRef.current = findColumn(e.active.id as string)
     setActiveId(e.active.id as string)
   }
 
@@ -106,6 +110,7 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
   // componenta și resetează ref-ul).
   const handleDragCancel = () => {
     draggingRef.current = false
+    coloanaStartRef.current = null
     setActiveId(null)
     setColumns(groupByStatus(sarcini))
   }
@@ -134,11 +139,15 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
     const { active, over } = e
     draggingRef.current = false
     setActiveId(null)
-    if (!over) return
+    const startCol = coloanaStartRef.current
+    coloanaStartRef.current = null
+    // Lăsat în afara coloanelor: înapoi la starea reală.
+    if (!over) { setColumns(groupByStatus(sarcini)); return }
 
     const activeCol = findColumn(active.id as string)
     if (!activeCol) return
     const overCol = findColumn(over.id as string) ?? activeCol
+    const dinCol = startCol ?? activeCol
 
     let finalColumns = columns
     if (activeCol === overCol) {
@@ -152,7 +161,7 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
     }
 
     try {
-      if (activeCol !== overCol) {
+      if (dinCol !== overCol) {
         const task = sarcini.find(t => t.id === active.id)
         if (!task) return
         if (overCol === 'finalizat') {
@@ -162,7 +171,7 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
         await moveSarcina(workspaceId, task.id, overCol, finalColumns[overCol].length * 1000)
         if (overCol === 'finalizat') maybeSuggestDosarComplete(task)
         await reorderColumn(workspaceId, finalColumns[overCol])
-        if (finalColumns[activeCol].length > 0) await reorderColumn(workspaceId, finalColumns[activeCol])
+        if (finalColumns[dinCol].length > 0) await reorderColumn(workspaceId, finalColumns[dinCol])
       } else {
         await reorderColumn(workspaceId, finalColumns[activeCol])
       }
