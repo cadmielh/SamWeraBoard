@@ -6,6 +6,16 @@ export function equalShare(n: number): string {
   return `${Number.isInteger(val) ? val : val.toFixed(2)}%`
 }
 
+/** Adaugă un asociat ca în fișa clientului: cota lui implicită e partea egală, iar asociații care aveau partea egală
+ * de dinainte (sau nicio cotă) trec la noua parte egală. Cei cu cote alese explicit rămân neatinși. Folosit de formularul
+ * clientului și de „Extrage datele în fișă”, ca cele două să nu se comporte diferit. */
+export function adaugaAsociat<T extends { cotaParticipare: string }>(asociati: T[], nou: T): T[] {
+  const prevEqual = equalShare(asociati.length)
+  const newEqual = equalShare(asociati.length + 1)
+  const rebalanced = asociati.map(a => (!a.cotaParticipare.trim() || a.cotaParticipare === prevEqual) ? { ...a, cotaParticipare: newEqual } : a)
+  return [...rebalanced, { ...nou, cotaParticipare: nou.cotaParticipare.trim() || newEqual }]
+}
+
 /** Extrage valoarea numerică dintr-o cotă introdusă ca text (ex: "33.33%" → 33.33). */
 export function parsePercent(s: string): number {
   const m = /(-?\d+(?:[.,]\d+)?)/.exec(s)

@@ -29,7 +29,9 @@ function salveaza(p: Preferinte) {
 
 /** Fișa clientului pe ecran lat: datele în stânga (`children`), documentele într-o coloană în dreapta. Mânerul dintre
  * ele se trage cu mouse-ul sau se mută cu săgețile; dublu clic revine la un sfert. Coloana se poate restrânge la o bandă. */
-export default function ImpartireDocumente({ client, children }: { client: Client; children: ReactNode }) {
+export default function ImpartireDocumente({ client, children, onSaveClient }: {
+  client: Client; children: ReactNode; onSaveClient?: (patch: Partial<Client>) => Promise<void>
+}) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [pref, setPref] = useState<Preferinte>(citeste)
   const [trage, setTrage] = useState(false)
@@ -92,7 +94,8 @@ export default function ImpartireDocumente({ client, children }: { client: Clien
         />
       )}
       <aside className="doc-split-aside" aria-label="Documentele clientului">
-        <ClientDocumente client={client} layout="coloana" restrans={pref.restrans} onRestrans={r => actualizeaza({ restrans: r })} />
+        <ClientDocumente client={client} layout="coloana" restrans={pref.restrans} onRestrans={r => actualizeaza({ restrans: r })}
+          onSaveClient={onSaveClient} />
       </aside>
     </div>
   )

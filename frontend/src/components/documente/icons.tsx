@@ -62,3 +62,11 @@ export function IconDirectie({ desc, size = 16 }: { desc: boolean; size?: number
     </svg>
   )
 }
+
+export function IconCautare({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden className="doc-ico-cautare">
+      <circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" />
+    </svg>
+  )
+}

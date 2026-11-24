@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cotaCuProcent, parteSocialaError, valoareParteSociala } from './cota'
+import { cotaCuProcent, parteSocialaError, valoareParteSociala, adaugaAsociat } from './cota'
 
 describe('valoarea unei părți sociale', () => {
   it('implicit 10 lei, inclusiv pentru clienții fără valoare salvată', () => {
@@ -32,5 +32,14 @@ describe('cotaCuProcent', () => {
     expect(cotaCuProcent(' 33,33 ')).toBe('33,33%')
     expect(cotaCuProcent('50%')).toBe('50%')
     expect(cotaCuProcent('')).toBe('')
+  })
+})
+
+describe('adaugaAsociat', () => {
+  it('noul asociat primește partea egală; cei cu partea egală sau fără cotă se reîmpart; cotele alese rămân', () => {
+    expect(adaugaAsociat([{ cotaParticipare: '100%' }], { cotaParticipare: '' }).map(a => a.cotaParticipare)).toEqual(['50%', '50%'])
+    expect(adaugaAsociat([{ cotaParticipare: '70%' }, { cotaParticipare: '' }], { cotaParticipare: '' }).map(a => a.cotaParticipare))
+      .toEqual(['70%', '33.33%', '33.33%'])
+    expect(adaugaAsociat([{ cotaParticipare: '100%' }], { cotaParticipare: '20%' }).map(a => a.cotaParticipare)).toEqual(['50%', '20%'])
   })
 })

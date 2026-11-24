@@ -1,7 +1,7 @@
 /** Documentele clienților: metadatele se citesc live din Firestore (`workspaces/{wid}/fisiere`, `foldere`), iar toate
  * modificările și conținutul trec prin API (fisiere_api.py), care criptează, verifică tipul și ține jurnalul de acces.
  * Plan și decizii: docs/plan-documente-client.md. */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { collection, doc, getCountFromServer, onSnapshot, query, where, type DocumentData } from 'firebase/firestore'
 import { db } from './firebase'
 import { toDateSafe } from './dates'
@@ -91,10 +91,34 @@ export const ETICHETA_FAMILIE: Record<Familie, string> = {
   pdf: 'PDF', imagine: 'IMG', word: 'DOC', excel: 'XLS', prezentare: 'PPT', text: 'TXT', semnat: 'SIG', email: 'MSG', altul: 'FIȘ',
 }
 
-// Imaginile se afișează direct (img-src permite blob:), PDF-urile cu pdf.js (PdfViewer), fără iframe: acela ar cere
-// relaxarea CSP-ului (frame-src blob:, object-src) și pe iPhone ar arăta doar prima pagină.
-const PREVIZUALIZABILE = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-export const previzualizabil = (mime: string) => PREVIZUALIZABILE.has(mime)
+// Imaginile se afișează direct (img-src permite blob:), PDF-urile cu pdf.js (PdfViewer), documentele Word cu docx-preview
+// (DocxViewer), textul și XML-ul ca text. Fără iframe: acela ar cere relaxarea CSP-ului și pe iPhone ar arăta o pagină.
+export type FelPrevizualizare = 'imagine' | 'pdf' | 'word' | 'text'
+const PREVIZUALIZARE: Record<string, FelPrevizualizare> = {
+  'image/jpeg': 'imagine', 'image/png': 'imagine', 'image/webp': 'imagine', 'image/gif': 'imagine',
+  'application/pdf': 'pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'word',
+  'text/plain': 'text', 'text/csv': 'text', 'application/xml': 'text',
+}
+export const felPrevizualizare = (mime: string): FelPrevizualizare | null => PREVIZUALIZARE[mime] ?? null
+export const previzualizabil = (mime: string) => mime in PREVIZUALIZARE
+
+/** Actele din care se pot extrage datele (OCR): aceleași tipuri ca la scanarea obișnuită. */
+export const extractibil = (mime: string) => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mime)
+
+/** Căutarea după nume: fără diacritice și fără deosebire de majuscule („stefanescu” găsește „Ștefănescu”). */
+export function normalizeazaCautare(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('ro').trim()
+}
+
+/** Numele unui fișier lipit din clipboard: capturile vin ca „image.png”, deci primesc un nume cu data și ora. */
+export function numeLipire(file: { name: string; type: string }, acum: Date): string {
+  const generic = !file.name || /^image\.(png|jpe?g|gif|webp)$/i.test(file.name)
+  if (!generic) return file.name
+  const ext = file.type === 'image/jpeg' ? 'jpg' : (file.type.split('/')[1] || 'png')
+  const z = (n: number) => String(n).padStart(2, '0')
+  return `Captură ${acum.getFullYear()}-${z(acum.getMonth() + 1)}-${z(acum.getDate())} ${z(acum.getHours())}.${z(acum.getMinutes())}.${z(acum.getSeconds())}.${ext}`
+}
 
 /** Extensiile acceptate de server (fisiere.detecteaza_tip); verificarea reală se face acolo, după conținut. */
 export const EXTENSII = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff', 'heic', 'heif', 'docx', 'doc', 'odt',
@@ -398,7 +422,8 @@ export async function descarcaFisier(f: Pick<Fisier, 'id' | 'nume'>): Promise<vo
 
 export const redenumesteFisier = (id: string, nume: string) => apiJson('PATCH', `/fisiere/${encodeURIComponent(id)}`, { nume })
 export const mutaFisier = (id: string, folderId: string | null) => apiJson('PATCH', `/fisiere/${encodeURIComponent(id)}`, { folderId })
-export const stergeFisier = (id: string) => apiJson('DELETE', `/fisiere/${encodeURIComponent(id)}`)
+export const stergeFisier = (id: string, workspaceId?: string) =>
+  apiJson('DELETE', `/fisiere/${encodeURIComponent(id)}`, undefined, workspaceId)
 
 export const creeazaFolder = (clientId: string, parentId: string | null, nume: string) =>
   apiJson<{ folder: Folder }>('POST', '/foldere', { clientId, parentId, nume }).then(r => r.folder)
@@ -414,5 +439,49 @@ export const pastreazaCopieGenerata = (workspaceId: string, clientId: string, bl
     file: new File([blob], nume, { type: blob.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }) })
 export const redenumesteFolder = (id: string, nume: string) => apiJson('PATCH', `/foldere/${encodeURIComponent(id)}`, { nume })
 export const mutaFolder = (id: string, parentId: string | null) => apiJson('PATCH', `/foldere/${encodeURIComponent(id)}`, { parentId })
-export const stergeFolder = (id: string, recursiv: boolean) =>
-  apiJson('DELETE', `/foldere/${encodeURIComponent(id)}${recursiv ? '?recursiv=1' : ''}`)
+export const stergeFolder = (id: string, recursiv: boolean, workspaceId?: string) =>
+  apiJson('DELETE', `/foldere/${encodeURIComponent(id)}${recursiv ? '?recursiv=1' : ''}`, undefined, workspaceId)
+
+// ── Ștergeri amânate („Anulează”) ───────────────────────────────────────────
+// Elementele șterse dispar imediat din listă, dar cererea către server pleacă abia la expirarea notificării. Mulțimea
+// trăiește în afara componentelor: un element rămâne ascuns și dacă utilizatorul deschide între timp alt client.
+
+let ascunse = new Set<string>()
+const ascultatoriAscunse = new Set<() => void>()
+
+function seteazaAscunse(next: Set<string>) {
+  ascunse = next
+  ascultatoriAscunse.forEach(l => l())
+}
+
+export function ascundeTemporar(ids: string[]) {
+  seteazaAscunse(new Set([...ascunse, ...ids]))
+}
+
+// Cât timp o ștergere așteaptă expirarea notificării, închiderea sau reîncărcarea paginii ar anula-o fără știrea
+// utilizatorului: browserul cere confirmare (mesajul standard al browserului).
+let stergeriInAsteptare = 0
+const avertizeazaLaPlecare = (e: BeforeUnloadEvent) => { e.preventDefault() }
+
+export function incepeStergereAmanata() {
+  if (stergeriInAsteptare++ === 0) window.addEventListener('beforeunload', avertizeazaLaPlecare)
+}
+
+export function terminaStergereAmanata() {
+  stergeriInAsteptare = Math.max(0, stergeriInAsteptare - 1)
+  if (stergeriInAsteptare === 0) window.removeEventListener('beforeunload', avertizeazaLaPlecare)
+}
+
+export function reafiseaza(ids: string[]) {
+  const next = new Set(ascunse)
+  ids.forEach(id => next.delete(id))
+  seteazaAscunse(next)
+}
+
+/** Starea curentă (pentru cod din afara React și pentru teste). */
+export const ascunseAcum = (): ReadonlySet<string> => ascunse
+
+/** Id-urile (fișiere și foldere) aflate în așteptarea ștergerii. */
+export function useAscunse(): Set<string> {
+  return useSyncExternalStore(l => { ascultatoriAscunse.add(l); return () => { ascultatoriAscunse.delete(l) } }, () => ascunse)
+}

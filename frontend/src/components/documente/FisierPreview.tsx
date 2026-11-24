@@ -1,10 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import Modal from '../Modal'
 import BtnLabel from '../BtnLabel'
-import { continutFisier, formatMarime, type Fisier } from '../../lib/fisiere'
+import { continutFisier, felPrevizualizare, formatMarime, type Fisier } from '../../lib/fisiere'
 import { IconDescarca } from './icons'
 
 const PdfViewer = lazy(() => import('./PdfViewer'))
+const DocxViewer = lazy(() => import('./DocxViewer'))
+const TextViewer = lazy(() => import('./TextViewer'))
 
 interface Props {
   /** Fișierele prin care se poate naviga (←/→), în ordinea din listă; toate previzualizabile. */
@@ -75,6 +77,7 @@ export default function FisierPreview({ fisiere, start, onClose, onDownload }: P
   if (!f) return null
   const stare = stari[f.id]
   const nrPagini = pagini[f.id]
+  const fel = felPrevizualizare(f.mime)
   const descarca = async () => {
     setDescarc(true)
     try { await onDownload(f) } finally { setDescarc(false) }
@@ -107,10 +110,12 @@ export default function FisierPreview({ fisiere, start, onClose, onDownload }: P
       <div className="doc-preview-body">
         {stare?.eroare && <div className="doc-preview-msg">{stare.eroare}</div>}
         {!stare && <div className="doc-preview-msg"><span className="spin spin-dark" /> Se deschide documentul…</div>}
-        {stare?.url && f.mime !== 'application/pdf' && <img className="doc-preview-img" src={stare.url} alt={f.nume} />}
-        {stare?.blob && f.mime === 'application/pdf' && (
+        {stare?.url && fel === 'imagine' && <img className="doc-preview-img" src={stare.url} alt={f.nume} />}
+        {stare?.blob && fel !== 'imagine' && (
           <Suspense fallback={<div className="doc-preview-msg"><span className="spin spin-dark" /> Se deschide documentul…</div>}>
-            <PdfViewer key={f.id} blob={stare.blob} onPagini={laPagini} />
+            {fel === 'pdf' && <PdfViewer key={f.id} blob={stare.blob} onPagini={laPagini} />}
+            {fel === 'word' && <DocxViewer key={f.id} blob={stare.blob} />}
+            {fel === 'text' && <TextViewer key={f.id} blob={stare.blob} />}
           </Suspense>
         )}
       </div>

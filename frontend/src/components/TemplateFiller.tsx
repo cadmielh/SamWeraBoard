@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { CSSProperties } from 'react'
 import { ensureTemplateContext, fillDocx, fillDocxFromBuiltinTemplate, fillDocxFromDriveTemplate, fillGdoc } from '../lib/api'
 import ContextCampInfo from './ContextCampInfo'
@@ -107,7 +108,8 @@ export default function TemplateFiller({
   onToast, onBack, onClientSaved, stepNumber = 3,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
-  const { activeWorkspace, hasFeature, canEdit } = useApp()
+  const { activeWorkspace, hasFeature, canEdit, toast: appToast } = useApp()
+  const navigate = useNavigate()
   const { builtins: allBuiltins } = useBuiltinTemplates()
   // La generare apar doar șabloanele de bază pe care adminul cabinetului nu le-a ascuns (biblioteca le arată pe toate).
   const hiddenBuiltins = activeWorkspace?.hiddenBuiltins
@@ -181,7 +183,10 @@ export default function TemplateFiller({
     if (!blob || !destRef.current.copie || !clientIdSalvat || !activeWorkspace) return
     try {
       await pastreazaCopieGenerata(activeWorkspace.id, clientIdSalvat, blob, nume)
-      onToast('Copia a fost păstrată în documentele clientului.', 'ok')
+      // „Vezi” deschide fișa clientului direct la documente (legătura `?open=&sectiune=` a paginii Clienți).
+      appToast('Copia a fost păstrată în documentele clientului.', 'ok', {
+        action: { label: 'Vezi', onClick: () => navigate(`/?open=${encodeURIComponent(clientIdSalvat)}&sectiune=documente`) },
+      })
     } catch (err) {
       onToast(`Documentul s-a generat, dar copia nu s-a păstrat în documentele clientului: ${(err as Error).message}`, 'err')
     }

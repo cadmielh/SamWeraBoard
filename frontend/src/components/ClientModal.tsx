@@ -5,7 +5,7 @@ import { fetchAnafCompany } from '../lib/api'
 import { marcheazaPas } from '../lib/ghidPornire'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
-import { equalShare, sumCota, isCotaTotalValid, parteSocialaError, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
+import { adaugaAsociat, equalShare, sumCota, isCotaTotalValid, parteSocialaError, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
 import { useApp } from '../AppContext'
 import { formatDateRo, isIncompleteOrInvalidRoDate, isoDateToRo } from '../lib/dates'
 import type { Mandat } from '../lib/durata'
@@ -370,15 +370,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     const arr = [...form.puncteLucru]; arr.splice(i, 1); set('puncteLucru', arr)
   }
 
-  const addAsociat = (p: Persoana) => {
-    const prevEqual = equalShare(form.asociati.length)
-    const newEqual = equalShare(form.asociati.length + 1)
-    const rebalanced = form.asociati.map(a =>
-      (!a.cotaParticipare.trim() || a.cotaParticipare === prevEqual) ? { ...a, cotaParticipare: newEqual } : a
-    )
-    const newP: Persoana = { ...p, cotaParticipare: p.cotaParticipare.trim() || newEqual }
-    set('asociati', [...rebalanced, newP])
-  }
+  const addAsociat = (p: Persoana) => set('asociati', adaugaAsociat(form.asociati, p))
 
   const savePersoana = (p: Persoana) => {
     if (!personaModal) return

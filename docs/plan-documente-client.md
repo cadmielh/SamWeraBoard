@@ -51,6 +51,24 @@ Implementare faza 1: `fisiere.py` (tip după conținut, nume, stocare), `fisiere
 - O copie eșuată nu oprește generarea: utilizatorul primește documentul și un mesaj că, de data asta, copia nu s-a păstrat.
 - Nu se aplică șabloanelor Google Docs (nu produc un .docx în browser) și generărilor fără client salvat; fereastra spune asta.
 
+## Finisare fazele 1–2 (24 nov 2026, necomisă)
+
+- **Ștergere cu „Anulează”**: documentele și folderele dispar imediat, cererea pleacă la expirarea notificării. Folderele cu
+  conținut cer în continuare confirmare.
+- **Tragere**: fișiere din calculator peste un folder din listă intră în el; documente și foldere trase peste un folder sau peste
+  o treaptă din firul de navigare se mută acolo (inclusiv toată selecția). Pe ecran tactil rămâne „Mută în…”.
+- **Lipire (Ctrl+V)**: o captură sau un fișier copiat intră în folderul deschis; capturile primesc un nume cu data și ora.
+- **Căutare** în documentele clientului (de la 8 elemente; fără diacritice; inclusiv în subfoldere, cu calea afișată).
+- **Selecție multiplă**: căsuțe pe rânduri, bară cu Descarcă (până la 10), Mută în…, Șterge; Escape golește selecția fără să
+  închidă fișa.
+- **Previzualizare Word, text și XML**: `docx-preview` 0.3.7 (încărcat la nevoie, fără fonturi externe și linkuri active),
+  text cu UTF-8 sau Windows-1250.
+- **Extrage datele în fișă**: OCR pe un act păstrat (`POST /fisiere/<fid>/extract`, în funcția `api`, aceleași cote ca scanarea),
+  verificare în fereastra obișnuită, apoi persoana propusă automat (după nume sau ultimele cifre ale CNP-ului) sau una nouă;
+  persoana se actualizează în toate rolurile ei, prin vault.
+- **„Vezi”** în notificarea copiei generate: deschide fișa clientului la documente. (Butonul „Istoric” din pagina de generare
+  arată scanările OCR, nu generările, deci legătura stă în notificare.)
+
 ## Audit (24 nov 2026), corectat
 
 - Transferurile au funcție proprie (`documente`, `fisiere_app.py`: 2 GiB, 16 cereri pe instanță), ca o coadă de fișiere să nu

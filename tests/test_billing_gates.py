@@ -27,7 +27,7 @@ GATED = {
     # documentele clienților: încărcare, foldere, redenumire, mutare
     ("POST", "/fisiere"), ("PATCH", "/fisiere/<fid>"), ("POST", "/foldere"), ("POST", "/clients/<cid>/documente/init"),
     ("PUT", "/fisiere/setari"),
-    ("PATCH", "/foldere/<folder_id>"),
+    ("PATCH", "/foldere/<folder_id>"), ("POST", "/fisiere/<fid>/extract"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
 # ștergerea GDPR a unui client, căutarea ANAF (necesară completării datelor de facturare) și abonarea.

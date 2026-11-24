@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clientMatchesQuery, missingCompanyFields, missingRegistrationFields, resolveInfiintare, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from './clienti'
+import { campuriDenumire, clientMatchesQuery, missingCompanyFields, missingRegistrationFields, resolveInfiintare, EMPTY_CLIENT, EMPTY_PERSOANA, type ClientInput } from './clienti'
 import type { Client } from '../types'
 
 const client = (over: Partial<Client>): Client => ({
@@ -98,5 +98,15 @@ describe('ieșirea din înființare confirmă începutul mandatelor „din preze
     expect(fara.administratori?.[0].mandat?.dataNumire).toBe('')
     const inca = resolveInfiintare({ ...EMPTY_CLIENT, inInfiintare: true, dataInmatricularii: '15.06.2026', administratori: [admin('')] }, null)
     expect(inca.administratori?.[0].mandat?.dataNumire).toBe('')
+  })
+})
+
+describe('campuriDenumire', () => {
+  it('o modificare doar a titularului sau a tipului nu atinge denumirea', () => {
+    expect(campuriDenumire({ titular: { nume: 'Popescu' } as never })).toEqual({})
+    expect(campuriDenumire({ tipClient: 'PF' })).toEqual({})
+  })
+  it('o modificare a denumirii o scrie, cu varianta pentru căutare', () => {
+    expect(campuriDenumire({ denumire: 'Alfa SRL' })).toEqual({ denumire: 'Alfa SRL', denumireLower: 'alfa srl' })
   })
 })

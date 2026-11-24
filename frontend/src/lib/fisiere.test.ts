@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ACCEPT, arbore, caleFolder, continutRecursiv, descendenti, extensie, familie, fisierDinFirestore, formatMarime, inaltime,
   previzualizabil, sorteazaFisiere, sorteazaFoldere, subfoldere, verificaLocal, type Fisier, type Folder,
+  ascundeTemporar, ascunseAcum, extractibil, felPrevizualizare, normalizeazaCautare, numeLipire, reafiseaza,
 } from './fisiere'
 
 const folder = (id: string, parentId: string | null, nume = id): Folder => ({ id, clientId: 'c1', parentId, nume })
@@ -138,5 +139,39 @@ describe('sorteazaFoldere', () => {
   })
   it('după nume, descrescător', () => {
     expect(sorteazaFoldere(radacina, FOLDERE, fisiere, 'nume', true).map(f => f.nume)).toEqual(['contracte', 'Acte'])
+  })
+})
+
+describe('căutare, lipire, previzualizare', () => {
+  it('căutarea ignoră diacriticele, majusculele și spațiile de la capete', () => {
+    expect(normalizeazaCautare('  CI Ștefănescu ')).toBe('ci stefanescu')
+    expect(normalizeazaCautare('Ștefănescu').includes(normalizeazaCautare('stefan'))).toBe(true)
+  })
+  it('capturile lipite primesc un nume cu data; fișierele cu nume propriu și-l păstrează', () => {
+    const acum = new Date(2026, 10, 24, 9, 5, 7)
+    expect(numeLipire({ name: 'image.png', type: 'image/png' }, acum)).toBe('Captură 2026-11-24 09.05.07.png')
+    expect(numeLipire({ name: '', type: 'image/jpeg' }, acum)).toBe('Captură 2026-11-24 09.05.07.jpg')
+    expect(numeLipire({ name: 'CI Ion.pdf', type: 'application/pdf' }, acum)).toBe('CI Ion.pdf')
+  })
+  it('felul previzualizării și actele din care se pot extrage date', () => {
+    expect(felPrevizualizare('application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('word')
+    expect(felPrevizualizare('application/xml')).toBe('text')
+    expect(felPrevizualizare('application/msword')).toBeNull()
+    expect(previzualizabil('text/csv')).toBe(true)
+    expect(extractibil('image/jpeg')).toBe(true)
+    expect(extractibil('image/heic')).toBe(false)
+  })
+})
+
+describe('ștergeri amânate', () => {
+  it('elementele ascunse reapar la „Anulează”; fiecare schimbare e o mulțime nouă (React o observă)', () => {
+    const inainte = ascunseAcum()
+    ascundeTemporar(['a', 'b'])
+    expect([...ascunseAcum()].sort()).toEqual(['a', 'b'])
+    expect(ascunseAcum()).not.toBe(inainte)
+    reafiseaza(['a'])
+    expect([...ascunseAcum()]).toEqual(['b'])
+    reafiseaza(['b'])
+    expect(ascunseAcum().size).toBe(0)
   })
 })

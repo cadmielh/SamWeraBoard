@@ -220,6 +220,56 @@ def extract():
     file_bytes = file.read()
     filename   = file.filename
     source     = _clean_choice(request.form.get("source"), ("upload", "drive"), "upload")   # doar pentru jurnal
+    return jsonify(_ocr(uid, file_bytes, filename, source))
+
+
+@app.route("/fisiere/<fid>/extract", methods=["POST"])
+@limiter.limit("20 per minute")
+def extract_document(fid: str):
+    """OCR pe un act deja păstrat în documentele clientului (fisiere_api.py): serverul îl decriptează și îl citește, fără
+    ca utilizatorul să-l mai descarce și să-l încarce din nou. Aceleași drepturi și cote ca scanarea obișnuită."""
+    try:
+        uid = _verify(consent=True, limit="ocr", billing=True)
+    except PermissionError as e:
+        return _auth_error(e)
+    import fisiere
+    import vault
+    wid = request.headers.get("X-Workspace-Id", "")
+    # Aceleași condiții ca rutele documentelor (fisiere_api._require): funcția activă și stocarea configurată.
+    ws = authz.load_workspace(wid) or {}
+    if not (ws.get("features") or {}).get("documente"):
+        return jsonify({"error": "feature_disabled"}), 403
+    if not fisiere.configurata():
+        return jsonify({"error": "storage_unavailable"}), 503
+    if not fisiere_api._ID_RE.match(fid):
+        return jsonify({"error": "not_found"}), 404
+    snap = authz.db().collection("workspaces").document(wid).collection("fisiere").document(fid).get()
+    meta = snap.to_dict() if snap.exists else None
+    if not meta:
+        return jsonify({"error": "not_found"}), 404
+    # Tipul verificat la încărcare (după conținut) decide, nu numele, pe care utilizatorul îl poate redenumi oricum.
+    ext = _EXT_OCR.get(meta.get("mime") or "")
+    if not ext:
+        return jsonify({"error": "Unsupported file type"}), 400
+    nume = f"act.{ext}"
+    try:
+        data = fisiere.citeste(wid, fid)
+    except fisiere.StocareIndisponibila:
+        return jsonify({"error": "storage_unavailable"}), 503
+    except vault.VaultError:
+        return jsonify({"error": "vault_unavailable"}), 503
+    if data is None:
+        return jsonify({"error": "fisier_indisponibil"}), 404
+    audit.log(wid, uid, "fisier.download", fid, {"scop": "ocr"})
+    return jsonify(_ocr(uid, data, nume, "document"))
+
+
+# Tipurile de acte din care se pot extrage date (aceleași ca ALLOWED_EXTENSIONS), după tipul verificat la încărcare.
+_EXT_OCR = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf"}
+
+
+def _ocr(uid: str, file_bytes: bytes, filename: str, source: str) -> dict:
+    """Azure, cu OCR-ul local ca rezervă; întoarce toate câmpurile actului (goale unde nu s-a citit nimic)."""
 
     def _postprocess(fields: dict) -> dict:
         """Curăță spațiile/liniile noi din valorile extrase (OCR-ul desparte adesea seria de număr pe linii diferite);
@@ -257,7 +307,7 @@ def extract():
 
     if ai_score >= local_extractor.QUALITY_THRESHOLD:
         _audit(uid, "ocr.extract", _ocr_meta(source, "azure", "ok", len(file_bytes), ai_fields))
-        return jsonify(_empty | ai_fields)
+        return _empty | ai_fields
 
     # ── OCR local — doar dacă Azure n-a dat suficient (eșec sau scor mic) ──────
     # EasyOCR pe CPU poate rula minute întregi pe scanuri slabe (2 pass-uri ×
@@ -293,7 +343,7 @@ def extract():
             best["data_nasterii"] = dob
     _audit(uid, "ocr.extract", _ocr_meta(source, "local" if local_score > ai_score else "azure",
                                          "ok" if any(best.values()) else "empty", len(file_bytes), best))
-    return jsonify(_empty | best)
+    return _empty | best
 
 
 # ── Șabloane de bază ("built-in") ────────────────────────────────────────────

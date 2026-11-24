@@ -85,6 +85,14 @@ function resolveDisplayName(data: ClientInput): string {
   return data.denumire
 }
 
+/** Denumirea (și varianta pentru căutare) dintr-o modificare a clientului: doar dacă modificarea conține denumirea.
+ * O modificare doar a titularului sau a tipului nu o atinge (înainte o recalcula dintr-un client gol și o ștergea). */
+export function campuriDenumire(data: Partial<ClientInput>): { denumire: string; denumireLower: string } | Record<string, never> {
+  if (data.denumire === undefined) return {}
+  const displayName = resolveDisplayName({ ...EMPTY_CLIENT, ...data } as ClientInput)
+  return { denumire: displayName, denumireLower: displayName.toLowerCase() }
+}
+
 function clientiCol(workspaceId: string) {
   return collection(db, 'workspaces', workspaceId, 'clienti')
 }
@@ -395,11 +403,7 @@ export function useClienti(workspaceId: string | null) {
     delete patch.id
     delete patch.createdAt
     delete patch.createdBy
-    if (data.denumire !== undefined || data.titular !== undefined || data.tipClient !== undefined) {
-      const displayName = resolveDisplayName({ ...EMPTY_CLIENT, ...data } as ClientInput)
-      patch.denumire = displayName
-      patch.denumireLower = displayName.toLowerCase()
-    }
+    Object.assign(patch, campuriDenumire(data))
 
     let previous: Client | undefined
     setClienti(prev => prev.map(c => {

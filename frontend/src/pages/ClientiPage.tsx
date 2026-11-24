@@ -754,10 +754,10 @@ export default function ClientiPage() {
                   await update(workspaceId, activeClient.id, { notite })
                   toast('Notițe salvate', 'ok')
                 }}
-                onSaveField={async (patch) => {
+                onSaveField={async (patch, opts) => {
                   if (!workspaceId) return
                   await update(workspaceId, activeClient.id, patch)
-                  toast('Actualizat', 'ok')
+                  if (!opts?.silent) toast('Actualizat', 'ok')
                 }}
               />
             ) : (

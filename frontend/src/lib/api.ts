@@ -201,10 +201,15 @@ export function warmUpApi(): void {
 
 /** Apel JSON către API (membri, invitații, audit, vault). Nu folosește token-ul Google — doar identitatea Firebase.
  * Aruncă Error cu `code` = codul de eroare al serverului (ex. "last_admin", "consent_required"). */
-export async function apiJson<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+export async function apiJson<T = unknown>(method: string, path: string, body?: unknown, workspaceId?: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { ...(await authHeaders()), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+    headers: {
+      ...(await authHeaders()),
+      // Un cabinet anume (ex. o ștergere amânată pornită în alt cabinet decât cel activ acum la expirarea ei).
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -251,6 +256,28 @@ export async function extractFile(file: File, source: "upload" | "drive" = "uplo
     throw new Error(apiErrorMessage(data, res, "Extraction failed"));
   }
   marcheazaPas("scan");
+  return data as IDFields;
+}
+
+/** OCR pe un act deja păstrat în documentele clientului: serverul îl decriptează și îl citește (fără re-încărcare). */
+export async function extractStoredFile(fisierId: string): Promise<IDFields> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OCR_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${OCR_BASE}/fisiere/${encodeURIComponent(fisierId)}/extract`, {
+      method: "POST", headers: await authHeaders(), signal: controller.signal,
+    });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new Error("Citirea actului durează prea mult. Încearcă din nou.", { cause: e });
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(apiErrorMessage(data as { error?: string }, res, "Citirea actului a eșuat"));
   return data as IDFields;
 }
 

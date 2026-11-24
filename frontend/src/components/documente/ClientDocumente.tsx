@@ -3,18 +3,20 @@ import type { Client } from '../../types'
 import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
-  ACCEPT, caleFolder, continutRecursiv, creeazaFolder, descarcaFisier, extensie, initDocumenteClient,
-  formatMarime, mutaFisier, mutaFolder, previzualizabil, redenumesteFisier, redenumesteFolder, sorteazaFisiere, stergeFisier,
-  sorteazaFoldere, stergeFolder, subfoldere, useDocumenteClient, DESC_IMPLICIT, type EroareFisier, type Fisier, type Folder, type Sortare,
+  ACCEPT, DESC_IMPLICIT, ascundeTemporar, incepeStergereAmanata, terminaStergereAmanata, caleFolder, continutRecursiv, creeazaFolder, descarcaFisier, descendenti, extensie,
+  extractibil, formatMarime, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
+  reafiseaza, redenumesteFisier, redenumesteFolder, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
+  useAscunse, useDocumenteClient, type EroareFisier, type Fisier, type Folder, type Sortare,
 } from '../../lib/fisiere'
 import ConfirmModal from '../ConfirmModal'
 import BtnLabel from '../BtnLabel'
 import MeniuRand, { type OptiuneMeniu } from './MeniuRand'
 import FisierPreview from './FisierPreview'
-import MutaModal from './MutaModal'
+import MutaModal, { type ElementMutat } from './MutaModal'
 import CoadaIncarcare from './CoadaIncarcare'
+import ExtrageAct from './ExtrageAct'
 import { useIncarcari } from './useIncarcari'
-import { IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
+import { IconCautare, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
 import '../../styles/documente.css'
 
 const SORTARI: { key: Sortare; label: string }[] = [
@@ -24,6 +26,9 @@ const SORTARI: { key: Sortare; label: string }[] = [
   { key: 'data', label: 'Dată' },
 ]
 const CHEIE_SORTARE = 'cabinio:documente-sortare'
+const CAUTARE_DE_LA = 8                       // câmpul de căutare apare de la atâtea elemente încolo
+const MAX_DESCARCARI_ODATA = 10               // browserele cer confirmare pentru multe descărcări simultane
+const MIME_INTERN = 'application/x-cabinio-documente'
 
 // Ordinea aleasă se reține pe dispozitivul utilizatorului, pentru toți clienții.
 function citesteSortare(): { dupa: Sortare; desc: boolean } {
@@ -37,9 +42,18 @@ function citesteSortare(): { dupa: Sortare; desc: boolean } {
 }
 
 type Element = { tip: 'fisier'; f: Fisier } | { tip: 'folder'; f: Folder }
+const cheieEl = (e: Element) => `${e.tip === 'fisier' ? 'f' : 'd'}:${e.f.id}`
+const nrText = (n: number, unu: string, multe: string) => `${n} ${n === 1 ? unu : multe}`
 
 // Clienții pentru care s-a cerut deja pregătirea documentelor în sesiunea curentă (serverul e oricum idempotent).
 const initCerut = new Set<string>()
+
+/** Ținta clipboard-ului e un câmp de text sau există o fereastră deschisă: lipirea nu e pentru documente. */
+function lipireInAltaParte(e: ClipboardEvent): boolean {
+  const t = e.target as HTMLElement | null
+  if (t && (t.closest('input, textarea, [contenteditable="true"]'))) return true
+  return !!document.querySelector('.modal-backdrop')
+}
 
 interface Props {
   client: Client
@@ -47,18 +61,35 @@ interface Props {
   layout?: 'sectiune' | 'coloana'
   restrans?: boolean
   onRestrans?: (restrans: boolean) => void
+  /** Salvarea unei modificări a fișei (ex. datele extrase dintr-un act păstrat). Fără ea, „Extrage datele” nu apare. */
+  onSaveClient?: (patch: Partial<Client>) => Promise<void>
 }
 
-/** Documentele clientului: foldere, încărcare (buton sau tragere), previzualizare, descărcare, redenumire, mutare,
- * ștergere. Lista e live; toate modificările trec prin server. Viewer: doar vede și descarcă. La prima deschidere de
- * către un membru, serverul creează folderele implicite ale cabinetului (o singură dată per client). */
-export default function ClientDocumente({ client, layout = 'sectiune', restrans = false, onRestrans }: Props) {
+/** Documentele clientului: foldere, încărcare (buton, tragere, lipire), căutare, selecție multiplă, previzualizare,
+ * descărcare, redenumire, mutare (și prin tragere), ștergere cu „Anulează”, extragerea datelor dintr-un act. Lista e
+ * live; toate modificările trec prin server. Viewer: doar vede și descarcă. La prima deschidere de către un membru,
+ * serverul creează folderele implicite ale cabinetului (o singură dată per client). */
+export default function ClientDocumente({ client, layout = 'sectiune', restrans = false, onRestrans, onSaveClient }: Props) {
   const { activeWorkspace, userRole, canEdit, toast } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
-  const { fisiere, foldere, loading, error } = useDocumenteClient(workspaceId, client.id)
+  const date = useDocumenteClient(workspaceId, client.id)
+  const { loading, error } = date
+  const ascunse = useAscunse()
   const coada = useIncarcari(workspaceId, client.id)
   // Ștergerea rămâne posibilă și după expirarea abonamentului (datele sunt ale cabinetului); restul cere acces complet.
   const poateSterge = userRole === 'admin' || userRole === 'member'
+  const poateSelecta = canEdit || poateSterge
+
+  // Elementele în curs de ștergere (cu „Anulează” încă disponibil) nu se mai arată, cu tot conținutul lor.
+  const foldere = useMemo(() => {
+    const ascunsePlus = new Set<string>()
+    for (const d of date.foldere) if (ascunse.has(d.id)) descendenti(date.foldere, d.id).forEach(id => ascunsePlus.add(id))
+    return date.foldere.filter(d => !ascunsePlus.has(d.id))
+  }, [date.foldere, ascunse])
+  const fisiere = useMemo(() => {
+    const vizibile = new Set(foldere.map(d => d.id))
+    return date.fisiere.filter(f => !ascunse.has(f.id) && (!f.folderId || vizibile.has(f.folderId)))
+  }, [date.fisiere, foldere, ascunse])
 
   const [folderCerut, setFolderCerut] = useState<string | null>(null)
   const [sortare, setSortareStare] = useState(citesteSortare)
@@ -66,20 +97,25 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     setSortareStare(next)
     try { localStorage.setItem(CHEIE_SORTARE, JSON.stringify(next)) } catch { /* doar pentru sesiunea curentă */ }
   }
+  const [cautare, setCautare] = useState('')
+  const [selectie, setSelectie] = useState<Set<string>>(new Set())
   const [redenumire, setRedenumire] = useState<string | null>(null)       // id-ul rândului editat
   const [folderNou, setFolderNou] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
-  const [muta, setMuta] = useState<Element | null>(null)
-  const [sterge, setSterge] = useState<Element | null>(null)
+  const [muta, setMuta] = useState<Element[] | null>(null)
+  const [confirmaSterge, setConfirmaSterge] = useState<Element[] | null>(null)
+  const [extrage, setExtrage] = useState<Fisier | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
+  const [tintaTragere, setTintaTragere] = useState<string | null>(null)   // folderul (sau „radacina”) de sub cursor
+  const [trase, setTrase] = useState<Element[] | null>(null)                // elementele trase din listă
   const [initInCurs, setInitInCurs] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
 
   // Pregătirea automată: client fără niciun folder sau fișier, deschis de cineva care poate scrie.
   useEffect(() => {
-    if (loading || error || !canEdit || !workspaceId || fisiere.length || foldere.length) return
+    if (loading || error || !canEdit || !workspaceId || date.fisiere.length || date.foldere.length) return
     const k = `${workspaceId}/${client.id}`
     if (initCerut.has(k)) return
     initCerut.add(k)
@@ -87,7 +123,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     setInitInCurs(k)
     initDocumenteClient(client.id).catch(() => { /* fără foldere implicite: utilizatorul le poate crea */ })
       .finally(() => setInitInCurs(cur => cur === k ? null : cur))
-  }, [loading, error, canEdit, workspaceId, client.id, fisiere.length, foldere.length])
+  }, [loading, error, canEdit, workspaceId, client.id, date.fisiere.length, date.foldere.length])
   const pregatire = initInCurs === `${workspaceId}/${client.id}`
 
   // Un folder șters între timp (de un coleg) trimite înapoi la rădăcină.
@@ -95,19 +131,44 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const folderCurent = cale.length ? cale[cale.length - 1].id : null
   const numeFolderCurent = cale.length ? cale[cale.length - 1].nume : 'Documente'
 
-  const fisiereAici = useMemo(() => sorteazaFisiere(fisiere.filter(f => f.folderId === folderCurent), sortare.dupa, sortare.desc),
-    [fisiere, folderCurent, sortare])
-  const folderAici = useMemo(() => sorteazaFoldere(subfoldere(foldere, folderCurent), foldere, fisiere, sortare.dupa, sortare.desc),
-    [foldere, fisiere, folderCurent, sortare])
+  const q = normalizeazaCautare(cautare)
+  const fisiereAici = useMemo(() => sorteazaFisiere(
+    q ? fisiere.filter(f => normalizeazaCautare(f.nume).includes(q)) : fisiere.filter(f => f.folderId === folderCurent),
+    sortare.dupa, sortare.desc), [fisiere, folderCurent, sortare, q])
+  const folderAici = useMemo(() => sorteazaFoldere(
+    q ? foldere.filter(d => normalizeazaCautare(d.nume).includes(q)) : subfoldere(foldere, folderCurent),
+    foldere, fisiere, sortare.dupa, sortare.desc), [foldere, fisiere, folderCurent, sortare, q])
   const deVazut = useMemo(() => fisiereAici.filter(f => previzualizabil(f.mime)), [fisiereAici])
   const totalOcupat = useMemo(() => fisiere.reduce((s, f) => s + f.marime, 0), [fisiere])
+  const elementeAici: Element[] = useMemo(() => [
+    ...folderAici.map(f => ({ tip: 'folder', f }) as Element), ...fisiereAici.map(f => ({ tip: 'fisier', f }) as Element),
+  ], [folderAici, fisiereAici])
+  const selectate = useMemo(() => elementeAici.filter(e => selectie.has(cheieEl(e))), [elementeAici, selectie])
 
   const numeMembru = (uid: string) => {
     const m = activeWorkspace?.members?.[uid]
     return m ? (m.displayName || m.email.split('@')[0]) : ''
   }
+  const caleText = (folderId: string | null) => caleFolder(foldere, folderId).map(d => d.nume).join(' / ') || 'Documente'
 
-  const deschide = (folderId: string | null) => { setFolderCerut(folderId); setRedenumire(null); setFolderNou(false) }
+  const deschide = (folderId: string | null) => {
+    setFolderCerut(folderId); setRedenumire(null); setFolderNou(false); setSelectie(new Set()); setCautare('')
+  }
+
+  // Escape golește întâi selecția și se oprește acolo: altfel pagina Clienți l-ar folosi și pentru închiderea fișei
+  // (ascultă tot pe document, deci aici ascultăm în faza de captură, înaintea ei). Al doilea Escape închide fișa, ca înainte.
+  useEffect(() => {
+    if (!selectie.size) return
+    const laTasta = (e: KeyboardEvent) => {
+      // Un meniu „⋯” deschis își tratează singur Escape (se închide); selecția rămâne până la următorul Escape.
+      if (e.key !== 'Escape' || document.querySelector('.modal-backdrop, .doc-menu-pop')) return
+      if ((e.target as HTMLElement)?.closest('textarea, input:not([type="checkbox"]):not([type="radio"])')) return
+      e.stopPropagation()
+      setSelectie(new Set())
+    }
+    document.addEventListener('keydown', laTasta, true)
+    return () => document.removeEventListener('keydown', laTasta, true)
+  }, [selectie.size])
 
   const ruleaza = async (id: string, fn: () => Promise<unknown>, succes?: string) => {
     setBusyId(id)
@@ -129,68 +190,195 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     else void descarca(f)
   }
 
-  const alegeFisiere = (list: FileList | null) => {
+  const alegeFisiere = (list: FileList | File[] | null, folderId: string | null = folderCurent) => {
     const files = Array.from(list ?? [])
-    if (files.length) coada.adauga(files, folderCurent)
+    if (files.length) coada.adauga(files, folderId)
   }
 
-  // ── Tragere din exploratorul de fișiere ──
+  // ── Lipire din clipboard (Ctrl+V / Cmd+V): o captură sau un act copiat intră în folderul deschis ──
+  const lipireRef = useRef<(e: ClipboardEvent) => void>(() => {})
+  useEffect(() => {
+    lipireRef.current = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.files ?? [])
+      if (!canEdit || !files.length || lipireInAltaParte(e)) return
+      e.preventDefault()
+      const acum = new Date()
+      alegeFisiere(files.map(f => new File([f], numeLipire(f, acum), { type: f.type })), folderCurent)
+      if (restrans) onRestrans?.(false)
+    }
+  })
+  useEffect(() => {
+    const h = (e: ClipboardEvent) => lipireRef.current(e)
+    document.addEventListener('paste', h)
+    return () => document.removeEventListener('paste', h)
+  }, [])
+
+  // ── Tragere: fișiere din calculator (peste secțiune sau peste un folder) și elemente din listă (peste un folder) ──
   const cuFisiere = (e: React.DragEvent) => canEdit && Array.from(e.dataTransfer.types).includes('Files')
+  const intern = (e: React.DragEvent) => canEdit && Array.from(e.dataTransfer.types).includes(MIME_INTERN)
   const dragHandlers = canEdit ? {
     onDragEnter: (e: React.DragEvent) => { if (!cuFisiere(e)) return; e.preventDefault(); dragDepth.current++; setPeste(true) },
     onDragOver: (e: React.DragEvent) => { if (!cuFisiere(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy' },
-    onDragLeave: () => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setPeste(false) },
+    onDragLeave: () => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) { setPeste(false); setTintaTragere(null) } },
     onDrop: (e: React.DragEvent) => {
       if (!cuFisiere(e)) return
-      e.preventDefault(); dragDepth.current = 0; setPeste(false)
+      e.preventDefault(); dragDepth.current = 0; setPeste(false); setTintaTragere(null)
       alegeFisiere(e.dataTransfer.files)
       if (restrans) onRestrans?.(false)          // fișiere trase pe banda restrânsă: coloana se deschide, cu progresul
     },
   } : {}
 
-  const confirmaStergere = async () => {
-    const el = sterge
-    if (!el) return
-    setSterge(null)
-    if (el.tip === 'fisier') {
-      await ruleaza(el.f.id, () => stergeFisier(el.f.id), `„${el.f.nume}” a fost șters.`).catch(() => {})
-    } else {
-      // Confirmarea a arătat conținutul văzut atunci. Dacă serverul găsește mai mult (un coleg a încărcat între timp),
-      // răspunde `folder_negol` și utilizatorul confirmă din nou, cu numărul actualizat.
-      const c = continutRecursiv(foldere, fisiere, el.f.id)
-      setBusyId(el.f.id)
-      try {
-        await stergeFolder(el.f.id, c.fisiere + c.foldere > 0)
-        toast(`Folderul „${el.f.nume}” a fost șters.`, 'ok')
-      } catch (e) {
-        const err = e as EroareFisier
-        toast(err.message || 'Folderul nu a putut fi șters.', err.code === 'folder_negol' ? 'info' : 'err')
-        if (err.code === 'folder_negol') setSterge(el)
-      } finally {
-        setBusyId(null)
-      }
-    }
+  /** Poate primi folderul `dest` elementele trase? (nu în el însuși, nu în propriul subfolder, nu acolo unde sunt deja) */
+  const primeste = (dest: string | null): boolean => {
+    if (!trase) return true
+    return trase.some(el => (el.tip === 'fisier' ? el.f.folderId : el.f.parentId) !== dest)
+      && !trase.some(el => el.tip === 'folder' && dest !== null && descendenti(foldere, el.f.id).has(dest))
   }
 
-  const mesajStergere = (el: Element) => {
-    if (el.tip === 'fisier') return <>Ștergi definitiv „<strong>{el.f.nume}</strong>”? Acțiunea nu poate fi anulată.</>
-    const c = continutRecursiv(foldere, fisiere, el.f.id)
-    if (!c.fisiere && !c.foldere) return <>Ștergi folderul gol „<strong>{el.f.nume}</strong>”?</>
-    const parti = [c.fisiere ? `${c.fisiere} ${c.fisiere === 1 ? 'fișier' : 'fișiere'}` : '', c.foldere ? `${c.foldere} ${c.foldere === 1 ? 'subfolder' : 'subfoldere'}` : ''].filter(Boolean)
-    return <>Folderul „<strong>{el.f.nume}</strong>” conține {parti.join(' și ')}. Se șterg definitiv împreună cu el.</>
+  /** Handlerele unei ținte de tragere: un folder din listă sau o treaptă din firul de navigare (`null` = rădăcina). */
+  const tintaHandlers = (dest: string | null) => canEdit ? {
+    onDragOver: (e: React.DragEvent) => {
+      if (!(cuFisiere(e) || (intern(e) && primeste(dest)))) return
+      e.preventDefault(); e.stopPropagation()
+      e.dataTransfer.dropEffect = intern(e) ? 'move' : 'copy'
+      setTintaTragere(dest ?? 'radacina')
+    },
+    onDragLeave: () => setTintaTragere(t => t === (dest ?? 'radacina') ? null : t),
+    onDrop: (e: React.DragEvent) => {
+      const fisiereTrase = cuFisiere(e)
+      if (!fisiereTrase && !intern(e)) return
+      e.preventDefault(); e.stopPropagation()
+      dragDepth.current = 0; setPeste(false); setTintaTragere(null)
+      if (fisiereTrase) alegeFisiere(e.dataTransfer.files, dest)
+      else if (trase && primeste(dest)) mutaElemente(trase, dest).catch(() => { /* mesajul l-a afișat mutaElemente */ })
+      setTrase(null)
+    },
+  } : {}
+
+  const rowDrag = (el: Element) => canEdit ? {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      // Un element selectat trage toată selecția; altfel doar pe el.
+      const lot = selectie.has(cheieEl(el)) ? selectate : [el]
+      setTrase(lot)
+      e.dataTransfer.setData(MIME_INTERN, lot.map(cheieEl).join(','))
+      e.dataTransfer.effectAllowed = 'move'
+    },
+    onDragEnd: () => { setTrase(null); setTintaTragere(null) },
+  } : {}
+
+  // ── Mutare, ștergere (cu „Anulează”), descărcare — pentru unul sau mai multe elemente ──
+  const mutaElemente = async (lot: Element[], dest: string | null) => {
+    const deMutat = lot.filter(el => (el.tip === 'fisier' ? el.f.folderId : el.f.parentId) !== dest)
+    const erori: string[] = []
+    setBusyId(deMutat.length === 1 ? deMutat[0].f.id : 'lot')
+    for (const el of deMutat) {
+      try {
+        if (el.tip === 'fisier') await mutaFisier(el.f.id, dest)
+        else await mutaFolder(el.f.id, dest)
+      } catch (e) {
+        erori.push(`„${el.f.nume}”: ${(e as Error).message}`)
+      }
+    }
+    setBusyId(null)
+    setSelectie(new Set())
+    const ok = deMutat.length - erori.length
+    const unde = dest ? foldere.find(d => d.id === dest)?.nume ?? 'folder' : 'Documente'
+    if (ok) toast(ok === 1 && deMutat.length === 1 ? `Mutat în „${unde}”.` : `${nrText(ok, 'element mutat', 'elemente mutate')} în „${unde}”.`, 'ok')
+    if (erori.length) toast(erori.length === 1 ? `Nu s-a putut muta ${erori[0]}` : `${erori.length} elemente nu s-au putut muta. ${erori[0]}`, 'err')
+    if (erori.length && !ok) throw new Error('mutare eșuată')
+  }
+
+  /** Ștergerea amânată: elementele dispar acum, cererile pleacă la expirarea notificării; „Anulează” le readuce. */
+  /** `confirmat`: utilizatorul a confirmat ștergerea folderelor cu conținut (se șterg recursiv). Un folder șters fără
+   * confirmare (era gol) se șterge doar dacă e tot gol: dacă între timp cineva a încărcat ceva în el, serverul refuză
+   * (`folder_negol`) și folderul rămâne. Cererile pleacă spre cabinetul de acum, nu spre cel activ la expirare. */
+  const stergeAmanat = (lot: Element[], confirmat = false) => {
+    const ids = lot.map(el => el.f.id)
+    const wid = workspaceId ?? undefined
+    ascundeTemporar(ids)
+    incepeStergereAmanata()
+    setSelectie(new Set())
+    const mesaj = lot.length === 1
+      ? `${lot[0].tip === 'folder' ? 'Folderul' : 'Documentul'} „${lot[0].f.nume}” a fost șters.`
+      : `${nrText(lot.length, 'element șters', 'elemente șterse')}.`
+    toast(mesaj, 'ok', {
+      action: { label: 'Anulează', onClick: () => { reafiseaza(ids); terminaStergereAmanata() } },
+      onExpire: async () => {
+        const erori: string[] = []
+        const pastrate: string[] = []
+        try {
+          for (const el of lot) {
+            try {
+              if (el.tip === 'fisier') await stergeFisier(el.f.id, wid)
+              else await stergeFolder(el.f.id, confirmat, wid)
+            } catch (e) {
+              const err = e as EroareFisier
+              if (err.code === 'folder_negol') pastrate.push(el.f.nume)
+              else if (err.status !== 404) erori.push(el.f.nume)     // 404: șters deja (de un coleg)
+            }
+          }
+        } finally {
+          terminaStergereAmanata()
+          reafiseaza(ids)                                 // cele șterse dispar oricum din listă; cele rămase reapar
+        }
+        const lista = (n: string[]) => `${n.slice(0, 3).map(x => `„${x}”`).join(', ')}${n.length > 3 ? '…' : ''}`
+        if (pastrate.length) toast(`Nu am șters ${lista(pastrate)}: între timp a primit documente noi. Verifică-l și șterge-l din nou dacă e cazul.`, 'info')
+        if (erori.length) toast(`Nu s-au putut șterge: ${lista(erori)}.`, 'err')
+      },
+    })
+  }
+
+  /** Folderele cu conținut cer confirmare (se șterg cu tot ce conțin); documentele și folderele goale, nu: „Anulează” ajunge. */
+  const cereStergere = (lot: Element[]) => {
+    const cuContinut = lot.some(el => el.tip === 'folder' && (() => {
+      const c = continutRecursiv(foldere, fisiere, el.f.id)
+      return c.fisiere + c.foldere > 0
+    })())
+    if (cuContinut) setConfirmaSterge(lot)
+    else stergeAmanat(lot)
+  }
+
+  const descarcaLot = async (lot: Fisier[]) => {
+    for (const f of lot.slice(0, MAX_DESCARCARI_ODATA)) await descarca(f)
+    if (lot.length > MAX_DESCARCARI_ODATA) toast(`S-au descărcat primele ${MAX_DESCARCARI_ODATA}. Selectează mai puține pentru restul.`, 'info')
+  }
+
+  const mesajStergere = (lot: Element[]) => {
+    const folderele = lot.filter(el => el.tip === 'folder')
+    const c = folderele.reduce((acc, el) => {
+      const x = continutRecursiv(foldere, fisiere, el.f.id)
+      return { fisiere: acc.fisiere + x.fisiere, foldere: acc.foldere + x.foldere }
+    }, { fisiere: 0, foldere: 0 })
+    const parti = [c.fisiere ? nrText(c.fisiere, 'fișier', 'fișiere') : '', c.foldere ? nrText(c.foldere, 'subfolder', 'subfoldere') : ''].filter(Boolean)
+    const ce = lot.length === 1 ? <>Folderul „<strong>{lot[0].f.nume}</strong>” conține</> : <>Folderele selectate conțin</>
+    return <>{ce} {parti.join(' și ')}. Se șterg împreună. Vei putea anula câteva secunde.</>
   }
 
   const optiuni = (el: Element): OptiuneMeniu[] => [
     ...(el.tip === 'fisier' ? [{ label: 'Descarcă', onSelect: () => void descarca(el.f) }] : []),
+    ...(el.tip === 'fisier' && canEdit && onSaveClient && extractibil(el.f.mime)
+      ? [{ label: 'Extrage datele în fișă', onSelect: () => setExtrage(el.f) }] : []),
     ...(canEdit ? [
       { label: 'Redenumește', onSelect: () => { setFolderNou(false); setRedenumire(el.f.id) } },
-      { label: 'Mută în…', onSelect: () => setMuta(el) },
+      { label: 'Mută în…', onSelect: () => setMuta([el]) },
     ] : []),
-    ...(poateSterge ? [{ label: 'Șterge', danger: true, onSelect: () => setSterge(el) }] : []),
+    ...(poateSterge ? [{ label: 'Șterge', danger: true, onSelect: () => cereStergere([el]) }] : []),
   ]
 
+  const comuta = (el: Element) => setSelectie(prev => {
+    const next = new Set(prev)
+    const k = cheieEl(el)
+    if (next.has(k)) next.delete(k)
+    else next.add(k)
+    return next
+  })
+  const toateSelectate = elementeAici.length > 0 && selectate.length === elementeAici.length
+
   const nimic = !loading && !error && !pregatire && fisiere.length === 0 && foldere.length === 0
-  const golAici = !loading && !error && !pregatire && !nimic && fisiereAici.length === 0 && folderAici.length === 0 && !folderNou
+  const golAici = !loading && !error && !pregatire && !nimic && !q && fisiereAici.length === 0 && folderAici.length === 0 && !folderNou
+  const faraRezultate = !!q && fisiereAici.length === 0 && folderAici.length === 0
+  const arataCautare = fisiere.length + foldere.length >= CAUTARE_DE_LA || !!cautare
 
   const fileInput = (
     <input ref={inputRef} type="file" multiple accept={ACCEPT} hidden
@@ -221,6 +409,83 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     )
   }
 
+  const casuta = (el: Element) => poateSelecta && (
+    <input type="checkbox" className="doc-check" checked={selectie.has(cheieEl(el))} onChange={() => comuta(el)}
+      aria-label={`Selectează ${el.f.nume}`} onClick={e => e.stopPropagation()} />
+  )
+
+  const randFolder = (d: Folder) => {
+    const el: Element = { tip: 'folder', f: d }
+    const n = continutRecursiv(foldere, fisiere, d.id)
+    if (redenumire === d.id) {
+      return (
+        <RandEditare key={d.id} icon={<IconFolder />} initial={d.nume}
+          onCancel={() => setRedenumire(null)}
+          onSave={async nume => {
+            if (nume !== d.nume) await ruleaza(d.id, () => redenumesteFolder(d.id, nume))
+            setRedenumire(null)
+          }} />
+      )
+    }
+    const detalii = n.fisiere === 0 && n.foldere === 0 ? 'Gol'
+      : [n.fisiere ? nrText(n.fisiere, 'fișier', 'fișiere') : '', n.foldere ? nrText(n.foldere, 'subfolder', 'subfoldere') : ''].filter(Boolean).join(' · ')
+    return (
+      <li key={d.id} {...rowDrag(el)} {...tintaHandlers(d.id)}
+        className={`doc-row doc-row--folder${busyId === d.id ? ' is-busy' : ''}${tintaTragere === d.id ? ' is-tinta' : ''}${selectie.has(cheieEl(el)) ? ' is-selected' : ''}`}>
+        {casuta(el)}
+        <button type="button" className="doc-row-main" onClick={() => deschide(d.id)}>
+          <IconFolder />
+          <span className="doc-row-text">
+            <span className="doc-name">{d.nume}</span>
+            <span className="doc-meta">{q ? [caleText(d.parentId), detalii].join(' · ') : detalii}</span>
+          </span>
+        </button>
+        <div className="doc-row-actions">
+          <MeniuRand eticheta={`Acțiuni pentru folderul ${d.nume}`} optiuni={optiuni(el)} />
+        </div>
+      </li>
+    )
+  }
+
+  const randFisier = (f: Fisier) => {
+    const el: Element = { tip: 'fisier', f }
+    if (redenumire === f.id) {
+      return (
+        <RandEditare key={f.id} icon={<IconFisier mime={f.mime} />} initial={f.nume} sufix={extensie(f.nume)}
+          onCancel={() => setRedenumire(null)}
+          onSave={async nume => {
+            if (nume !== f.nume) await ruleaza(f.id, () => redenumesteFisier(f.id, nume))
+            setRedenumire(null)
+          }} />
+      )
+    }
+    return (
+      <li key={f.id} {...rowDrag(el)}
+        className={`doc-row${busyId === f.id ? ' is-busy' : ''}${selectie.has(cheieEl(el)) ? ' is-selected' : ''}`}>
+        {casuta(el)}
+        <button type="button" className="doc-row-main" onClick={() => deschideFisier(f)}
+          title={previzualizabil(f.mime) ? `Deschide „${f.nume}”` : `Descarcă „${f.nume}”`}>
+          <IconFisier mime={f.mime} />
+          <span className="doc-row-text">
+            <span className="doc-name">{f.nume}</span>
+            <span className="doc-meta">
+              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', formatMarime(f.marime),
+                f.createdAt ? formatDateRo(f.createdAt) : '', q ? '' : numeMembru(f.createdBy)].filter(Boolean).join(' · ')}
+            </span>
+          </span>
+        </button>
+        <div className="doc-row-actions">
+          {busyId === f.id
+            ? <span className="spin spin-dark" role="status" aria-label="Se procesează" />
+            : <button type="button" className="doc-icon-btn doc-only-hover" onClick={() => void descarca(f)} aria-label={`Descarcă ${f.nume}`} title="Descarcă"><IconDescarca /></button>}
+          <MeniuRand eticheta={`Acțiuni pentru ${f.nume}`} optiuni={optiuni(el)} />
+        </div>
+      </li>
+    )
+  }
+
+  const fisiereSelectate = selectate.filter((el): el is { tip: 'fisier'; f: Fisier } => el.tip === 'fisier').map(el => el.f)
+
   return (
     <div className={`cv2-section doc-section doc-section--${layout}${peste ? ' is-drop' : ''}`} data-sectiune="documente" {...dragHandlers}>
       <div className="doc-head">
@@ -244,12 +509,13 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
             </div>
           )}
           {canEdit && (
-            <button type="button" className="btn btn-ghost btn-sm doc-btn" onClick={() => { setRedenumire(null); setFolderNou(true) }} title="Folder nou" aria-label="Folder nou">
+            <button type="button" className="btn btn-ghost btn-sm doc-btn" onClick={() => { setRedenumire(null); setCautare(''); setFolderNou(true) }} title="Folder nou" aria-label="Folder nou">
               <IconFolderNou /> <span className="doc-btn-text">Folder nou</span>
             </button>
           )}
           {canEdit && (
-            <button type="button" className="btn btn-outline-primary btn-sm doc-btn" onClick={() => inputRef.current?.click()} title="Încarcă documente" aria-label="Încarcă documente">
+            <button type="button" className="btn btn-outline-primary btn-sm doc-btn" onClick={() => inputRef.current?.click()}
+              title="Încarcă documente (sau trage-le aici, ori lipește cu Ctrl+V)" aria-label="Încarcă documente">
               <IconIncarca /> <span className="doc-btn-text">Încarcă</span>
             </button>
           )}
@@ -262,13 +528,45 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         )}
       </div>
 
-      {cale.length > 0 && (
+      {arataCautare && (
+        <div className="doc-cautare">
+          <IconCautare />
+          <input type="search" className="field-input" placeholder="Caută în documentele clientului…" value={cautare}
+            aria-label="Caută în documentele clientului"
+            onChange={e => { setCautare(e.target.value); setSelectie(new Set()) }}
+            onKeyDown={e => { if (e.key === 'Escape' && cautare) { e.stopPropagation(); setCautare('') } }} />
+        </div>
+      )}
+
+      {selectate.length > 0 && (
+        <div className="doc-bulk" role="toolbar" aria-label="Acțiuni pentru elementele selectate">
+          <label className="doc-bulk-all">
+            <input type="checkbox" className="doc-check" checked={toateSelectate}
+              onChange={() => setSelectie(toateSelectate ? new Set() : new Set(elementeAici.map(cheieEl)))} aria-label="Selectează tot" />
+            <span>{nrText(selectate.length, 'selectat', 'selectate')}</span>
+          </label>
+          <div className="doc-bulk-actions">
+            {fisiereSelectate.length > 0 && (
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => void descarcaLot(fisiereSelectate)}>
+                <IconDescarca size={14} /> Descarcă
+              </button>
+            )}
+            {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}>Mută în…</button>}
+            {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}>Șterge</button>}
+            <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
+          </div>
+        </div>
+      )}
+
+      {cale.length > 0 && !q && (
         <nav className="doc-crumbs" aria-label="Locația în documente">
-          <button type="button" className="doc-crumb" onClick={() => deschide(null)}>Documente</button>
+          <button type="button" className={`doc-crumb${tintaTragere === 'radacina' ? ' is-tinta' : ''}`} onClick={() => deschide(null)}
+            {...tintaHandlers(null)}>Documente</button>
           {cale.map((c, i) => (
             <span key={c.id} className="doc-crumb-wrap">
               <span className="doc-crumb-sep" aria-hidden>›</span>
-              <button type="button" className="doc-crumb" onClick={() => deschide(c.id)} aria-current={i === cale.length - 1 ? 'page' : undefined}>{c.nume}</button>
+              <button type="button" className={`doc-crumb${tintaTragere === c.id ? ' is-tinta' : ''}`} onClick={() => deschide(c.id)}
+                aria-current={i === cale.length - 1 ? 'page' : undefined} {...(i < cale.length - 1 ? tintaHandlers(c.id) : {})}>{c.nume}</button>
             </span>
           ))}
         </nav>
@@ -284,7 +582,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           <div className="doc-empty-title">Niciun document încă</div>
           <div className="doc-empty-text">
             {canEdit
-              ? <>Trage aici actele clientului sau <button type="button" className="doc-link" onClick={() => inputRef.current?.click()}>alege-le de pe calculator</button>. Sunt păstrate criptat.</>
+              ? <>Trage aici actele clientului, lipește-le (Ctrl+V) sau <button type="button" className="doc-link" onClick={() => inputRef.current?.click()}>alege-le de pe calculator</button>. Sunt păstrate criptat.</>
               : 'Documentele încărcate de colegi vor apărea aici.'}
           </div>
           {canEdit && <div className="doc-empty-hint">PDF, imagini, Word, Excel, XML sau text · până la 15 MB pe fișier</div>}
@@ -303,58 +601,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
               }}
             />
           )}
-          {folderAici.map(d => {
-            const n = continutRecursiv(foldere, fisiere, d.id)
-            return redenumire === d.id ? (
-              <RandEditare key={d.id} icon={<IconFolder />} initial={d.nume}
-                onCancel={() => setRedenumire(null)}
-                onSave={async nume => {
-                  if (nume !== d.nume) await ruleaza(d.id, () => redenumesteFolder(d.id, nume))
-                  setRedenumire(null)
-                }} />
-            ) : (
-              <li key={d.id} className={`doc-row doc-row--folder${busyId === d.id ? ' is-busy' : ''}`}>
-                <button type="button" className="doc-row-main" onClick={() => deschide(d.id)}>
-                  <IconFolder />
-                  <span className="doc-row-text">
-                    <span className="doc-name">{d.nume}</span>
-                    <span className="doc-meta">{n.fisiere === 0 && n.foldere === 0 ? 'Gol' : [n.fisiere ? `${n.fisiere} ${n.fisiere === 1 ? 'fișier' : 'fișiere'}` : '', n.foldere ? `${n.foldere} ${n.foldere === 1 ? 'subfolder' : 'subfoldere'}` : ''].filter(Boolean).join(' · ')}</span>
-                  </span>
-                </button>
-                <div className="doc-row-actions">
-                  <MeniuRand eticheta={`Acțiuni pentru folderul ${d.nume}`} optiuni={optiuni({ tip: 'folder', f: d })} />
-                </div>
-              </li>
-            )
-          })}
-          {fisiereAici.map(f => redenumire === f.id ? (
-            <RandEditare key={f.id} icon={<IconFisier mime={f.mime} />} initial={f.nume} sufix={extensie(f.nume)}
-              onCancel={() => setRedenumire(null)}
-              onSave={async nume => {
-                if (nume !== f.nume) await ruleaza(f.id, () => redenumesteFisier(f.id, nume))
-                setRedenumire(null)
-              }} />
-          ) : (
-            <li key={f.id} className={`doc-row${busyId === f.id ? ' is-busy' : ''}`}>
-              <button type="button" className="doc-row-main" onClick={() => deschideFisier(f)}
-                title={previzualizabil(f.mime) ? `Deschide „${f.nume}”` : `Descarcă „${f.nume}”`}>
-                <IconFisier mime={f.mime} />
-                <span className="doc-row-text">
-                  <span className="doc-name">{f.nume}</span>
-                  <span className="doc-meta">
-                    {[f.sursa === 'generat' ? 'generat' : '', formatMarime(f.marime), f.createdAt ? formatDateRo(f.createdAt) : '', numeMembru(f.createdBy)]
-                      .filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-              </button>
-              <div className="doc-row-actions">
-                {busyId === f.id
-                  ? <span className="spin spin-dark" role="status" aria-label="Se procesează" />
-                  : <button type="button" className="doc-icon-btn doc-only-hover" onClick={() => void descarca(f)} aria-label={`Descarcă ${f.nume}`} title="Descarcă"><IconDescarca /></button>}
-                <MeniuRand eticheta={`Acțiuni pentru ${f.nume}`} optiuni={optiuni({ tip: 'fisier', f })} />
-              </div>
-            </li>
-          ))}
+          {folderAici.map(randFolder)}
+          {fisiereAici.map(randFisier)}
           {golAici && (
             <li className="doc-empty doc-empty--folder">
               <div className="doc-empty-text">
@@ -362,10 +610,15 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
               </div>
             </li>
           )}
+          {faraRezultate && (
+            <li className="doc-empty doc-empty--folder">
+              <div className="doc-empty-text">Niciun document sau folder nu conține „{cautare.trim()}”.</div>
+            </li>
+          )}
         </ul>
       )}
 
-      {peste && (
+      {peste && !tintaTragere && (
         <div className="doc-drop" aria-hidden>
           <IconIncarca size={22} />
           <span>Eliberează pentru a încărca în „{numeFolderCurent}”</span>
@@ -380,19 +633,21 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
       {muta && (
         <MutaModal
           foldere={foldere}
-          tinta={{ tip: muta.tip, id: muta.f.id, nume: muta.f.nume, folderCurent: muta.tip === 'fisier' ? muta.f.folderId : muta.f.parentId }}
+          elemente={muta.map<ElementMutat>(el => ({ tip: el.tip, id: el.f.id, nume: el.f.nume }))}
+          folderCurent={muta[0].tip === 'fisier' ? muta[0].f.folderId : muta[0].f.parentId}
           onClose={() => setMuta(null)}
-          onMove={async dest => {
-            const el = muta
-            const numeDest = dest ? foldere.find(d => d.id === dest)?.nume ?? 'folder' : 'Documente'
-            await ruleaza(el.f.id, () => el.tip === 'fisier' ? mutaFisier(el.f.id, dest) : mutaFolder(el.f.id, dest), `Mutat în „${numeDest}”.`)
-          }}
+          onMove={dest => mutaElemente(muta, dest)}
         />
       )}
 
-      {sterge && (
-        <ConfirmModal title={sterge.tip === 'fisier' ? 'Șterge documentul' : 'Șterge folderul'} message={mesajStergere(sterge)}
-          confirmLabel="Șterge" danger onConfirm={confirmaStergere} onCancel={() => setSterge(null)} />
+      {confirmaSterge && (
+        <ConfirmModal title={confirmaSterge.length === 1 ? 'Șterge folderul' : 'Șterge elementele selectate'} message={mesajStergere(confirmaSterge)}
+          confirmLabel="Șterge" danger onConfirm={() => { const lot = confirmaSterge; setConfirmaSterge(null); stergeAmanat(lot, true) }}
+          onCancel={() => setConfirmaSterge(null)} />
+      )}
+
+      {extrage && onSaveClient && (
+        <ExtrageAct client={client} fisier={extrage} onSaveClient={onSaveClient} onClose={() => setExtrage(null)} onToast={toast} />
       )}
     </div>
   )

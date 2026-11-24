@@ -4,10 +4,13 @@ import BtnLabel from '../BtnLabel'
 import { arbore, caleFolder, descendenti, inaltime, MAX_ADANCIME, type Folder } from '../../lib/fisiere'
 import { IconFolder } from './icons'
 
+export interface ElementMutat { tip: 'fisier' | 'folder'; id: string; nume: string }
+
 interface Props {
   foldere: Folder[]
-  /** Ce se mută: un fișier (din `folderCurent`) sau un folder (cu tot ce conține). */
-  tinta: { tip: 'fisier' | 'folder'; id: string; nume: string; folderCurent: string | null }
+  /** Ce se mută (unul sau mai multe elemente, din același folder `folderCurent`). Folderele se mută cu tot ce conțin. */
+  elemente: ElementMutat[]
+  folderCurent: string | null
   onMove: (folderId: string | null) => Promise<void>
   onClose: () => void
 }
@@ -16,21 +19,22 @@ const RADACINA = '__radacina__'
 
 /** „Mută în…”: arborele de foldere al clientului. Destinațiile imposibile (folderul curent, un folder în el însuși
  * sau în propriul subfolder, peste numărul maxim de niveluri) apar dezactivate, cu motivul în titlu. */
-export default function MutaModal({ foldere, tinta, onMove, onClose }: Props) {
+export default function MutaModal({ foldere, elemente, folderCurent, onMove, onClose }: Props) {
   const [ales, setAles] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const optiuni = useMemo(() => {
-    const interzise = tinta.tip === 'folder' ? descendenti(foldere, tinta.id) : new Set<string>()
-    const h = tinta.tip === 'folder' ? inaltime(foldere, tinta.id) : 0
+    const folderele = elemente.filter(e => e.tip === 'folder')
+    const interzise = new Set(folderele.flatMap(e => [...descendenti(foldere, e.id)]))
+    const h = Math.max(0, ...folderele.map(e => inaltime(foldere, e.id)))
     return arbore(foldere).map(({ folder, nivel }) => {
       let motiv = ''
-      if (folder.id === tinta.folderCurent) motiv = 'Se află deja aici'
+      if (folder.id === folderCurent) motiv = 'Se află deja aici'
       else if (interzise.has(folder.id)) motiv = 'Un folder nu poate fi mutat în el însuși'
-      else if (tinta.tip === 'folder' && caleFolder(foldere, folder.id).length + h > MAX_ADANCIME) motiv = 'Prea multe niveluri'
+      else if (h && caleFolder(foldere, folder.id).length + h > MAX_ADANCIME) motiv = 'Prea multe niveluri'
       return { folder, nivel, motiv }
     })
-  }, [foldere, tinta])
+  }, [foldere, elemente, folderCurent])
 
   const muta = async () => {
     if (ales === null) return
@@ -57,15 +61,17 @@ export default function MutaModal({ foldere, tinta, onMove, onClose }: Props) {
     </li>
   )
 
+  const titlu = elemente.length === 1 ? `Mută „${elemente[0].nume}”` : `Mută ${elemente.length} elemente`
+
   return (
     <Modal onClose={onClose} className="modal-box--sm" ariaLabel="Mută">
       <div className="modal-head">
-        <span className="modal-title">Mută „{tinta.nume}”</span>
+        <span className="modal-title">{titlu}</span>
         <button className="modal-close" onClick={onClose} aria-label="Închide">×</button>
       </div>
       <div className="modal-body">
         <ul className="doc-tree" aria-label="Alege folderul de destinație">
-          {rand(RADACINA, 'Documente (fără folder)', 0, tinta.folderCurent === null ? 'Se află deja aici' : '')}
+          {rand(RADACINA, 'Documente (fără folder)', 0, folderCurent === null ? 'Se află deja aici' : '')}
           {optiuni.map(o => rand(o.folder.id, o.folder.nume, o.nivel + 1, o.motiv))}
         </ul>
       </div>

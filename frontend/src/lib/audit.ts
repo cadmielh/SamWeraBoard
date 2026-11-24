@@ -101,7 +101,7 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
       return `${num(m.written)} salvate, ${num(m.removed)} eliminate · client ${shortId(e.target)}`
     case 'ocr.extract':
       return [
-        `sursă: ${m.source === 'drive' ? 'Google Drive' : 'încărcare'}`,
+        `sursă: ${m.source === 'drive' ? 'Google Drive' : m.source === 'document' ? 'document păstrat' : 'încărcare'}`,
         `motor: ${m.engine === 'local' ? 'local' : 'Azure'}`,
         `rezultat: ${OUTCOME_LABELS[str(m.outcome)] ?? (str(m.outcome) || '—')}`,
         `${num(m.sizeKb)} KB`,
@@ -125,7 +125,7 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
       return [m.sursa === 'generat' ? 'copie document generat' : '', str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `client ${shortId(str(m.client) || null)}`]
         .filter(Boolean).join(' · ')
     case 'fisier.download':
-      return `${m.scop === 'previzualizare' ? 'previzualizare' : 'descărcare'} · document ${shortId(e.target)}`
+      return `${m.scop === 'previzualizare' ? 'previzualizare' : m.scop === 'ocr' ? 'citire OCR' : 'descărcare'} · document ${shortId(e.target)}`
     case 'fisier.update':
       return [m.redenumit ? 'redenumit' : '', m.mutat ? 'mutat' : '', `document ${shortId(e.target)}`].filter(Boolean).join(' · ')
     case 'fisier.delete':
