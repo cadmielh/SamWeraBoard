@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import type { Client, Persoana, TipClient, SubtipPF } from '../types'
 import { EMPTY_CLIENT, EMPTY_PERSOANA, denumireExists, missingCompanyFields, type ClientInput } from '../lib/clienti'
 import { fetchAnafCompany } from '../lib/api'
-import { marcheazaPas } from '../lib/ghidPornire'
+import { indiciuFacut, marcheazaPas } from '../lib/ghidPornire'
 import { FORME_JURIDICE_PJ } from '../lib/formeJuridice'
 import { findCaenDescriere } from '../data/caen'
 import { adaugaAsociat, equalShare, sumCota, isCotaTotalValid, parteSocialaError, VALOARE_PARTE_SOCIALA_DEFAULT } from '../lib/cota'
@@ -197,13 +197,16 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
     }))
   }
 
+  // Firma adăugată după CUI bifează pasul din ghid abia la salvare (fără asociat și administrator nu se poate salva).
+  const anafPreluatRef = useRef(false)
   const preiaAnaf = async () => {
     if (!form.codFiscal.trim()) return
     setAnafLoading(true)
     try {
       const result = await fetchAnafCompany(form.codFiscal)
       if (!result.found) { toast('CIF-ul nu a fost găsit în baza de date ANAF', 'info'); return }
-      marcheazaPas('anaf')
+      anafPreluatRef.current = true
+      indiciuFacut('client-anaf')
       const merge = (prev: ClientInput): ClientInput => {
         const c = result.adresaSediuComponente
         const totalGoale = !c || (!c.strada && !c.numar && !c.localitate && !c.judet && !c.detaliiAdresa)
@@ -346,6 +349,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
       // actualizează local instant și revine singur dacă scrierea eșuează;
       // eroarea de aici doar informează userul, modalul nu mai stă blocat.
       onSave(form).catch((e: unknown) => toast((e as Error).message ?? 'Eroare la salvare', 'err'))
+      if (!initial?.id && !isPF && anafPreluatRef.current) marcheazaPas('anaf')
       onClose()
     } catch (e: unknown) {
       toast((e as Error).message ?? 'Eroare la salvare', 'err')
@@ -610,7 +614,7 @@ export default function ClientModal({ initial, legacyRaw, onSave, onClose }: Pro
 
           {/* ── Asociați / Administratori (doar PJ) — determină firma, deci se completează primele ── */}
           {!isPF && (
-            <div ref={asociatiSectionRef}>
+            <div ref={asociatiSectionRef} data-ghid="client-persoane">
               <PersonSection title="Asociați" persons={form.asociati}
                 minCount={1}
                 onAdd={() => setPersonaModal({ type: 'asociati', index: null })}

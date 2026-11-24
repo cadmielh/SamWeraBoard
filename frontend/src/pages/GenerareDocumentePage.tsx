@@ -695,7 +695,7 @@ export default function GenerareDocumentePage() {
           <>
             {step === 1 && (
               <>
-                <div style={COMPACT_STYLE} className="card">
+                <div style={COMPACT_STYLE} className="card" data-ghid="gen-client-alege">
                   <div className="card-head">
                     <span className="card-title">
                       <span className="step-chip">1</span>
@@ -724,7 +724,7 @@ export default function GenerareDocumentePage() {
                   <div style={COMPACT_STYLE} className="card">
                     <div className="card-head">
                       <span className="card-title">Verifică datele persoanei</span>
-                      <button className="btn btn-primary btn-sm" onClick={handlePFContinue}>Continuă la template →</button>
+                      <button className="btn btn-primary btn-sm" onClick={handlePFContinue} data-ghid="gen-continua">Continuă la template →</button>
                     </div>
                     <div className="card-body">
                       <div className="persoana-card" style={{ marginBottom: '1rem' }}>
@@ -769,6 +769,7 @@ export default function GenerareDocumentePage() {
                       <button
                         className="btn btn-primary btn-sm"
                         onClick={() => multiPersonRef.current?.continue()}
+                        data-ghid="gen-continua"
                       >
                         Continuă la template →
                       </button>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { useIsMobile } from '../lib/useIsMobile'
 import { withViewTransition } from '../lib/viewTransition'
-import type { DefinitiePas } from '../lib/ghidPornire'
+import { pasiObligatorii, type DefinitiePas } from '../lib/ghidPornire'
 import { progresGhid, useClientDemo, useGhidVizibil } from '../lib/useGhid'
 import BtnLabel from './BtnLabel'
 import IndiciuEvidentiat from './IndiciuEvidentiat'
@@ -18,6 +18,9 @@ function IconBifa() {
   )
 }
 
+/** Cât așteaptă anunțul unui pas făcut (rezultatul pasului apare întâi) și cât de des reverifică. */
+const PAUZA_ANUNT_MS = 1200
+
 /** Lista „Primii pași”: plutește în colțul din dreapta-jos (pe telefon, ca foaie de jos). */
 export function GhidPanou() {
   const ghid = useGhidVizibil()
@@ -26,14 +29,35 @@ export function GhidPanou() {
   const isMobile = useIsMobile()
   const demo = useClientDemo()
 
-  // Primul document generat e momentul în care aplicația își arată rostul: îl marcăm.
-  const generatAnterior = useRef<boolean | null>(null)
-  const generat = !!ghid?.facuti.has('generare')
+  // Un pas tocmai făcut: un anunț discret cu pasul următor și „Arată-mi”, în loc să redeschidem panoul peste lucru
+  // (ex. peste datele abia extrase). Așteptăm să se închidă fereastra în care s-a făcut pasul și indiciile lui.
+  const pasFacut = ghid?.pasFacut ?? null
+  const ghidRef = useRef(ghid)
+  useEffect(() => { ghidRef.current = ghid })
   useEffect(() => {
-    if (!ghid) return
-    if (generatAnterior.current === false && generat) toast('Primul tău document e gata. Bravo!', 'ok')
-    generatAnterior.current = generat
-  }, [ghid, generat, toast])
+    if (!pasFacut) return
+    const t = setInterval(() => {
+      if (document.querySelector('.modal-backdrop, .ghid-indiciu')) return
+      clearInterval(t)
+      const g = ghidRef.current
+      if (!g) return
+      g.confirmaPasFacut()
+      if (!g.activ || g.ascuns) return
+      const facut = g.pasi.find(p => p.key === pasFacut)
+      // Pasul următor nefăcut de după cel tocmai făcut (înainte, nu înapoi la ce a sărit); apoi cel mai vechi rămas.
+      const obligatorii = pasiObligatorii(g.pasi)
+      const dupa = obligatorii.slice(obligatorii.findIndex(p => p.key === pasFacut) + 1)
+      const urmator = dupa.find(p => !g.facuti.has(p.key)) ?? obligatorii.find(p => !g.facuti.has(p.key))
+      const inceput = pasFacut === 'generare' ? 'Primul tău document e gata. Bravo!' : `Gata: ${facut?.titlu ?? 'pasul'}.`
+      if (!urmator) { toast(`${inceput} Ai parcurs primii pași. Spor la lucru!`, 'ok'); return }
+      // După scanare utilizatorul e la jumătatea fluxului (verificare → generare): nu-l trimitem în altă parte.
+      if (pasFacut === 'scan') { toast(`${inceput} Verifică datele extrase și continuă până la document.`, 'ok'); return }
+      toast(`${inceput} Urmează: ${urmator.titlu}.`, 'ok', {
+        action: { label: 'Arată-mi', onClick: () => { g.arata(urmator); withViewTransition(() => navigate(urmator.ruta)) } },
+      })
+    }, PAUZA_ANUNT_MS)
+    return () => clearInterval(t)
+  }, [pasFacut, toast, navigate])
 
   useEffect(() => {
     if (!ghid?.deschis) return

@@ -19,7 +19,7 @@ export function progresGhid(ghid: Ghid): { facuti: number; total: number } {
 
 /** Creează (sau regăsește) clientul demo și deschide generarea direct pe el. */
 export function useClientDemo() {
-  const { user, activeWorkspace, toast } = useApp()
+  const { user, activeWorkspace, toast, ghid } = useApp()
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   const creeaza = async () => {
@@ -29,6 +29,11 @@ export function useClientDemo() {
       const id = await clientDemoId(activeWorkspace.id, user.uid)
       toast('Clientul demo e gata. Alege un șablon și generează documentul.', 'ok')
       withViewTransition(() => navigate(`/extragere?clientId=${encodeURIComponent(id)}&mode=client`))
+      // Clientul e deja ales: ghidul continuă de la verificarea datelor, nu de la alegerea sursei.
+      const generare = ghid.pasi.find(p => p.key === 'generare')
+      if (generare && ghid.activ && !ghid.ascuns && !ghid.facuti.has('generare')) {
+        ghid.arata(generare, Math.max(0, generare.indicii.findIndex(i => i.tinta === 'gen-continua')))
+      }
     } catch (e) {
       toast((e as Error).message || 'Clientul demo nu a putut fi creat', 'err')
     } finally {

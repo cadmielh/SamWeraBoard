@@ -1616,7 +1616,7 @@ export default function TemplateFiller({
           <div className={`tf-layout${isMobile ? (mobileDetail ? ' tf-layout--m-detail' : ' tf-layout--m-list') : ''}`} ref={layoutRef} style={{ ['--tf-list-w' as string]: `${listW}px` }}>
 
             {/* ── Coloana din stânga — listă ── */}
-            <div className="tf-list">
+            <div className="tf-list" data-ghid="gen-sablon">
               <div
                 className="tf-resizer" role="separator" aria-orientation="vertical" tabIndex={0}
                 aria-label="Lățimea listei de șabloane" aria-valuemin={LIST_W_MIN} aria-valuemax={LIST_W_MAX} aria-valuenow={listW}

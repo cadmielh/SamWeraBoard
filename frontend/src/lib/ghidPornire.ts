@@ -55,16 +55,21 @@ export const PASI_GHID: DefinitiePas[] = [
     descriere: 'Încarci poza sau PDF-ul buletinului, iar numele, CNP-ul și adresa se completează singure.',
     indicii: [
       { tinta: 'gen-pf', text: 'Alege „Entitate nouă — PF”: aici pornești de la un buletin.' },
-      { tinta: 'scan-upload', text: 'Trage aici poza sau PDF-ul buletinului (sau apasă și alege fișierul). Datele apar în câteva secunde.' },
+      { tinta: 'scan-upload', text: 'Trage aici poza sau PDF-ul buletinului (sau apasă și alege fișierul), apoi „Extrage câmpuri”: '
+        + 'datele apar în câteva secunde, iar tu doar le verifici.' },
     ],
   },
   {
     key: 'anaf', ruta: '/',
     titlu: 'Adaugă o firmă după CUI',
-    descriere: 'Scrii CUI-ul, iar denumirea, sediul, CAEN-ul și datele fiscale vin de la ANAF.',
+    descriere: 'Scrii CUI-ul, iar denumirea, sediul, CAEN-ul și datele fiscale vin de la ANAF. Adaugi asociații și administratorul, apoi salvezi.',
+    // Se bifează la salvarea clientului, nu la răspunsul ANAF: fără asociat și administrator firma nu se poate salva.
     indicii: [
       { tinta: 'client-add', text: 'Deschide formularul de client nou.' },
-      { tinta: 'client-anaf', text: 'Scrie CUI-ul firmei și apasă ANAF: restul datelor se completează singure.' },
+      // Avansează la răspunsul ANAF (indiciuFacut), nu la clic: clicul în câmp, ca să scrii CUI-ul, nu înseamnă „gata”.
+      { tinta: 'client-anaf', doarCuButon: true, text: 'Scrie CUI-ul firmei și apasă ANAF: denumirea, sediul, CAEN-ul și datele fiscale se completează singure.' },
+      { tinta: 'client-persoane', text: 'ANAF nu dă asociații și administratorii: adaugă cel puțin un asociat și un administrator, '
+        + 'completează capitalul social, apoi „Adaugă client”.' },
     ],
   },
   {
@@ -72,7 +77,11 @@ export const PASI_GHID: DefinitiePas[] = [
     titlu: 'Generează primul document',
     descriere: 'Alegi clientul și șablonul, iar documentul iese completat, gata de descărcat.',
     indicii: [
-      { tinta: 'gen-client', text: 'Alege „Client din portofoliu”, apoi clientul și șablonul. Dacă n-ai încă un client, creează unul demo din ghid.' },
+      { tinta: 'gen-client', text: 'Alege „Client din portofoliu”.' },
+      { tinta: 'gen-client-alege', text: 'Alege clientul. Dacă n-ai încă unul, folosește clientul demo din „Primii pași”.' },
+      { tinta: 'gen-continua', text: 'Verifică datele de mai jos (le poți corecta aici), apoi „Continuă la template”.' },
+      { tinta: 'gen-sablon', text: 'Alege un șablon (procentul arată cât e deja completat din datele clientului), apoi „Generează”. '
+        + 'La unele, ca hotărârea AGA, bifezi întâi ce conține documentul.' },
     ],
   },
   {
@@ -176,11 +185,16 @@ export function ghidActiv(workspace: Workspace, uid: string, now: Date = new Dat
 // o singură dată în AppLayout, îl ascultă și îl salvează. Așa codul care face acțiunea nu depinde de ghid.
 
 const EVENIMENT = 'cabinio:ghid-pas'
-/** Cât așteaptă panoul după un pas făcut (rezultatul pasului apare întâi) și cât de des reverifică. */
-const PAUZA_REDESCHIDERE_MS = 1200
 
 export function marcheazaPas(pas: PasGhid): void {
   try { window.dispatchEvent(new CustomEvent<PasGhid>(EVENIMENT, { detail: pas })) } catch { /* fără window (teste) */ }
+}
+
+const EVENIMENT_INDICIU = 'cabinio:ghid-indiciu'
+
+/** Acțiunea arătată de indiciul cu ținta dată s-a făcut (ex. datele ANAF au venit): dacă e indiciul curent, trece la următorul. */
+export function indiciuFacut(tinta: string): void {
+  try { window.dispatchEvent(new CustomEvent<string>(EVENIMENT_INDICIU, { detail: tinta })) } catch { /* fără window (teste) */ }
 }
 
 interface StareSalvata {
@@ -208,9 +222,13 @@ export interface GhidPornire {
   inchide: () => void
   /** Ascunde ghidul de tot (se poate reafișa din meniu cu `deschide`). */
   ascunde: () => void
-  arata: (pas: DefinitiePas) => void
+  /** Pornește indiciile pasului (de la `index`, ex. generarea cu clientul demo deja ales). */
+  arata: (pas: DefinitiePas, index?: number) => void
   urmatorulIndiciu: () => void
   opresteIndiciul: () => void
+  /** Pasul tocmai bifat (o singură dată): GhidPanou îl anunță și propune pasul următor. */
+  pasFacut: PasGhid | null
+  confirmaPasFacut: () => void
   /** Clientul demo rămas la finalul ghidului: se propune ștergerea lui. */
   demoDeSters: string | null
   /** Răspunsul la propunere: șters (deja, de apelant) sau păstrat (nu mai întrebăm). */
@@ -223,7 +241,7 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
   const [deschis, setDeschis] = useState(false)
   const [indiciu, setIndiciu] = useState<GhidPornire['indiciu']>(null)
   const [demoDeSters, setDemoDeSters] = useState<string | null>(null)
-  const [redeschide, setRedeschide] = useState(false)
+  const [pasFacut, setPasFacut] = useState<PasGhid | null>(null)
   const stareRef = useRef(stare)
   useEffect(() => { stareRef.current = stare }, [stare])
 
@@ -235,7 +253,7 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setStare(null); setDeschis(false); setIndiciu(null); setDemoDeSters(null); setRedeschide(false)
+    setStare(null); setDeschis(false); setIndiciu(null); setDemoDeSters(null); setPasFacut(null)
     if (!ref || !workspace || !uid) return
     return onSnapshot(ref, snap => {
       if (snap.exists()) { setStare(snap.data() as StareSalvata); return }
@@ -257,10 +275,16 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
       salveaza({ pasi: { [pas]: new Date().toISOString() } })
       // Pasul făcut înaintea ultimului indiciu (ex. sarcina mutată, mai e de aflat de arhivă): indiciile continuă.
       setIndiciu(i => (i?.pas.key === pas && i.index + 1 >= i.pas.indicii.length ? null : i))
-      if (!stareRef.current?.ascuns) setRedeschide(true)
+      setPasFacut(pas)
+    }
+    const onIndiciu = (e: Event) => {
+      const tinta = (e as CustomEvent<string>).detail
+      setIndiciu(i => (i && i.pas.indicii[i.index]?.tinta === tinta
+        ? (i.index + 1 < i.pas.indicii.length ? { ...i, index: i.index + 1 } : null) : i))
     }
     window.addEventListener(EVENIMENT, onPas)
-    return () => window.removeEventListener(EVENIMENT, onPas)
+    window.addEventListener(EVENIMENT_INDICIU, onIndiciu)
+    return () => { window.removeEventListener(EVENIMENT, onPas); window.removeEventListener(EVENIMENT_INDICIU, onIndiciu) }
   }, [salveaza])
 
   // La finalul ghidului (pașii obligatorii făcuți sau ghidul închis de utilizator), dacă a rămas clientul demo,
@@ -311,20 +335,6 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
     setStare(s => ({ ...s, prezentat: true }))
   }, [activ, stare, salveaza])
 
-  // Un pas tocmai făcut: panoul revine singur, cu bifa nouă și pasul următor, ca ghidul să nu se piardă din vedere.
-  // Așteptăm să se închidă fereastra în care s-a făcut pasul (ex. formularul de client) și să dispară orice indiciu.
-  useEffect(() => {
-    if (!redeschide) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!activ) { setRedeschide(false); return }
-    const t = setInterval(() => {
-      if (document.querySelector('.modal-backdrop, .ghid-indiciu')) return
-      setRedeschide(false)
-      setDeschis(true)
-    }, PAUZA_REDESCHIDERE_MS)
-    return () => clearInterval(t)
-  }, [redeschide, activ])
-
   const deschide = useCallback(() => {
     setIndiciu(null)
     setDeschis(true)
@@ -349,9 +359,11 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
     deschide,
     inchide: useCallback(() => setDeschis(false), []),
     ascunde,
-    arata: useCallback((pas: DefinitiePas) => { setDeschis(false); setIndiciu({ pas, index: 0 }) }, []),
+    arata: useCallback((pas: DefinitiePas, index = 0) => { setDeschis(false); setIndiciu({ pas, index }) }, []),
     urmatorulIndiciu: useCallback(() => setIndiciu(i => (i && i.index + 1 < i.pas.indicii.length ? { ...i, index: i.index + 1 } : null)), []),
     opresteIndiciul: useCallback(() => setIndiciu(null), []),
+    pasFacut,
+    confirmaPasFacut: useCallback(() => setPasFacut(null), []),
     demoDeSters,
     raspundeDemo,
   }
