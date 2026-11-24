@@ -52,7 +52,7 @@ UNGATED = {
     ("POST", "/billing/credits/checkout"), ("GET", "/billing/credits"), ("GET", "/billing/credits/quote"),
     ("POST", "/admin/workspaces/<wid>/billing/credits"), ("GET", "/admin/billing/payments"), ("GET", "/admin/billing/stripe-fees"),
     ("POST", "/admin/billing/payments/<wid>/<kind>/<pid>/invoice"),
-    ("GET", "/admin/billing/overview"), ("GET", "/admin/activity"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
+    ("GET", "/admin/billing/overview"), ("GET", "/admin/activity"), ("GET", "/admin/fisiere/spatiu"), ("POST", "/admin/workspaces/<wid>/billing/extend-trial"),
     ("POST", "/admin/workspaces/<wid>/billing/comp"), ("POST", "/admin/workspaces/<wid>/billing/sync"),
     ("GET", "/admin/workspaces/<wid>/billing/manual"), ("POST", "/admin/workspaces/<wid>/billing/manual"),
     ("POST", "/admin/workspaces/<wid>/billing/manual/<pid>/cancel"),

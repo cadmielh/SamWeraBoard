@@ -235,10 +235,7 @@ def extract_document(fid: str):
     import fisiere
     import vault
     wid = request.headers.get("X-Workspace-Id", "")
-    # Aceleași condiții ca rutele documentelor (fisiere_api._require): funcția activă și stocarea configurată.
-    ws = authz.load_workspace(wid) or {}
-    if not (ws.get("features") or {}).get("documente"):
-        return jsonify({"error": "feature_disabled"}), 403
+    # Aceeași condiție ca rutele documentelor (fisiere_api._require): stocarea configurată.
     if not fisiere.configurata():
         return jsonify({"error": "storage_unavailable"}), 503
     if not fisiere_api._ID_RE.match(fid):

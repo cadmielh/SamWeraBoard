@@ -14,7 +14,6 @@ import IconPencil from './IconPencil'
 import ClientDosareSarcini from './ClientDosareSarcini'
 import ClientDocumente from './documente/ClientDocumente'
 import ImpartireDocumente from './documente/ImpartireDocumente'
-import { useApp } from '../AppContext'
 import TermenBadge from './TermenBadge'
 import { durataFraza, stareDurataSocietate, stareMandat, termenText, termeneUrgente } from '../lib/durata'
 import BtnLabel from './BtnLabel'
@@ -225,7 +224,6 @@ function PersoanaCard({ p, pii, onReveal, showMandat, focused }: { p: Persoana; 
 
 export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onSaveField, embedded, focus }: Props) {
   const navigate = useNavigate()
-  const { hasFeature } = useApp()
   const rootRef = useRef<HTMLDivElement>(null)
 
   // Lățimea fișei (nu a ferestrei): fișa poate sta într-un panou. Măsurată înainte de prima afișare, ca să nu sară.
@@ -239,10 +237,9 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const documente = hasFeature('documente')
   // Documentele (ex. „Extrage datele în fișă”) își afișează propriul mesaj, mai precis decât „Actualizat”.
   const salvareTacuta = (patch: Partial<Client>) => onSaveField(patch, { silent: true })
-  const documenteInColoana = documente && !!embedded && fisaLata
+  const documenteInColoana = !!embedded && fisaLata
   // pid-ul evidențiat acum (link din alerte); se stinge singur după FOCUS_MS.
   const [focusPid, setFocusPid] = useState<string | null>(null)
 
@@ -405,7 +402,7 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
 
         <ClientDosareSarcini client={client} />
 
-        {documente && !documenteInColoana && <ClientDocumente key={client.id} client={client} onSaveClient={salvareTacuta} />}
+        {!documenteInColoana && <ClientDocumente key={client.id} client={client} onSaveClient={salvareTacuta} />}
 
         {/* ── Bloc Date persoană (CI) — orice PF ── */}
         {isPF && client.titular && (

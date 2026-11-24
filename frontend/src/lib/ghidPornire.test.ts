@@ -9,7 +9,7 @@ import { NOUTATI } from './noutati'
 
 describe('pașii ghidului', () => {
   it('administratorul vede și pașii de configurare a cabinetului', () => {
-    expect(pasiPentruRol('admin', { alerte: true, documente: true })).toHaveLength(PASI_GHID.length)
+    expect(pasiPentruRol('admin', { alerte: true })).toHaveLength(PASI_GHID.length)
     expect(pasiPentruRol('member').some(p => p.doarAdmin)).toBe(false)
   })
 
@@ -33,9 +33,8 @@ describe('pașii ghidului', () => {
     expect(pasiObligatorii(cuAlerte).some(p => p.key === 'alerte')).toBe(false)
   })
 
-  it('pasul de documente apare doar cu documentele pornite, e opțional și are indiciile turului din „Ce e nou”', () => {
-    expect(pasiPentruRol('member').some(p => p.key === 'documente')).toBe(false)
-    const cuDocumente = pasiPentruRol('member', { documente: true })
+  it('pasul de documente apare la toți, e opțional și are indiciile turului din „Ce e nou”', () => {
+    const cuDocumente = pasiPentruRol('member')
     const pas = cuDocumente.find(p => p.key === 'documente')
     expect(pas?.indicii).toBe(INDICII_DOCUMENTE)
     expect(pasiObligatorii(cuDocumente).some(p => p.key === 'documente')).toBe(false)

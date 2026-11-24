@@ -113,7 +113,7 @@ export const PASI_GHID: DefinitiePas[] = [
     ],
   },
   {
-    key: 'documente', optional: true, functie: 'documente', ruta: '/',
+    key: 'documente', optional: true, ruta: '/',
     titlu: 'Păstrează actele clientului',
     descriere: 'Buletine, contracte, dovezi de sediu: în fișa clientului, criptate, în foldere. Le previzualizezi și extragi datele din ele.',
     indicii: INDICII_DOCUMENTE,

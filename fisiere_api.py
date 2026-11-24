@@ -33,10 +33,6 @@ _SCOPURI = {"descarcare", "previzualizare"}
 _BATCH = 400
 
 
-class _FunctieInactiva(Exception):
-    pass
-
-
 def _err(code: str, status: int, **extra):
     return jsonify({"error": code, **extra}), status
 
@@ -44,11 +40,6 @@ def _err(code: str, status: int, **extra):
 @bp.errorhandler(authz.AuthError)
 def _handle_auth(e: authz.AuthError):
     return authz.error_response(e)
-
-
-@bp.errorhandler(_FunctieInactiva)
-def _handle_inactiv(_e):
-    return _err("feature_disabled", 403)
 
 
 @bp.errorhandler(fisiere.FisierRefuzat)
@@ -75,8 +66,6 @@ def _handle_mare(_e):
 
 def _require(min_role: str, billing: bool = False, limit: str | None = None):
     principal, wid, ws = authz.require_from_header(min_role, consent=True, limit=limit, billing=billing)
-    if not (ws.get("features") or {}).get("documente"):
-        raise _FunctieInactiva()
     if not fisiere.configurata():
         raise fisiere.StocareIndisponibila("neconfigurată")
     return principal, wid, ws
@@ -462,6 +451,21 @@ def seteaza_foldere_implicite():
         meta["folderGenerate"] = True        # doar faptul că s-a schimbat, fără nume
     audit.log(wid, principal.uid, "fisiere.setari", None, meta)
     return jsonify(patch)
+
+
+@bp.get("/admin/fisiere/spatiu")
+def admin_spatiu():
+    """Spațiul ocupat de documente în fiecare cabinet (super admin): cine se apropie de limită, din date reale."""
+    authz.require_super_admin()
+    db = authz.db()
+    ids = [d.id for d in db.collection("workspaces").select([]).limit(1000).stream()]
+    cabinete = {}
+    for snap in db.get_all([_contor(wid) for wid in ids]):
+        d = snap.to_dict() or {}
+        cabinete[snap.reference.parent.parent.id] = {
+            "octeti": max(0, int(d.get("octeti") or 0)), "numar": max(0, int(d.get("numar") or 0)),
+        }
+    return jsonify({"limita": fisiere.LIMITA_CABINET, "cabinete": cabinete})
 
 
 @bp.post("/clients/<cid>/documente/init")

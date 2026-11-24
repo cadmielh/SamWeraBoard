@@ -196,6 +196,13 @@ export const adminSyncBilling = (workspaceId: string) =>
 export const adminBillingOverview = () =>
   apiJson<{ id: string; cuiSeenInWorkspace?: string | null }[]>('GET', '/admin/billing/overview')
 
+/** Spațiul ocupat de documentele clienților în fiecare cabinet și limita inclusă în abonament (octeți). */
+export interface SpatiuDocumente { limita: number; cabinete: Record<string, { octeti: number; numar: number }> }
+export const adminSpatiuDocumente = () => apiJson<SpatiuDocumente>('GET', '/admin/fisiere/spatiu')
+
+/** Pragul de la care un cabinet e semnalat ca aproape de limita de spațiu. */
+export const PRAG_SPATIU = 0.8
+
 export interface WorkspaceCreator {
   id: string
   email: string

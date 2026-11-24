@@ -42,7 +42,6 @@ export const NOUTATI: Noutate[] = [
       + 'Le previzualizezi, le cauți, le tragi dintr-un folder în altul și extragi datele dintr-un buletin direct în fișă. '
       + 'La generarea unui document poți păstra și o copie a lui la client.',
     actiune: { label: 'Deschide clienții', cale: '/' },
-    feature: 'documente',
     tur: {
       ruta: '/',
       pasi: INDICII_DOCUMENTE,
@@ -55,7 +54,6 @@ export const NOUTATI: Noutate[] = [
     titlu: 'Folderele fiecărui client nou, alese de tine',
     text: 'În Setări › Documente stabilești ce foldere primește automat fiecare client și unde se păstrează copiile documentelor generate.',
     actiune: { label: 'Deschide setările documentelor', cale: '/setari/documente' },
-    feature: 'documente',
     roluri: ['admin'],
   },
 ]

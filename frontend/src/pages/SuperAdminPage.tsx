@@ -7,12 +7,14 @@ import {
   grantSuperAdmin, revokeSuperAdminGrant, adminRestoreWorkspace, adminRestoreAccount, listAccountDeletions, type AccountDeletion, listSuperAdminGrants, type SuperAdminGrant,
   listWorkspaceCreators, addWorkspaceCreator, removeWorkspaceCreator, type WorkspaceCreator, fetchSignupStatus,
   adminBillingOverview, adminActivity, engagementOf, activityTotals, type WorkspaceActivity, type ActivityDay, type EngagementKey,
+  adminSpatiuDocumente, PRAG_SPATIU, type SpatiuDocumente,
 } from '../lib/superAdmin'
 import SuperAdminPayments from '../components/SuperAdminPayments'
 import DeleteWorkspaceModal from '../components/DeleteWorkspaceModal'
 import ConfirmModal from '../components/ConfirmModal'
 import type { BillingTime, Workspace } from '../types'
 import NotificariBell from '../components/NotificariBell'
+import { formatMarime } from '../lib/fisiere'
 import { billingAccess, formatDate, toDate, type AccessReason } from '../lib/billing'
 import BtnLabel from '../components/BtnLabel'
 import { Skeleton, SkeletonRows } from '../components/Skeleton'
@@ -42,6 +44,7 @@ export default function SuperAdminPage() {
   const [activity, setActivity] = useState<Record<string, WorkspaceActivity> | null>(null)
   const [activityAt, setActivityAt] = useState<Date | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+  const [spatiu, setSpatiu] = useState<SpatiuDocumente | null>(null)
   // Fila paginii și cabinetul deschis în panou, în adresă (?fila=…&cabinet=…): se pot trimite ca link, merge Înapoi.
   const [params, setParams] = useSearchParams()
   const pageTab: PageTab = (PAGE_TABS.map(t => t[0]) as string[]).includes(params.get('fila') ?? '') ? params.get('fila') as PageTab : 'cabinete'
@@ -125,6 +128,7 @@ export default function SuperAdminPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isSuperAdmin) { void loadWorkspaces(); void loadActivity(); void loadGrants(); void loadCreators(); void loadAccountDeletions() }
+    if (isSuperAdmin) adminSpatiuDocumente().then(setSpatiu).catch(() => { /* fără cifrele de spațiu */ })
   }, [isSuperAdmin, loadWorkspaces, loadActivity, loadGrants, loadCreators, loadAccountDeletions])
 
   // Rândurile listei, cu tot ce trebuie pentru filtre, sortare și „De urmărit”.
@@ -135,8 +139,9 @@ export default function SuperAdminPage() {
     const act = activity?.[w.id]
     const eng = engagementOf(act, created, now)
     const admin = Object.values(w.members ?? {}).find(m => m.role === 'admin')
-    return { w, access, created, act, eng, admin }
-  }), [workspaces, activity, now])
+    const doc = spatiu ? { ...(spatiu.cabinete[w.id] ?? { octeti: 0, numar: 0 }), limita: spatiu.limita } : null
+    return { w, access, created, act, eng, admin, doc }
+  }), [workspaces, activity, spatiu, now])
   type Row = typeof rows[number]
 
   const matches = (r: Row, f: Filter) => {
@@ -269,6 +274,8 @@ export default function SuperAdminPage() {
     trial: live.filter(r => r.access.full && r.access.reason === 'trial').length,
     paying: live.filter(r => r.access.full && (r.access.reason === 'subscription' || r.access.reason === 'manual' || r.access.reason === 'credits' || r.access.reason === 'past_due')).length,
     docs30: live.reduce((n, r) => n + (last30(r.act)?.documents ?? 0), 0),
+    octeti: live.reduce((n, r) => n + (r.doc?.octeti ?? 0), 0),
+    aproapeDeLimita: live.filter(r => r.doc && r.doc.octeti >= r.doc.limita * PRAG_SPATIU).length,
   }
   // Seria agregată: câte cabinete au avut activitate în fiecare din ultimele 30 de zile.
   const days30: ActivityDay[] = activity
@@ -332,6 +339,10 @@ export default function SuperAdminPage() {
                 <Kpi label="În probă" value={`${kpis.trial}`} sub="acum" />
                 <Kpi label="Plătitoare" value={`${kpis.paying}`} sub="abonament sau credite" />
                 <Kpi label="Documente" value={activityLoading ? '…' : `${kpis.docs30}`} sub="generate în 30 de zile" />
+                <Kpi label="Spațiu documente" value={spatiu ? formatMarime(kpis.octeti) : '…'}
+                  sub={!spatiu ? 'în toate cabinetele' : kpis.aproapeDeLimita
+                    ? `${kpis.aproapeDeLimita} ${kpis.aproapeDeLimita === 1 ? 'cabinet' : 'cabinete'} peste ${PRAG_SPATIU * 100}% din ${formatMarime(spatiu.limita)}`
+                    : `toate sub ${PRAG_SPATIU * 100}% din ${formatMarime(spatiu.limita)}`} />
               </>)}
             </div>
 
@@ -511,6 +522,7 @@ export default function SuperAdminPage() {
           w={openRow.w}
           activity={openRow.act}
           activityLoading={activityLoading}
+          spatiu={openRow.doc}
           cuiSeenName={cuiSeen[openRow.w.id] ? (workspaces.find(x => x.id === cuiSeen[openRow.w.id])?.name ?? cuiSeen[openRow.w.id]) : null}
           onPrev={openIndex > 0 ? () => openAt(openIndex - 1) : undefined}
           onNext={openIndex >= 0 && openIndex < visible.length - 1 ? () => openAt(openIndex + 1) : undefined}
@@ -554,6 +566,8 @@ interface RowData {
   act: WorkspaceActivity | undefined
   eng: { key: EngagementKey; label: string; daysSince: number | null }
   admin: { email?: string } | undefined
+  /** Documentele clienților (null cât se încarcă). */
+  doc: { octeti: number; numar: number; limita: number } | null
 }
 
 /** Un grup din „De urmărit”: cabinetele lui, fiecare deschide panoul. */
@@ -605,6 +619,11 @@ function WorkspaceRow({ r, cuiWarning, activityLoading, active, onOpen }: {
       <span className="sa-row-flags">
         {act && <span className={`sa-eng sa-eng--${eng.key}`}>{eng.label}</span>}
         {w.status === 'pendingDeletion' && <span className="badge badge-inactiv">În ștergere</span>}
+        {r.doc && r.doc.octeti >= r.doc.limita * PRAG_SPATIU && (
+          <span className="chip sa-chip-warn" title={`${formatMarime(r.doc.octeti)} din ${formatMarime(r.doc.limita)} pentru documentele clienților`}>
+            Spațiu {Math.round((r.doc.octeti / r.doc.limita) * 100)}%
+          </span>
+        )}
         {cuiWarning && <span className="chip sa-chip-warn" title="Același CUI a mai avut o perioadă de probă în alt cabinet">CUI refolosit</span>}
       </span>
     </button>

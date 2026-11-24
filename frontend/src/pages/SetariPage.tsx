@@ -317,7 +317,7 @@ export default function SetariPage() {
         desc: isAdmin ? 'Colegii din cabinet, rolurile lor și invitațiile.' : 'Colegii din cabinet și rolurile lor.' } as Section,
     ] : []),
     ...(activeWorkspace ? [{ key: 'plan', icon: '💳', group: 'Cabinet', label: 'Plan și credite', title: 'Plan și credite', desc: `Abonamentul, creditele și datele de facturare ale ${cabinet}.` } as Section] : []),
-    ...(activeWorkspace && hasFeature('documente')
+    ...(activeWorkspace
       ? [{ key: 'documente', icon: '📁', group: 'Cabinet', label: 'Documente', title: 'Documente', desc: 'Spațiul folosit de documentele clienților și Arhiva.' } as Section] : []),
     ...(isAdmin && activeWorkspace && hasFeature('facturareSamiAdi')
       ? [{ key: 'facturare', icon: '💰', group: 'Cabinet', label: 'Facturare Sami / Adi', title: 'Facturare Sami / Adi', desc: 'Cotele de împărțire și pragurile pentru sumarul lunar.' } as Section] : []),

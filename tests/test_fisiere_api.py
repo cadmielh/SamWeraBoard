@@ -53,7 +53,7 @@ def env(monkeypatch, tmp_path):
         if not raw:
             raise authz.AuthError(401)
         uid, email = raw.split(":")
-        return authz.Principal(uid=uid, email=email, name=uid)
+        return authz.Principal(uid=uid, email=email, name=uid, provider="google.com")
 
     monkeypatch.setattr(authz, "authenticate", fake_authenticate)
     app = Flask(__name__)
@@ -70,13 +70,12 @@ def call(c, uid, method, url, wid=None, **kw):
     return getattr(c, method)(url, headers=hdr, **kw)
 
 
-def setup_ws(c, db, documente=True):
+def setup_ws(c, db):
     wid = call(c, "alice", "post", "/workspaces", json={"name": "Cabinet", "consent": CONSENT}).get_json()["id"]
     ref = db.collection("workspaces").document(wid)
     ref.update({
         "members.bob": {"role": "member", "email": "bob@ex.ro"},
         "members.vera": {"role": "viewer", "email": "vera@ex.ro"},
-        "features.documente": documente,
     })
     ref.collection("clienti").document(CID).set({"denumire": "Alfa SRL"})
     ref.collection("clienti").document(CID2).set({"denumire": "Beta SRL"})
@@ -127,15 +126,19 @@ def test_incarcare_descarcare_criptat(env):
     assert all("Ștefan" not in str(e.get("meta")) for e in log)        # numele fișierului nu ajunge în jurnal
 
 
-def test_roluri_si_functie_inactiva(env):
+def test_roluri(env):
     c, db, _ = env
     wid = setup_ws(c, db)
     assert upload(c, "vera", wid).status_code == 403                    # viewer: doar citire
     assert upload(c, "mallory", wid).status_code == 403                 # nu e membru
+
+
+def test_documentele_merg_in_orice_cabinet(env):
+    # Funcția e pornită pentru toți (fără comutator per cabinet): un cabinet nou încarcă direct.
+    c, db, _ = env
     wid2 = call(c, "carol", "post", "/workspaces", json={"name": "Altul", "consent": CONSENT}).get_json()["id"]
     db.collection("workspaces").document(wid2).collection("clienti").document(CID).set({"denumire": "X"})
-    r = upload(c, "carol", wid2)
-    assert r.status_code == 403 and r.get_json()["error"] == "feature_disabled"
+    assert upload(c, "carol", wid2).status_code == 201
 
 
 def test_fisier_din_alt_cabinet_nu_e_accesibil(env):
@@ -143,7 +146,6 @@ def test_fisier_din_alt_cabinet_nu_e_accesibil(env):
     wid = setup_ws(c, db)
     fid = upload(c, "bob", wid).get_json()["fisier"]["id"]
     wid2 = call(c, "carol", "post", "/workspaces", json={"name": "Altul", "consent": CONSENT}).get_json()["id"]
-    db.collection("workspaces").document(wid2).update({"features.documente": True})
     assert call(c, "carol", "get", f"/fisiere/{fid}/continut", wid2).status_code == 404
     assert call(c, "carol", "delete", f"/fisiere/{fid}", wid2).status_code == 404
 
@@ -297,9 +299,9 @@ def test_stergere_client_cu_fisiere(env):
     assert contor(db, wid) == {"octeti": 0, "numar": 0}
 
 
-def test_stergere_client_fara_documente_merge_si_fara_functie(env):
+def test_stergere_client_fara_documente(env):
     c, db, _ = env
-    wid = setup_ws(c, db, documente=False)
+    wid = setup_ws(c, db)
     assert call(c, "alice", "delete", f"/clients/{CID}", wid).status_code == 200
 
 
@@ -402,3 +404,14 @@ def test_folderul_copiilor_se_alege_in_setari(env):
     d = db.collection("workspaces").document(wid).collection("foldere").document(f["folderId"]).get().to_dict()
     assert d["nume"] == "generate 2026"          # folderul existent, găsit fără deosebire de majuscule
     assert call(c, "alice", "put", "/fisiere/setari", wid, json={}).status_code == 400
+
+
+def test_spatiul_cabinetelor_doar_pentru_super_admin(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    upload(c, "bob", wid)
+    assert call(c, "alice", "get", "/admin/fisiere/spatiu").status_code == 403      # admin de cabinet, nu super admin
+    db.collection("users").document("root").set({"isSuperAdmin": True})
+    r = call(c, "root", "get", "/admin/fisiere/spatiu").get_json()
+    assert r["limita"] == fisiere.LIMITA_CABINET
+    assert r["cabinete"][wid] == {"octeti": len(PDF), "numar": 1}

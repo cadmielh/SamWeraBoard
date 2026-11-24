@@ -37,7 +37,7 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module.limiter, "enabled", False)
     ws = db.collection("workspaces").document(WID)
     db.collection("workspaceKeys").document(WID).delete()      # fiecare test are propria cheie locală a vault-ului
-    ws.set({"name": "W", "features": {"documente": True}})
+    ws.set({"name": "W"})
     fisiere.salveaza(WID, FID, JPG)
     ws.collection("fisiere").document(FID).set({"clientId": "cli1", "nume": "CI Ion.jpg", "mime": "image/jpeg", "marime": len(JPG)})
     yield app_module.app.test_client(), db
@@ -69,7 +69,7 @@ def test_document_din_alt_cabinet_sau_de_alt_tip(env, monkeypatch):
     c, db = env
     monkeypatch.setattr(azure_extractor, "extract_from_bytes", lambda *a: pytest.fail("OCR nu trebuia apelat"))
     altul = db.collection("workspaces").document("wsAltulBBBBBBBB02")
-    altul.set({"name": "Altul", "features": {"documente": True}})
+    altul.set({"name": "Altul"})
     try:
         # cabinet străin cu funcția activă: documentul nu există acolo
         assert c.post(f"/fisiere/{FID}/extract", headers={"X-Workspace-Id": "wsAltulBBBBBBBB02"}).status_code == 404
@@ -79,11 +79,3 @@ def test_document_din_alt_cabinet_sau_de_alt_tip(env, monkeypatch):
     db.collection("workspaces").document(WID).collection("fisiere").document(FID).update(
         {"nume": "act.jpg", "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"})
     assert c.post(f"/fisiere/{FID}/extract", headers={"X-Workspace-Id": WID}).status_code == 400
-
-
-def test_functia_documente_oprita(env, monkeypatch):
-    c, db = env
-    monkeypatch.setattr(azure_extractor, "extract_from_bytes", lambda *a: pytest.fail("OCR nu trebuia apelat"))
-    db.collection("workspaces").document(WID).update({"features.documente": False})
-    r = c.post(f"/fisiere/{FID}/extract", headers={"X-Workspace-Id": WID})
-    assert r.status_code == 403 and r.get_json()["error"] == "feature_disabled"

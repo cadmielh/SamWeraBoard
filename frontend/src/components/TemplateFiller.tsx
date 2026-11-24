@@ -108,7 +108,7 @@ export default function TemplateFiller({
   onToast, onBack, onClientSaved, stepNumber = 3,
 }: Props) {
   const { templates, loading: tplLoading, add: addTemplate, remove: removeTemplate } = useTemplates(workspaceId)
-  const { activeWorkspace, hasFeature, canEdit, toast: appToast } = useApp()
+  const { activeWorkspace, canEdit, toast: appToast } = useApp()
   const navigate = useNavigate()
   const { builtins: allBuiltins } = useBuiltinTemplates()
   // La generare apar doar șabloanele de bază pe care adminul cabinetului nu le-a ascuns (biblioteca le arată pe toate).
@@ -178,7 +178,7 @@ export default function TemplateFiller({
   // Copia în documentele clientului (faza 2 a documentelor): doar la bifă, doar pentru un client salvat, cu funcția activă.
   const [pastreazaCopie, setPastreazaCopie] = useState(false)
   const clientIdSalvat = client?.id ?? null
-  const poatePastraCopie = !!clientIdSalvat && hasFeature('documente') && canEdit
+  const poatePastraCopie = !!clientIdSalvat && canEdit
   const pastreazaCopia = async (blob: Blob | undefined, nume: string) => {
     if (!blob || !destRef.current.copie || !clientIdSalvat || !activeWorkspace) return
     try {

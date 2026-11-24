@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatMarime } from '../../lib/fisiere'
 import Modal from '../Modal'
 import SuperAdminBilling from '../SuperAdminBilling'
 import DeliveredTemplatesPanel from '../DeliveredTemplatesPanel'
@@ -16,11 +17,13 @@ type Tab = 'activitate' | 'abonament' | 'membri' | 'sabloane' | 'setari'
 
 /** Panoul lateral al unui cabinet din super admin: activitate, abonament, membri, șabloane livrate, setări.
  *  Lista rămâne în spate; ↑/↓ (sau butoanele din antet) trec la cabinetul anterior/următor. */
-export default function WorkspaceDrawer({ w, activity, activityLoading, cuiSeenName, onPrev, onNext, onClose,
+export default function WorkspaceDrawer({ w, activity, activityLoading, spatiu, cuiSeenName, onPrev, onNext, onClose,
   onBillingChange, onToggleFeature, onRestore, onDelete, manualPayment = false }: {
   w: Workspace
   activity: WorkspaceActivity | undefined
   activityLoading: boolean
+  /** Documentele clienților: spațiul ocupat, numărul de fișiere și limita (null cât se încarcă). */
+  spatiu: { octeti: number; numar: number; limita: number } | null
   /** Numele cabinetului în care același CUI a mai avut o probă (dacă e cazul). */
   cuiSeenName: string | null
   onPrev?: () => void
@@ -124,6 +127,8 @@ export default function WorkspaceDrawer({ w, activity, activityLoading, cuiSeenN
             <Kpi label="Utilizatori activi" value={`${activity.activeUsers}`} sub={`din ${members.length} (90 zile)`} />
             <Kpi label="Clienți" value={`${activity.clients}`} sub="în portofoliu" />
             <Kpi label="Dosare" value={`${activity.dosare}`} sub="în total" />
+            {spatiu && <Kpi label="Documente stocate" value={formatMarime(spatiu.octeti)}
+              sub={`${spatiu.numar} ${spatiu.numar === 1 ? 'fișier' : 'fișiere'} · ${Math.round((spatiu.octeti / spatiu.limita) * 100)}% din ${formatMarime(spatiu.limita)}`} />}
             {access.reason === 'trial' && access.daysLeft !== null && <Kpi label="Probă" value={`${access.daysLeft}`} sub="zile rămase" />}
           </div>
           <DailyBars title="Documente generate pe zi" data={series} value={d => d.documents} unit={['document', 'documente']}

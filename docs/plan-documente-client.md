@@ -1,14 +1,16 @@
 # Plan: documente pe client (stocare) și cereri de documente (portal)
 
 Stare: **fazele 1–2 și finisarea lansate în producție pe 24 noiembrie 2026** (funcții, inclusiv `documente`, reguli, hosting;
-bucket `samwera-board-eu-fisiere`, europe-west3). Funcția e oprită implicit: se pornește per cabinet din Super admin
-(„Documente clienți”). Termenii și DPA-ul `2026-11-24` cer reacceptarea de către fiecare cabinet. Anunțul „Ce e nou”
-apare în cabinetele unde funcția e pornită (`lib/noutati.ts`).
+bucket `samwera-board-eu-fisiere`, europe-west3). Testat pe un cabinet cu flag-ul `documente`; **din 25 noiembrie 2026
+pornit pentru toate cabinetele** (flag-ul a fost scos din cod: nici serverul, nici aplicația nu-l mai verifică). Termenii
+și DPA-ul `2026-11-24` cer reacceptarea de către fiecare cabinet. Anunțul „Ce e nou” (cu tur) apare tuturor conturilor
+create înainte de 24 noiembrie (`lib/noutati.ts`). Spațiul ocupat de fiecare cabinet se vede în Super admin (cifră
+totală, semnal „Spațiu N%” peste 80% din limită, detaliu în panoul cabinetului), din `GET /admin/fisiere/spatiu`.
 
 Implementare faza 1: `fisiere.py` (tip după conținut, nume, stocare), `fisiere_api.py` (rute), `vault.py` (`encrypt_file`/`decrypt_file`),
 `pii_api.py` (ștergerea clientului cu `?fisiere=`), `workspace_deletion.py` (ștergerea din stocare la purjare), `ratelimit.py`,
 `firestore.rules`, `scripts/setup_fisiere_bucket.sh`; frontend: `lib/fisiere.ts`, `components/documente/*`, `StergeClientModal.tsx`,
-`styles/documente.css`, flag `documente` în `lib/features.ts`, Setări › Documente. Teste: `tests/test_fisiere.py`,
+`styles/documente.css`, Setări › Documente. Teste: `tests/test_fisiere.py`,
 `tests/test_fisiere_api.py`, `tests/test_billing_gates.py`, `tests/rules/firestore.rules.test.js`, `lib/fisiere.test.ts`.
 
 ## Lansare (faza 1)
@@ -23,7 +25,7 @@ Implementare faza 1: `fisiere.py` (tip după conținut, nume, stocare), `fisiere
 3. `FISIERE_BUCKET=…` în `.env.samwera-board-eu`, apoi deploy **în ordinea**: funcții (inclusiv funcția nouă `documente`),
    reguli Firestore, hosting (`npm run build:eu`). Hosting-ul trimite transferurile la `VITE_FILES_BASE`
    (`…cloudfunctions.net/documente`, deja în `frontend/.env.eu.local`), deci funcția trebuie să existe înainte.
-4. Flag-ul `documente` pornit întâi la un cabinet de test (Super admin › funcții), apoi treptat.
+4. Flag-ul `documente` pornit întâi la un cabinet de test (Super admin › funcții), apoi scos cu totul (25 nov 2026).
 
 ## Interfață (ajustată pe 24 nov 2026)
 
