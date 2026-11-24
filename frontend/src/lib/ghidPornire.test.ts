@@ -18,10 +18,12 @@ describe('pașii ghidului', () => {
     expect(PASI_GHID.filter(p => p.recomandat).map(p => p.key)).toEqual(['scan', 'generare'])
   })
 
-  it('șablonul propriu e opțional: apare, dar nu condiționează terminarea', () => {
+  it('șablonul propriu și invitarea unui coleg sunt opționale: apar, dar nu condiționează terminarea (cabinet solo)', () => {
     const admin = pasiPentruRol('admin')
-    expect(admin.some(p => p.key === 'sablon')).toBe(true)
-    expect(pasiObligatorii(admin).some(p => p.key === 'sablon')).toBe(false)
+    for (const key of ['sablon', 'coleg']) {
+      expect(admin.some(p => p.key === key)).toBe(true)
+      expect(pasiObligatorii(admin).some(p => p.key === key)).toBe(false)
+    }
   })
 
   it('pasul de alerte apare doar la cabinetele cu alertele pornite și e opțional', () => {

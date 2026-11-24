@@ -112,10 +112,11 @@ export const PASI_GHID: DefinitiePas[] = [
     ],
   },
   {
-    key: 'coleg', doarAdmin: true, ruta: '/setari/membri',
+    // Opțional: un cabinet cu un singur om nu are pe cine invita; e destul să știe unde se face.
+    key: 'coleg', doarAdmin: true, optional: true, ruta: '/setari/membri',
     titlu: 'Invită un coleg',
-    descriere: 'Colegii lucrează în același cabinet, cu rolul pe care îl alegi.',
-    indicii: [{ tinta: 'membri-invite', text: 'Scrie adresa colegului, alege rolul și trimite invitația.' }],
+    descriere: 'Lucrezi cu alții? Îi inviți din Setări › Membri, cu rolul pe care îl alegi. Dacă lucrezi singur, poți sări peste.',
+    indicii: [{ tinta: 'membri-invite', text: 'Când vrei să lucrezi cu un coleg, scrie aici adresa lui, alege rolul și trimite invitația.' }],
   },
   {
     key: 'sablon', doarAdmin: true, optional: true, ruta: '/extragere',
