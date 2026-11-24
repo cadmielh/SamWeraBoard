@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { GHID_DE_LA, PASI_GHID, ghidActiv, membruNou, pasiObligatorii, pasiPentruRol } from './ghidPornire'
+import { GHID_DE_LA, INDICII_DOCUMENTE, PASI_GHID, ghidActiv, membruNou, pasiObligatorii, pasiPentruRol } from './ghidPornire'
 import { clientDemo, cuCifraDeControl } from './clientDemo'
 import { DENUMIRE_DEMO, esteClientDemo } from './demo'
 import { isValidCNP } from './cnp'
 import { isCotaTotalValid } from './cota'
 import type { Workspace } from '../types'
+import { NOUTATI } from './noutati'
 
 describe('pașii ghidului', () => {
   it('administratorul vede și pașii de configurare a cabinetului', () => {
-    expect(pasiPentruRol('admin', { alerte: true })).toHaveLength(PASI_GHID.length)
+    expect(pasiPentruRol('admin', { alerte: true, documente: true })).toHaveLength(PASI_GHID.length)
     expect(pasiPentruRol('member').some(p => p.doarAdmin)).toBe(false)
   })
 
@@ -28,6 +29,15 @@ describe('pașii ghidului', () => {
     const cuAlerte = pasiPentruRol('member', { alerte: true })
     expect(cuAlerte.some(p => p.key === 'alerte')).toBe(true)
     expect(pasiObligatorii(cuAlerte).some(p => p.key === 'alerte')).toBe(false)
+  })
+
+  it('pasul de documente apare doar cu documentele pornite, e opțional și are indiciile turului din „Ce e nou”', () => {
+    expect(pasiPentruRol('member').some(p => p.key === 'documente')).toBe(false)
+    const cuDocumente = pasiPentruRol('member', { documente: true })
+    const pas = cuDocumente.find(p => p.key === 'documente')
+    expect(pas?.indicii).toBe(INDICII_DOCUMENTE)
+    expect(pasiObligatorii(cuDocumente).some(p => p.key === 'documente')).toBe(false)
+    expect(NOUTATI.find(n => n.id === 'documente-clienti')?.tur?.pasi).toBe(INDICII_DOCUMENTE)
   })
 
   it('fiecare pas are cel puțin un indiciu', () => {

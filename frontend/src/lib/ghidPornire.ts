@@ -13,7 +13,7 @@ import { DENUMIRE_DEMO, esteClientDemo } from './demo'
  * subcolecțiile proprii ale utilizatorului).
  */
 
-export type PasGhid = 'scan' | 'generare' | 'anaf' | 'dosar' | 'sarcina' | 'alerte' | 'coleg' | 'sablon'
+export type PasGhid = 'scan' | 'generare' | 'anaf' | 'dosar' | 'sarcina' | 'documente' | 'alerte' | 'coleg' | 'sablon'
 
 /** Un indiciu „Arată-mi”: elementul [data-ghid=țintă] e evidențiat cu textul alăturat. Indiciile se succed:
  * următorul apare după clic pe țintă (ex. butonul care deschide formularul, apoi câmpul din formular). */
@@ -34,6 +34,14 @@ export interface DefinitiePas {
   ruta: string
   indicii: IndiciuGhid[]
 }
+
+/** Indiciile pentru documentele clientului: aceleași în pasul din ghid și în turul „Arată-mi cum” al noutății. */
+export const INDICII_DOCUMENTE: IndiciuGhid[] = [
+  { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
+  { tinta: 'doc-incarca', text: 'Aici încarci actele clientului. Le poți și trage direct în secțiunea „Documente” sau lipi cu Ctrl+V.' },
+  { tinta: 'doc-lista', text: 'Apasă un document ca să-l vezi. Din meniul „⋯” al unui buletin alegi „Extrage datele în fișă”; '
+    + 'un document tras peste un folder se mută acolo.' },
+]
 
 export const PASI_GHID: DefinitiePas[] = [
   {
@@ -73,6 +81,12 @@ export const PASI_GHID: DefinitiePas[] = [
     titlu: 'Adaugă o sarcină cu termen',
     descriere: 'Primești alertă înainte de termen, ca nimic să nu scape.',
     indicii: [{ tinta: 'sarcina-add', text: 'Adaugă o sarcină și pune-i un termen.' }],
+  },
+  {
+    key: 'documente', optional: true, functie: 'documente', ruta: '/',
+    titlu: 'Păstrează actele clientului',
+    descriere: 'Buletine, contracte, dovezi de sediu: în fișa clientului, criptate, în foldere. Le previzualizezi și extragi datele din ele.',
+    indicii: INDICII_DOCUMENTE,
   },
   {
     key: 'alerte', optional: true, functie: 'alerte', ruta: '/setari/notificari',

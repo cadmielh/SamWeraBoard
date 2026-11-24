@@ -6,6 +6,7 @@ import { collection, doc, getCountFromServer, onSnapshot, query, where, type Doc
 import { db } from './firebase'
 import { toDateSafe } from './dates'
 import { FILES_BASE, apiErrorMessage, apiJson, authHeaders } from './api'
+import { marcheazaPas } from './ghidPornire'
 
 export const MAX_BYTES = 15 * 1024 * 1024
 export const LIMITA_CABINET = 10 * 1024 * 1024 * 1024
@@ -385,6 +386,8 @@ export async function incarcaFisier(
       let data: { error?: string; fisier?: DocumentData & { id: string }; existent?: EroareFisier['existent'] } = {}
       try { data = JSON.parse(xhr.responseText || '{}') } catch { /* răspuns ne-JSON (ex. 413 de la proxy) */ }
       if (xhr.status >= 200 && xhr.status < 300 && data.fisier) {
+        // Doar actele încărcate de utilizator bifează pasul din ghid, nu copiile documentelor generate.
+        if (!p.destinatie) marcheazaPas('documente')
         resolve(fisierDinFirestore(data.fisier.id, data.fisier))
         return
       }

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { arrayUnion, doc, onSnapshot, setDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import type { FeatureKey } from './features'
-import type { IndiciuGhid } from './ghidPornire'
+import { INDICII_DOCUMENTE, type IndiciuGhid } from './ghidPornire'
 
 export type Rol = 'admin' | 'member' | 'viewer'
 
@@ -45,12 +45,7 @@ export const NOUTATI: Noutate[] = [
     feature: 'documente',
     tur: {
       ruta: '/',
-      pasi: [
-        { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
-        { tinta: 'doc-incarca', text: 'Aici încarci actele clientului. Le poți și trage direct în secțiunea „Documente” sau lipi cu Ctrl+V.' },
-        { tinta: 'doc-lista', text: 'Apasă un document ca să-l vezi. Din meniul „⋯” al unui buletin alegi „Extrage datele în fișă”; '
-          + 'un document tras peste un folder se mută acolo.' },
-      ],
+      pasi: INDICII_DOCUMENTE,
     },
   },
   {
