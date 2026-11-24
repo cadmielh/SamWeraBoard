@@ -13,9 +13,9 @@ describe('pașii ghidului', () => {
     expect(pasiPentruRol('member').some(p => p.doarAdmin)).toBe(false)
   })
 
-  it('scanarea și generarea sunt primele, recomandate', () => {
-    expect(PASI_GHID.slice(0, 2).map(p => p.key)).toEqual(['scan', 'generare'])
-    expect(PASI_GHID.slice(0, 2).every(p => p.recomandat)).toBe(true)
+  it('întâi datele clientului (buletin, apoi firmă după CUI), apoi generarea; scanarea și generarea recomandate', () => {
+    expect(PASI_GHID.slice(0, 3).map(p => p.key)).toEqual(['scan', 'anaf', 'generare'])
+    expect(PASI_GHID.filter(p => p.recomandat).map(p => p.key)).toEqual(['scan', 'generare'])
   })
 
   it('șablonul propriu e opțional: apare, dar nu condiționează terminarea', () => {

@@ -54,20 +54,20 @@ export const PASI_GHID: DefinitiePas[] = [
     ],
   },
   {
-    key: 'generare', recomandat: true, ruta: '/extragere',
-    titlu: 'Generează primul document',
-    descriere: 'Alegi clientul și șablonul, iar documentul iese completat, gata de descărcat.',
-    indicii: [
-      { tinta: 'gen-client', text: 'Alege „Client din portofoliu”, apoi clientul și șablonul. Dacă n-ai încă un client, creează unul demo din ghid.' },
-    ],
-  },
-  {
     key: 'anaf', ruta: '/',
     titlu: 'Adaugă o firmă după CUI',
     descriere: 'Scrii CUI-ul, iar denumirea, sediul, CAEN-ul și datele fiscale vin de la ANAF.',
     indicii: [
       { tinta: 'client-add', text: 'Deschide formularul de client nou.' },
       { tinta: 'client-anaf', text: 'Scrie CUI-ul firmei și apasă ANAF: restul datelor se completează singure.' },
+    ],
+  },
+  {
+    key: 'generare', recomandat: true, ruta: '/extragere',
+    titlu: 'Generează primul document',
+    descriere: 'Alegi clientul și șablonul, iar documentul iese completat, gata de descărcat.',
+    indicii: [
+      { tinta: 'gen-client', text: 'Alege „Client din portofoliu”, apoi clientul și șablonul. Dacă n-ai încă un client, creează unul demo din ghid.' },
     ],
   },
   {
