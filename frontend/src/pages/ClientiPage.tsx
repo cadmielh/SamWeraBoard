@@ -858,7 +858,7 @@ function ClientCardList({ clients, onOpen }: { clients: Client[]; onOpen: (c: Cl
         const caen = c.caenCod ? `CAEN ${c.caenCod}` : ''
         return (
           <li key={c.id}>
-            <button type="button" className="m-card" onClick={() => onOpen(c)}>
+            <button type="button" className="m-card" onClick={() => onOpen(c)} data-ghid="client-deschide">
               <span className="m-card-main">
                 <span className="m-card-title">{renderCellContent(c, 'denumire')}</span>
                 <span className="m-card-sub">
@@ -1119,7 +1119,7 @@ function ClientTable({
     const c = clients[index]
     return (
       <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '.25rem', padding: '0 .5rem', borderBottom: '1px solid var(--s100)' }}>
-        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onView(c) }} title="Vizualizează"><IconEye /></button>
+        <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onView(c) }} title="Vizualizează" data-ghid="client-deschide"><IconEye /></button>
         <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onEdit(c) }} title="Editare"><IconPencil /></button>
         <button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); onDelete(c) }} title="Șterge" style={{ color: 'var(--r500)' }}><IconTrash /></button>
       </div>

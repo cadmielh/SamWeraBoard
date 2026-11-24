@@ -228,5 +228,5 @@
 .noutate-titlu { font-size: .95rem; font-weight: 700; color: var(--s800); margin: 0; }
 .noutate-data { font-size: .75rem; color: var(--s400); }
 .noutate-text { font-size: .875rem; color: var(--s600); line-height: 1.5; margin: 0; }
-.noutate-actiune { align-self: flex-start; margin-top: .25rem; }
+.noutate-actiuni { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .25rem; }
 .noutati-istoric { font-size: .78rem; color: var(--s400); margin: 0; }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./firebase', () => ({ db: {} }))
 
-import { NOUTATI, deAnuntat, noutatiVizibile, type Noutate } from './noutati'
+import { NOUTATI, deAnuntat, noutatiVizibile, opresteTur, pornesteTur, turAcum, urmatorulPasTur, type Noutate } from './noutati'
 
 const N = (o: Partial<Noutate>): Noutate => ({ id: 'x', data: '2026-11-24', icon: '•', titlu: 'T', text: 't', ...o })
 const lista = [
@@ -34,6 +34,29 @@ describe('noutăți', () => {
     for (const n of NOUTATI) {
       expect(n.data).toMatch(/^\d{4}-\d{2}-\d{2}$/)
       if (n.actiune) expect(n.actiune.cale.startsWith('/')).toBe(true)
+      if (n.tur) {
+        expect(n.tur.ruta.startsWith('/')).toBe(true)
+        expect(n.tur.pasi.length).toBeGreaterThan(0)
+      }
     }
+  })
+})
+
+describe('turul „Arată-mi cum”', () => {
+  it('pornește la primul pas, avansează și se încheie după ultimul', () => {
+    const n = N({ id: 'tur', tur: { ruta: '/', pasi: [{ tinta: 'a', text: '1' }, { tinta: 'b', text: '2' }] } })
+    pornesteTur(n)
+    expect(turAcum()).toMatchObject({ index: 0 })
+    urmatorulPasTur()
+    expect(turAcum()).toMatchObject({ index: 1 })
+    urmatorulPasTur()
+    expect(turAcum()).toBeNull()
+  })
+  it('un anunț fără tur nu pornește nimic; „Închide” oprește oricând', () => {
+    pornesteTur(N({ id: 'simplu' }))
+    expect(turAcum()).toBeNull()
+    pornesteTur(N({ id: 't', tur: { ruta: '/', pasi: [{ tinta: 'a', text: '1' }] } }))
+    opresteTur()
+    expect(turAcum()).toBeNull()
   })
 })

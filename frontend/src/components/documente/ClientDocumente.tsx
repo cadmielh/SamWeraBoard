@@ -400,7 +400,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         </button>
         {activ && <span className="spin spin-dark" role="status" aria-label="Se încarcă documente" />}
         {canEdit && (
-          <button type="button" className="doc-icon-btn" onClick={() => inputRef.current?.click()} aria-label="Încarcă documente" title="Încarcă documente">
+          <button type="button" className="doc-icon-btn" onClick={() => inputRef.current?.click()} aria-label="Încarcă documente" title="Încarcă documente"
+            data-ghid="doc-incarca">
             <IconIncarca size={16} />
           </button>
         )}
@@ -515,7 +516,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           )}
           {canEdit && (
             <button type="button" className="btn btn-outline-primary btn-sm doc-btn" onClick={() => inputRef.current?.click()}
-              title="Încarcă documente (sau trage-le aici, ori lipește cu Ctrl+V)" aria-label="Încarcă documente">
+              title="Încarcă documente (sau trage-le aici, ori lipește cu Ctrl+V)" aria-label="Încarcă documente" data-ghid="doc-incarca">
               <IconIncarca /> <span className="doc-btn-text">Încarcă</span>
             </button>
           )}
@@ -590,7 +591,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
       )}
 
       {!loading && !error && !pregatire && (!nimic || folderNou) && (
-        <ul className="doc-list">
+        <ul className="doc-list" data-ghid="doc-lista">
           {folderNou && (
             <RandEditare
               icon={<IconFolder />} initial="" placeholder="Numele folderului"

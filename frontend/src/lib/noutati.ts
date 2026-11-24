@@ -7,10 +7,11 @@
  * Cine vede un anunț: dacă are `feature`, doar în cabinetele cu funcția pornită, și abia când e pornită; dacă are
  * `roluri`, doar acele roluri. Conturile create după data anunțului nu primesc fereastra (au ghidul „Primii pași”), dar
  * îl găsesc în istoric. „Văzut” se ține pe cont (`users/{uid}.noutatiVazute`), nu pe dispozitiv. */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { arrayUnion, doc, onSnapshot, setDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import type { FeatureKey } from './features'
+import type { IndiciuGhid } from './ghidPornire'
 
 export type Rol = 'admin' | 'member' | 'viewer'
 
@@ -24,7 +25,12 @@ export interface Noutate {
   actiune?: { label: string; cale: string }
   feature?: FeatureKey
   roluri?: Rol[]
+  /** Turul „Arată-mi cum” (opțional): pornește pe `ruta` și evidențiază pe rând elementele [data-ghid=țintă]. */
+  tur?: { ruta: string; pasi: IndiciuGhid[] }
 }
+
+/** Câte anunțuri încap în fereastra „Ce e nou”; restul se văd în Setări › Noutăți. */
+export const MAX_IN_FEREASTRA = 3
 
 export const NOUTATI: Noutate[] = [
   {
@@ -37,6 +43,15 @@ export const NOUTATI: Noutate[] = [
       + 'La generarea unui document poți păstra și o copie a lui la client.',
     actiune: { label: 'Deschide clienții', cale: '/' },
     feature: 'documente',
+    tur: {
+      ruta: '/',
+      pasi: [
+        { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
+        { tinta: 'doc-incarca', text: 'Aici încarci actele clientului. Le poți și trage direct în secțiunea „Documente” sau lipi cu Ctrl+V.' },
+        { tinta: 'doc-lista', text: 'Apasă un document ca să-l vezi. Din meniul „⋯” al unui buletin alegi „Extrage datele în fișă”; '
+          + 'un document tras peste un folder se mută acolo.' },
+      ],
+    },
   },
   {
     id: 'documente-foldere-implicite',
@@ -87,4 +102,22 @@ export function useNoutatiVazute(uid: string | null) {
   }, [uid])
 
   return { vazute: vazute?.uid === uid ? vazute.ids : null, marcheaza }
+}
+
+// ── Turul activ „Arată-mi cum” ──────────────────────────────────────────────
+// În afara componentelor: pornit din fereastra „Ce e nou” (care se închide) sau din istoric, continuă după navigare.
+
+let tur: { noutate: Noutate; index: number } | null = null
+const ascultatoriTur = new Set<() => void>()
+const seteazaTur = (t: typeof tur) => { tur = t; ascultatoriTur.forEach(l => l()) }
+
+export function pornesteTur(n: Noutate) { if (n.tur?.pasi.length) seteazaTur({ noutate: n, index: 0 }) }
+export function urmatorulPasTur() { if (tur) seteazaTur(tur.index + 1 < (tur.noutate.tur?.pasi.length ?? 0) ? { ...tur, index: tur.index + 1 } : null) }
+export function opresteTur() { seteazaTur(null) }
+
+/** Turul activ (pentru teste și cod din afara React). */
+export const turAcum = () => tur
+
+export function useTurNoutate() {
+  return useSyncExternalStore(l => { ascultatoriTur.add(l); return () => { ascultatoriTur.delete(l) } }, () => tur)
 }

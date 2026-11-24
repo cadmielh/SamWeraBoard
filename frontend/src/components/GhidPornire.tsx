@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { useIsMobile } from '../lib/useIsMobile'
 import { withViewTransition } from '../lib/viewTransition'
 import type { DefinitiePas } from '../lib/ghidPornire'
 import { progresGhid, useClientDemo, useGhidVizibil } from '../lib/useGhid'
 import BtnLabel from './BtnLabel'
+import IndiciuEvidentiat from './IndiciuEvidentiat'
 import { deleteClientOnServer } from '../lib/pii'
 import '../styles/ghid.css'
 
@@ -175,106 +176,19 @@ export function GhidStergeDemo() {
   )
 }
 
-const PAUZA_FARA_TINTA_MS = 6000
-
-/**
- * Indiciul „Arată-mi”: un chenar peste elementul [data-ghid=țintă] și un text lângă el. Nu acoperă pagina:
- * utilizatorul face chiar acțiunea, iar clicul pe țintă trece la indiciul următor (ex. formularul deschis).
- * Dacă ținta nu apare (ex. ești la alt pas al generării), textul rămâne afișat jos, fără chenar.
- */
+/** Indiciul „Arată-mi” al ghidului: componenta comună (IndiciuEvidentiat), cu pasul activ al ghidului. */
 export function GhidIndiciu() {
   const ghid = useGhidVizibil()
   const indiciu = ghid?.indiciu ?? null
-  const curent = indiciu ? indiciu.pas.indicii[indiciu.index] : null
-  const areUrmator = !!indiciu && indiciu.index + 1 < indiciu.pas.indicii.length
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  const [faraTinta, setFaraTinta] = useState(false)
-  const tintaRef = useRef<Element | null>(null)
-  const { pathname } = useLocation()
-
-  // Caută ținta și îi urmărește poziția (derulare, redimensionare, animații) cât timp indiciul e activ.
-  useLayoutEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRect(null); setFaraTinta(false); tintaRef.current = null
-    if (!curent) return
-    const start = Date.now()
-    let derulat = false
-    let raf = 0
-    const tick = () => {
-      const el = [...document.querySelectorAll(`[data-ghid="${curent.tinta}"]`)]
-        .find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }) ?? null
-      tintaRef.current = el
-      if (el) {
-        if (!derulat) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); derulat = true }
-        const r = el.getBoundingClientRect()
-        setRect(prev => (prev && prev.top === r.top && prev.left === r.left && prev.width === r.width && prev.height === r.height ? prev : r))
-        setFaraTinta(false)
-      } else {
-        setRect(null)
-        if (Date.now() - start > PAUZA_FARA_TINTA_MS) setFaraTinta(true)
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [curent, pathname])
-
-  // Plecat de pe pagina indicată (după ce a ajuns pe ea): indiciul nu mai are sens.
-  const ajunsRef = useRef(false)
-  const ruta = indiciu?.pas.ruta ?? null
-  useEffect(() => { ajunsRef.current = false }, [indiciu?.pas])
-  useEffect(() => {
-    if (!ruta || !ghid) return
-    const peRuta = ruta === '/' ? pathname === '/' : pathname === ruta || pathname.startsWith(`${ruta}/`)
-    if (peRuta) ajunsRef.current = true
-    else if (ajunsRef.current) ghid.opresteIndiciul()
-  }, [pathname, ruta, ghid])
-
-  // Clicul pe țintă: utilizatorul a făcut ce i-am arătat, trecem mai departe.
-  useEffect(() => {
-    if (!curent || !ghid) return
-    const onClick = (e: MouseEvent) => {
-      if (areUrmator && tintaRef.current?.contains(e.target as Node)) ghid.urmatorulIndiciu()
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') ghid.opresteIndiciul() }
-    document.addEventListener('click', onClick, true)
-    window.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('click', onClick, true); window.removeEventListener('keydown', onKey) }
-  }, [curent, areUrmator, ghid])
-
-  if (!ghid || !indiciu || !curent || (!rect && !faraTinta)) return null
-
-  const pozitie = rect ? pozitioneaza(rect) : null
+  if (!ghid || !indiciu) return null
   return (
-    <>
-      {rect && (
-        <div className="ghid-chenar" aria-hidden
-          style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12 }} />
-      )}
-      <div className={`ghid-indiciu${rect ? '' : ' ghid-indiciu--liber'}`} role="status"
-        style={pozitie ?? undefined}>
-        <div className="ghid-indiciu-pas">{indiciu.pas.titlu}{indiciu.pas.indicii.length > 1 && ` · ${indiciu.index + 1}/${indiciu.pas.indicii.length}`}</div>
-        <p>{curent.text}</p>
-        <div className="ghid-indiciu-act">
-          <button type="button" className="btn btn-ghost btn-xs" onClick={ghid.deschide}>Toți pașii</button>
-          <button type="button" className="btn btn-primary btn-xs" onClick={ghid.opresteIndiciul}>Am înțeles</button>
-        </div>
-      </div>
-    </>
+    <IndiciuEvidentiat
+      titlu={indiciu.pas.titlu} indicii={indiciu.pas.indicii} index={indiciu.index} ruta={indiciu.pas.ruta}
+      onUrmator={ghid.urmatorulIndiciu} onOpreste={ghid.opresteIndiciul}
+      actiuni={<>
+        <button type="button" className="btn btn-ghost btn-xs" onClick={ghid.deschide}>Toți pașii</button>
+        <button type="button" className="btn btn-primary btn-xs" onClick={ghid.opresteIndiciul}>Am înțeles</button>
+      </>}
+    />
   )
-}
-
-const LATIME_INDICIU = 300
-const MARGINE = 12
-
-/** Textul stă sub țintă dacă încape, altfel deasupra; pe orizontală rămâne în ecran. */
-function pozitioneaza(r: DOMRect): React.CSSProperties {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const latime = Math.min(LATIME_INDICIU, vw - 2 * MARGINE)
-  const left = Math.max(MARGINE, Math.min(r.left + r.width / 2 - latime / 2, vw - latime - MARGINE))
-  const sub = vh - r.bottom > 180 || r.top < 180
-  return sub
-    ? { top: Math.min(r.bottom + 14, vh - 160), left, width: latime }
-    : { bottom: vh - r.top + 14, left, width: latime }
 }

@@ -16,7 +16,7 @@ import Sidebar from './components/Sidebar'
 import MobileTabBar from './components/MobileTabBar'
 import Toast from './components/Toast'
 import ConsentGate from './components/ConsentGate'
-import { NoutatiFereastra } from './components/Noutati'
+import { NoutatiFereastra, TurNoutate } from './components/Noutati'
 import TrialBanner from './components/TrialBanner'
 import UpgradeModal from './components/UpgradeModal'
 import { GhidIndiciu, GhidPanou, GhidStergeDemo } from './components/GhidPornire'
@@ -228,6 +228,7 @@ export default function AppLayout() {
       <GhidIndiciu />
       <GhidStergeDemo />
       <NoutatiFereastra />
+      <TurNoutate />
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </AppCtx.Provider>
   )
