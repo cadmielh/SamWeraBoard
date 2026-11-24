@@ -1,8 +1,9 @@
 # Plan: documente pe client (stocare) și cereri de documente (portal)
 
-Stare: **faza 1 implementată și testată local, nelansată** (24 noiembrie 2026), ramura `feat/documente-client`. Toate testele trec
-(`tests/run_all.sh`: pytest, reguli Firestore, E2E, vitest); interfața a fost verificată în browser pe emulatoare (admin și viewer,
-desktop și telefon, temă deschisă și întunecată). Înainte de pornirea flag-ului: vezi „Lansare (faza 1)”.
+Stare: **fazele 1–2 și finisarea lansate în producție pe 24 noiembrie 2026** (funcții, inclusiv `documente`, reguli, hosting;
+bucket `samwera-board-eu-fisiere`, europe-west3). Funcția e oprită implicit: se pornește per cabinet din Super admin
+(„Documente clienți”). Termenii și DPA-ul `2026-11-24` cer reacceptarea de către fiecare cabinet. Anunțul „Ce e nou”
+apare în cabinetele unde funcția e pornită (`lib/noutati.ts`).
 
 Implementare faza 1: `fisiere.py` (tip după conținut, nume, stocare), `fisiere_api.py` (rute), `vault.py` (`encrypt_file`/`decrypt_file`),
 `pii_api.py` (ștergerea clientului cu `?fisiere=`), `workspace_deletion.py` (ștergerea din stocare la purjare), `ratelimit.py`,
