@@ -78,7 +78,6 @@ export function useSarcini(workspaceId: string | null) {
     if (data.status === 'finalizat') payload.completedAt = serverTimestamp()
     assertWritable()
     const ref = await addDoc(sarciniCol(workspaceId), payload)
-    marcheazaPas('sarcina')
     return ref.id
   }, [])
 
@@ -226,6 +225,7 @@ export async function moveSarcina(workspaceId: string, id: string, newStatus: Sa
     order: newOrder,
     completedAt: newStatus === 'finalizat' ? serverTimestamp() : deleteField(),
   })
+  marcheazaPas('sarcina')
 }
 
 /** Re-spațiază `order` (index * 1000) pentru un set de sarcini din aceeași

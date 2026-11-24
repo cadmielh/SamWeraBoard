@@ -202,7 +202,7 @@ export default function KanbanBoard({ workspaceId, sarcini, onOpenTask, onQuickA
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
-      <div className="kanban-board">
+      <div className="kanban-board" data-ghid="sarcini-board">
         {SARCINA_STATUS_ORDER.map(status => (
           <KanbanColumn key={status} status={status} tasks={columns[status]} onOpenTask={onOpenTask} onQuickMove={handleQuickMove} onDeleteTask={onDeleteTask} onArchiveTask={handleArchive} justCompletedId={justCompletedId}>
             {status === 'deschis' ? <QuickAddRow onAdd={onQuickAdd} /> : undefined}

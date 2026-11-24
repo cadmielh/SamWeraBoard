@@ -45,7 +45,8 @@ export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmat
   const areUrmator = index + 1 < indicii.length
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [faraTinta, setFaraTinta] = useState(false)
-  // O fereastră deschisă (previzualizare, confirmare): indiciul nu se desenează peste ea; reapare după închidere.
+  // O fereastră deschisă (previzualizare, confirmare) care nu conține ținta: indiciul nu se desenează peste ea și
+  // reapare după închidere. Ținta din fereastră (ex. câmpul ANAF din formularul de client) se evidențiază normal.
   const [subFereastra, setSubFereastra] = useState(false)
   const tintaRef = useRef<Element | null>(null)
   const { pathname } = useLocation()
@@ -59,9 +60,11 @@ export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmat
     let derulat = false
     let raf = 0
     const tick = () => {
-      setSubFereastra(!!document.querySelector('.modal-backdrop'))
       const el = [...document.querySelectorAll(`[data-ghid="${curent.tinta}"]`)]
         .find(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }) ?? null
+      const ferestre = document.querySelectorAll('.modal-backdrop')
+      const deasupra = ferestre[ferestre.length - 1]
+      setSubFereastra(!!deasupra && !(el && deasupra.contains(el)))
       tintaRef.current = el
       if (el) {
         if (!derulat) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); derulat = true }

@@ -66,6 +66,7 @@ export default function ArchivedSarciniSection({ refreshKey = 0 }: Props) {
       <button
         type="button"
         className="card-head"
+        data-ghid="sarcini-arhiva"
         onClick={() => setOpen(o => !o)}
         style={{ width: '100%', padding: '1rem 1.125rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}
       >

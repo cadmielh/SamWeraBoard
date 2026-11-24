@@ -73,14 +73,28 @@ export const PASI_GHID: DefinitiePas[] = [
   {
     key: 'dosar', ruta: '/dosare',
     titlu: 'Deschide un dosar',
-    descriere: 'Un dosar ține la un loc lucrarea pentru un client: stadiul, termenele, onorariul.',
-    indicii: [{ tinta: 'dosar-add', text: 'Creează un dosar și leagă-l de un client.' }],
+    descriere: 'Un dosar ține la un loc lucrarea pentru un client: stadiul, termenele, onorariul. '
+      + 'Când ajunge la „Documente predate client” și e facturat, trece la „Încheiate”.',
+    indicii: [
+      { tinta: 'dosar-add', text: 'Apasă „+ Dosar nou”.' },
+      { tinta: 'dosar-sarcina', text: 'Completează clientul (din portofoliu sau o denumire liberă, pentru un prospect), obiectul cererii '
+        + 'și responsabilul. Bifa de aici pune dosarul și ca sarcină pe board-ul din Sarcini, unde îi urmărești pașii; '
+        + 'debifeaz-o dacă nu vrei.' },
+    ],
   },
   {
+    // Se bifează la prima mutare a unei sarcini, nu la adăugare: o sarcină creată odată cu dosarul ar bifa pasul
+    // fără ca utilizatorul să fi văzut board-ul.
     key: 'sarcina', ruta: '/sarcini',
-    titlu: 'Adaugă o sarcină cu termen',
-    descriere: 'Primești alertă înainte de termen, ca nimic să nu scape.',
-    indicii: [{ tinta: 'sarcina-add', text: 'Adaugă o sarcină și pune-i un termen.' }],
+    titlu: 'Mută o sarcină pe board',
+    descriere: 'Sarcinile, și cele create odată cu un dosar, trec prin Deschis → În lucru → Finalizat; cele finalizate ajung în arhivă.',
+    indicii: [
+      { tinta: 'sarcini-board', text: 'Fiecare coloană e o stare: Deschis, În lucru, Finalizat. Muți o sarcină trăgând cardul în altă coloană '
+        + 'sau cu butoanele de pe card: „▶ În lucru”, „✓ Finalizează”.' },
+      { tinta: 'sarcini-arhiva', text: 'Sarcinile finalizate trec singure aici, în arhivă, la finalul săptămânii. Cu „🗄 Arhivează” de pe card '
+        + 'le muți imediat; din arhivă le poți readuce pe board.' },
+      { tinta: 'sarcina-add', text: 'Pentru o sarcină nouă apeși aici. Pune-i un termen: primești alertă înainte să expire.' },
+    ],
   },
   {
     key: 'documente', optional: true, functie: 'documente', ruta: '/',
@@ -154,6 +168,8 @@ export function ghidActiv(workspace: Workspace, uid: string, now: Date = new Dat
 // o singură dată în AppLayout, îl ascultă și îl salvează. Așa codul care face acțiunea nu depinde de ghid.
 
 const EVENIMENT = 'cabinio:ghid-pas'
+/** Cât așteaptă panoul după un pas făcut (rezultatul pasului apare întâi) și cât de des reverifică. */
+const PAUZA_REDESCHIDERE_MS = 1200
 
 export function marcheazaPas(pas: PasGhid): void {
   try { window.dispatchEvent(new CustomEvent<PasGhid>(EVENIMENT, { detail: pas })) } catch { /* fără window (teste) */ }
@@ -199,6 +215,7 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
   const [deschis, setDeschis] = useState(false)
   const [indiciu, setIndiciu] = useState<GhidPornire['indiciu']>(null)
   const [demoDeSters, setDemoDeSters] = useState<string | null>(null)
+  const [redeschide, setRedeschide] = useState(false)
   const stareRef = useRef(stare)
   useEffect(() => { stareRef.current = stare }, [stare])
 
@@ -210,7 +227,7 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setStare(null); setDeschis(false); setIndiciu(null); setDemoDeSters(null)
+    setStare(null); setDeschis(false); setIndiciu(null); setDemoDeSters(null); setRedeschide(false)
     if (!ref || !workspace || !uid) return
     return onSnapshot(ref, snap => {
       if (snap.exists()) { setStare(snap.data() as StareSalvata); return }
@@ -231,6 +248,7 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
       setStare(s => ({ ...s, pasi: { ...s?.pasi, [pas]: new Date().toISOString() } }))
       salveaza({ pasi: { [pas]: new Date().toISOString() } })
       setIndiciu(i => (i?.pas.key === pas ? null : i))
+      if (!stareRef.current?.ascuns) setRedeschide(true)
     }
     window.addEventListener(EVENIMENT, onPas)
     return () => window.removeEventListener(EVENIMENT, onPas)
@@ -283,6 +301,20 @@ export function useGhidPornire(uid: string | null, workspace: Workspace | null, 
     salveaza({ prezentat: true })
     setStare(s => ({ ...s, prezentat: true }))
   }, [activ, stare, salveaza])
+
+  // Un pas tocmai făcut: panoul revine singur, cu bifa nouă și pasul următor, ca ghidul să nu se piardă din vedere.
+  // Așteptăm să se închidă fereastra în care s-a făcut pasul (ex. formularul de client) și să dispară orice indiciu.
+  useEffect(() => {
+    if (!redeschide) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!activ) { setRedeschide(false); return }
+    const t = setInterval(() => {
+      if (document.querySelector('.modal-backdrop, .ghid-indiciu')) return
+      setRedeschide(false)
+      setDeschis(true)
+    }, PAUZA_REDESCHIDERE_MS)
+    return () => clearInterval(t)
+  }, [redeschide, activ])
 
   const deschide = useCallback(() => {
     setIndiciu(null)

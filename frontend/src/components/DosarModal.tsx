@@ -285,7 +285,7 @@ export default function DosarModal({ initial, onSave, onClose, prefillClient }: 
           </details>
 
           {!isEditing && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', marginTop: '1rem', cursor: 'pointer' }}>
+            <label data-ghid="dosar-sarcina" style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.8125rem', color: 'var(--s600)', marginTop: '1rem', cursor: 'pointer' }}>
               <input type="checkbox" checked={creeazaSarcina} onChange={e => setCreeazaSarcina(e.target.checked)} />
               Creează și o sarcină pe board
             </label>

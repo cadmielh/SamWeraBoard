@@ -78,6 +78,14 @@ export function GhidPanou() {
                     {pas.doarAdmin && <span className="ghid-eticheta ghid-eticheta--admin">Admin</span>}
                   </div>
                   {!facut && <div className="ghid-pas-desc">{pas.descriere}</div>}
+                  {pas.key === 'generare' && !facut && (
+                    <div className="ghid-demo">
+                      <span>N-ai încă un client sau vrei să încerci fără date reale?</span>
+                      <button type="button" className="btn btn-outline-primary btn-xs" onClick={() => void demo.creeaza()} disabled={demo.busy}>
+                        <BtnLabel busy={demo.busy} dark>Folosește un client demo</BtnLabel>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {!facut && (
                   <button type="button" className="btn btn-ghost btn-xs ghid-arata" onClick={() => arata(pas)}>Arată-mi</button>
@@ -86,15 +94,6 @@ export function GhidPanou() {
             )
           })}
         </ol>
-
-        {!generat && (
-          <div className="ghid-demo">
-            <span>Vrei să încerci fără date reale?</span>
-            <button type="button" className="btn btn-outline-primary btn-xs" onClick={() => void demo.creeaza()} disabled={demo.busy}>
-              <BtnLabel busy={demo.busy} dark>Folosește un client demo</BtnLabel>
-            </button>
-          </div>
-        )}
 
         <footer className="ghid-subsol">
           <button type="button" className="btn btn-ghost btn-xs" onClick={ghid.ascunde}>
@@ -181,13 +180,17 @@ export function GhidIndiciu() {
   const ghid = useGhidVizibil()
   const indiciu = ghid?.indiciu ?? null
   if (!ghid || !indiciu) return null
+  // Indiciile doar de citit (ex. coloanele board-ului) nu cer un clic pe țintă: „Următorul” trece mai departe.
+  const areUrmator = indiciu.index + 1 < indiciu.pas.indicii.length
   return (
     <IndiciuEvidentiat
       titlu={indiciu.pas.titlu} indicii={indiciu.pas.indicii} index={indiciu.index} ruta={indiciu.pas.ruta}
       onUrmator={ghid.urmatorulIndiciu} onOpreste={ghid.opresteIndiciul}
       actiuni={<>
         <button type="button" className="btn btn-ghost btn-xs" onClick={ghid.deschide}>Toți pașii</button>
-        <button type="button" className="btn btn-primary btn-xs" onClick={ghid.opresteIndiciul}>Am înțeles</button>
+        <button type="button" className="btn btn-primary btn-xs" onClick={areUrmator ? ghid.urmatorulIndiciu : ghid.opresteIndiciul}>
+          {areUrmator ? 'Următorul' : 'Am înțeles'}
+        </button>
       </>}
     />
   )
