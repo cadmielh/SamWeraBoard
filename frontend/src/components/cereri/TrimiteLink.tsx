@@ -44,7 +44,7 @@ export default function TrimiteLink({ link, expiraLa, cabinet, emailClient, onCo
         <button type="button" className="btn btn-primary btn-sm" onClick={() => void copiaza('link')}><IconCopiaza /> Copiază linkul</button>
       </div>
       <div className="cer-canale">
-        <a className="btn btn-outline-primary btn-sm" href={linkWhatsApp(mesaj)} target="_blank" rel="noopener noreferrer"><IconMesaj /> WhatsApp</a>
+        <a className="btn btn-outline-primary btn-sm cer-whatsapp" href={linkWhatsApp(mesaj)} target="_blank" rel="noopener noreferrer"><IconMesaj /> WhatsApp</a>
         <a className="btn btn-outline-primary btn-sm" href={linkEmail(emailClient ?? '', cabinet, mesaj)}><IconEmail /> E-mail</a>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copiaza('mesaj')} title="Pentru SMS sau altă aplicație"><IconCopiaza /> Copiază mesajul</button>
         <button type="button" className="btn btn-ghost btn-sm" aria-expanded={qr} onClick={() => setQr(v => !v)}><IconQr /> {qr ? 'Ascunde codul QR' : 'Cod QR'}</button>
