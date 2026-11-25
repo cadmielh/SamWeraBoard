@@ -86,7 +86,7 @@ function Cerere({ p, token, onSchimbat, onInactiv }: {
         </div>
         {/* Discret: cabinetul e cel care cere actele; Cabinio e doar platforma, numită și în informarea de jos. */}
         <div className="portal-marca" aria-label="Cabinio">
-          <LogoMark size={18} /><span>Cabin<b>io</b></span>
+          <LogoMark size={22} /><span>Cabin<b>io</b></span>
         </div>
       </header>
 
