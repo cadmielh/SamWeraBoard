@@ -118,7 +118,9 @@ def _hash(token: str) -> str:
 
 
 def _link(token: str) -> str:
-    baza = (os.getenv("FRONTEND_ORIGIN") or "").split(",")[0].strip().rstrip("/")
+    """Adresa pe care o primește clientul: PORTAL_ORIGIN (domeniul public al cabinetului, ex. cabinio.ro), altfel prima
+    origine a aplicației. Separat de FRONTEND_ORIGIN, a cărui primă valoare e și întoarcerea din Stripe."""
+    baza = (os.getenv("PORTAL_ORIGIN") or os.getenv("FRONTEND_ORIGIN") or "").split(",")[0].strip().rstrip("/")
     return f"{baza}/p/{token}"
 
 

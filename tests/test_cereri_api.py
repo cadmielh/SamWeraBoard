@@ -163,6 +163,15 @@ def test_creare_validari_si_roluri(env):
 
 # ── Portalul ──────────────────────────────────────────────────────────────────
 
+def test_linkul_foloseste_domeniul_portalului(env, monkeypatch):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    monkeypatch.setenv("FRONTEND_ORIGIN", "https://cabinio.web.app,https://cabinio.ro")
+    monkeypatch.setenv("PORTAL_ORIGIN", "https://cabinio.ro/")
+    _, token, j = cerere(c, wid)
+    assert j["link"] == f"https://cabinio.ro/p/{token}"
+
+
 def test_portal_arata_doar_ce_trebuie_si_marcheaza_deschiderea(env):
     c, db, _ = env
     wid = setup_ws(c, db)
