@@ -159,11 +159,22 @@ function numeAfisat(p: Persoana): string {
   return [p.nume, p.prenume].map(x => (x ?? '').trim()).filter(Boolean).join(' ')
 }
 
+const cheieNume = (p: Persoana) => numeAfisat(p).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').toLowerCase()
+const cifreCnp = (p: Persoana) => (p.cnp || p.cnpMasked || '').replace(/\D/g, '').slice(-4)
+
+/** Aceeași persoană pentru un buletin cerut: potrivirea strictă din fișă sau, fără CNP-uri care să se contrazică, același
+ * nume (asociatul și administratorul introduși separat, fără date de buletin, au id-uri diferite). */
+function aceeasiPentruCerere(a: Persoana, b: Persoana): boolean {
+  if (aceeasiInFisa(a, b)) return true
+  const ca = cifreCnp(a), cb = cifreCnp(b)
+  return !!cheieNume(a) && cheieNume(a) === cheieNume(b) && !(ca.length === 4 && cb.length === 4 && ca !== cb)
+}
+
 export function propuneriActe(c: Client, azi: Date = new Date()): PropunereAct[] {
   const out: PropunereAct[] = []
   const vazute: Persoana[] = []
   for (const { p } of intrari(c)) {
-    if (vazute.some(v => aceeasiInFisa(v, p))) continue        // asociat și administrator: un singur buletin
+    if (vazute.some(v => aceeasiPentruCerere(v, p))) continue  // asociat și administrator: un singur buletin
     vazute.push(p)
     const nume = numeAfisat(p)
     if (!nume) continue

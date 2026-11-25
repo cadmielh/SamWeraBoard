@@ -32,6 +32,14 @@ describe('propuneriActe', () => {
     ])
     expect(pr).toHaveLength(3)
   })
+  it('aceeași persoană introdusă separat (id-uri diferite, fără CNP) apare o singură dată; omonimii cu CNP diferit rămân', () => {
+    const c = PJ({
+      asociati: [P('Popovici', 'Dorothea', 'p1'), { ...P('Pop', 'Ana', 'p3'), cnp: '2900101123456' } as Persoana],
+      administratori: [P('POPOVICI', 'Dorothea', 'p2'), { ...P('Pop', 'Ana', 'p4'), cnp: '2900101129999' } as Persoana],
+    })
+    expect(propuneriActe(c, AZI).filter(p => p.tip === 'ci').map(p => p.eticheta))
+      .toEqual(['CI – Popovici Dorothea', 'CI – Pop Ana', 'CI – Pop Ana'])
+  })
   it('PF: titularul, fără dovadă de sediu', () => {
     const c = { id: 'c2', denumire: 'Pop Ion', tipClient: 'PF', titular: P('Pop', 'Ion', 'p9', '01.01.2031') } as unknown as Client
     expect(propuneriActe(c, AZI).map(p => p.eticheta)).toEqual(['CI – Pop Ion'])
