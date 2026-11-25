@@ -1,0 +1,180 @@
+/* Portalul clientului (/p/<token>): o pagină îngustă, gândită întâi pentru telefon, cu butoane mari. */
+
+.portal {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+.portal-pagina {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 20px 16px calc(32px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.portal h1 { font-size: 1.35rem; line-height: 1.25; margin: 0 0 6px; }
+.portal h2 { font-size: 1rem; margin: 0; }
+.portal p { margin: 0; line-height: 1.5; }
+
+.portal-cap { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.portal-cabinet { font-size: 1.1rem; font-weight: 700; }
+.portal-cerut { color: var(--text-muted); font-size: .9rem; margin-top: 2px; }
+
+.portal-intro p { color: var(--text); }
+.portal-nota {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--p500);
+  background: var(--surface);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  white-space: pre-line;
+}
+
+.portal-final {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--g500) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--g500) 35%, transparent);
+}
+.portal-final-semn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--g500);
+  color: #fff;
+  font-weight: 700;
+}
+
+.portal-progres { display: flex; align-items: center; gap: 10px; font-size: .85rem; color: var(--text-muted); }
+.portal-progres .portal-progres-bara { flex: 1; }
+.portal-progres-bara { height: 6px; border-radius: var(--r-full); background: var(--border); overflow: hidden; }
+.portal-progres-bara > span { display: block; height: 100%; background: var(--p500); transition: width .2s; }
+
+.portal-acte { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.portal-act {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px;
+  box-shadow: var(--sh-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.portal-act--respins { border-color: color-mix(in srgb, var(--a500) 60%, transparent); }
+.portal-act--acceptat, .portal-act--primit { border-color: color-mix(in srgb, var(--g500) 40%, transparent); }
+.portal-act-cap { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.portal-act-nume { overflow-wrap: anywhere; }
+.portal-act-text { color: var(--text-muted); font-size: .9rem; }
+
+.portal-stare {
+  flex: none;
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.portal-stare--primit, .portal-stare--acceptat {
+  background: color-mix(in srgb, var(--g500) 14%, var(--surface));
+  color: var(--g600);
+  border-color: transparent;
+}
+.portal-stare--respins {
+  background: color-mix(in srgb, var(--a500) 16%, var(--surface));
+  color: var(--a800);
+  border-color: transparent;
+}
+:root[data-theme="dark"] .portal-stare--primit,
+:root[data-theme="dark"] .portal-stare--acceptat { color: var(--g400); }
+:root[data-theme="dark"] .portal-stare--respins { color: var(--y400); }
+
+.portal-respins {
+  font-size: .9rem;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--a500) 12%, var(--surface));
+}
+
+.portal-fisiere { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.portal-fisiere li, .portal-incarcare {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .9rem;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.portal-incarcare .portal-progres-bara { flex: 0 0 35%; }
+.portal-fisier-nume { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-fisier-marime { color: var(--text-muted); font-size: .8rem; flex: none; }
+.portal-retrage {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.portal-retrage:hover:not(:disabled) { background: var(--border); color: var(--text); }
+
+.portal-eroare { color: var(--r600); font-size: .9rem; }
+:root[data-theme="dark"] .portal-eroare { color: var(--r400); }
+
+.portal-actiuni { display: flex; flex-wrap: wrap; gap: 8px; }
+.portal-btn {
+  flex: 1 1 160px;
+  min-height: 46px;
+  padding: 10px 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+/* Actul are deja fișiere: adăugarea rămâne la îndemână, dar discretă. */
+.portal-actiuni--mic .portal-btn { flex: 0 1 auto; min-height: 38px; padding: 6px 12px; font-size: .9rem; color: var(--p500); }
+.portal-btn--principal { background: var(--p500); border-color: var(--p500); color: #fff; }
+.portal-btn:disabled { opacity: .6; cursor: default; }
+.portal-btn:focus-visible, .portal-retrage:focus-visible { outline: 2px solid var(--p500); outline-offset: 2px; }
+
+.portal-termen { font-size: .85rem; color: var(--text-muted); }
+.portal-subsol {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+
+.portal-mesaj { padding: 32px 4px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.portal-incarca { display: grid; place-items: center; min-height: 50vh; }
+.portal-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--p500);
+  animation: portal-rot .8s linear infinite;
+}
+@keyframes portal-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .portal-spinner { animation-duration: 2s; } }

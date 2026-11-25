@@ -142,7 +142,7 @@ Un cabinet cu 200 de clienți ≈ 2–4 GB → sub 0,10 $/lună. 100 de cabinete
 
 ### Portal (link per cerere)
 - Linkul conține un token aleator (≥ 128 biți). În Firestore se păstrează doar hash-ul lui. Expirare implicită de 14 zile, cu anulare manuală.
-- Pagina publică (de exemplu `/p/<token>`) arată numele și logo-ul cabinetului, lista de acte cerute și butoane de încărcare sau fotografiere de pe telefon. Nu arată nimic altceva din cabinet sau de la client.
+- Pagina publică (de exemplu `/p/<token>`) arată numele cabinetului și pe cine a cerut actele, lista de acte cerute și butoane de încărcare sau fotografiere de pe telefon. Nu arată nimic altceva din cabinet sau de la client.
 - Fișierele intră cu `stare: de_verificat` în folderul „Primite de la client”. Utilizatorul primește o alertă prin sistemul existent de notificări (tip nou, de exemplu `documente_primite`), apoi acceptă sau respinge fișierele și, opțional, rulează OCR.
 - Pe pagină apare informarea GDPR în numele cabinetului (Operator). Cabinio apare ca persoană împuternicită.
 
@@ -194,7 +194,7 @@ pe care o decide dacă portalul chiar e folosit.
   se propune „Extrage datele în fișă”.
 
 ### Clientul (pagina publică)
-- Gândită întâi pentru telefon: numele și logo-ul cabinetului, mesajul, lista actelor cu starea fiecăruia.
+- Gândită întâi pentru telefon: numele cabinetului și cine a cerut actele, mesajul, lista actelor cu starea fiecăruia.
 - Fotografiere direct din cameră, cu indicații pe tipul actului („față și verso”, „toată pagina în cadru”); mai multe poze
   pot forma un act. Pozele se micșorează pe telefon înainte de trimitere (date mobile), serverul le re-salvează oricum ca JPEG.
 - Clientul revine pe același link până la expirare: vede ce a trimis (doar nume și mărime) și ce mai lipsește; actele
@@ -216,9 +216,13 @@ pe care o decide dacă portalul chiar e folosit.
   „Cere” în secțiunea Documente (propuneri din fișă, acte libere, mesaj, valabilitate), trimiterea (link, WhatsApp,
   e-mail, mesaj, cod QR), cererile clientului cu verificarea, eticheta „de verificat” și „Documente primite” pe pagina
   Clienți. Linkul arată spre `/p/<token>`, pagină care se face în 4b.
-- **Pentru 4b:** pagina publică; logo-ul cabinetului nu există încă în aplicație (trebuie încărcare în Setări › General
-  sau pagina rămâne doar cu numele); la deploy: funcțiile `api` și `documente`, regulile Firestore (`cereriDocumente`) și
-  triggerul nou `alerte_cerere`.
+- **4b făcută:** pagina publică `/p/<token>` (`pages/PortalPage.tsx`, `lib/portal.ts`), fără Firebase: numele
+  cabinetului și cine a cerut, mesajul, actele cu indicații pe tip, „Fotografiază” (camera telefonului, prin selectorul de
+  fișiere, deci fără permisiunea `camera` în antete) și „Alege din telefon”; pozele se micșorează la 2400 px și pleacă ca
+  JPEG (HEIC doar unde browserul îl poate citi); fișierele trimise (nume, mărime) cu retragere; actele respinse cu motivul;
+  ecran de final; mesaj pentru linkuri inactive; informarea GDPR în numele cabinetului; `noindex`.
+- **La deploy:** funcțiile `api` și `documente`, regulile Firestore (`cereriDocumente`), triggerul nou `alerte_cerere` și
+  hostingul.
 
 ### Etape
 - **4a. Cabinetul:** cererea (propuneri, acte libere), trimiterea (link, WhatsApp, e-mail, QR), urmărirea, „Documente
@@ -229,4 +233,4 @@ pe care o decide dacă portalul chiar e folosit.
 ## Detalii tranșate
 - Linkul din portal expiră implicit după **14 zile**.
 - Limita de utilizare a spațiului: **10 GB** per cabinet.
-- Pagina portalului afișează **numele și logo-ul** cabinetului.
+- Pagina portalului afișează **numele cabinetului** și numele celui care a creat cererea (fără logo; adresa de e-mail nu se arată).

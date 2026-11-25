@@ -6,9 +6,7 @@ import type { BuiltinTemplate, ClauseMeta } from "../types";
 import type { VariantContext } from './variants'
 import { marcheazaPas } from './ghidPornire'
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5001";
-// OCR calls go directly to Cloud Run to bypass Firebase Hosting's 60s proxy timeout
-const OCR_BASE = import.meta.env.VITE_OCR_BASE ?? BASE;
+import { BASE, OCR_BASE, FILES_BASE } from "./apiBase";
 
 export interface IDFields {
   cnp: string;
@@ -186,9 +184,7 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
   }
 }
 
-/** Încărcările și descărcările de documente merg direct la funcția dedicată `documente` (main.py), cu mai multe transferuri
- * pe instanță, fără plafonul de timp al Hosting-ului. Fără VITE_FILES_BASE (dezvoltare locală): același server ca OCR-ul. */
-export const FILES_BASE = import.meta.env.VITE_FILES_BASE ?? OCR_BASE;
+export { FILES_BASE };
 
 export async function authHeaders(): Promise<Record<string, string>> {
   const idToken = await auth.currentUser!.getIdToken();

@@ -26,6 +26,7 @@ const loaders = {
   '/setari': withReload(() => import('./pages/SetariPage')),
   '/super-admin': withReload(() => import('./pages/SuperAdminPage')),
   '/workspace/setup': withReload(() => import('./pages/WorkspaceSetupPage')),
+  '/p': withReload(() => import('./pages/PortalPage')),
 } as const
 
 export const DosarePage = lazy(loaders['/dosare'])
@@ -34,6 +35,8 @@ export const GenerareDocumentePage = lazy(loaders['/extragere'])
 export const SetariPage = lazy(loaders['/setari'])
 export const SuperAdminPage = lazy(loaders['/super-admin'])
 export const WorkspaceSetupPage = lazy(loaders['/workspace/setup'])
+/** Portalul clientului (fără cont). */
+export const PortalPage = lazy(loaders['/p'])
 
 /** Pornește descărcarea paginii de la `path` (ex. „/setari/plan”); browserul o păstrează, deci apelurile repetate nu costă. */
 export function preloadRoute(path: string) {

@@ -1,9 +1,10 @@
+import { Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import AppLayout from './AppLayout'
 import ClientiPage from './pages/ClientiPage'
 import MaiMultPage from './pages/MaiMultPage'
 import {
-  DosarePage, GenerareDocumentePage, SarciniPage, SetariPage, SuperAdminPage, WorkspaceSetupPage,
+  DosarePage, GenerareDocumentePage, PortalPage, SarciniPage, SetariPage, SuperAdminPage, WorkspaceSetupPage,
 } from './routes'
 import { TermeniPage, ConfidentialitatePage, DpaPage, SubImputernicitiPage, SecuritatePage } from './pages/legal/LegalPages'
 
@@ -45,6 +46,8 @@ export default function App() {
         <Route path="/dpa" element={<DpaPage />} />
         <Route path="/sub-imputerniciti" element={<SubImputernicitiPage />} />
         <Route path="/securitate" element={<SecuritatePage />} />
+        {/* Portalul clientului: linkul trimis de cabinet, fără cont și fără nimic din aplicație. */}
+        <Route path="/p/:token" element={<Suspense fallback={null}><PortalPage /></Suspense>} />
         <Route path="/signin" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

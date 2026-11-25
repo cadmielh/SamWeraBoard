@@ -197,6 +197,8 @@ def creeaza():
         "clientId": cid, "clientNume": _curat(client.get("denumire"), 200), "mesaj": _curat(body.get("mesaj"), MAX_MESAJ),
         "acte": acte, "stare": "deschisa", "deVerificat": 0, "expiraLa": acum + timedelta(days=zile),
         "tokenHash": _hash(token), "creataLa": acum, "creataDe": principal.uid, "actualizataLa": acum,
+        # Numele afișat clientului pe link („cerere de la …”); adresa de e-mail a contului nu se arată.
+        "cerutDe": "" if "@" in (principal.name or "") else _curat(principal.name, 120),
     }
     batch = authz.db().batch()
     batch.create(ref, d)
@@ -448,8 +450,8 @@ def _out_portal(d: dict, ws: dict) -> dict:
     for a in d.get("acte") or []:
         acte.append({"id": a.get("id"), "eticheta": a.get("eticheta"), "tip": a.get("tip"), "stare": a.get("stare"),
                      **({"motiv": a["motiv"]} if a.get("stare") == "respins" and a.get("motiv") else {})})
-    return {"cabinet": ws.get("name") or "", "mesaj": d.get("mesaj") or "", "expiraLa": _iso(d.get("expiraLa")),
-            "stare": d.get("stare"), "acte": acte}
+    return {"cabinet": ws.get("name") or "", "cerutDe": d.get("cerutDe") or "", "mesaj": d.get("mesaj") or "",
+            "expiraLa": _iso(d.get("expiraLa")), "stare": d.get("stare"), "acte": acte}
 
 
 def _fisiere_trimise(wid: str, rid: str, d: dict) -> dict[str, list[dict]]:

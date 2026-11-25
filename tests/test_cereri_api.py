@@ -171,6 +171,7 @@ def test_portal_arata_doar_ce_trebuie_si_marcheaza_deschiderea(env):
     assert r.status_code == 200
     j = r.get_json()
     assert j["cabinet"] == "Cabinet Ionescu" and j["mesaj"] == "Mulțumim" and j["stare"] == "deschisa"
+    assert j["cerutDe"] == "bob"                                         # cine a cerut (numele contului, nu adresa)
     assert [(a["id"], a["eticheta"], a["stare"], a["fisiere"]) for a in j["acte"]] == [
         ("a1", "CI – Popescu Ion", "de_trimis", []), ("a2", "Dovada sediu", "de_trimis", [])]
     assert "Alfa" not in str(j) and "clientId" not in str(j)            # nimic despre client în afara actelor
