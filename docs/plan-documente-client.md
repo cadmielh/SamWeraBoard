@@ -162,8 +162,59 @@ Un cabinet cu 200 de clienți ≈ 2–4 GB → sub 0,10 $/lună. 100 de cabinete
 1. **Fundația:** bucket, API (încărcare, listare, descărcare, redenumire, mutare, ștergere), criptare, foldere, audit, contor de spațiu, tabul „Documente” în fișa clientului, Arhiva și dialogul de la ștergerea clientului. Teste pe emulatoare.
 2. **Documente generate:** bifa „Salvează în documentele clientului” la generare (.docx), cu legătură la `docGenerations`.
 3. **Migrarea șabloanelor** din base64 în Storage, inclusiv script de migrare. Dispare limita de 500 KB.
-4. **Portal:** cereri de documente, pagina publică, starea „De verificat”, alerta `documente_primite`.
+4. **Portal:** cereri de documente, pagina publică, starea „De verificat”, alerta `documente_primite`. Detaliat în „Faza 4: portalul, plan detaliat”.
 5. **Mai târziu:** portal permanent pentru clientul final (revenire, istoric, documente de semnat), OCR direct din fișierele stocate, antivirus (ClamAV pe Cloud Run) dacă devine necesar, limită de spațiu afișată în Setări.
+
+## Faza 4: portalul, plan detaliat (25 nov 2026)
+
+Arhitectura de mai sus (token, hash, expirare, verificarea fișierelor, `de_verificat`, alerta) rămâne. Aici e experiența,
+pe care o decide dacă portalul chiar e folosit.
+
+### Decizii (25 nov 2026)
+| Subiect | Decizie |
+|---|---|
+| Trimiterea linkului | **Din telefonul/mailul cabinetului**: „Copiază linkul”, WhatsApp, E-mail (`mailto:` cu mesajul gata scris) și cod QR pentru clientul aflat la birou. Cabinio nu trimite e-mailuri (fără furnizor nou, fără sub-împuternicit nou). Trimiterea automată, cu amintiri, rămâne pentru mai târziu |
+| Ce vede clientul după încărcare | **Doar numele și mărimea fișierelor** trimise, cu posibilitatea de a le șterge cât timp cabinetul nu le-a acceptat. Fără previzualizări: un link ajuns la altcineva nu expune actele |
+| Respingerea unui act | **Același link se redeschide** pentru actul respins, cu motivul scris de cabinet („poza e neclară, refă-o la lumină”); cabinetul retrimite linkul |
+| Lista de acte cerute | **Propuneri din fișa clientului + șabloane de cerere salvate de cabinet + acte libere** |
+
+### Cabinetul
+- **Crearea cererii** din fișa clientului („Cere documente”). Actele propuse automat din datele clientului: CI pentru fiecare
+  asociat/administrator (PJ) sau titular/membri (PF/II/IF), actele care expiră (aceleași reguli ca alertele), dovada de sediu.
+  Cabinetul bifează, adaugă acte libere, alege un șablon salvat („Înființare SRL”, „Schimbare sediu”) și poate scrie un mesaj.
+- **Șabloanele de cerere**: listă de acte cu nume, salvată per cabinet (Setări › Documente), editabilă de admin.
+- **Trimiterea**: după creare, ecranul cu linkul, butoanele de mai sus și mesajul propus („Bună ziua, vă rugăm să încărcați
+  actele cerute aici: … Linkul e valabil până pe …”).
+- **Urmărirea**, pe fiecare act: de trimis, primit, acceptat, respins. Pe cerere: deschisă de client (prima accesare),
+  completă, expirată, anulată. Acțiuni: prelungește, anulează, retrimite (copiază din nou linkul).
+- **„Documente primite”**: un loc central (pagina Clienți sau clopoțelul) cu tot ce așteaptă verificare, la toți clienții;
+  în fișa clientului, un semn „De verificat”. Alerta `documente_primite` prin sistemul existent.
+- **Verificarea**: previzualizare, Acceptă / Respinge (cu motiv). La acceptare, fișierul trece în folderul potrivit actului
+  (CI → „Acte identitate”, restul → „Primite de la client”) și primește un nume clar („CI – Popescu Ion.jpg”); pentru buletine
+  se propune „Extrage datele în fișă”.
+
+### Clientul (pagina publică)
+- Gândită întâi pentru telefon: numele și logo-ul cabinetului, mesajul, lista actelor cu starea fiecăruia.
+- Fotografiere direct din cameră, cu indicații pe tipul actului („față și verso”, „toată pagina în cadru”); mai multe poze
+  pot forma un act. Pozele se micșorează pe telefon înainte de trimitere (date mobile), serverul le re-salvează oricum ca JPEG.
+- Clientul revine pe același link până la expirare: vede ce a trimis (doar nume și mărime) și ce mai lipsește; actele
+  respinse apar din nou, cu motivul.
+- Ecran de final: „Gata, Cabinetul X a primit documentele.” Informarea GDPR în numele cabinetului.
+- Linkuri expirate, anulate sau ale unui cabinet în mod citire: un mesaj politicos („Linkul nu mai e activ; contactați
+  cabinetul”), fără alte detalii.
+
+### Reguli
+- În mod citire: linkurile active se opresc, iar cereri noi nu se pot crea.
+- Limite pe cerere: număr maxim de fișiere (de exemplu 30) și 15 MB per fișier; ce vine prin portal intră în spațiul de 10 GB.
+- Datele noi: pe fiecare act din `cereriDocumente`: `stare` (de_trimis / primit / acceptat / respins), `motivRespingere`,
+  fișierele primite; pe cerere: `deschisaLa`, `mesaj`. Șabloanele: `workspaces/{wid}/setari/cereriSabloane`.
+- La lansare: anunț în „Ce e nou” (`necesita: ['client', 'acces']`, cu tur) și un pas opțional în „Primii pași”.
+
+### Etape
+- **4a. Cabinetul:** cererea (propuneri, acte libere), trimiterea (link, WhatsApp, e-mail, QR), urmărirea, „Documente
+  primite”, verificarea cu acceptare/respingere, alerta.
+- **4b. Pagina publică:** încărcare și fotografiere, revenire pe link, ecran de final, linkuri inactive.
+- **4c. Finisare:** șabloane de cerere, numele automate la acceptare, anunțul și pasul din ghid.
 
 ## Detalii tranșate
 - Linkul din portal expiră implicit după **14 zile**.
