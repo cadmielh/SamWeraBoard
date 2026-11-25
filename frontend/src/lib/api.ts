@@ -165,6 +165,8 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Conținutul fișierului nu mai este disponibil.";
     case "arhivat":
       return "Documentele din Arhivă nu pot fi mutate în foldere.";
+    case "fisier_modificat":
+      return "Documentul a fost modificat între timp. Redeschide-l și încearcă din nou.";
     case "folder_negol":
       return "Folderul a primit conținut nou între timp. Verifică și confirmă din nou ștergerea.";
     default:

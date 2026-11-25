@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import Modal from '../Modal'
 import BtnLabel from '../BtnLabel'
-import { continutFisier, felPrevizualizare, formatMarime, type Fisier } from '../../lib/fisiere'
+import { continutFisier, editabil, felPrevizualizare, formatMarime, type Fisier } from '../../lib/fisiere'
 import { IconDescarca } from './icons'
 
 const PdfViewer = lazy(() => import('./PdfViewer'))
@@ -14,11 +14,13 @@ interface Props {
   start: number
   onClose: () => void
   onDownload: (f: Fisier) => Promise<void>
+  /** Deschide editorul (decupare, îndreptare); doar pentru poze și doar dacă utilizatorul poate modifica. */
+  onEdit?: (f: Fisier) => void
 }
 
 /** Previzualizarea imaginilor și a PDF-urilor (pdf.js, încărcat doar la nevoie). Conținutul vine decriptat de la server ca blob (cerere auditată, scop „previzualizare”)
  * și se afișează dintr-un URL local, eliberat la închidere. */
-export default function FisierPreview({ fisiere, start, onClose, onDownload }: Props) {
+export default function FisierPreview({ fisiere, start, onClose, onDownload, onEdit }: Props) {
   const [index, setIndex] = useState(start)
   // Cererile pornite (o singură dată per document) și URL-urile create, eliberate la închiderea ferestrei.
   const cerute = useRef(new Set<string>())
@@ -100,6 +102,11 @@ export default function FisierPreview({ fisiere, start, onClose, onDownload }: P
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIndex(i => i - 1)} disabled={index === 0} aria-label="Documentul anterior">←</button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIndex(i => i + 1)} disabled={index >= fisiere.length - 1} aria-label="Documentul următor">→</button>
             </>
+          )}
+          {onEdit && editabil(f.mime) && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onEdit(f)} title="Decupează, îndreaptă, albește fundalul">
+              Editează
+            </button>
           )}
           <button type="button" className="btn btn-outline-primary btn-sm" onClick={descarca} disabled={descarc}>
             <BtnLabel busy={descarc} dark><IconDescarca size={15} /> Descarcă</BtnLabel>

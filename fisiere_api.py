@@ -104,7 +104,14 @@ def _out_fisier(fid: str, d: dict) -> dict:
         "id": fid, "clientId": d.get("clientId"), "folderId": d.get("folderId"), "nume": d.get("nume"),
         "mime": d.get("mime"), "marime": d.get("marime"), "sursa": d.get("sursa"), "stare": d.get("stare"),
         "arhivat": bool(d.get("arhivat")), "createdAt": _iso(d.get("createdAt")), "createdBy": d.get("createdBy"),
+        "editat": bool(d.get("original")),
     }
+
+
+def obiect(fid: str, d: dict) -> str:
+    """Obiectul din stocare cu conținutul curent: după o editare, altul decât id-ul fișierului (vezi `inlocuieste`)."""
+    o = d.get("obiect")
+    return o if isinstance(o, str) and _ID_RE.match(o) else fid
 
 
 def _out_folder(fid: str, d: dict) -> dict:
@@ -241,14 +248,18 @@ def descarca(fid: str):
     if not snap.exists:
         return _err("not_found", 404)
     d = snap.to_dict() or {}
-    data = fisiere.citeste(wid, fid)
+    # `?versiune=original`: conținutul dinaintea editării, cât timp e păstrat.
+    orig = d.get("original") if request.args.get("versiune") == "original" else None
+    if request.args.get("versiune") == "original" and not isinstance(orig, dict):
+        return _err("not_found", 404)
+    data = fisiere.citeste(wid, orig["obiect"] if orig else obiect(fid, d))
     if data is None:
         return _err("fisier_indisponibil", 404)
-    audit.log(wid, principal.uid, "fisier.download", fid, {"scop": scop})
+    audit.log(wid, principal.uid, "fisier.download", fid, {"scop": scop, **({"versiune": "original"} if orig else {})})
 
     nume = d.get("nume") or "document"
     ascii_nume = nume.encode("ascii", "ignore").decode().replace('"', "") or "document"
-    resp = Response(data, mimetype=fisiere.mime_sigur(d.get("mime")))
+    resp = Response(data, mimetype=fisiere.mime_sigur((orig or d).get("mime")))
     resp.headers["Content-Disposition"] = f"attachment; filename=\"{ascii_nume}\"; filename*=UTF-8''{quote(nume)}"
     resp.headers["Cache-Control"] = "private, no-store"
     resp.headers["X-Content-Type-Options"] = "nosniff"
@@ -298,16 +309,140 @@ def _sterge_fisiere(wid: str, snaps: list) -> int:
         batch = authz.db().batch()
         for s in snaps[i:i + _BATCH]:
             batch.delete(s.reference)
-            octeti += int((s.to_dict() or {}).get("marime") or 0)
+            d = s.to_dict() or {}
+            octeti += int(d.get("marime") or 0) + int((d.get("original") or {}).get("marime") or 0)
         batch.commit()
     if snaps:
         _schimba_contor(wid, -octeti, -len(snaps))
     for s in snaps:
-        try:
-            fisiere.sterge(wid, s.id)
-        except Exception as e:  # noqa: BLE001
-            print(f"[fisiere] obiect neșters ({type(e).__name__})")
+        d = s.to_dict() or {}
+        for o in {obiect(s.id, d), *([d["original"]["obiect"]] if isinstance(d.get("original"), dict) else [])}:
+            try:
+                fisiere.sterge(wid, o)
+            except Exception as e:  # noqa: BLE001
+                print(f"[fisiere] obiect neșters ({type(e).__name__})")
     return octeti
+
+
+def _cu_extensia(nume: str, tip: fisiere.Tip) -> str:
+    """Același nume, cu extensia noului format („act.png” salvat ca JPEG devine „act.jpg”)."""
+    ext = fisiere.extensie(nume)
+    baza = nume[: -(len(ext) + 1)] if ext else nume
+    return fisiere.nume_fisier(f"{baza or 'document'}.{tip.ext}", tip)
+
+
+EDITABILE = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime, fisiere.PDF.mime}
+
+
+class _Modificat(Exception):
+    """Fișierul s-a schimbat între citire și scriere (altă editare sau ștergere în paralel)."""
+
+
+@bp.errorhandler(_Modificat)
+def _handle_modificat(_e):
+    return _err("fisier_modificat", 409)
+
+
+@bp.put("/fisiere/<fid>/continut")
+def inlocuieste(fid: str):
+    """Conținutul editat în aplicație (decupat, îndreptat, „scanat”) înlocuiește fișierul. Prima versiune rămâne păstrată
+    (`original`) până la „Revino la original” sau ștergerea fișierului; editările următoare o înlocuiesc doar pe cea editată."""
+    principal, wid, _ = _require("member", billing=True, limit="fisiere_scriere")
+    request.max_content_length = fisiere.MAX_BYTES + 256 * 1024
+    if not _ID_RE.match(fid):
+        return _err("not_found", 404)
+    ref = _col_fisiere(wid).document(fid)
+    snap = ref.get()
+    d = snap.to_dict() if snap.exists else None
+    if not d or d.get("arhivat"):
+        return _err("not_found", 404)
+    if d.get("mime") not in EDITABILE:
+        return _err("tip_nepermis", 400)
+    upload = request.files.get("fisier")
+    if upload is None:
+        return _err("fisier_lipsa", 400)
+    data = upload.read(fisiere.MAX_BYTES + 1)
+    if len(data) > fisiere.MAX_BYTES:
+        return _err("fisier_prea_mare", 413)
+    tip = fisiere.detecteaza_tip(data, upload.filename or "")
+    if tip.mime not in EDITABILE:
+        return _err("tip_nepermis", 400)
+    vechi = int(d.get("marime") or 0) if d.get("original") else 0     # versiunea editată anterior, care dispare
+    contor = _contor(wid).get().to_dict() or {}
+    if int(contor.get("octeti") or 0) + len(data) - vechi > fisiere.LIMITA_CABINET:
+        return _err("spatiu_depasit", 409)
+
+    nou = _col_fisiere(wid).document().id
+    fisiere.salveaza(wid, nou, data)
+    cid, folder = d.get("clientId"), d.get("folderId")
+    nume = _nume_liber(_cu_extensia(d.get("nume") or "", tip), _nume_ocupate(wid, cid, folder, exclude=fid))
+    acum = _now()
+
+    @firestore.transactional
+    def scrie(txn) -> dict:
+        cur = ref.get(transaction=txn)
+        c = cur.to_dict() if cur.exists else None
+        if not c or obiect(fid, c) != obiect(fid, d) or c.get("arhivat"):
+            raise _Modificat()
+        patch = {
+            "obiect": nou, "mime": tip.mime, "marime": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+            "nume": nume, "editatLa": acum, "editatDe": principal.uid, "updatedAt": acum,
+        }
+        if not c.get("original"):
+            patch["original"] = {"obiect": obiect(fid, c), "marime": c.get("marime"), "mime": c.get("mime"),
+                                 "sha256": c.get("sha256"), "nume": c.get("nume")}
+        txn.update(ref, patch)
+        return {**c, **patch}
+
+    try:
+        rezultat = scrie(authz.db().transaction())
+    except Exception:
+        fisiere.sterge(wid, nou)
+        raise
+    if d.get("original"):
+        fisiere.sterge(wid, obiect(fid, d))           # editarea precedentă; originalul rămâne
+    _schimba_contor(wid, len(data) - vechi, 0)
+    audit.log(wid, principal.uid, "fisier.edit", fid, {"marime": len(data), "tip": tip.ext})
+    return jsonify({"fisier": _out_fisier(fid, rezultat)})
+
+
+@bp.post("/fisiere/<fid>/original")
+def revino_la_original(fid: str):
+    """Renunță la editare: conținutul, numele și tipul de dinainte revin, iar versiunea editată se șterge."""
+    principal, wid, _ = _require("member", limit="fisiere_scriere")
+    if not _ID_RE.match(fid):
+        return _err("not_found", 404)
+    ref = _col_fisiere(wid).document(fid)
+    snap = ref.get()
+    d = snap.to_dict() if snap.exists else None
+    if not d or not isinstance(d.get("original"), dict):
+        return _err("not_found", 404)
+    o = d["original"]
+    cid, folder = d.get("clientId"), d.get("folderId")
+    nume = d.get("nume") or ""
+    if o.get("mime") and o.get("mime") != d.get("mime"):
+        tip = next((t for t in (fisiere.JPEG, fisiere.PNG, fisiere.WEBP, fisiere.PDF) if t.mime == o["mime"]), None)
+        if tip:
+            nume = _nume_liber(_cu_extensia(nume, tip), _nume_ocupate(wid, cid, folder, exclude=fid))
+
+    @firestore.transactional
+    def scrie(txn) -> dict:
+        cur = ref.get(transaction=txn)
+        c = cur.to_dict() if cur.exists else None
+        if not c or obiect(fid, c) != obiect(fid, d):
+            raise _Modificat()
+        patch = {"obiect": o.get("obiect") or fid, "mime": o.get("mime"), "marime": o.get("marime"),
+                 "sha256": o.get("sha256"), "nume": nume, "original": firestore.DELETE_FIELD,
+                 "editatLa": firestore.DELETE_FIELD, "editatDe": firestore.DELETE_FIELD, "updatedAt": _now()}
+        txn.update(ref, patch)
+        rest = {k: v for k, v in patch.items() if v is not firestore.DELETE_FIELD}
+        return {**{k: v for k, v in c.items() if k not in ("original", "editatLa", "editatDe")}, **rest}
+
+    rezultat = scrie(authz.db().transaction())
+    fisiere.sterge(wid, obiect(fid, d))
+    _schimba_contor(wid, -int(d.get("marime") or 0), 0)
+    audit.log(wid, principal.uid, "fisier.original", fid)
+    return jsonify({"fisier": _out_fisier(fid, rezultat)})
 
 
 @bp.delete("/fisiere/<fid>")

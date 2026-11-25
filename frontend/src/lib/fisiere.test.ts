@@ -9,7 +9,7 @@ import {
 const folder = (id: string, parentId: string | null, nume = id): Folder => ({ id, clientId: 'c1', parentId, nume })
 const fisier = (id: string, p: Partial<Fisier> = {}): Fisier => ({
   id, clientId: 'c1', folderId: null, nume: `${id}.pdf`, mime: 'application/pdf', marime: 100, sursa: 'incarcat',
-  stare: 'acceptat', createdAt: new Date(2026, 0, 1), createdBy: 'u', arhivat: false, ...p,
+  stare: 'acceptat', createdAt: new Date(2026, 0, 1), createdBy: 'u', arhivat: false, editat: false, ...p,
 })
 
 // Acte › 2024 › Ian ; Acte › 2025 ; Contracte

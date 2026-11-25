@@ -26,7 +26,7 @@ GATED = {
     ("POST", "/templates"), ("POST", "/templates/from-builtin"), ("POST", "/billing/credits/consume"),
     # documentele clienților: încărcare, foldere, redenumire, mutare
     ("POST", "/fisiere"), ("PATCH", "/fisiere/<fid>"), ("POST", "/foldere"), ("POST", "/clients/<cid>/documente/init"),
-    ("PUT", "/fisiere/setari"),
+    ("PUT", "/fisiere/setari"), ("PUT", "/fisiere/<fid>/continut"),
     ("PATCH", "/foldere/<folder_id>"), ("POST", "/fisiere/<fid>/extract"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
@@ -37,6 +37,8 @@ UNGATED = {
     ("GET", "/clients/<cid>/pii"), ("DELETE", "/clients/<cid>"),
     # documentele rămân de descărcat și de șters (GDPR) și după expirarea accesului
     ("GET", "/fisiere/<fid>/continut"), ("DELETE", "/fisiere/<fid>"), ("DELETE", "/foldere/<folder_id>"),
+    # revenirea la original doar eliberează spațiu, ca ștergerea
+    ("POST", "/fisiere/<fid>/original"),
     ("POST", "/workspaces"), ("POST", "/workspaces/<wid>/consent"),
     ("PATCH", "/workspaces/<wid>/members/<uid>"), ("DELETE", "/workspaces/<wid>/members/<uid>"),
     ("POST", "/workspaces/<wid>/invites"), ("GET", "/workspaces/<wid>/invites"),

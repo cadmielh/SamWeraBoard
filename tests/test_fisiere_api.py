@@ -415,3 +415,73 @@ def test_spatiul_cabinetelor_doar_pentru_super_admin(env):
     r = call(c, "root", "get", "/admin/fisiere/spatiu").get_json()
     assert r["limita"] == fisiere.LIMITA_CABINET
     assert r["cabinete"][wid] == {"octeti": len(PDF), "numar": 1}
+
+
+def _png() -> bytes:
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (8, 8), (200, 10, 10)).save(b, "PNG")
+    return b.getvalue()
+
+
+def test_editarea_inlocuieste_continutul_si_pastreaza_originalul(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    png = _png()
+    fid = upload(c, "bob", wid, data=png, name="CI Ion.png").get_json()["fisier"]["id"]
+    edit = lambda data, name="CI Ion.jpg": call(c, "bob", "put", f"/fisiere/{fid}/continut", wid,  # noqa: E731
+                                                data={"fisier": (io.BytesIO(data), name)}, content_type="multipart/form-data")
+    assert call(c, "vera", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+                content_type="multipart/form-data").status_code == 403
+    r = edit(JPG)
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["fisier"]["nume"] == "CI Ion.jpg" and r.get_json()["fisier"]["editat"] is True
+    d = fisiere_db(db, wid)[0]
+    assert d["mime"] == "image/jpeg" and d["marime"] == len(JPG) and d["original"]["obiect"] == fid
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data == JPG
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut?versiune=original", wid).data == png
+    assert contor(db, wid)["octeti"] == len(png) + len(JPG)
+
+    # o a doua editare înlocuiește doar versiunea editată; originalul rămâne primul
+    jpg2 = b"\xff\xd8\xff\xe0" + os.urandom(80)
+    prima = d["obiect"]
+    assert edit(jpg2).status_code == 200
+    d = fisiere_db(db, wid)[0]
+    assert d["original"]["obiect"] == fid and d["obiect"] != prima
+    assert not (root / fisiere.cale(wid, prima)).exists()
+    assert contor(db, wid)["octeti"] == len(png) + len(jpg2)
+
+    # revenirea la original: conținutul, numele și tipul de dinainte; versiunea editată dispare
+    r = call(c, "bob", "post", f"/fisiere/{fid}/original", wid)
+    assert r.status_code == 200 and r.get_json()["fisier"]["nume"] == "CI Ion.png" and r.get_json()["fisier"]["editat"] is False
+    d = fisiere_db(db, wid)[0]
+    assert "original" not in d and d["mime"] == "image/png" and d["obiect"] == fid
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data == png
+    assert contor(db, wid)["octeti"] == len(png)
+    assert call(c, "bob", "post", f"/fisiere/{fid}/original", wid).status_code == 404
+
+
+def test_stergerea_unui_fisier_editat_sterge_ambele_versiuni(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    png = _png()
+    fid = upload(c, "bob", wid, data=png, name="a.png").get_json()["fisier"]["id"]
+    call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+         content_type="multipart/form-data")
+    nou = fisiere_db(db, wid)[0]["obiect"]
+    assert call(c, "bob", "delete", f"/fisiere/{fid}", wid).status_code == 200
+    assert not (root / fisiere.cale(wid, fid)).exists() and not (root / fisiere.cale(wid, nou)).exists()
+    assert contor(db, wid) == {"octeti": 0, "numar": 0}
+
+
+def test_editarea_doar_pentru_poze_si_pdf(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid, data=b"text simplu", name="a.txt").get_json()["fisier"]["id"]
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+             content_type="multipart/form-data")
+    assert r.get_json()["error"] == "tip_nepermis"
+    fid = upload(c, "bob", wid, data=PDF, name="a.pdf").get_json()["fisier"]["id"]
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(b"text"), "a.txt")},
+             content_type="multipart/form-data")
+    assert r.get_json()["error"] == "tip_nepermis"

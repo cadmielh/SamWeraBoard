@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { Client } from '../../types'
 import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
   ACCEPT, DESC_IMPLICIT, ascundeTemporar, incepeStergereAmanata, terminaStergereAmanata, caleFolder, continutRecursiv, creeazaFolder, descarcaFisier, descendenti, extensie,
-  extractibil, formatMarime, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
-  reafiseaza, redenumesteFisier, redenumesteFolder, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
+  editabil, extractibil, formatMarime, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
+  reafiseaza, redenumesteFisier, redenumesteFolder, revinoLaOriginal, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
   useAscunse, useDocumenteClient, type EroareFisier, type Fisier, type Folder, type Sortare,
 } from '../../lib/fisiere'
 import ConfirmModal from '../ConfirmModal'
@@ -19,6 +19,9 @@ import SpatiuCabinet from './SpatiuCabinet'
 import { useIncarcari } from './useIncarcari'
 import { IconCautare, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
 import '../../styles/documente.css'
+
+// Editorul de poze (procesarea pixelilor) se descarcă doar la prima editare.
+const EditorPoza = lazy(() => import('./EditorPoza'))
 
 const SORTARI: { key: Sortare; label: string }[] = [
   { key: 'nume', label: 'Nume' },
@@ -106,6 +109,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const [muta, setMuta] = useState<Element[] | null>(null)
   const [confirmaSterge, setConfirmaSterge] = useState<Element[] | null>(null)
   const [extrage, setExtrage] = useState<Fisier | null>(null)
+  const [editor, setEditor] = useState<Fisier | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
   const [tintaTragere, setTintaTragere] = useState<string | null>(null)   // folderul (sau „radacina”) de sub cursor
@@ -361,6 +365,11 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     ...(el.tip === 'fisier' && canEdit && onSaveClient && extractibil(el.f.mime)
       ? [{ label: 'Extrage datele în fișă', onSelect: () => setExtrage(el.f) }] : []),
     ...(canEdit ? [
+      ...(el.tip === 'fisier' && editabil(el.f.mime) && !el.f.arhivat
+        ? [{ label: 'Editează (decupează, îndreaptă)', onSelect: () => setEditor(el.f) }] : []),
+      ...(el.tip === 'fisier' && el.f.editat
+        ? [{ label: 'Revino la original', onSelect: () => void ruleaza(el.f.id, () => revinoLaOriginal(el.f.id), 'Documentul a revenit la original.') }]
+        : []),
       { label: 'Redenumește', onSelect: () => { setFolderNou(false); setRedenumire(el.f.id) } },
       { label: 'Mută în…', onSelect: () => setMuta([el]) },
     ] : []),
@@ -471,7 +480,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           <span className="doc-row-text">
             <span className="doc-name">{f.nume}</span>
             <span className="doc-meta">
-              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', formatMarime(f.marime),
+              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', f.editat ? 'editat' : '', formatMarime(f.marime),
                 f.createdAt ? formatDateRo(f.createdAt) : '', q ? '' : numeMembru(f.createdBy)].filter(Boolean).join(' · ')}
             </span>
           </span>
@@ -630,7 +639,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
 
       {preview && deVazut.some(f => f.id === preview) && (
         <FisierPreview fisiere={deVazut} start={deVazut.findIndex(f => f.id === preview)}
-          onClose={() => setPreview(null)} onDownload={f => descarca(f)} />
+          onClose={() => setPreview(null)} onDownload={f => descarca(f)}
+          onEdit={canEdit ? f => { setPreview(null); setEditor(f) } : undefined} />
       )}
 
       {muta && (
@@ -647,6 +657,10 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         <ConfirmModal title={confirmaSterge.length === 1 ? 'Șterge folderul' : 'Șterge elementele selectate'} message={mesajStergere(confirmaSterge)}
           confirmLabel="Șterge" danger onConfirm={() => { const lot = confirmaSterge; setConfirmaSterge(null); stergeAmanat(lot, true) }}
           onCancel={() => setConfirmaSterge(null)} />
+      )}
+
+      {editor && (
+        <Suspense fallback={null}><EditorPoza fisier={editor} onClose={() => setEditor(null)} /></Suspense>
       )}
 
       {extrage && onSaveClient && (
