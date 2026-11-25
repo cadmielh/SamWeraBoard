@@ -58,7 +58,7 @@ export function aceeasiPersoana(p: Persoana, f: Pick<IDFields, 'cnp' | 'nume' | 
 /** Două intrări din fișă sunt aceeași persoană (ex. asociat și administrator)? Mai strict decât potrivirea cu actul:
  * același pid, același CNP sau același nume ȘI aceleași ultime cifre ale CNP-ului. Doi oameni cu același nume
  * (tată și fiu) nu se confundă. */
-function aceeasiInFisa(a: Persoana, b: Persoana): boolean {
+export function aceeasiInFisa(a: Persoana, b: Persoana): boolean {
   if (a === b || (!!a.pid && a.pid === b.pid)) return true
   if (a.cnp && b.cnp) return normalizeCnp(a.cnp) === normalizeCnp(b.cnp)
   const ma = ultimele4(a.cnpMasked)

@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('./api', () => ({ apiJson: vi.fn(async () => []) }))
 
 import { actionLabel, categoryOf, describe as describeEntry, toCsv, fetchAudit, type AuditEntry } from './audit'
-import sursa from '../../../fisiere_api.py?raw'
+import sursaFisiere from '../../../fisiere_api.py?raw'
+import sursaCereri from '../../../cereri_api.py?raw'
 import { apiJson } from './api'
 
 const E = (o: Partial<AuditEntry>): AuditEntry => ({
@@ -76,9 +77,9 @@ describe('fetchAudit', () => {
 })
 
 describe('documentele clienților', () => {
-  it('fiecare acțiune scrisă de fisiere_api.py are etichetă și categorie', () => {
-    const actiuni = [...sursa.matchAll(/audit\.log\([^"]*"([a-z_.]+)"/g)].map(m => m[1])
-    expect(actiuni.length).toBeGreaterThan(5)
+  it('fiecare acțiune scrisă de fisiere_api.py și cereri_api.py are etichetă și categorie', () => {
+    const actiuni = [sursaFisiere, sursaCereri].flatMap(s => [...s.matchAll(/audit\.log\([^"]*"([a-z_.]+)"/g)].map(m => m[1]))
+    expect(actiuni.length).toBeGreaterThan(12)
     for (const a of actiuni) {
       expect(actionLabel(a), a).not.toBe(a)
       expect(categoryOf(a), a).toBe('documente')

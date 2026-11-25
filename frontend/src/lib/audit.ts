@@ -41,6 +41,14 @@ const ACTIONS: Record<string, { label: string; category: AuditCategory }> = {
   'folder.update': { label: 'Modificare folder', category: 'documente' },
   'folder.delete': { label: 'Ștergere folder', category: 'documente' },
   'fisiere.setari': { label: 'Foldere implicite modificate', category: 'documente' },
+  'cerere.creare': { label: 'Cerere de documente trimisă', category: 'documente' },
+  'cerere.link': { label: 'Linkul unei cereri copiat din nou', category: 'documente' },
+  'cerere.prelungire': { label: 'Cerere de documente prelungită', category: 'documente' },
+  'cerere.anulare': { label: 'Cerere de documente anulată', category: 'documente' },
+  'cerere.accepta': { label: 'Act primit acceptat', category: 'documente' },
+  'cerere.respinge': { label: 'Act primit respins', category: 'documente' },
+  'portal.incarcare': { label: 'Act încărcat de client prin link', category: 'documente' },
+  'portal.stergere': { label: 'Act retras de client prin link', category: 'documente' },
   'member.role_change': { label: 'Schimbare rol', category: 'membri' },
   'member.remove': { label: 'Eliminare membru', category: 'membri' },
   'invite.create': { label: 'Invitație trimisă', category: 'membri' },
@@ -87,6 +95,7 @@ const shortId = (id: string | null): string => (id ? `…${id.slice(-6)}` : '')
  * sau numele membrului. */
 export function actorLabel(e: AuditEntry, nameOf: NameOf): string {
   if (e.actorUid === 'system') return 'Sistem'
+  if (e.actorUid === 'portal') return 'Clientul (prin link)'
   if (e.meta?.byProvider === true) return 'Echipa Cabinio'
   return nameOf(e.actorUid)
 }
@@ -136,6 +145,20 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
       return `${num(m.fisiere)} ${num(m.fisiere) === 1 ? 'document' : 'documente'} · ${num(m.foldere)} ${num(m.foldere) === 1 ? 'folder' : 'foldere'}`
     case 'fisiere.setari':
       return `${num(m.foldere)} foldere implicite`
+    case 'cerere.creare':
+      return `${num(m.acte)} ${num(m.acte) === 1 ? 'act' : 'acte'} · ${num(m.zile)} zile · client ${shortId(str(m.client) || null)}`
+    case 'cerere.prelungire':
+      return `+${num(m.zile)} zile · cerere ${shortId(e.target)}`
+    case 'cerere.link':
+    case 'cerere.anulare':
+      return `cerere ${shortId(e.target)}`
+    case 'cerere.accepta':
+    case 'cerere.respinge':
+      return `${num(m.fisiere)} ${num(m.fisiere) === 1 ? 'fișier' : 'fișiere'} · cerere ${shortId(e.target)}`
+    case 'portal.incarcare':
+      return [str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `cerere ${shortId(e.target)}`].filter(Boolean).join(' · ')
+    case 'portal.stergere':
+      return `cerere ${shortId(e.target)}`
     case 'member.role_change':
       return `${e.target ? nameOf(e.target) : '—'} → ${ROLE_LABELS[str(m.role)] ?? (str(m.role) || '—')}`
     case 'member.remove':

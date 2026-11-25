@@ -35,6 +35,17 @@ export function IconIncarca({ size = 14 }: { size?: number }) {
   )
 }
 
+/** Cerere de documente: un plic cu o săgeată spre interior (clientul trimite actele). */
+export function IconCerere({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2.5 6v6.5h11V6" />
+      <path d="M2.5 6 8 9.5 13.5 6" />
+      <path d="M8 1.5v4M6.3 3.8 8 5.5l1.7-1.7" />
+    </svg>
+  )
+}
+
 export function IconFolderNou({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

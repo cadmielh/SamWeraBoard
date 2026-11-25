@@ -16,8 +16,10 @@ import MutaModal, { type ElementMutat } from './MutaModal'
 import CoadaIncarcare from './CoadaIncarcare'
 import ExtrageAct from './ExtrageAct'
 import SpatiuCabinet from './SpatiuCabinet'
+import CereriClient from '../cereri/CereriClient'
+import CerereNoua from '../cereri/CerereNoua'
 import { useIncarcari } from './useIncarcari'
-import { IconCautare, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
+import { IconCautare, IconCerere, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
 import '../../styles/documente.css'
 
 const SORTARI: { key: Sortare; label: string }[] = [
@@ -103,6 +105,9 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const [redenumire, setRedenumire] = useState<string | null>(null)       // id-ul rândului editat
   const [folderNou, setFolderNou] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
+  // Previzualizarea actelor primite într-o cerere (pot fi în alt folder decât cel deschis acum).
+  const [previewCerere, setPreviewCerere] = useState<{ lista: Fisier[]; index: number } | null>(null)
+  const [cerereNoua, setCerereNoua] = useState(false)
   const [muta, setMuta] = useState<Element[] | null>(null)
   const [confirmaSterge, setConfirmaSterge] = useState<Element[] | null>(null)
   const [extrage, setExtrage] = useState<Fisier | null>(null)
@@ -469,9 +474,9 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           title={previzualizabil(f.mime) ? `Deschide „${f.nume}”` : `Descarcă „${f.nume}”`}>
           <IconFisier mime={f.mime} />
           <span className="doc-row-text">
-            <span className="doc-name">{f.nume}</span>
+            <span className="doc-name">{f.nume}{f.stare === 'de_verificat' && <span className="doc-de-verificat">de verificat</span>}</span>
             <span className="doc-meta">
-              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', formatMarime(f.marime),
+              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', f.sursa === 'portal' ? 'trimis de client' : '', formatMarime(f.marime),
                 f.createdAt ? formatDateRo(f.createdAt) : '', q ? '' : numeMembru(f.createdBy)].filter(Boolean).join(' · ')}
             </span>
           </span>
@@ -515,6 +520,12 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
             </button>
           )}
           {canEdit && (
+            <button type="button" className="btn btn-ghost btn-sm doc-btn" onClick={() => setCerereNoua(true)}
+              title="Trimite clientului un link prin care încarcă singur actele" aria-label="Cere documente de la client">
+              <IconCerere /> <span className="doc-btn-text">Cere</span>
+            </button>
+          )}
+          {canEdit && (
             <button type="button" className="btn btn-outline-primary btn-sm doc-btn" onClick={() => inputRef.current?.click()}
               title="Încarcă documente (sau trage-le aici, ori lipește cu Ctrl+V)" aria-label="Încarcă documente" data-ghid="doc-incarca">
               <IconIncarca /> <span className="doc-btn-text">Încarcă</span>
@@ -528,6 +539,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           </button>
         )}
       </div>
+
+      <CereriClient client={client} fisiere={fisiere} onPreview={(lista, index) => setPreviewCerere({ lista, index })} />
 
       {arataCautare && (
         <div className="doc-cautare">
@@ -627,6 +640,12 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           <span>Eliberează pentru a încărca în „{numeFolderCurent}”</span>
         </div>
       )}
+
+      {previewCerere && (
+        <FisierPreview fisiere={previewCerere.lista} start={previewCerere.index}
+          onClose={() => setPreviewCerere(null)} onDownload={f => descarca(f)} />
+      )}
+      {cerereNoua && <CerereNoua client={client} onClose={() => setCerereNoua(false)} />}
 
       {preview && deVazut.some(f => f.id === preview) && (
         <FisierPreview fisiere={deVazut} start={deVazut.findIndex(f => f.id === preview)}

@@ -391,7 +391,8 @@ export default function ClientView({ client, onEdit, onDelete, onSaveNotite, onS
 
       {/* ── Body ── */}
       {documenteInColoana
-        ? <ImpartireDocumente key={client.id} client={client} onSaveClient={salvareTacuta}>{renderBody()}</ImpartireDocumente>
+        ? <ImpartireDocumente key={client.id} client={client} onSaveClient={salvareTacuta}
+            deschide={focus?.sectiune === 'documente' ? focus : undefined}>{renderBody()}</ImpartireDocumente>
         : renderBody()}
     </div>
   )

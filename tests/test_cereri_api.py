@@ -211,6 +211,7 @@ def test_incarcare_prin_portal(env):
     assert vault.decrypt_file(wid, fid, (root / fisiere.cale(wid, fid)).read_bytes()) == PDF
     d = doc_cerere(db, wid, rid)
     assert d["acte"][1]["stare"] == "primit" and d["acte"][1]["fisiere"] == [fid] and d["deVerificat"] == 1
+    assert d["deschisaLa"]                                    # o încărcare înseamnă că linkul a fost deschis
     # pe link: doar numele trimis și mărimea, fără conținut
     a2 = c.get(f"/portal/{token}").get_json()["acte"][1]
     assert a2["stare"] == "primit" and a2["fisiere"] == [{"id": fid, "nume": "sediu scanat.pdf", "marime": len(PDF)}]
@@ -222,9 +223,11 @@ def test_pozele_se_resalveaza_ca_jpeg_fara_metadate(env):
     c, db, root = env
     wid = setup_ws(c, db)
     _, token, _ = cerere(c, wid)
-    fid = trimite(c, token, "a1", data=_png_cu_gps(), name="IMG_1.png").get_json()["fisier"]["id"]
+    r = trimite(c, token, "a1", data=_png_cu_gps(), name="IMG_1.png").get_json()["fisier"]
+    fid = r["id"]
     f = fisier(db, wid, fid)
     assert f["mime"] == "image/jpeg" and f["nume"] == "CI – Popescu Ion.jpg"
+    assert r["nume"] == "IMG_1.jpg" == f["numeOriginal"]                  # extensia înlocuită, nu adăugată
     data = vault.decrypt_file(wid, fid, (root / fisiere.cale(wid, fid)).read_bytes())
     im = Image.open(io.BytesIO(data))
     assert im.format == "JPEG" and not im.getexif()

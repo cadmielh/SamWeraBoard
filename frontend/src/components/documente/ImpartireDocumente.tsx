@@ -29,8 +29,10 @@ function salveaza(p: Preferinte) {
 
 /** Fișa clientului pe ecran lat: datele în stânga (`children`), documentele într-o coloană în dreapta. Mânerul dintre
  * ele se trage cu mouse-ul sau se mută cu săgețile; dublu clic revine la un sfert. Coloana se poate restrânge la o bandă. */
-export default function ImpartireDocumente({ client, children, onSaveClient }: {
+export default function ImpartireDocumente({ client, children, onSaveClient, deschide }: {
   client: Client; children: ReactNode; onSaveClient?: (patch: Partial<Client>) => Promise<void>
+  /** Schimbat la fiecare link spre documente (alertă, „Documente primite”): coloana restrânsă se deschide. */
+  deschide?: unknown
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [pref, setPref] = useState<Preferinte>(citeste)
@@ -43,6 +45,9 @@ export default function ImpartireDocumente({ client, children, onSaveClient }: {
       return next
     })
   }, [])
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (deschide) actualizeaza({ restrans: false }) }, [deschide, actualizeaza])
 
   // Limitele depind de lățimea curentă a fișei: fracția se încadrează între MIN_PX și „stânga rămâne MIN_STANGA_PX”.
   const limiteaza = useCallback((f: number) => {

@@ -21,6 +21,7 @@ import IconPencil from '../components/IconPencil'
 import IconEye from '../components/IconEye'
 import IconExport from '../components/IconExport'
 import NotificariBell from '../components/NotificariBell'
+import DocumentePrimite from '../components/cereri/DocumentePrimite'
 import { SkeletonRows } from '../components/Skeleton'
 import { withViewTransition } from '../lib/viewTransition'
 import { useIsMobile } from '../lib/useIsMobile'
@@ -610,6 +611,7 @@ export default function ClientiPage() {
               <div className="page-subtitle">Gestionare portofoliu clienți</div>
             </div>
             <div className="page-actions">
+              <DocumentePrimite />
               <button className="btn btn-ghost" onClick={() => setShowExportDialog(true)} aria-label="Exportă">
                 <IconExport /> <span className="btn-label">Exportă</span>
               </button>

@@ -210,6 +210,16 @@ pe care o decide dacă portalul chiar e folosit.
   fișierele primite; pe cerere: `deschisaLa`, `mesaj`. Șabloanele: `workspaces/{wid}/setari/cereriSabloane`.
 - La lansare: anunț în „Ce e nou” (`necesita: ['client', 'acces']`, cu tur) și un pas opțional în „Primii pași”.
 
+### Stare (25 nov 2026, ramura `feat/portal-documente`, nedeployată)
+- **4a făcută:** `cereri_api.py` (cereri, link criptat, prelungire, anulare, acceptare/respingere tranzacționale, rutele
+  publice `/portal/<token>` cu verificarea strictă a fișierelor), alerta `documente_primite`, reguli și teste; în aplicație
+  „Cere” în secțiunea Documente (propuneri din fișă, acte libere, mesaj, valabilitate), trimiterea (link, WhatsApp,
+  e-mail, mesaj, cod QR), cererile clientului cu verificarea, eticheta „de verificat” și „Documente primite” pe pagina
+  Clienți. Linkul arată spre `/p/<token>`, pagină care se face în 4b.
+- **Pentru 4b:** pagina publică; logo-ul cabinetului nu există încă în aplicație (trebuie încărcare în Setări › General
+  sau pagina rămâne doar cu numele); la deploy: funcțiile `api` și `documente`, regulile Firestore (`cereriDocumente`) și
+  triggerul nou `alerte_cerere`.
+
 ### Etape
 - **4a. Cabinetul:** cererea (propuneri, acte libere), trimiterea (link, WhatsApp, e-mail, QR), urmărirea, „Documente
   primite”, verificarea cu acceptare/respingere, alerta.

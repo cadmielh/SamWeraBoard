@@ -436,6 +436,13 @@ def _portal(token: str, limita: str):
     return wid, ref, d, ws
 
 
+def _nume_original(raw: str, tip: fisiere.Tip) -> str:
+    """Numele trimis de client, cu extensia formatului păstrat: „IMG_1.png” re-salvat ca JPEG devine „IMG_1.jpg”."""
+    ext = fisiere.extensie(raw)
+    baza = raw[: -(len(ext) + 1)] if ext else raw
+    return fisiere.nume_fisier(f"{baza or 'document'}.{tip.ext}", tip)
+
+
 def _out_portal(d: dict, ws: dict) -> dict:
     acte = []
     for a in d.get("acte") or []:
@@ -517,7 +524,7 @@ def portal_incarca(token: str, aid: str):
     meta = {
         "clientId": cid, "folderId": folder, "nume": nume, "mime": tip.mime, "marime": len(data), "sha256": sha,
         "sursa": "portal", "stare": "de_verificat", "arhivat": False, "cerereId": ref.id, "actId": aid,
-        "numeOriginal": fisiere.nume_fisier(upload.filename or "", tip),
+        "numeOriginal": _nume_original(upload.filename or "", tip),
         "createdAt": acum, "createdBy": _PORTAL_UID, "updatedAt": acum,
     }
     client_ref = _ws(wid).collection("clienti").document(cid)
@@ -537,7 +544,7 @@ def portal_incarca(token: str, aid: str):
         acte[k].pop("motiv", None)
         txn.create(fref, meta)
         txn.update(ref, {"acte": acte, "deVerificat": de_verificat(acte), "ultimaPrimireLa": acum,
-                         "actualizataLa": acum})
+                         "actualizataLa": acum, **({} if cd.get("deschisaLa") else {"deschisaLa": acum})})
         return {**cd, "acte": acte}
 
     try:

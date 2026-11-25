@@ -167,6 +167,20 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Documentele din Arhivă nu pot fi mutate în foldere.";
     case "folder_negol":
       return "Folderul a primit conținut nou între timp. Verifică și confirmă din nou ștergerea.";
+    case "acte_invalide":
+      return "Alege cel puțin un act (cel mult 20), fiecare cu un nume.";
+    case "zile_invalide":
+      return "Valabilitatea linkului trebuie să fie între 1 și 60 de zile.";
+    case "cerere_inchisa":
+      return "Cererea e completă sau anulată; pentru alte acte creează o cerere nouă.";
+    case "act_neprimit":
+      return "Actul a fost deja verificat sau clientul l-a retras între timp.";
+    case "act_modificat":
+      return "Clientul a trimis sau a retras un fișier chiar acum. Verifică din nou actul.";
+    case "motiv_lipsa":
+      return "Scrie motivul respingerii; clientul îl vede pe link.";
+    case "link_inactiv":
+      return "Linkul nu mai e activ (cerere anulată sau ștearsă).";
     default:
       return data?.error ?? fallback;
   }

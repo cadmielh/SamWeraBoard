@@ -1,0 +1,67 @@
+/* Cererile de documente (components/cereri): fereastra de cerere, trimiterea linkului, cererile din fișa clientului
+   și „Documente primite”. Doar variabilele temei, deci merge și în modul întunecat. */
+
+.cer-modal { width: min(560px, calc(100vw - 2rem)); }
+.cer-intro { margin: 0 0 .875rem; font-size: .875rem; color: var(--s600); line-height: 1.45; }
+.cer-form { display: flex; flex-direction: column; gap: 1rem; }
+.cer-grup { display: flex; flex-direction: column; gap: .4rem; border: 0; padding: 0; margin: 0; min-width: 0; }
+.cer-check { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--p600); cursor: pointer; }
+.cer-optiune { display: flex; align-items: center; gap: .6rem; padding: .45rem .6rem; border: 1px solid var(--s200);
+  border-radius: var(--r-md); font-size: .875rem; cursor: pointer; background: var(--surface); }
+.cer-optiune:has(.cer-check:checked) { border-color: var(--p300, var(--p200)); background: var(--p50); }
+.cer-optiune--liber { cursor: default; }
+.cer-optiune--liber .doc-icon-btn { margin-left: auto; }
+.cer-optiune-nume { font-weight: 600; color: var(--s800); }
+.cer-adauga { display: flex; gap: .5rem; }
+.cer-adauga .field-input { flex: 1; min-width: 0; }
+.cer-zile .field-input { max-width: 10rem; }
+.cer-numar { margin-right: auto; }
+
+/* Trimiterea linkului */
+.cer-trimite { display: flex; flex-direction: column; gap: .75rem; }
+.cer-link { display: flex; gap: .5rem; }
+.cer-link .field-input { flex: 1; min-width: 0; font-family: var(--mono, ui-monospace, monospace); font-size: .8rem; }
+.cer-canale { display: flex; flex-wrap: wrap; gap: .5rem; }
+.cer-qr-zona { display: flex; align-items: center; gap: 1rem; }
+.cer-qr { width: 168px; height: 168px; border-radius: var(--r-md); border: 1px solid var(--s200); flex-shrink: 0; }
+.cer-nota { margin: 0; line-height: 1.45; }
+
+/* Cererile din fișa clientului */
+.cer-lista { display: flex; flex-direction: column; gap: .6rem; margin: .25rem 0 .75rem; }
+.cer-card { border: 1px solid var(--s200); border-radius: var(--r-md); padding: .65rem .75rem; display: flex;
+  flex-direction: column; gap: .35rem; background: var(--surface); }
+.cer-card--atentie { border-color: var(--a300); background: var(--a50); }
+.cer-card-cap { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.cer-card-titlu { font-size: .8125rem; font-weight: 700; color: var(--s800); }
+.cer-chip-atentie { background: var(--a100); color: var(--a800); }
+.cer-acte { list-style: none; margin: .15rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.cer-act { display: flex; flex-direction: column; gap: .3rem; padding: .35rem 0; border-top: 1px dashed var(--s200); }
+.cer-act:first-child { border-top: 0; }
+.cer-act-cap { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.cer-act-nume { font-size: .8125rem; color: var(--s700); min-width: 0; overflow-wrap: anywhere; }
+.cer-act-stare { font-size: .7rem; font-weight: 700; white-space: nowrap; color: var(--s500); }
+.cer-act-stare--primit { color: var(--a800); }
+.cer-act-stare--acceptat { color: var(--g600); }
+.cer-act-stare--respins { color: var(--r600); }
+.cer-fisiere { list-style: none; margin: 0; padding: 0; font-size: .8rem; display: flex; flex-direction: column; gap: .15rem; }
+.cer-fisiere .doc-link { overflow-wrap: anywhere; text-align: left; }
+.cer-verifica, .cer-respinge, .cer-card-actiuni { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.cer-respinge .field-input { flex: 1 1 12rem; min-width: 0; font-size: .8rem; padding: .35rem .5rem; }
+.cer-card-actiuni { padding-top: .25rem; border-top: 1px solid var(--s100); }
+.cer-anuleaza { margin-left: auto; color: var(--s500); }
+.cer-istoric summary { cursor: pointer; padding: .2rem 0; }
+.cer-istoric[open] { display: flex; flex-direction: column; gap: .6rem; }
+
+/* „Documente primite” (pagina Clienți) */
+.cer-primite-btn { gap: .45rem; }
+.cer-primite-punct { width: 8px; height: 8px; border-radius: 50%; background: var(--a500); box-shadow: 0 0 0 3px var(--a100); }
+.cer-primite { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+.cer-primite-rand { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: .15rem; text-align: left;
+  padding: .6rem .75rem; border: 1px solid var(--s200); border-radius: var(--r-md); background: var(--surface);
+  font: inherit; cursor: pointer; }
+.cer-primite-rand:hover { border-color: var(--p300, var(--p200)); background: var(--p50); }
+.cer-primite-client { font-weight: 700; color: var(--s800); font-size: .875rem; }
+
+/* Fișierele primite prin link, încă neverificate, în lista documentelor */
+.doc-de-verificat { display: inline-block; margin-left: .4rem; padding: .05rem .4rem; border-radius: var(--r-full);
+  background: var(--a100); color: var(--a800); font-size: .65rem; font-weight: 700; vertical-align: 1px; }
