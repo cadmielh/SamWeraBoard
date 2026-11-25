@@ -18,7 +18,7 @@ Nu poate vedea restul Drive-ului. Consecințe:
 Picker cere o cheie API și numărul proiectului:
 1. Cloud Console → **APIs & Services → Library** → activează **Google Picker API** (și verifică dacă sunt active *Google Drive API* și *Google Docs API*).
 2. **APIs & Services → Credentials → Create credentials → API key**. Apoi *Edit API key*:
-   - *Application restrictions*: **Websites** → adaugă `https://cabinio.web.app/*`, `https://samwera-board-eu.web.app/*`, `https://samwera-board-eu.firebaseapp.com/*` și, pentru test, `http://localhost:5173/*`;
+   - *Application restrictions*: **Websites** → adaugă `https://cabinio.ro/*`, `https://www.cabinio.ro/*` (adresa publică), `https://cabinio.web.app/*`, `https://samwera-board-eu.web.app/*`, `https://samwera-board-eu.firebaseapp.com/*` și, pentru test, `http://localhost:5173/*`;
    - *API restrictions*: **Restrict key** → doar **Google Picker API**.
 3. În `frontend/.env.eu.local` (și `.env.google.local` pentru test local) completează:
    - `VITE_GOOGLE_API_KEY=<cheia creată>` (cheia e publică prin natura ei, dar restricția de mai sus o face inutilizabilă în afara aplicației)

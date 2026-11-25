@@ -66,10 +66,10 @@ describe('starea unei cereri', () => {
 })
 
 describe('trimiterea linkului', () => {
-  const link = 'https://cabinio.web.app/p/abc'
+  const link = 'https://cabinio.ro/p/abc'
   const mesaj = mesajCerere('Cabinet Ionescu', link, new Date(2026, 11, 9))
   it('mesajul conține cabinetul, linkul și termenul', () => {
-    expect(mesaj).toContain('cerute de Cabinet Ionescu aici:\nhttps://cabinio.web.app/p/abc')
+    expect(mesaj).toContain('cerute de Cabinet Ionescu aici:\nhttps://cabinio.ro/p/abc')
     expect(mesaj).toContain('valabil până pe 09.12.2026')
   })
   it('WhatsApp și e-mail, cu textul codificat', () => {

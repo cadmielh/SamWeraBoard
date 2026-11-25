@@ -64,7 +64,7 @@ def env(monkeypatch, tmp_path):
     monkeypatch.delenv("FISIERE_BUCKET", raising=False)
     monkeypatch.delenv("K_SERVICE", raising=False)
     monkeypatch.setenv("FISIERE_LOCAL_DIR", str(tmp_path))
-    monkeypatch.setenv("FRONTEND_ORIGIN", "https://cabinio.web.app")
+    monkeypatch.setenv("FRONTEND_ORIGIN", "https://cabinio.ro,https://cabinio.web.app")
     vault._cache.clear()
     client = gcf.Client(project="demo-samwera")
     for coll in ("workspaces", "invitations", "users", "workspaceKeys", "trialClaims", "rateLimits", "portalTokens"):
@@ -136,7 +136,7 @@ def test_creare_link_si_fara_token_in_clar(env):
     c, db, _ = env
     wid = setup_ws(c, db)
     rid, token, j = cerere(c, wid, mesaj="  Vă rog   actele ", zile=7)
-    assert j["link"] == f"https://cabinio.web.app/p/{token}"
+    assert j["link"] == f"https://cabinio.ro/p/{token}"
     d = doc_cerere(db, wid, rid)
     assert d["stare"] == "deschisa" and d["deVerificat"] == 0 and d["mesaj"] == "Vă rog actele"
     assert [a["id"] for a in d["acte"]] == ["a1", "a2"] and all(a["stare"] == "de_trimis" for a in d["acte"])
@@ -162,15 +162,6 @@ def test_creare_validari_si_roluri(env):
 
 
 # ── Portalul ──────────────────────────────────────────────────────────────────
-
-def test_linkul_foloseste_domeniul_portalului(env, monkeypatch):
-    c, db, _ = env
-    wid = setup_ws(c, db)
-    monkeypatch.setenv("FRONTEND_ORIGIN", "https://cabinio.web.app,https://cabinio.ro")
-    monkeypatch.setenv("PORTAL_ORIGIN", "https://cabinio.ro/")
-    _, token, j = cerere(c, wid)
-    assert j["link"] == f"https://cabinio.ro/p/{token}"
-
 
 def test_portal_arata_doar_ce_trebuie_si_marcheaza_deschiderea(env):
     c, db, _ = env

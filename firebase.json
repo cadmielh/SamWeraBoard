@@ -188,72 +188,72 @@
       "redirects": [
         {
           "source": "/",
-          "destination": "https://cabinio.web.app",
+          "destination": "https://cabinio.ro",
           "type": 301
         },
         {
           "source": "/termeni",
-          "destination": "https://cabinio.web.app/termeni",
+          "destination": "https://cabinio.ro/termeni",
           "type": 301
         },
         {
           "source": "/confidentialitate",
-          "destination": "https://cabinio.web.app/confidentialitate",
+          "destination": "https://cabinio.ro/confidentialitate",
           "type": 301
         },
         {
           "source": "/dpa",
-          "destination": "https://cabinio.web.app/dpa",
+          "destination": "https://cabinio.ro/dpa",
           "type": 301
         },
         {
           "source": "/sub-imputerniciti",
-          "destination": "https://cabinio.web.app/sub-imputerniciti",
+          "destination": "https://cabinio.ro/sub-imputerniciti",
           "type": 301
         },
         {
           "source": "/securitate",
-          "destination": "https://cabinio.web.app/securitate",
+          "destination": "https://cabinio.ro/securitate",
           "type": 301
         },
         {
           "source": "/dosare",
-          "destination": "https://cabinio.web.app/dosare",
+          "destination": "https://cabinio.ro/dosare",
           "type": 301
         },
         {
           "source": "/sarcini",
-          "destination": "https://cabinio.web.app/sarcini",
+          "destination": "https://cabinio.ro/sarcini",
           "type": 301
         },
         {
           "source": "/extragere",
-          "destination": "https://cabinio.web.app/extragere",
+          "destination": "https://cabinio.ro/extragere",
           "type": 301
         },
         {
           "source": "/utilizatori",
-          "destination": "https://cabinio.web.app/utilizatori",
+          "destination": "https://cabinio.ro/utilizatori",
           "type": 301
         },
         {
           "source": "/setari",
-          "destination": "https://cabinio.web.app/setari",
+          "destination": "https://cabinio.ro/setari",
           "type": 301
         },
         {
           "source": "/abonament",
-          "destination": "https://cabinio.web.app/abonament",
+          "destination": "https://cabinio.ro/abonament",
           "type": 301
         },
         {
           "source": "/super-admin",
-          "destination": "https://cabinio.web.app/super-admin",
+          "destination": "https://cabinio.ro/super-admin",
           "type": 301
         },
         {
           "source": "/workspace/setup",
-          "destination": "https://cabinio.web.app/workspace/setup",
+          "destination": "https://cabinio.ro/workspace/setup",
           "type": 301
         }
       ]

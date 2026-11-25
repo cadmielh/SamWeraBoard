@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def _app(monkeypatch):
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/none.json")
-    monkeypatch.setenv("FRONTEND_ORIGIN", "https://cabinio.web.app")
+    monkeypatch.setenv("FRONTEND_ORIGIN", "https://cabinio.ro")
     sys.modules.pop("fisiere_app", None)
     import fisiere_app  # noqa: PLC0415  (după setarea mediului)
     return fisiere_app
@@ -22,8 +22,8 @@ def test_rutele_documentelor_sunt_inregistrate(monkeypatch):
 
 def test_cors_doar_pentru_originea_aplicatiei(monkeypatch):
     c = _app(monkeypatch).app.test_client()
-    ok = c.options("/fisiere", headers={"Origin": "https://cabinio.web.app", "Access-Control-Request-Method": "POST"})
-    assert ok.headers.get("Access-Control-Allow-Origin") == "https://cabinio.web.app"
+    ok = c.options("/fisiere", headers={"Origin": "https://cabinio.ro", "Access-Control-Request-Method": "POST"})
+    assert ok.headers.get("Access-Control-Allow-Origin") == "https://cabinio.ro"
     rau = c.options("/fisiere", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
     assert "Access-Control-Allow-Origin" not in rau.headers
 
@@ -32,4 +32,4 @@ def test_limita_cererii_acopera_un_fisier_de_15_mb(monkeypatch):
     mod = _app(monkeypatch)
     import fisiere  # noqa: PLC0415
     assert mod.app.config["MAX_CONTENT_LENGTH"] > fisiere.MAX_BYTES
-    assert os.getenv("FRONTEND_ORIGIN") == "https://cabinio.web.app"
+    assert os.getenv("FRONTEND_ORIGIN") == "https://cabinio.ro"

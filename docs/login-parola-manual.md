@@ -16,7 +16,7 @@ Repară conectarea la Drive. Fără acest pas, Drive dă `origin_mismatch` și �
 1. Deschide [clientul OAuth](https://console.cloud.google.com/auth/clients/1000687240483-vcgv0dbm9l80st0p39lvlb1qvtiojr9i.apps.googleusercontent.com?project=samwera-board-eu).
 2. La **Authorized JavaScript origins**, verifică să existe aceste trei rânduri și adaugă-le pe cele lipsă:
    - `https://cabinio.ro`
-   - `https://cabinio.web.app`
+   - `https://cabinio.web.app` (adresa tehnică; aplicația o redirecționează pe cabinio.ro)
    - `http://localhost:5173`
 3. Apasă **Save** și așteaptă câteva minute.
 
