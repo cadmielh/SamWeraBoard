@@ -68,7 +68,7 @@ describe('efectul de scanare', () => {
   })
   it('o zonă colorată mare (o masă maro) nu capătă nuanțe țipătoare, iar albastrul rămâne albastru', () => {
     const masa = imagine(60, 60, () => [92, 70, 52])
-    const [r, g, b] = px(aplicaFiltru(masa, 'scanare'), 30, 30)
+    const [r, , b] = px(aplicaFiltru(masa, 'scanare'), 30, 30)
     expect(r - b).toBeLessThan(60)
     const pix = imagine(80, 40, (x, y) => (y > 15 && y < 20 ? [40, 60, 180] : [210, 210, 210]))
     const [pr, , pb] = px(aplicaFiltru(pix, 'scanare'), 40, 17)
