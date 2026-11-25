@@ -26,7 +26,7 @@ GATED = {
     ("POST", "/templates"), ("POST", "/templates/from-builtin"), ("POST", "/billing/credits/consume"),
     # documentele clienților: încărcare, foldere, redenumire, mutare
     ("POST", "/fisiere"), ("PATCH", "/fisiere/<fid>"), ("POST", "/foldere"), ("POST", "/clients/<cid>/documente/init"),
-    ("PUT", "/fisiere/setari"), ("PUT", "/fisiere/<fid>/continut"), ("POST", "/fisiere/tipar"),
+    ("PUT", "/fisiere/setari"), ("PUT", "/fisiere/<fid>/continut"), ("POST", "/fisiere/tipar"), ("POST", "/fisiere/<fid>/pagini"),
     ("PATCH", "/foldere/<folder_id>"), ("POST", "/fisiere/<fid>/extract"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,

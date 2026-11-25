@@ -100,3 +100,23 @@ def nume_tipar(primul: str, aspect: str) -> str:
             baza = baza[: -len(sufix)]
     baza = baza.strip() or "Document"
     return f"{baza} – {'față-verso' if aspect == 'ci' else 'pentru tipar'}.pdf"
+
+
+def rearanjeaza(data: bytes, pagini: list[tuple[int, int]]) -> bytes:
+    """Paginile PDF-ului în ordinea dată (fără cele lipsă = șterse), fiecare rotită suplimentar cu 0/90/180/270°.
+    Conținutul paginilor rămâne neschimbat (text, semnături vizuale), doar ordinea și orientarea diferă."""
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception:  # noqa: BLE001
+        raise TiparRefuzat("pdf_invalid")
+    if doc.needs_pass:
+        raise TiparRefuzat("pdf_parola")
+    indici = [i for i, _ in pagini]
+    if (not pagini or len(set(indici)) != len(indici) or any(not 0 <= i < doc.page_count for i in indici)
+            or any(r % 90 for _, r in pagini)):
+        raise TiparRefuzat("pagini_invalide")
+    doc.select(indici)
+    for pag, (_, r) in zip(doc, pagini):
+        if r % 360:
+            pag.set_rotation((pag.rotation + r) % 360)
+    return doc.tobytes(garbage=3, deflate=True)

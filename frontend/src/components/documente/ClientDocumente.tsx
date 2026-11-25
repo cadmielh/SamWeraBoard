@@ -23,6 +23,7 @@ import '../../styles/documente.css'
 // Editorul de poze (procesarea pixelilor) se descarcă doar la prima editare.
 const EditorPoza = lazy(() => import('./EditorPoza'))
 const TiparModal = lazy(() => import('./TiparModal'))
+const PaginiPdf = lazy(() => import('./PaginiPdf'))
 
 const SORTARI: { key: Sortare; label: string }[] = [
   { key: 'nume', label: 'Nume' },
@@ -112,6 +113,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const [extrage, setExtrage] = useState<Fisier | null>(null)
   const [editor, setEditor] = useState<Fisier | null>(null)
   const [tipar, setTipar] = useState<Fisier[] | null>(null)
+  const [pagini, setPagini] = useState<Fisier | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
   const [tintaTragere, setTintaTragere] = useState<string | null>(null)   // folderul (sau „radacina”) de sub cursor
@@ -369,6 +371,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     ...(canEdit ? [
       ...(el.tip === 'fisier' && editabil(el.f.mime) && !el.f.arhivat
         ? [{ label: 'Editează (decupează, îndreaptă)', onSelect: () => setEditor(el.f) }] : []),
+      ...(el.tip === 'fisier' && el.f.mime === 'application/pdf' && !el.f.arhivat
+        ? [{ label: 'Pagini (rotește, mută, șterge)', onSelect: () => setPagini(el.f) }] : []),
       ...(el.tip === 'fisier' && tiparibil(el.f.mime) && !el.f.arhivat
         ? [{ label: 'Pregătește pentru tipar', onSelect: () => setTipar([el.f]) }] : []),
       ...(el.tip === 'fisier' && el.f.editat
@@ -648,7 +652,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
       {preview && deVazut.some(f => f.id === preview) && (
         <FisierPreview fisiere={deVazut} start={deVazut.findIndex(f => f.id === preview)}
           onClose={() => setPreview(null)} onDownload={f => descarca(f)}
-          onEdit={canEdit ? f => { setPreview(null); setEditor(f) } : undefined} />
+          onEdit={canEdit ? f => { setPreview(null); if (f.mime === 'application/pdf') setPagini(f); else setEditor(f) } : undefined} />
       )}
 
       {muta && (
@@ -665,6 +669,10 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         <ConfirmModal title={confirmaSterge.length === 1 ? 'Șterge folderul' : 'Șterge elementele selectate'} message={mesajStergere(confirmaSterge)}
           confirmLabel="Șterge" danger onConfirm={() => { const lot = confirmaSterge; setConfirmaSterge(null); stergeAmanat(lot, true) }}
           onCancel={() => setConfirmaSterge(null)} />
+      )}
+
+      {pagini && (
+        <Suspense fallback={null}><PaginiPdf fisier={pagini} onClose={() => setPagini(null)} /></Suspense>
       )}
 
       {tipar && (

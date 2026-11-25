@@ -451,6 +451,10 @@ export const pregatesteTipar = (ids: string[], aspect: AspectTipar) =>
     .then(r => fisierDinFirestore(r.fisier.id, r.fisier))
 /** Ce se poate pune pe A4: pozele obișnuite și PDF-urile. */
 export const tiparibil = (mime: string) => editabil(mime) || mime === 'application/pdf'
+/** Paginile unui PDF în ordinea nouă (cele lipsă se șterg), cu rotirea fiecăreia; `copie`: fișier nou alături. */
+export const rearanjeazaPagini = (id: string, pagini: { p: number; r: number }[], copie: boolean) =>
+  apiJson<{ fisier: DocumentData & { id: string } }>('POST', `/fisiere/${encodeURIComponent(id)}/pagini`, { pagini, copie })
+    .then(r => fisierDinFirestore(r.fisier.id, r.fisier))
 export const revinoLaOriginal = (id: string) => apiJson('POST', `/fisiere/${encodeURIComponent(id)}/original`)
 
 export const redenumesteFisier = (id: string, nume: string) => apiJson('PATCH', `/fisiere/${encodeURIComponent(id)}`, { nume })

@@ -165,6 +165,10 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Conținutul fișierului nu mai este disponibil.";
     case "arhivat":
       return "Documentele din Arhivă nu pot fi mutate în foldere.";
+    case "pagini_invalide":
+      return "Ordinea paginilor nu e validă. Redeschide documentul și încearcă din nou.";
+    case "pdf_parola":
+      return "PDF-ul este protejat cu parolă și nu poate fi modificat.";
     case "tipar_invalid":
       return "Alege documentele aceluiași client: pentru buletin, una sau două poze.";
     case "tipar_prea_mare":

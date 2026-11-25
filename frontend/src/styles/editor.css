@@ -82,3 +82,14 @@
 @media (max-width: 520px) { .tip-aspecte { grid-template-columns: 1fr; } }
 .tip-avertisment { margin: 0; font-size: .8125rem; padding: .5rem .65rem; border-radius: var(--r-sm); background: var(--y50); color: var(--y800); }
 :root[data-theme="dark"] .tip-avertisment { background: color-mix(in srgb, var(--y500) 15%, transparent); color: var(--y400); }
+
+/* Paginile unui PDF (PaginiPdf.tsx) */
+.pg-scena { flex: 1; min-height: 0; overflow: auto; padding: 1rem; background: var(--surface-2); }
+.pg-grila { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1rem; }
+.pg-pagina { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: .5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); }
+.pg-miniatura { width: 150px; height: 200px; display: flex; align-items: center; justify-content: center; }
+.pg-miniatura img { max-width: 150px; max-height: 150px; box-shadow: var(--sh-sm); transition: transform .15s; }
+.pg-miniatura img:not([style*="rotate(90"]):not([style*="rotate(270"]) { max-height: 200px; }
+.pg-eticheta { font-size: .8rem; font-weight: 600; }
+.pg-actiuni { display: flex; gap: .1rem; }
+.pg-sterge:hover:not(:disabled) { color: var(--r600); }

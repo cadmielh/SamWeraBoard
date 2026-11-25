@@ -103,9 +103,10 @@ export default function FisierPreview({ fisiere, start, onClose, onDownload, onE
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIndex(i => i + 1)} disabled={index >= fisiere.length - 1} aria-label="Documentul următor">→</button>
             </>
           )}
-          {onEdit && editabil(f.mime) && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onEdit(f)} title="Decupează, îndreaptă, albește fundalul">
-              Editează
+          {onEdit && (editabil(f.mime) || f.mime === 'application/pdf') && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onEdit(f)}
+              title={f.mime === 'application/pdf' ? 'Rotește, mută sau șterge pagini' : 'Decupează, îndreaptă, albește fundalul'}>
+              {f.mime === 'application/pdf' ? 'Pagini' : 'Editează'}
             </button>
           )}
           <button type="button" className="btn btn-outline-primary btn-sm" onClick={descarca} disabled={descarc}>

@@ -540,3 +540,36 @@ def test_tipar_refuzuri(env):
     assert tip([i, j])["error"] == "tipar_invalid"                   # clienți diferiți
     assert tip([i, i])["error"] == "tipar_invalid"
     assert tip([i], "altceva")["error"] == "tipar_invalid"
+
+
+def _pdf_pagini(n: int) -> bytes:
+    import fitz
+    doc = fitz.open()
+    for i in range(n):
+        doc.new_page().insert_text((72, 72), f"Pagina {i + 1}")
+    return doc.tobytes()
+
+
+def test_pagini_pdf_ordine_rotire_stergere(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    pdf = _pdf_pagini(3)
+    fid = upload(c, "bob", wid, data=pdf, name="Contract.pdf").get_json()["fisier"]["id"]
+    pag = lambda body: call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, json=body)  # noqa: E731
+    assert pag({"pagini": [{"p": 0}, {"p": 0}]}).get_json()["error"] == "pagini_invalide"
+    assert pag({"pagini": [{"p": 5}]}).get_json()["error"] == "pagini_invalide"
+    assert pag({"pagini": [{"p": 0, "r": 45}]}).get_json()["error"] == "pagini_invalide"
+
+    r = pag({"pagini": [{"p": 2}, {"p": 0, "r": 90}]})                # a doua pagină ștearsă, ordinea inversată
+    assert r.status_code == 200 and r.get_json()["fisier"]["editat"] is True
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data, filetype="pdf")
+    assert [p.get_text().strip() for p in doc] == ["Pagina 3", "Pagina 1"] and doc[1].rotation == 90
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut?versiune=original", wid).data == pdf
+
+    r = pag({"pagini": [{"p": 1}], "copie": True})                    # copie: din versiunea curentă
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Contract (editat).pdf"
+    nou = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{r.get_json()['fisier']['id']}/continut", wid).data, filetype="pdf")
+    assert [p.get_text().strip() for p in nou] == ["Pagina 1"]
+    jpg = upload(c, "bob", wid, data=JPG, name="a.jpg").get_json()["fisier"]["id"]
+    assert call(c, "bob", "post", f"/fisiere/{jpg}/pagini", wid, json={"pagini": [{"p": 0}]}).get_json()["error"] == "tip_nepermis"
