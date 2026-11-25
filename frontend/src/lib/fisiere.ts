@@ -34,6 +34,8 @@ export interface Fisier {
   createdAt: Date | null
   createdBy: string
   arhivat: boolean
+  /** Editat în aplicație (decupat, îndreptat); originalul e păstrat până la „Revino la original”. */
+  editat: boolean
   /** Doar în Arhivă: clientul șters și calea folderului în care era fișierul. */
   clientNume?: string
   cale?: string
@@ -61,6 +63,7 @@ export function fisierDinFirestore(id: string, d: DocumentData): Fisier {
     createdAt: toDateSafe(d.createdAt),
     createdBy: String(d.createdBy ?? ''),
     arhivat: d.arhivat === true,
+    editat: !!d.original || d.editat === true,
     clientNume: d.clientNume,
     cale: d.cale,
     arhivatLa: toDateSafe(d.arhivatLa),
@@ -112,6 +115,8 @@ export const felPrevizualizare = (mime: string): FelPrevizualizare | null => PRE
 export const previzualizabil = (mime: string) => mime in PREVIZUALIZARE
 
 /** Actele din care se pot extrage datele (OCR): aceleași tipuri ca la scanarea obișnuită. */
+/** Pozele care se pot edita în aplicație (decupare, îndreptare, scanare). */
+export const editabil = (mime: string) => ['image/jpeg', 'image/png', 'image/webp'].includes(mime)
 export const extractibil = (mime: string) => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mime)
 
 /** Căutarea după nume: fără diacritice și fără deosebire de majuscule („stefanescu” găsește „Ștefănescu”). */
@@ -429,6 +434,42 @@ export async function descarcaFisier(f: Pick<Fisier, 'id' | 'nume'>): Promise<vo
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }
+
+/** Conținutul editat înlocuiește fișierul; serverul păstrează originalul (vezi fisiere_api.inlocuieste). */
+export async function inlocuiesteContinut(id: string, blob: Blob, nume: string): Promise<Fisier> {
+  const fd = new FormData()
+  fd.append('fisier', blob, nume)
+  const res = await fetch(`${FILES_BASE}/fisiere/${encodeURIComponent(id)}/continut`, { method: 'PUT', headers: await authHeaders(), body: fd })
+  const data = await res.json().catch(() => ({})) as { error?: string; fisier?: DocumentData & { id: string } }
+  if (!res.ok || !data.fisier) throw eroare(apiErrorMessage(data, res, `Eroare ${res.status}`), data.error, res.status)
+  return fisierDinFirestore(data.fisier.id, data.fisier)
+}
+export type AspectTipar = 'ci' | 'pagina' | 'unire'
+/** Pozele (și PDF-urile) într-un PDF A4 nou, lângă primul document (vezi tipar.py). */
+export const pregatesteTipar = (ids: string[], aspect: AspectTipar) =>
+  apiJson<{ fisier: DocumentData & { id: string } }>('POST', '/fisiere/tipar', { fisiere: ids, aspect })
+    .then(r => fisierDinFirestore(r.fisier.id, r.fisier))
+/** Ce se poate pune pe A4: pozele obișnuite și PDF-urile. */
+export const tiparibil = (mime: string) => editabil(mime) || mime === 'application/pdf'
+/** Paginile unui PDF în ordinea nouă (cele lipsă se șterg), cu rotirea fiecăreia; `copie`: fișier nou alături. */
+export async function rearanjeazaPagini(
+  id: string, pagini: { p: number; r: number }[], copie: boolean, inlocuiri: Record<number, Blob> = {},
+): Promise<Fisier> {
+  const chei = Object.keys(inlocuiri)
+  if (!chei.length) {
+    const r = await apiJson<{ fisier: DocumentData & { id: string } }>('POST', `/fisiere/${encodeURIComponent(id)}/pagini`, { pagini, copie })
+    return fisierDinFirestore(r.fisier.id, r.fisier)
+  }
+  // Paginile editate ca poză pleacă alături, ca fișiere (multipart).
+  const fd = new FormData()
+  fd.append('date', JSON.stringify({ pagini, copie }))
+  for (const k of chei) fd.append(`pagina_${k}`, inlocuiri[Number(k)], `pagina_${k}.jpg`)
+  const res = await fetch(`${FILES_BASE}/fisiere/${encodeURIComponent(id)}/pagini`, { method: 'POST', headers: await authHeaders(), body: fd })
+  const data = await res.json().catch(() => ({})) as { error?: string; fisier?: DocumentData & { id: string } }
+  if (!res.ok || !data.fisier) throw eroare(apiErrorMessage(data, res, `Eroare ${res.status}`), data.error, res.status)
+  return fisierDinFirestore(data.fisier.id, data.fisier)
+}
+export const revinoLaOriginal = (id: string) => apiJson('POST', `/fisiere/${encodeURIComponent(id)}/original`)
 
 export const redenumesteFisier = (id: string, nume: string) => apiJson('PATCH', `/fisiere/${encodeURIComponent(id)}`, { nume })
 export const mutaFisier = (id: string, folderId: string | null) => apiJson('PATCH', `/fisiere/${encodeURIComponent(id)}`, { folderId })

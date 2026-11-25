@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { Client } from '../../types'
 import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
   ACCEPT, DESC_IMPLICIT, ascundeTemporar, incepeStergereAmanata, terminaStergereAmanata, caleFolder, continutRecursiv, creeazaFolder, descarcaFisier, descendenti, extensie,
-  extractibil, formatMarime, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
-  reafiseaza, redenumesteFisier, redenumesteFolder, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
-  useAscunse, useDocumenteClient, type EroareFisier, type Fisier, type Folder, type Sortare,
+  editabil, extractibil, formatMarime, pregatesteTipar, tiparibil, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
+  reafiseaza, redenumesteFisier, redenumesteFolder, revinoLaOriginal, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
+  useAscunse, useDocumenteClient, type AspectTipar, type EroareFisier, type Fisier, type Folder, type Sortare,
 } from '../../lib/fisiere'
 import ConfirmModal from '../ConfirmModal'
 import BtnLabel from '../BtnLabel'
@@ -20,11 +20,18 @@ import CereriClient from '../cereri/CereriClient'
 import CerereNoua from '../cereri/CerereNoua'
 import { useIncarcari } from './useIncarcari'
 import {
-  IconCautare, IconCerere, IconDescarca, IconDirectie, IconExtrage, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconMuta, IconRestrange,
+  IconCautare, IconCerere, IconCopiaza, IconDecupeaza, IconDescarca, IconDirectie, IconExtrage, IconFisier, IconFolder, IconFolderNou,
+  IconIncarca, IconMuta, IconRestrange, IconTipar, IconUneste,
 } from './icons'
 import IconPencil from '../IconPencil'
+import IconRefresh from '../IconRefresh'
 import IconTrash from '../IconTrash'
 import '../../styles/documente.css'
+
+// Editorul de poze (procesarea pixelilor) se descarcă doar la prima editare.
+const EditorPoza = lazy(() => import('./EditorPoza'))
+const TiparModal = lazy(() => import('./TiparModal'))
+const PaginiPdf = lazy(() => import('./PaginiPdf'))
 
 const SORTARI: { key: Sortare; label: string }[] = [
   { key: 'nume', label: 'Nume' },
@@ -123,6 +130,9 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     const f = ale.find(x => !/\(verso\)/i.test(x.nume)) ?? ale[0]
     if (f) setExtrage(f)
   }
+  const [editor, setEditor] = useState<Fisier | null>(null)
+  const [tipar, setTipar] = useState<{ fisiere: Fisier[]; aspect?: AspectTipar } | null>(null)
+  const [pagini, setPagini] = useState<Fisier | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
   const [tintaTragere, setTintaTragere] = useState<string | null>(null)   // folderul (sau „radacina”) de sub cursor
@@ -373,11 +383,28 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     return <>{ce} {parti.join(' și ')}. Se șterg împreună. Vei putea anula câteva secunde.</>
   }
 
+  /** O poză devine PDF (pagină A4), lângă ea, cu același nume. */
+  const transformaInPdf = (f: Fisier) => ruleaza(f.id, async () => {
+    const nou = await pregatesteTipar([f.id], 'unire')
+    toast(`„${nou.nume}” a fost creat lângă poză.`, 'ok', { action: { label: 'Deschide', onClick: () => setPreview(nou.id) } })
+  })
+
   const optiuni = (el: Element): OptiuneMeniu[] => [
     ...(el.tip === 'fisier' ? [{ label: 'Descarcă', icon: <IconDescarca size={14} />, onSelect: () => void descarca(el.f) }] : []),
     ...(el.tip === 'fisier' && canEdit && onSaveClient && extractibil(el.f.mime)
       ? [{ label: 'Extrage datele în fișă', icon: <IconExtrage />, onSelect: () => setExtrage(el.f) }] : []),
     ...(canEdit ? [
+      ...(el.tip === 'fisier' && editabil(el.f.mime) && !el.f.arhivat
+        ? [{ label: 'Editează (decupează, îndreaptă)', icon: <IconDecupeaza />, onSelect: () => setEditor(el.f) }] : []),
+      ...(el.tip === 'fisier' && el.f.mime === 'application/pdf' && !el.f.arhivat
+        ? [{ label: 'Pagini (rotește, mută, șterge)', icon: <IconCopiaza />, onSelect: () => setPagini(el.f) }] : []),
+      ...(el.tip === 'fisier' && tiparibil(el.f.mime) && !el.f.arhivat
+        ? [{ label: 'Pregătește pentru tipar', icon: <IconTipar />, onSelect: () => setTipar({ fisiere: [el.f] }) }] : []),
+      ...(el.tip === 'fisier' && editabil(el.f.mime) && !el.f.arhivat
+        ? [{ label: 'Transformă în PDF', icon: <IconUneste />, onSelect: () => void transformaInPdf(el.f) }] : []),
+      ...(el.tip === 'fisier' && el.f.editat
+        ? [{ label: 'Revino la original', icon: <IconRefresh size={13} />, onSelect: () => void ruleaza(el.f.id, () => revinoLaOriginal(el.f.id), 'Documentul a revenit la original.') }]
+        : []),
       { label: 'Redenumește', icon: <IconPencil size={13} />, onSelect: () => { setFolderNou(false); setRedenumire(el.f.id) } },
       { label: 'Mută în…', icon: <IconMuta />, onSelect: () => setMuta([el]) },
     ] : []),
@@ -488,7 +515,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           <span className="doc-row-text">
             <span className="doc-name">{f.nume}{f.stare === 'de_verificat' && <span className="doc-de-verificat">de verificat</span>}</span>
             <span className="doc-meta">
-              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', f.sursa === 'portal' ? 'trimis de client' : '', formatMarime(f.marime),
+              {[q ? caleText(f.folderId) : '', f.sursa === 'generat' ? 'generat' : '', f.sursa === 'portal' ? 'trimis de client' : '', f.editat ? 'editat' : '', formatMarime(f.marime),
                 f.createdAt ? formatDateRo(f.createdAt) : '', q ? '' : numeMembru(f.createdBy)].filter(Boolean).join(' · ')}
             </span>
           </span>
@@ -567,20 +594,32 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
 
       {selectate.length > 0 && (
         <div className="doc-bulk" role="toolbar" aria-label="Acțiuni pentru elementele selectate">
-          <label className="doc-bulk-all">
-            <input type="checkbox" className="doc-check" checked={toateSelectate}
-              onChange={() => setSelectie(toateSelectate ? new Set() : new Set(elementeAici.map(cheieEl)))} aria-label="Selectează tot" />
-            <span>{nrText(selectate.length, 'selectat', 'selectate')}</span>
-          </label>
+          <div className="doc-bulk-cap">
+            <label className="doc-bulk-all">
+              <input type="checkbox" className="doc-check" checked={toateSelectate}
+                onChange={() => setSelectie(toateSelectate ? new Set() : new Set(elementeAici.map(cheieEl)))} aria-label="Selectează tot" />
+              <span>{nrText(selectate.length, 'selectat', 'selectate')}</span>
+            </label>
+            <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
+          </div>
           <div className="doc-bulk-actions">
             {fisiereSelectate.length > 0 && (
               <button type="button" className="btn btn-ghost btn-xs" onClick={() => void descarcaLot(fisiereSelectate)}>
                 <IconDescarca size={14} /> Descarcă
               </button>
             )}
+            {canEdit && fisiereSelectate.length > 0 && fisiereSelectate.length === selectate.length && fisiereSelectate.every(f => tiparibil(f.mime)) && (
+              <>
+                {fisiereSelectate.length > 1 && (
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar({ fisiere: fisiereSelectate, aspect: 'unire' })}
+                    title="Documentele selectate, într-un singur PDF, în ordinea aleasă"><IconUneste /> Unește în PDF</button>
+                )}
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar({ fisiere: fisiereSelectate })}
+                  title="Într-un PDF A4: buletinul față-verso la mărime reală sau câte un document pe pagină"><IconTipar /> Pentru tipar</button>
+              </>
+            )}
             {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}><IconMuta /> Mută în…</button>}
             {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}><IconTrash size={13} /> Șterge</button>}
-            <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
           </div>
         </div>
       )}
@@ -662,7 +701,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
 
       {preview && deVazut.some(f => f.id === preview) && (
         <FisierPreview fisiere={deVazut} start={deVazut.findIndex(f => f.id === preview)}
-          onClose={() => setPreview(null)} onDownload={f => descarca(f)} />
+          onClose={() => setPreview(null)} onDownload={f => descarca(f)}
+          onEdit={canEdit ? f => { setPreview(null); if (f.mime === 'application/pdf') setPagini(f); else setEditor(f) } : undefined} />
       )}
 
       {muta && (
@@ -679,6 +719,23 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         <ConfirmModal title={confirmaSterge.length === 1 ? 'Șterge folderul' : 'Șterge elementele selectate'} message={mesajStergere(confirmaSterge)}
           confirmLabel="Șterge" danger onConfirm={() => { const lot = confirmaSterge; setConfirmaSterge(null); stergeAmanat(lot, true) }}
           onCancel={() => setConfirmaSterge(null)} />
+      )}
+
+      {pagini && (
+        <Suspense fallback={null}><PaginiPdf fisier={pagini} onClose={() => setPagini(null)} /></Suspense>
+      )}
+
+      {tipar && (
+        <Suspense fallback={null}>
+          <TiparModal fisiere={tipar.fisiere} aspectInitial={tipar.aspect} onClose={() => setTipar(null)} onCreat={f => {
+            setSelectie(new Set())
+            toast(`„${f.nume}” a fost creat lângă documente.`, 'ok', { action: { label: 'Deschide', onClick: () => setPreview(f.id) } })
+          }} />
+        </Suspense>
+      )}
+
+      {editor && (
+        <Suspense fallback={null}><EditorPoza fisier={editor} onClose={() => setEditor(null)} /></Suspense>
       )}
 
       {extrage && onSaveClient && (

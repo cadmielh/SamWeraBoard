@@ -11,6 +11,7 @@ utilizatorului — vezi `la_stergere_client`, apelat din pii_api.delete_client.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -24,6 +25,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 import audit
 import authz
 import fisiere
+import tipar
 import vault
 
 bp = Blueprint("fisiere", __name__)
@@ -104,7 +106,14 @@ def _out_fisier(fid: str, d: dict) -> dict:
         "id": fid, "clientId": d.get("clientId"), "folderId": d.get("folderId"), "nume": d.get("nume"),
         "mime": d.get("mime"), "marime": d.get("marime"), "sursa": d.get("sursa"), "stare": d.get("stare"),
         "arhivat": bool(d.get("arhivat")), "createdAt": _iso(d.get("createdAt")), "createdBy": d.get("createdBy"),
+        "editat": bool(d.get("original")),
     }
+
+
+def obiect(fid: str, d: dict) -> str:
+    """Obiectul din stocare cu conținutul curent: după o editare, altul decât id-ul fișierului (vezi `inlocuieste`)."""
+    o = d.get("obiect")
+    return o if isinstance(o, str) and _ID_RE.match(o) else fid
 
 
 def _out_folder(fid: str, d: dict) -> dict:
@@ -200,35 +209,46 @@ def incarca():
             return _err("duplicat", 409, existent={"id": s.id, "nume": d.get("nume"), "folderId": d.get("folderId")})
 
     nume = _nume_liber(fisiere.nume_fisier(upload.filename or "", tip), _nume_ocupate(wid, cid, folder_id))
+    rezultat = _inregistreaza(wid, cid, folder_id, data, nume, tip, principal.uid, "generat" if generat else "incarcat", sha)
+    if rezultat is None:
+        return _err("not_found", 404)
+    fid, meta = rezultat
+    audit.log(wid, principal.uid, "fisier.upload", fid,
+              {"client": cid, "marime": len(data), "tip": tip.ext, **({"sursa": "generat"} if generat else {})})
+    return jsonify({"fisier": _out_fisier(fid, meta)}), 201
+
+
+def _inregistreaza(wid: str, cid: str, folder_id, data: bytes, nume: str, tip: fisiere.Tip, uid: str, sursa: str,
+                   sha: str | None = None) -> tuple[str, dict] | None:
+    """Conținutul criptat în stocare și metadatele în Firestore; None dacă între timp clientul a fost șters."""
     ref = _col_fisiere(wid).document()
     fisiere.salveaza(wid, ref.id, data)
     client_ref = _ws(wid).collection("clienti").document(cid)
     meta = {
-        "clientId": cid, "folderId": folder_id, "nume": nume, "mime": tip.mime, "marime": len(data), "sha256": sha,
-        "sursa": "generat" if generat else "incarcat", "stare": "acceptat", "arhivat": False,
-        "createdAt": _now(), "createdBy": principal.uid, "updatedAt": _now(),
+        "clientId": cid, "folderId": folder_id, "nume": nume, "mime": tip.mime, "marime": len(data),
+        "sha256": sha or hashlib.sha256(data).hexdigest(),
+        "sursa": sursa, "stare": "acceptat", "arhivat": False,
+        "createdAt": _now(), "createdBy": uid, "updatedAt": _now(),
     }
     # Metadatele se scriu într-o tranzacție care citește și fișa clientului: dacă între timp clientul a fost șters, fișierul
     # nu se înregistrează (altfel ar rămâne orfan: nici la client, nici în Arhivă, dar numărat în spațiul cabinetului).
     @firestore.transactional
-    def inregistreaza(txn) -> bool:
+    def scrie(txn) -> bool:
         if not client_ref.get(transaction=txn).exists:
             return False
         txn.create(ref, meta)
         return True
 
     try:
-        creat = inregistreaza(authz.db().transaction())
+        creat = scrie(authz.db().transaction())
     except Exception:
         fisiere.sterge(wid, ref.id)          # fără metadate, obiectul ar rămâne orfan
         raise
     if not creat:
         fisiere.sterge(wid, ref.id)
-        return _err("not_found", 404)
+        return None
     _schimba_contor(wid, len(data), 1)
-    audit.log(wid, principal.uid, "fisier.upload", ref.id,
-              {"client": cid, "marime": len(data), "tip": tip.ext, **({"sursa": "generat"} if generat else {})})
-    return jsonify({"fisier": _out_fisier(ref.id, meta)}), 201
+    return ref.id, meta
 
 
 @bp.get("/fisiere/<fid>/continut")
@@ -241,14 +261,18 @@ def descarca(fid: str):
     if not snap.exists:
         return _err("not_found", 404)
     d = snap.to_dict() or {}
-    data = fisiere.citeste(wid, fid)
+    # `?versiune=original`: conținutul dinaintea editării, cât timp e păstrat.
+    orig = d.get("original") if request.args.get("versiune") == "original" else None
+    if request.args.get("versiune") == "original" and not isinstance(orig, dict):
+        return _err("not_found", 404)
+    data = fisiere.citeste(wid, orig["obiect"] if orig else obiect(fid, d))
     if data is None:
         return _err("fisier_indisponibil", 404)
-    audit.log(wid, principal.uid, "fisier.download", fid, {"scop": scop})
+    audit.log(wid, principal.uid, "fisier.download", fid, {"scop": scop, **({"versiune": "original"} if orig else {})})
 
     nume = d.get("nume") or "document"
     ascii_nume = nume.encode("ascii", "ignore").decode().replace('"', "") or "document"
-    resp = Response(data, mimetype=fisiere.mime_sigur(d.get("mime")))
+    resp = Response(data, mimetype=fisiere.mime_sigur((orig or d).get("mime")))
     resp.headers["Content-Disposition"] = f"attachment; filename=\"{ascii_nume}\"; filename*=UTF-8''{quote(nume)}"
     resp.headers["Cache-Control"] = "private, no-store"
     resp.headers["X-Content-Type-Options"] = "nosniff"
@@ -298,16 +322,282 @@ def _sterge_fisiere(wid: str, snaps: list) -> int:
         batch = authz.db().batch()
         for s in snaps[i:i + _BATCH]:
             batch.delete(s.reference)
-            octeti += int((s.to_dict() or {}).get("marime") or 0)
+            d = s.to_dict() or {}
+            octeti += int(d.get("marime") or 0) + int((d.get("original") or {}).get("marime") or 0)
         batch.commit()
     if snaps:
         _schimba_contor(wid, -octeti, -len(snaps))
     for s in snaps:
-        try:
-            fisiere.sterge(wid, s.id)
-        except Exception as e:  # noqa: BLE001
-            print(f"[fisiere] obiect neșters ({type(e).__name__})")
+        d = s.to_dict() or {}
+        for o in {obiect(s.id, d), *([d["original"]["obiect"]] if isinstance(d.get("original"), dict) else [])}:
+            try:
+                fisiere.sterge(wid, o)
+            except Exception as e:  # noqa: BLE001
+                print(f"[fisiere] obiect neșters ({type(e).__name__})")
     return octeti
+
+
+def _cu_extensia(nume: str, tip: fisiere.Tip) -> str:
+    """Același nume, cu extensia noului format („act.png” salvat ca JPEG devine „act.jpg”)."""
+    ext = fisiere.extensie(nume)
+    baza = nume[: -(len(ext) + 1)] if ext else nume
+    return fisiere.nume_fisier(f"{baza or 'document'}.{tip.ext}", tip)
+
+
+POZE = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime}
+EDITABILE = POZE | {fisiere.PDF.mime}
+# Tot ce intră în PDF-urile pregătite pentru tipar (sursele se țin în memorie, deci plafonul contează).
+MAX_SURSE_TIPAR = 60 * 1024 * 1024
+
+
+class _SpatiuDepasit(Exception):
+    pass
+
+
+@bp.errorhandler(_SpatiuDepasit)
+def _handle_spatiu(_e):
+    return _err("spatiu_depasit", 409)
+
+
+class _Modificat(Exception):
+    """Fișierul s-a schimbat între citire și scriere (altă editare sau ștergere în paralel)."""
+
+
+@bp.errorhandler(_Modificat)
+def _handle_modificat(_e):
+    return _err("fisier_modificat", 409)
+
+
+def _inlocuieste(wid: str, fid: str, d: dict, data: bytes, tip: fisiere.Tip, uid: str) -> dict:
+    """Conținutul nou devine versiunea curentă; prima versiune rămâne în `original` (vezi `inlocuieste`)."""
+    ref = _col_fisiere(wid).document(fid)
+    vechi = int(d.get("marime") or 0) if d.get("original") else 0     # versiunea editată anterior, care dispare
+    contor = _contor(wid).get().to_dict() or {}
+    if int(contor.get("octeti") or 0) + len(data) - vechi > fisiere.LIMITA_CABINET:
+        raise _SpatiuDepasit()
+
+    nou = _col_fisiere(wid).document().id
+    fisiere.salveaza(wid, nou, data)
+    cid, folder = d.get("clientId"), d.get("folderId")
+    nume = _nume_liber(_cu_extensia(d.get("nume") or "", tip), _nume_ocupate(wid, cid, folder, exclude=fid))
+    acum = _now()
+
+    @firestore.transactional
+    def scrie(txn) -> dict:
+        cur = ref.get(transaction=txn)
+        c = cur.to_dict() if cur.exists else None
+        if not c or obiect(fid, c) != obiect(fid, d) or c.get("arhivat"):
+            raise _Modificat()
+        patch = {
+            "obiect": nou, "mime": tip.mime, "marime": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+            "nume": nume, "editatLa": acum, "editatDe": uid, "updatedAt": acum,
+        }
+        if not c.get("original"):
+            patch["original"] = {"obiect": obiect(fid, c), "marime": c.get("marime"), "mime": c.get("mime"),
+                                 "sha256": c.get("sha256"), "nume": c.get("nume")}
+        txn.update(ref, patch)
+        return {**c, **patch}
+
+    try:
+        rezultat = scrie(authz.db().transaction())
+    except Exception:
+        fisiere.sterge(wid, nou)
+        raise
+    if d.get("original"):
+        fisiere.sterge(wid, obiect(fid, d))           # editarea precedentă; originalul rămâne
+    _schimba_contor(wid, len(data) - vechi, 0)
+    return rezultat
+
+
+@bp.put("/fisiere/<fid>/continut")
+def inlocuieste(fid: str):
+    """Conținutul editat în aplicație (decupat, îndreptat, „scanat”) înlocuiește fișierul. Prima versiune rămâne păstrată
+    (`original`) până la „Revino la original” sau ștergerea fișierului; editările următoare o înlocuiesc doar pe cea editată."""
+    principal, wid, _ = _require("member", billing=True, limit="fisiere_scriere")
+    request.max_content_length = fisiere.MAX_BYTES + 256 * 1024
+    if not _ID_RE.match(fid):
+        return _err("not_found", 404)
+    ref = _col_fisiere(wid).document(fid)
+    snap = ref.get()
+    d = snap.to_dict() if snap.exists else None
+    if not d or d.get("arhivat"):
+        return _err("not_found", 404)
+    if d.get("mime") not in POZE:                     # PDF-urile se modifică prin /pagini
+        return _err("tip_nepermis", 400)
+    upload = request.files.get("fisier")
+    if upload is None:
+        return _err("fisier_lipsa", 400)
+    data = upload.read(fisiere.MAX_BYTES + 1)
+    if len(data) > fisiere.MAX_BYTES:
+        return _err("fisier_prea_mare", 413)
+    tip = fisiere.detecteaza_tip(data, upload.filename or "")
+    if tip.mime not in POZE:
+        return _err("tip_nepermis", 400)
+    rezultat = _inlocuieste(wid, fid, d, data, tip, principal.uid)
+    audit.log(wid, principal.uid, "fisier.edit", fid, {"marime": len(data), "tip": tip.ext})
+    return jsonify({"fisier": _out_fisier(fid, rezultat)})
+
+
+@bp.post("/fisiere/<fid>/pagini")
+def pagini_pdf(fid: str):
+    """Paginile unui PDF: ordine, ștergere, rotire. `copie: true` salvează rezultatul ca fișier nou lângă original;
+    altfel îl înlocuiește, cu originalul păstrat (ca la editarea pozelor)."""
+    principal, wid, _ = _require("member", billing=True, limit="fisiere_scriere")
+    if not _ID_RE.match(fid):
+        return _err("not_found", 404)
+    snap = _col_fisiere(wid).document(fid).get()
+    d = snap.to_dict() if snap.exists else None
+    if not d or d.get("arhivat") or not d.get("clientId"):
+        return _err("not_found", 404)
+    if d.get("mime") != fisiere.PDF.mime:
+        return _err("tip_nepermis", 400)
+    # JSON simplu sau, cu pagini editate ca poză, multipart: `date` (JSON-ul) și fișierele `pagina_<index>`.
+    request.max_content_length = fisiere.MAX_BYTES + 256 * 1024
+    inlocuiri: dict[int, bytes] = {}
+    if request.files:
+        try:
+            body = json.loads(request.form.get("date") or "{}")
+        except ValueError:
+            return _err("pagini_invalide", 400)
+        for cheie, f in request.files.items():
+            m = re.fullmatch(r"pagina_(\d{1,3})", cheie)
+            if not m:
+                return _err("pagini_invalide", 400)
+            img = f.read(fisiere.MAX_BYTES + 1)
+            if len(img) > fisiere.MAX_BYTES or fisiere.detecteaza_tip(img, f.filename or "").mime not in POZE:
+                return _err("tip_nepermis", 400)
+            inlocuiri[int(m.group(1))] = img
+    else:
+        body = _body()
+    if not isinstance(body, dict):
+        return _err("pagini_invalide", 400)
+    raw = body.get("pagini")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 500:
+        return _err("pagini_invalide", 400)
+    try:
+        pagini = [(int(p["p"]), int(p.get("r") or 0)) for p in raw]
+    except (TypeError, ValueError, KeyError):
+        return _err("pagini_invalide", 400)
+    data = fisiere.citeste(wid, obiect(fid, d))
+    if data is None:
+        return _err("fisier_indisponibil", 404)
+    pdf = tipar.rearanjeaza(data, pagini, inlocuiri)
+    if len(pdf) > fisiere.MAX_BYTES:
+        return _err("fisier_prea_mare", 413)
+    meta_audit = {"pagini": len(pagini), "copie": bool(body.get("copie")), **({"editate": len(inlocuiri)} if inlocuiri else {})}
+    if body.get("copie") is True:
+        contor = _contor(wid).get().to_dict() or {}
+        if int(contor.get("octeti") or 0) + len(pdf) > fisiere.LIMITA_CABINET:
+            return _err("spatiu_depasit", 409)
+        cid, folder = d["clientId"], d.get("folderId")
+        baza = (d.get("nume") or "document").rsplit(".", 1)[0]
+        nume = _nume_liber(fisiere.nume_fisier(f"{baza} (editat).pdf", fisiere.PDF), _nume_ocupate(wid, cid, folder))
+        rezultat = _inregistreaza(wid, cid, folder, pdf, nume, fisiere.PDF, principal.uid, "incarcat")
+        if rezultat is None:
+            return _err("not_found", 404)
+        nid, meta = rezultat
+        audit.log(wid, principal.uid, "fisier.pagini", fid, {**meta_audit, "nou": nid})
+        return jsonify({"fisier": _out_fisier(nid, meta)}), 201
+    rezultat = _inlocuieste(wid, fid, d, pdf, fisiere.PDF, principal.uid)
+    audit.log(wid, principal.uid, "fisier.pagini", fid, meta_audit)
+    return jsonify({"fisier": _out_fisier(fid, rezultat)})
+
+
+@bp.post("/fisiere/<fid>/original")
+def revino_la_original(fid: str):
+    """Renunță la editare: conținutul, numele și tipul de dinainte revin, iar versiunea editată se șterge."""
+    principal, wid, _ = _require("member", limit="fisiere_scriere")
+    if not _ID_RE.match(fid):
+        return _err("not_found", 404)
+    ref = _col_fisiere(wid).document(fid)
+    snap = ref.get()
+    d = snap.to_dict() if snap.exists else None
+    if not d or not isinstance(d.get("original"), dict):
+        return _err("not_found", 404)
+    o = d["original"]
+    cid, folder = d.get("clientId"), d.get("folderId")
+    nume = d.get("nume") or ""
+    if o.get("mime") and o.get("mime") != d.get("mime"):
+        tip = next((t for t in (fisiere.JPEG, fisiere.PNG, fisiere.WEBP, fisiere.PDF) if t.mime == o["mime"]), None)
+        if tip:
+            nume = _nume_liber(_cu_extensia(nume, tip), _nume_ocupate(wid, cid, folder, exclude=fid))
+
+    @firestore.transactional
+    def scrie(txn) -> dict:
+        cur = ref.get(transaction=txn)
+        c = cur.to_dict() if cur.exists else None
+        if not c or obiect(fid, c) != obiect(fid, d):
+            raise _Modificat()
+        patch = {"obiect": o.get("obiect") or fid, "mime": o.get("mime"), "marime": o.get("marime"),
+                 "sha256": o.get("sha256"), "nume": nume, "original": firestore.DELETE_FIELD,
+                 "editatLa": firestore.DELETE_FIELD, "editatDe": firestore.DELETE_FIELD, "updatedAt": _now()}
+        txn.update(ref, patch)
+        rest = {k: v for k, v in patch.items() if v is not firestore.DELETE_FIELD}
+        return {**{k: v for k, v in c.items() if k not in ("original", "editatLa", "editatDe")}, **rest}
+
+    rezultat = scrie(authz.db().transaction())
+    fisiere.sterge(wid, obiect(fid, d))
+    _schimba_contor(wid, -int(d.get("marime") or 0), 0)
+    audit.log(wid, principal.uid, "fisier.original", fid)
+    return jsonify({"fisier": _out_fisier(fid, rezultat)})
+
+
+@bp.errorhandler(tipar.TiparRefuzat)
+def _handle_tipar(e: tipar.TiparRefuzat):
+    return _err(e.code, 400)
+
+
+@bp.post("/fisiere/tipar")
+def pregateste_tipar():
+    """Pozele (și PDF-urile) alese, în ordinea dată, într-un PDF A4 nou, salvat lângă primul document."""
+    principal, wid, _ = _require("member", billing=True, limit="fisiere_scriere")
+    body = _body()
+    ids = body.get("fisiere")
+    aspect = body.get("aspect")
+    if (not isinstance(ids, list) or not 1 <= len(ids) <= 20 or len(set(map(str, ids))) != len(ids)
+            or any(not isinstance(i, str) or not _ID_RE.match(i) for i in ids) or aspect not in tipar.ASPECTE):
+        return _err("tipar_invalid", 400)
+    metas = []
+    for i in ids:
+        snap = _col_fisiere(wid).document(i).get()
+        d = snap.to_dict() if snap.exists else None
+        if not d or d.get("arhivat") or not d.get("clientId"):
+            return _err("not_found", 404)
+        metas.append((i, d))
+    cid = metas[0][1]["clientId"]
+    if any(d.get("clientId") != cid for _, d in metas):
+        return _err("tipar_invalid", 400)
+    permise = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime} | ({fisiere.PDF.mime} if aspect != "ci" else set())
+    if any(d.get("mime") not in permise for _, d in metas):
+        return _err("tip_nepermis", 400)
+    if sum(int(d.get("marime") or 0) for _, d in metas) > MAX_SURSE_TIPAR:
+        return _err("tipar_prea_mare", 413)
+    continut = []
+    for i, d in metas:
+        data = fisiere.citeste(wid, obiect(i, d))
+        if data is None:
+            return _err("fisier_indisponibil", 404)
+        continut.append((data, d.get("mime")))
+
+    pdf = tipar.pdf_tipar(continut, aspect)
+    if len(pdf) > fisiere.MAX_BYTES:
+        return _err("tipar_prea_mare", 413)
+    contor = _contor(wid).get().to_dict() or {}
+    if int(contor.get("octeti") or 0) + len(pdf) > fisiere.LIMITA_CABINET:
+        return _err("spatiu_depasit", 409)
+    folder = metas[0][1].get("folderId")
+    try:
+        _folder_valid(wid, cid, folder)
+    except fisiere.FisierRefuzat:
+        folder = None
+    nume = _nume_liber(fisiere.nume_fisier(tipar.nume_tipar(metas[0][1].get("nume") or "", aspect, len(ids)), fisiere.PDF),
+                       _nume_ocupate(wid, cid, folder))
+    rezultat = _inregistreaza(wid, cid, folder, pdf, nume, fisiere.PDF, principal.uid, "generat")
+    if rezultat is None:
+        return _err("not_found", 404)
+    fid, meta = rezultat
+    audit.log(wid, principal.uid, "fisier.tipar", fid, {"client": cid, "aspect": aspect, "surse": len(ids), "marime": len(pdf)})
+    return jsonify({"fisier": _out_fisier(fid, meta)}), 201
 
 
 @bp.delete("/fisiere/<fid>")

@@ -254,7 +254,7 @@ def extract_document(fid: str):
         return jsonify({"error": "Unsupported file type"}), 400
     nume = f"act.{ext}"
     try:
-        data = fisiere.citeste(wid, fid)
+        data = fisiere.citeste(wid, fisiere_api.obiect(fid, meta))
     except fisiere.StocareIndisponibila:
         return jsonify({"error": "storage_unavailable"}), 503
     except vault.VaultError:

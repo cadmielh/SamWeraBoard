@@ -163,6 +163,18 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Conținutul fișierului nu mai este disponibil.";
     case "arhivat":
       return "Documentele din Arhivă nu pot fi mutate în foldere.";
+    case "pagini_invalide":
+      return "Ordinea paginilor nu e validă. Redeschide documentul și încearcă din nou.";
+    case "pdf_parola":
+      return "PDF-ul este protejat cu parolă și nu poate fi modificat.";
+    case "tipar_invalid":
+      return "Alege documentele aceluiași client: pentru buletin, una sau două poze.";
+    case "tipar_prea_mare":
+      return "PDF-ul ar depăși 15 MB. Alege mai puține documente sau micșorează pozele (Editează).";
+    case "prea_multe_pagini":
+      return "Rezultatul ar avea peste 60 de pagini. Alege mai puține documente.";
+    case "fisier_modificat":
+      return "Documentul a fost modificat între timp. Redeschide-l și încearcă din nou.";
     case "folder_negol":
       return "Folderul a primit conținut nou între timp. Verifică și confirmă din nou ștergerea.";
     case "acte_invalide":

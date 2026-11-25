@@ -3,6 +3,7 @@
 Rulare: tests/run_all.sh (sau `firebase emulators:exec --only firestore ... pytest tests/test_fisiere_api.py`).
 """
 import base64
+import json
 import io
 import os
 import sys
@@ -415,3 +416,206 @@ def test_spatiul_cabinetelor_doar_pentru_super_admin(env):
     r = call(c, "root", "get", "/admin/fisiere/spatiu").get_json()
     assert r["limita"] == fisiere.LIMITA_CABINET
     assert r["cabinete"][wid] == {"octeti": len(PDF), "numar": 1}
+
+
+def _png() -> bytes:
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (8, 8), (200, 10, 10)).save(b, "PNG")
+    return b.getvalue()
+
+
+def test_editarea_inlocuieste_continutul_si_pastreaza_originalul(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    png = _png()
+    fid = upload(c, "bob", wid, data=png, name="CI Ion.png").get_json()["fisier"]["id"]
+    edit = lambda data, name="CI Ion.jpg": call(c, "bob", "put", f"/fisiere/{fid}/continut", wid,  # noqa: E731
+                                                data={"fisier": (io.BytesIO(data), name)}, content_type="multipart/form-data")
+    assert call(c, "vera", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+                content_type="multipart/form-data").status_code == 403
+    r = edit(JPG)
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["fisier"]["nume"] == "CI Ion.jpg" and r.get_json()["fisier"]["editat"] is True
+    d = fisiere_db(db, wid)[0]
+    assert d["mime"] == "image/jpeg" and d["marime"] == len(JPG) and d["original"]["obiect"] == fid
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data == JPG
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut?versiune=original", wid).data == png
+    assert contor(db, wid)["octeti"] == len(png) + len(JPG)
+
+    # o a doua editare înlocuiește doar versiunea editată; originalul rămâne primul
+    jpg2 = b"\xff\xd8\xff\xe0" + os.urandom(80)
+    prima = d["obiect"]
+    assert edit(jpg2).status_code == 200
+    d = fisiere_db(db, wid)[0]
+    assert d["original"]["obiect"] == fid and d["obiect"] != prima
+    assert not (root / fisiere.cale(wid, prima)).exists()
+    assert contor(db, wid)["octeti"] == len(png) + len(jpg2)
+
+    # revenirea la original: conținutul, numele și tipul de dinainte; versiunea editată dispare
+    r = call(c, "bob", "post", f"/fisiere/{fid}/original", wid)
+    assert r.status_code == 200 and r.get_json()["fisier"]["nume"] == "CI Ion.png" and r.get_json()["fisier"]["editat"] is False
+    d = fisiere_db(db, wid)[0]
+    assert "original" not in d and d["mime"] == "image/png" and d["obiect"] == fid
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data == png
+    assert contor(db, wid)["octeti"] == len(png)
+    assert call(c, "bob", "post", f"/fisiere/{fid}/original", wid).status_code == 404
+
+
+def test_stergerea_unui_fisier_editat_sterge_ambele_versiuni(env):
+    c, db, root = env
+    wid = setup_ws(c, db)
+    png = _png()
+    fid = upload(c, "bob", wid, data=png, name="a.png").get_json()["fisier"]["id"]
+    call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+         content_type="multipart/form-data")
+    nou = fisiere_db(db, wid)[0]["obiect"]
+    assert call(c, "bob", "delete", f"/fisiere/{fid}", wid).status_code == 200
+    assert not (root / fisiere.cale(wid, fid)).exists() and not (root / fisiere.cale(wid, nou)).exists()
+    assert contor(db, wid) == {"octeti": 0, "numar": 0}
+
+
+def test_editarea_doar_pentru_poze_si_pdf(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid, data=b"text simplu", name="a.txt").get_json()["fisier"]["id"]
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+             content_type="multipart/form-data")
+    assert r.get_json()["error"] == "tip_nepermis"
+    fid = upload(c, "bob", wid, data=PDF, name="a.pdf").get_json()["fisier"]["id"]
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
+             content_type="multipart/form-data")
+    assert r.get_json()["error"] == "tip_nepermis"                      # PDF-urile se modifică prin /pagini
+    fid = upload(c, "bob", wid, data=_png(), name="b.png").get_json()["fisier"]["id"]
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(PDF), "b.pdf")},
+             content_type="multipart/form-data")
+    assert r.get_json()["error"] == "tip_nepermis"                      # o poză rămâne poză
+    r = call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, content_type="multipart/form-data",
+             data={"date": "[1, 2]", "pagina_0": (io.BytesIO(JPG), "p.jpg")})
+    assert r.status_code == 400
+
+
+def _poza(w: int, h: int, culoare=(30, 90, 200)) -> bytes:
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (w, h), culoare).save(b, "JPEG")
+    return b.getvalue()
+
+
+def test_tipar_buletin_fata_verso_la_marime_reala(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    f1 = upload(c, "bob", wid, data=_poza(856, 540), name="CI Ion (față).jpg").get_json()["fisier"]["id"]
+    f2 = upload(c, "bob", wid, data=_poza(856, 540, (200, 30, 30)), name="CI Ion (verso).jpg").get_json()["fisier"]["id"]
+    assert call(c, "vera", "post", "/fisiere/tipar", wid, json={"fisiere": [f1, f2], "aspect": "ci"}).status_code == 403
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [f1, f2], "aspect": "ci"})
+    assert r.status_code == 201, r.get_json()
+    f = r.get_json()["fisier"]
+    assert f["nume"] == "CI Ion – față-verso.pdf" and f["mime"] == "application/pdf" and f["sursa"] == "generat"
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{f['id']}/continut", wid).data, filetype="pdf")
+    assert doc.page_count == 1 and round(doc[0].rect.width) == 595                     # A4
+    imagini = doc[0].get_image_info()
+    assert len(imagini) == 2
+    latime_mm = (imagini[0]["bbox"][2] - imagini[0]["bbox"][0]) * 25.4 / 72
+    assert abs(latime_mm - 85.6) < 0.5                                                 # mărimea reală a cardului
+
+
+def test_tipar_pagini_a4_din_poze_si_pdf(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    src = fitz.open()
+    src.new_page(width=842, height=595)
+    src.new_page()
+    pdf2 = src.tobytes()
+    a = upload(c, "bob", wid, data=_poza(600, 900), name="Contract p1.jpg").get_json()["fisier"]["id"]
+    b = upload(c, "bob", wid, data=pdf2, name="anexa.pdf").get_json()["fisier"]["id"]
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [a, b], "aspect": "pagina"})
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Contract p1 – pentru tipar.pdf"
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{r.get_json()['fisier']['id']}/continut", wid).data, filetype="pdf")
+    assert [(round(p.rect.width), round(p.rect.height)) for p in doc] == [(595, 842), (842, 595), (595, 842)]
+
+
+def test_tipar_refuzuri(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    p = upload(c, "bob", wid, data=PDF, name="a.pdf").get_json()["fisier"]["id"]
+    i = upload(c, "bob", wid, data=_poza(10, 10), name="a.jpg").get_json()["fisier"]["id"]
+    j = upload(c, "bob", wid, data=_poza(10, 10, (1, 2, 3)), name="b.jpg", cid=CID2).get_json()["fisier"]["id"]
+    tip = lambda ids, aspect="ci": call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": ids, "aspect": aspect}).get_json()  # noqa: E731
+    assert tip([p])["error"] == "tip_nepermis"                       # buletinul: doar poze
+    assert tip([i, j])["error"] == "tipar_invalid"                   # clienți diferiți
+    assert tip([i, i])["error"] == "tipar_invalid"
+    assert tip([i], "altceva")["error"] == "tipar_invalid"
+
+
+def _pdf_pagini(n: int) -> bytes:
+    import fitz
+    doc = fitz.open()
+    for i in range(n):
+        doc.new_page().insert_text((72, 72), f"Pagina {i + 1}")
+    return doc.tobytes()
+
+
+def test_pagini_pdf_ordine_rotire_stergere(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    pdf = _pdf_pagini(3)
+    fid = upload(c, "bob", wid, data=pdf, name="Contract.pdf").get_json()["fisier"]["id"]
+    pag = lambda body: call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, json=body)  # noqa: E731
+    assert pag({"pagini": [{"p": 0}, {"p": 0}]}).get_json()["error"] == "pagini_invalide"
+    assert pag({"pagini": [{"p": 5}]}).get_json()["error"] == "pagini_invalide"
+    assert pag({"pagini": [{"p": 0, "r": 45}]}).get_json()["error"] == "pagini_invalide"
+
+    r = pag({"pagini": [{"p": 2}, {"p": 0, "r": 90}]})                # a doua pagină ștearsă, ordinea inversată
+    assert r.status_code == 200 and r.get_json()["fisier"]["editat"] is True
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data, filetype="pdf")
+    assert [p.get_text().strip() for p in doc] == ["Pagina 3", "Pagina 1"] and doc[1].rotation == 90
+    assert call(c, "bob", "get", f"/fisiere/{fid}/continut?versiune=original", wid).data == pdf
+
+    r = pag({"pagini": [{"p": 1}], "copie": True})                    # copie: din versiunea curentă
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Contract (editat).pdf"
+    nou = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{r.get_json()['fisier']['id']}/continut", wid).data, filetype="pdf")
+    assert [p.get_text().strip() for p in nou] == ["Pagina 1"]
+    jpg = upload(c, "bob", wid, data=JPG, name="a.jpg").get_json()["fisier"]["id"]
+    assert call(c, "bob", "post", f"/fisiere/{jpg}/pagini", wid, json={"pagini": [{"p": 0}]}).get_json()["error"] == "tip_nepermis"
+
+
+def test_unire_in_pdf_pastreaza_paginile_si_transforma_poza(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    src = fitz.open()
+    src.new_page(width=300, height=400).insert_text((20, 40), "Anexa")
+    a = upload(c, "bob", wid, data=_pdf_pagini(2), name="Contract.pdf").get_json()["fisier"]["id"]
+    b = upload(c, "bob", wid, data=src.tobytes(), name="Anexa.pdf").get_json()["fisier"]["id"]
+    i = upload(c, "bob", wid, data=_poza(600, 400), name="Chitanta.jpg").get_json()["fisier"]["id"]
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [a, b, i], "aspect": "unire"})
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Contract – unit.pdf"
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{r.get_json()['fisier']['id']}/continut", wid).data, filetype="pdf")
+    assert [(round(p.rect.width), round(p.rect.height)) for p in doc] == [(595, 842), (595, 842), (300, 400), (842, 595)]
+    assert doc[2].get_text().strip() == "Anexa"                          # paginile PDF rămân cu textul lor
+    # o singură poză: „Transformă în PDF”, cu același nume
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [i], "aspect": "unire"})
+    assert r.get_json()["fisier"]["nume"] == "Chitanta.pdf"
+
+
+def test_pagina_pdf_editata_ca_poza_inlocuieste_pagina(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid, data=_pdf_pagini(3), name="Scan.pdf").get_json()["fisier"]["id"]
+    date = json.dumps({"pagini": [{"p": 0}, {"p": 1}, {"p": 2, "r": 90}]})
+    r = call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, content_type="multipart/form-data",
+             data={"date": date, "pagina_1": (io.BytesIO(_poza(400, 300)), "p.jpg")})
+    assert r.status_code == 200, r.get_json()
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data, filetype="pdf")
+    assert doc.page_count == 3 and doc[0].get_text().strip() == "Pagina 1"
+    assert doc[1].get_text().strip() == "" and len(doc[1].get_images()) == 1   # pagina 2: poza editată
+    assert round(doc[1].rect.width) == 595 and round(doc[1].rect.height) == 446   # lățimea paginii, proporția pozei
+    assert doc[2].rotation == 90
+    r = call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, content_type="multipart/form-data",
+             data={"date": date, "pagina_1": (io.BytesIO(b"text"), "p.txt")})
+    assert r.get_json()["error"] == "tip_nepermis"

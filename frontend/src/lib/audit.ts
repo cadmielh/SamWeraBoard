@@ -37,6 +37,10 @@ const ACTIONS: Record<string, { label: string; category: AuditCategory }> = {
   'fisier.download': { label: 'Deschidere document', category: 'documente' },
   'fisier.update': { label: 'Redenumire / mutare document', category: 'documente' },
   'fisier.delete': { label: 'Ștergere document', category: 'documente' },
+  'fisier.edit': { label: 'Editare document (decupare, îndreptare)', category: 'documente' },
+  'fisier.original': { label: 'Revenire la originalul unui document', category: 'documente' },
+  'fisier.tipar': { label: 'Document pregătit pentru tipar', category: 'documente' },
+  'fisier.pagini': { label: 'Pagini PDF rearanjate (ordine, rotire, ștergere)', category: 'documente' },
   'folder.create': { label: 'Folder nou', category: 'documente' },
   'folder.update': { label: 'Modificare folder', category: 'documente' },
   'folder.delete': { label: 'Ștergere folder', category: 'documente' },
@@ -140,7 +144,14 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
     case 'fisier.update':
       return [m.redenumit ? 'redenumit' : '', m.mutat ? 'mutat' : '', `document ${shortId(e.target)}`].filter(Boolean).join(' · ')
     case 'fisier.delete':
+    case 'fisier.original':
       return `document ${shortId(e.target)}`
+    case 'fisier.pagini':
+      return [`${num(m.pagini)} ${num(m.pagini) === 1 ? 'pagină' : 'pagini'}`, m.copie ? 'copie nouă' : '', `document ${shortId(e.target)}`].filter(Boolean).join(' · ')
+    case 'fisier.tipar':
+      return [m.aspect === 'ci' ? 'buletin față-verso' : `${num(m.surse)} ${num(m.surse) === 1 ? 'document' : 'documente'} pe A4`, `client ${shortId(str(m.client) || null)}`].join(' · ')
+    case 'fisier.edit':
+      return [str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `document ${shortId(e.target)}`].filter(Boolean).join(' · ')
     case 'folder.create':
       return `client ${shortId(str(m.client) || null)}`
     case 'folder.delete':
