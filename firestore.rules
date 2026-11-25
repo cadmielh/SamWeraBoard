@@ -215,6 +215,12 @@ service cloud.firestore {
         allow read: if isMember(wid);
         allow write: if false;
       }
+      // Cererile de documente (cereri_api.py): starea fiecărui act, citită în timp real; scrise DOAR prin server.
+      // Tokenul linkului nu e aici (doar hash-ul); legătura link → cerere e în `portalTokens`, fără reguli: doar server.
+      match /cereriDocumente/{cerereId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
       // Contoare calculate de server (ex. spațiul ocupat de documente).
       match /contoare/{contorId} {
         allow read: if isMember(wid);

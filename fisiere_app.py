@@ -20,6 +20,7 @@ import authz
 authz.init_admin()
 
 import fisiere  # noqa: E402  (după init Firebase Admin)
+import cereri_api  # noqa: E402
 import fisiere_api  # noqa: E402
 
 app = Flask(__name__)
@@ -40,6 +41,7 @@ def _skip_preflight() -> bool:
 
 
 app.register_blueprint(fisiere_api.bp)
+app.register_blueprint(cereri_api.bp)
 
 
 @app.get("/health")

@@ -199,6 +199,79 @@ def detecteaza_tip(data: bytes, nume: str) -> Tip:
     raise FisierRefuzat("tip_nepermis")
 
 
+# ── Portal: fișiere primite de la clientul cabinetului ───────────────────────
+# Vin de la oameni fără cont, deci regulile sunt mai stricte decât la încărcarea din aplicație: doar PDF și poze;
+# PDF-urile cu cod, lansări de programe, fișiere încorporate sau parolă se refuză; pozele se re-salvează ca JPEG
+# (dispare orice conținut ascuns și metadatele, inclusiv locația GPS), orientate corect și cu latura de cel mult
+# PORTAL_LATURA_MAX pixeli.
+
+PORTAL_LATURA_MAX = 3000
+PORTAL_PIXELI_MAX = 60_000_000           # o „bombă” de decompresie se refuză înainte de decodare
+_PDF_RISC = (b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/RichMedia", b"/XFA")
+
+
+def _pdf_sigur(data: bytes) -> None:
+    import pymupdf
+    try:
+        doc = pymupdf.open(stream=data, filetype="pdf")
+    except Exception:
+        raise FisierRefuzat("pdf_invalid")
+    try:
+        if doc.needs_pass or doc.is_encrypted:
+            raise FisierRefuzat("pdf_parola")
+        if doc.page_count < 1:
+            raise FisierRefuzat("pdf_invalid")
+        if doc.embfile_count():
+            raise FisierRefuzat("pdf_risc")
+        # Obiectele se citesc decomprimate (și din fluxurile de obiecte), deci un nume ascuns în compresie se vede.
+        for x in range(1, doc.xref_length()):
+            try:
+                obj = doc.xref_object(x, compressed=False).encode("latin-1", "ignore")
+            except Exception:
+                continue
+            if any(k in obj for k in _PDF_RISC):
+                raise FisierRefuzat("pdf_risc")
+    finally:
+        doc.close()
+
+
+def _jpeg_curat(data: bytes) -> bytes:
+    from PIL import Image, ImageOps
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            if im.width * im.height > PORTAL_PIXELI_MAX:
+                raise FisierRefuzat("imagine_prea_mare")
+            im = ImageOps.exif_transpose(im)
+            im.thumbnail((PORTAL_LATURA_MAX, PORTAL_LATURA_MAX))
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                fond = Image.new("RGB", im.size, (255, 255, 255))
+                fond.paste(im, mask=im.split()[-1])
+                im = fond
+            elif im.mode != "RGB":
+                im = im.convert("RGB")
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=85, optimize=True)      # fără exif/icc: doar pixelii
+            return out.getvalue()
+    except FisierRefuzat:
+        raise
+    except Exception:
+        raise FisierRefuzat("imagine_invalida")
+
+
+def pregateste_portal(data: bytes, nume: str) -> tuple[bytes, Tip]:
+    """Conținutul de păstrat pentru un fișier primit prin portal și tipul lui (PDF sau JPEG)."""
+    tip = detecteaza_tip(data, nume)
+    if tip == PDF:
+        _pdf_sigur(data)
+        return data, PDF
+    if tip in (JPEG, PNG, WEBP):
+        return _jpeg_curat(data), JPEG
+    if tip == HEIC:
+        raise FisierRefuzat("heic")          # pagina portalului convertește pozele în JPEG înainte de trimitere
+    raise FisierRefuzat("tip_nepermis_portal")
+
+
 # ── Nume ──────────────────────────────────────────────────────────────────────
 
 _INTERZISE = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]')

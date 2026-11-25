@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request
 import audit
 import authz
 import billing_credits
+import cereri_api
 import fisiere_api
 import vault
 
@@ -153,6 +154,7 @@ def delete_client(cid: str):
         return _err("forbidden", 403)
     docs = fisiere_api.la_stergere_client(wid, cid, request.args.get("fisiere", ""), principal.uid,
                                           str(data.get("denumire") or ""))
+    cereri_api.la_stergere_client(wid, cid)          # linkurile cererilor de documente nu mai merg
     authz.db().recursive_delete(ref)
     # O încărcare începută înainte de ștergere poate termina între arhivare și ștergerea fișei: încă o trecere, după.
     tarzii = fisiere_api.la_stergere_client(wid, cid, request.args.get("fisiere", ""), principal.uid, str(data.get("denumire") or ""))

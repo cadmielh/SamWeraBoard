@@ -42,6 +42,11 @@ LIMITS: dict[str, list[tuple[str, int, int]]] = {
     # documentele clienților (fisiere_api.py): încărcare/mutare/ștergere, respectiv descărcare și previzualizare
     "fisiere_scriere": [("user", 120, 60), ("workspace", 5000, 86400)],
     "fisiere_citire": [("user", 120, 60)],
+    # portalul (cereri_api.py, fără cont): pe adresa IP și pe link („user” = subiectul dat de apelant), plus un plafon
+    # zilnic pe cabinet pentru încărcări
+    "portal_ip": [("user", 120, 60)],
+    "portal_citire": [("user", 60, 60)],
+    "portal_scriere": [("user", 40, 60), ("workspace", 2000, 86400)],
 }
 
 # Perioadă de probă fără abonament: limitează costul OCR/AI pe conturile care nu convertesc. Ferestrele sunt

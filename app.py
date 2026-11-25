@@ -104,6 +104,7 @@ import billing_api  # noqa: E402
 import templates_api  # noqa: E402
 import activity_api  # noqa: E402
 import fisiere_api  # noqa: E402
+import cereri_api  # noqa: E402
 limiter.limit("120 per hour")(workspaces_api.bp)
 limiter.limit("120 per hour")(templates_api.bp)
 app.register_blueprint(templates_api.bp)
@@ -123,6 +124,9 @@ app.register_blueprint(activity_api.bp)
 # Documentele clienților: o încărcare de 50 de fișiere înseamnă 50 de cereri; contoarele per cont sunt în ratelimit.py.
 limiter.limit("1000 per hour")(fisiere_api.bp)
 app.register_blueprint(fisiere_api.bp)
+# Cererile de documente și portalul clientului final (fără cont); limitele reale sunt pe link și pe IP (ratelimit.py).
+limiter.limit("1000 per hour")(cereri_api.bp)
+app.register_blueprint(cereri_api.bp)
 
 UPLOAD_FOLDER = Path(os.getenv("UPLOAD_FOLDER", "uploads"))
 UPLOAD_FOLDER.mkdir(exist_ok=True)

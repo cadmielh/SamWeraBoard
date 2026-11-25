@@ -51,8 +51,10 @@ def run(db, wid: str, dry_run: bool = False, actor: str = "operator") -> dict:
     ref.update({"status": "pendingDeletion"})                     # 1) acces blocat imediat
     # 1b) documentele clienților, din stocare. Dacă eșuează, workspace-ul rămâne programat și ștergerea se reia a doua
     #     zi; conținutul e oricum ilizibil după pasul 2.
+    import cereri_api
     import fisiere
     fisiere.sterge_cabinet(wid)
+    cereri_api.la_stergere_cabinet(wid)                           #    + legăturile linkurilor de cereri (în afara cabinetului)
     vault.destroy_workspace_key(wid)                              # 2) crypto-shredding
     db.recursive_delete(ref)                                      # 3) tot ce ține de workspace
     db.recursive_delete(acct_ref)                                 #    + datele de facturare din aplicație

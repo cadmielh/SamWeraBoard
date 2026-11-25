@@ -91,7 +91,7 @@ def test_profil_implicite_pe_rol():
     adm, m1, v1 = _profil("adm"), _profil("m1"), _profil("v1")
     pornite = lambda p: sorted(c for c, r in p.reguli.items() if r["activ"])
     assert pornite(adm) == sorted(alerte.TIPURI)                                   # adminul: tot
-    assert pornite(m1) == ["acces_citire", "dosar_asignat", "dosar_blocat", "dosar_planificare",
+    assert pornite(m1) == ["acces_citire", "documente_primite", "dosar_asignat", "dosar_blocat", "dosar_planificare",
                            "sarcina_asignata", "sarcina_termen"]
     assert pornite(v1) == ["acces_citire"]
     assert "trial_expira" not in m1.reguli and "plata_esuata" not in v1.reguli     # abonamentul: doar adminii

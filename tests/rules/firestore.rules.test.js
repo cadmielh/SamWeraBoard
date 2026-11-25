@@ -506,3 +506,23 @@ test('documente: membrii (inclusiv viewer) citesc metadatele; nimeni nu le scrie
   await assertFails(setDoc(doc(ctx(ADMIN), 'workspaces', W1, 'setari', 'documente'), { foldereImplicite: ['X'] }))
   await assertFails(getDoc(doc(ctx(ADMIN), 'workspaces', W1, 'documenteClienti', 'c1')))
 })
+
+// ── Cererile de documente și portalul (cereri_api.py) ────────────────────────
+test('cereri de documente: membrii citesc starea; tokenurile portalului sunt doar ale serverului', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    const db = c.firestore()
+    await setDoc(doc(db, 'workspaces', W1, 'cereriDocumente', 'r1'), { clientId: 'c1', deVerificat: 1, tokenHash: 'h' })
+    await setDoc(doc(db, 'portalTokens', 'h'), { wid: W1, rid: 'r1', tokenCriptat: 'x' })
+  })
+  for (const uid of [ADMIN, MEMBER, VIEWER]) {
+    await assertSucceeds(getDocs(query(collection(ctx(uid), 'workspaces', W1, 'cereriDocumente'), where('clientId', '==', 'c1'))))
+    await assertSucceeds(getDocs(query(collection(ctx(uid), 'workspaces', W1, 'cereriDocumente'), where('deVerificat', '>', 0))))
+  }
+  await assertFails(getDoc(doc(ctx(OUTSIDER), 'workspaces', W1, 'cereriDocumente', 'r1')))
+  await assertFails(setDoc(doc(ctx(ADMIN), 'workspaces', W1, 'cereriDocumente', 'r2'), { clientId: 'c1' }))
+  await assertFails(updateDoc(doc(ctx(ADMIN), 'workspaces', W1, 'cereriDocumente', 'r1'), { deVerificat: 0 }))
+  for (const uid of [ADMIN, OUTSIDER]) {
+    await assertFails(getDoc(doc(ctx(uid), 'portalTokens', 'h')))
+    await assertFails(setDoc(doc(ctx(uid), 'portalTokens', 'h2'), { wid: W1, rid: 'r1' }))
+  }
+})

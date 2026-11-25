@@ -145,6 +145,16 @@ def alerte_sarcina(event) -> None:
     _alerte_entitate("sarcina", "sid", event)
 
 
+@firestore_fn.on_document_written(document="workspaces/{wid}/cereriDocumente/{rid}", **_ALERTE_TRIGGER)
+def alerte_cerere(event) -> None:
+    """Acte primite prin link (sau verificate): alerta „Documente primite”. Scrise doar de server, deci fără autor."""
+    import alerte
+    import authz
+    authz.init_admin()
+    alerte.la_scriere_entitate(authz.db(), "cerere", event.params["wid"], event.params["rid"],
+                               _date_document(event.data.before), _date_document(event.data.after))
+
+
 @firestore_fn.on_document_written(document="workspaces/{wid}/preferinteAlerte/{uid}", **_ALERTE_TRIGGER)
 def alerte_preferinte(event) -> None:
     """Un membru și-a schimbat setările de notificări: doar alertele lui se recalculează."""

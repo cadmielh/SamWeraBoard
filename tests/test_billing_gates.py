@@ -28,6 +28,9 @@ GATED = {
     ("POST", "/fisiere"), ("PATCH", "/fisiere/<fid>"), ("POST", "/foldere"), ("POST", "/clients/<cid>/documente/init"),
     ("PUT", "/fisiere/setari"),
     ("PATCH", "/foldere/<folder_id>"), ("POST", "/fisiere/<fid>/extract"),
+    # cererile de documente: creare, prelungire, verificare (mută și redenumește fișiere)
+    ("POST", "/cereri"), ("POST", "/cereri/<rid>/prelungeste"), ("POST", "/cereri/<rid>/acte/<aid>/accepta"),
+    ("POST", "/cereri/<rid>/acte/<aid>/respinge"),
 }
 # Disponibile și în citire: lectură, export, administrarea oamenilor și a consimțământului, jurnalul,
 # ștergerea GDPR a unui client, căutarea ANAF (necesară completării datelor de facturare) și abonarea.
@@ -37,6 +40,10 @@ UNGATED = {
     ("GET", "/clients/<cid>/pii"), ("DELETE", "/clients/<cid>"),
     # documentele rămân de descărcat și de șters (GDPR) și după expirarea accesului
     ("GET", "/fisiere/<fid>/continut"), ("DELETE", "/fisiere/<fid>"), ("DELETE", "/foldere/<folder_id>"),
+    # cererile: linkul se poate copia și o cerere se poate anula oricând; portalul nu are cont, iar modul citire
+    # îl oprește separat (cereri_api._portal: linkul devine inactiv)
+    ("GET", "/cereri/<rid>/link"), ("POST", "/cereri/<rid>/anuleaza"),
+    ("GET", "/portal/<token>"), ("POST", "/portal/<token>/acte/<aid>"), ("DELETE", "/portal/<token>/fisiere/<fid>"),
     ("POST", "/workspaces"), ("POST", "/workspaces/<wid>/consent"),
     ("PATCH", "/workspaces/<wid>/members/<uid>"), ("DELETE", "/workspaces/<wid>/members/<uid>"),
     ("POST", "/workspaces/<wid>/invites"), ("GET", "/workspaces/<wid>/invites"),

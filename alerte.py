@@ -216,8 +216,9 @@ class Profil:
 
     @property
     def semnatura(self) -> tuple:
-        """Profilele cu aceleași praguri produc aceleași alerte: se calculează o singură dată."""
-        return tuple((c, tuple(r["praguri"])) for c, r in sorted(self.reguli.items()))
+        """Profilele cu aceleași praguri produc aceleași alerte: se calculează o singură dată. Tipurile fără praguri
+        (imediate, evenimente) nu schimbă calculul (cine le primește decide `accepta`), deci nu intră în semnătură."""
+        return tuple((c, tuple(r["praguri"])) for c, r in sorted(self.reguli.items()) if r["praguri"])
 
 
 def are_colegi(uid: str, membri: dict[str, dict]) -> bool:
@@ -735,7 +736,18 @@ def _preferinte(ws_ref, uid: str | None = None) -> dict[str, dict]:
     return {s.id: (s.to_dict() or {}) for s in coll.stream()}
 
 
-_ENTITATI = {"client": "clienti", "dosar": "dosare", "sarcina": "sarcini"}
+_ENTITATI = {"client": "clienti", "dosar": "dosare", "sarcina": "sarcini", "cerere": "cereriDocumente"}
+
+
+def alerte_cerere(rid: str, d: dict, reguli: dict[str, dict]) -> list[Alerta]:
+    """Actele trimise de client prin link și neverificate încă (cereri_api.py). Dispare la verificarea lor."""
+    n = int(d.get("deVerificat") or 0)
+    cid = d.get("clientId") or None
+    if n <= 0 or not cid:
+        return []
+    titlu = "Un act primit de verificat" if n == 1 else f"{n} acte primite de verificat"
+    return [Alerta("documente_primite", f"cerere:{rid}", "atentie", "imediat", titlu,
+                   str(d.get("clientNume") or "").strip() or "Client", _link_client(cid, "documente"), client_id=cid)]
 
 
 def _alerte_entitate(tip: str, eid: str, data: dict, azi: date, reguli: dict) -> list[Alerta]:
@@ -743,6 +755,8 @@ def _alerte_entitate(tip: str, eid: str, data: dict, azi: date, reguli: dict) ->
         return alerte_client(eid, data, azi, reguli)
     if tip == "dosar":
         return alerte_dosar(eid, data, azi, reguli)
+    if tip == "cerere":
+        return alerte_cerere(eid, data, reguli)
     return alerte_sarcina(eid, data, azi, reguli)
 
 
@@ -755,6 +769,7 @@ CAMPURI_ENTITATE = {
               "documentePredateAt", "nrInregistrareDosar", "clientId", "clientDenumire", "clientDenumireLibera"),
     "sarcina": ("status", "termenLimita", "assigneeUid", "assigneeNume", "titlu", "clientId", "clientDenumire",
                 "clientDenumireLibera", "dosarId"),
+    "cerere": ("deVerificat", "clientId", "clientNume"),
 }
 
 
@@ -825,6 +840,8 @@ def recalculeaza_cabinet(db, wid: str, ws: dict | None = None, membri_noi: list[
         q = ws_ref.collection(colectie)
         if tip == "sarcina":
             q = q.where("status", "!=", "finalizat")
+        elif tip == "cerere":
+            q = q.where("deVerificat", ">", 0)
         for s in q.stream():
             entitati[f"{tip}:{s.id}"] = s.to_dict() or {}
     evenimente = [eveniment_membru_nou(uid, membri[uid]) for uid in membri_noi or [] if uid in membri]

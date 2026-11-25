@@ -108,6 +108,23 @@
       "obligatoriu": []
     },
     {
+      "cod": "documente_primite",
+      "categorie": "clienti",
+      "fel": "imediat",
+      "eticheta": "Documente primite de verificat",
+      "descriere": "Un client a trimis prin link actele cerute; le verifici în documentele lui.",
+      "praguri": [],
+      "roluri": [
+        "admin",
+        "member"
+      ],
+      "implicit": [
+        "admin",
+        "member"
+      ],
+      "obligatoriu": []
+    },
+    {
       "cod": "dosar_asignat",
       "categorie": "dosare",
       "fel": "eveniment",
