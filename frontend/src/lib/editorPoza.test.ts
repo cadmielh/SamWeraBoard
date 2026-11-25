@@ -70,7 +70,7 @@ describe('efectul de scanare', () => {
     const masa = imagine(60, 60, () => [92, 70, 52])
     const [r, , b] = px(aplicaFiltru(masa, 'scanare'), 30, 30)
     expect(r - b).toBeLessThan(60)
-    const pix = imagine(80, 40, (x, y) => (y > 15 && y < 20 ? [40, 60, 180] : [210, 210, 210]))
+    const pix = imagine(80, 40, (_x, y) => (y > 15 && y < 20 ? [40, 60, 180] : [210, 210, 210]))
     const [pr, , pb] = px(aplicaFiltru(pix, 'scanare'), 40, 17)
     expect(pb).toBeGreaterThan(pr + 40)
   })

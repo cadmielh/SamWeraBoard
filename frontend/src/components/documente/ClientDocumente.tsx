@@ -17,7 +17,8 @@ import CoadaIncarcare from './CoadaIncarcare'
 import ExtrageAct from './ExtrageAct'
 import SpatiuCabinet from './SpatiuCabinet'
 import { useIncarcari } from './useIncarcari'
-import { IconCautare, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
+import { IconCautare, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconMutaFolder, IconRestrange, IconTipar, IconUneste } from './icons'
+import IconTrash from '../IconTrash'
 import '../../styles/documente.css'
 
 // Editorul de poze (procesarea pixelilor) se descarcă doar la prima editare.
@@ -566,11 +567,14 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
 
       {selectate.length > 0 && (
         <div className="doc-bulk" role="toolbar" aria-label="Acțiuni pentru elementele selectate">
-          <label className="doc-bulk-all">
-            <input type="checkbox" className="doc-check" checked={toateSelectate}
-              onChange={() => setSelectie(toateSelectate ? new Set() : new Set(elementeAici.map(cheieEl)))} aria-label="Selectează tot" />
-            <span>{nrText(selectate.length, 'selectat', 'selectate')}</span>
-          </label>
+          <div className="doc-bulk-cap">
+            <label className="doc-bulk-all">
+              <input type="checkbox" className="doc-check" checked={toateSelectate}
+                onChange={() => setSelectie(toateSelectate ? new Set() : new Set(elementeAici.map(cheieEl)))} aria-label="Selectează tot" />
+              <span>{nrText(selectate.length, 'selectat', 'selectate')}</span>
+            </label>
+            <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
+          </div>
           <div className="doc-bulk-actions">
             {fisiereSelectate.length > 0 && (
               <button type="button" className="btn btn-ghost btn-xs" onClick={() => void descarcaLot(fisiereSelectate)}>
@@ -581,15 +585,14 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
               <>
                 {fisiereSelectate.length > 1 && (
                   <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar({ fisiere: fisiereSelectate, aspect: 'unire' })}
-                    title="Documentele selectate, într-un singur PDF, în ordinea aleasă">Unește în PDF</button>
+                    title="Documentele selectate, într-un singur PDF, în ordinea aleasă"><IconUneste /> Unește în PDF</button>
                 )}
                 <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar({ fisiere: fisiereSelectate })}
-                  title="Într-un PDF A4: buletinul față-verso la mărime reală sau câte un document pe pagină">Pentru tipar</button>
+                  title="Într-un PDF A4: buletinul față-verso la mărime reală sau câte un document pe pagină"><IconTipar /> Pentru tipar</button>
               </>
             )}
-            {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}>Mută în…</button>}
-            {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}>Șterge</button>}
-            <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
+            {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}><IconMutaFolder /> Mută în…</button>}
+            {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}><IconTrash size={13} /> Șterge</button>}
           </div>
         </div>
       )}

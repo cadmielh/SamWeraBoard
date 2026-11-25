@@ -70,3 +70,30 @@ export function IconCautare({ size = 15 }: { size?: number }) {
     </svg>
   )
 }
+
+export function IconTipar({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4.5 6V2.5h7V6M4.5 11.5h-2a1 1 0 0 1-1-1v-3.5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v3.5a1 1 0 0 1-1 1h-2" />
+      <path d="M4.5 9.5h7v4h-7z" />
+    </svg>
+  )
+}
+
+/** Unirea mai multor documente într-unul: două foi care converg spre a treia. */
+export function IconUneste({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 2.5h4v4H2zM2 9.5h4v4H2zM10 6h4v4h-4zM6 4.5h1.5L10 8M6 11.5h1.5L10 8" />
+    </svg>
+  )
+}
+
+export function IconMutaFolder({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.6 1.6h6.2a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
+      <path d="M5.5 9.3h5M8.8 7.6l1.7 1.7-1.7 1.7" />
+    </svg>
+  )
+}
