@@ -35,7 +35,11 @@ export interface Portal {
 /** Link greșit, expirat, anulat sau al unui cabinet inactiv: serverul nu spune care, pagina nici atât. */
 export class LinkInactiv extends Error {}
 
-export class EroarePortal extends Error {}
+export class EroarePortal extends Error {
+  /** Codul de la server (ex. „duplicat”), când există. */
+  readonly cod?: string
+  constructor(mesaj: string, cod?: string) { super(mesaj); this.cod = cod }
+}
 
 const STARI: StareAct[] = ['de_trimis', 'primit', 'acceptat', 'respins', 'lipsa']
 
@@ -144,11 +148,13 @@ const trecatoare = (status: number) => status === 0 || status === 502 || status 
 export async function incarcaAct(
   token: string, aid: string, fisier: Blob, nume: string, onProgres?: (p: number) => void, parte?: ParteCi,
   pauze: number[] = PAUZE_REINCERCARE,
-): Promise<FisierTrimis> {
+): Promise<FisierTrimis | null> {
   for (let i = 0; ; i++) {
     try {
       return await incarcaOdata(token, aid, fisier, nume, onProgres, parte)
     } catch (e) {
+      // După o reîncercare, „duplicat” înseamnă că încercarea anterioară a ajuns, doar răspunsul s-a pierdut.
+      if (i > 0 && e instanceof EroarePortal && e.cod === 'duplicat') return null
       if (!(e instanceof EroareTrecatoare) || i >= pauze.length) throw e instanceof EroareTrecatoare ? e.eroare : e
       onProgres?.(0)
       await new Promise(r => setTimeout(r, pauze[i]))
@@ -179,7 +185,7 @@ function incarcaOdata(token: string, aid: string, fisier: Blob, nume: string, on
         resolve({ id: String(f.id ?? ''), nume: String(f.nume ?? nume), marime: Number(f.marime) || fisier.size, ...(parte ? { parte } : {}) })
       } else if (j.error === 'link_inactiv') reject(new LinkInactiv())
       else {
-        const e = new EroarePortal(mesajEroare(j.error as string | undefined, xhr.status, xhr.getResponseHeader('Retry-After')))
+        const e = new EroarePortal(mesajEroare(j.error as string | undefined, xhr.status, xhr.getResponseHeader('Retry-After')), j.error as string | undefined)
         reject(trecatoare(xhr.status) ? new EroareTrecatoare(e) : e)
       }
     }

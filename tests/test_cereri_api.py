@@ -167,6 +167,8 @@ def test_portal_arata_doar_ce_trebuie_si_marcheaza_deschiderea(env):
     c, db, _ = env
     wid = setup_ws(c, db)
     rid, token, _ = cerere(c, wid, mesaj="Mulțumim")
+    _, t2, _ = cerere(c, wid, mesaj="Bună ziua,\r\n\n\n\nVă rugăm   actele.\n  Mulțumim ")
+    assert c.get(f"/portal/{t2}").get_json()["mesaj"] == "Bună ziua,\n\nVă rugăm actele.\nMulțumim"   # rândurile rămân
     r = c.get(f"/portal/{token}")
     assert r.status_code == 200
     j = r.get_json()

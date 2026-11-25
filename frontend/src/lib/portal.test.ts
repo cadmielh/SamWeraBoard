@@ -108,5 +108,9 @@ describe('reîncercarea încărcării', () => {
     XhrFals.raspunsuri = [{ status: 0, eroareRetea: true }, { status: 0, eroareRetea: true }, { status: 0, eroareRetea: true }]
     await expect(incarcaAct('t', 'a1', new Blob(['x']), 'a.jpg', undefined, undefined, [0, 0])).rejects.toBeInstanceOf(EroarePortal)
     expect(XhrFals.apeluri).toBe(3)
+    // răspunsul primei încercări s-a pierdut, dar fișierul a ajuns: a doua primește „duplicat” și e tot un succes
+    XhrFals.apeluri = 0
+    XhrFals.raspunsuri = [{ status: 0, eroareRetea: true }, { status: 409, body: JSON.stringify({ error: 'duplicat' }) }]
+    await expect(incarcaAct('t', 'a1', new Blob(['x']), 'a.jpg', undefined, undefined, [0, 0])).resolves.toBeNull()
   })
 })

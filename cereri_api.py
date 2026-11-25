@@ -126,6 +126,12 @@ def _curat(raw, maxim: int) -> str:
     return re.sub(r"\s+", " ", str(raw or "")).strip()[:maxim]
 
 
+def _curat_mesaj(raw) -> str:
+    """Mesajul către client: rândurile rămân (cel mult un rând liber între paragrafe), spațiile de prisos dispar."""
+    randuri = [re.sub(r"[^\S\n]+", " ", r).strip() for r in str(raw or "").replace("\r\n", "\n").split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(randuri)).strip()[:MAX_MESAJ]
+
+
 def _body() -> dict:
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else {}
@@ -197,7 +203,7 @@ def creeaza():
     ref = _col(wid).document()
     acum = _now()
     d = {
-        "clientId": cid, "clientNume": _curat(client.get("denumire"), 200), "mesaj": _curat(body.get("mesaj"), MAX_MESAJ),
+        "clientId": cid, "clientNume": _curat(client.get("denumire"), 200), "mesaj": _curat_mesaj(body.get("mesaj")),
         "acte": acte, "stare": "deschisa", "deVerificat": 0, "expiraLa": acum + timedelta(days=zile),
         "tokenHash": _hash(token), "creataLa": acum, "creataDe": principal.uid, "actualizataLa": acum,
         # Numele afișat clientului pe link („cerere de la …”); adresa de e-mail a contului nu se arată.

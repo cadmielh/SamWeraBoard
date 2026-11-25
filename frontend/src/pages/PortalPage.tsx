@@ -183,8 +183,8 @@ function ActCard({ a, token, deschisa, onSchimbat, onInactiv }: {
     setInCurs(v => [...v, { cheie, nume, progres: 0, parte }])
     try {
       const f = await incarcaAct(token, a.id, blob, nume, pr => setInCurs(v => v.map(x => (x.cheie === cheie ? { ...x, progres: pr } : x))), parte)
-      const u = url ?? urlPoza(blob)
-      if (u) setMiniaturi(m => ({ ...m, [f.id]: u }))
+      const u = f ? url ?? urlPoza(blob) : null
+      if (f && u) setMiniaturi(m => ({ ...m, [f.id]: u }))
       return true
     } catch (e) {
       trateaza(e)
