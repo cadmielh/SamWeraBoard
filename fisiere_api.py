@@ -11,6 +11,7 @@ utilizatorului — vezi `la_stergere_client`, apelat din pii_api.delete_client.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -447,8 +448,25 @@ def pagini_pdf(fid: str):
         return _err("not_found", 404)
     if d.get("mime") != fisiere.PDF.mime:
         return _err("tip_nepermis", 400)
-    body = _body()
-    raw = body.get("pagini")
+    # JSON simplu sau, cu pagini editate ca poză, multipart: `date` (JSON-ul) și fișierele `pagina_<index>`.
+    request.max_content_length = fisiere.MAX_BYTES + 256 * 1024
+    inlocuiri: dict[int, bytes] = {}
+    if request.files:
+        try:
+            body = json.loads(request.form.get("date") or "{}")
+        except ValueError:
+            return _err("pagini_invalide", 400)
+        for cheie, f in request.files.items():
+            m = re.fullmatch(r"pagina_(\d{1,3})", cheie)
+            if not m:
+                return _err("pagini_invalide", 400)
+            img = f.read(fisiere.MAX_BYTES + 1)
+            if len(img) > fisiere.MAX_BYTES or fisiere.detecteaza_tip(img, f.filename or "").mime not in EDITABILE - {fisiere.PDF.mime}:
+                return _err("tip_nepermis", 400)
+            inlocuiri[int(m.group(1))] = img
+    else:
+        body = _body()
+    raw = body.get("pagini") if isinstance(body, dict) else None
     if not isinstance(raw, list) or not 1 <= len(raw) <= 500:
         return _err("pagini_invalide", 400)
     try:
@@ -458,10 +476,10 @@ def pagini_pdf(fid: str):
     data = fisiere.citeste(wid, obiect(fid, d))
     if data is None:
         return _err("fisier_indisponibil", 404)
-    pdf = tipar.rearanjeaza(data, pagini)
+    pdf = tipar.rearanjeaza(data, pagini, inlocuiri)
     if len(pdf) > fisiere.MAX_BYTES:
         return _err("fisier_prea_mare", 413)
-    meta_audit = {"pagini": len(pagini), "copie": bool(body.get("copie"))}
+    meta_audit = {"pagini": len(pagini), "copie": bool(body.get("copie")), **({"editate": len(inlocuiri)} if inlocuiri else {})}
     if body.get("copie") is True:
         contor = _contor(wid).get().to_dict() or {}
         if int(contor.get("octeti") or 0) + len(pdf) > fisiere.LIMITA_CABINET:
@@ -544,7 +562,7 @@ def pregateste_tipar():
     cid = metas[0][1]["clientId"]
     if any(d.get("clientId") != cid for _, d in metas):
         return _err("tipar_invalid", 400)
-    permise = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime} | ({fisiere.PDF.mime} if aspect == "pagina" else set())
+    permise = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime} | ({fisiere.PDF.mime} if aspect != "ci" else set())
     if any(d.get("mime") not in permise for _, d in metas):
         return _err("tip_nepermis", 400)
     continut = []
@@ -565,7 +583,7 @@ def pregateste_tipar():
         _folder_valid(wid, cid, folder)
     except fisiere.FisierRefuzat:
         folder = None
-    nume = _nume_liber(fisiere.nume_fisier(tipar.nume_tipar(metas[0][1].get("nume") or "", aspect), fisiere.PDF),
+    nume = _nume_liber(fisiere.nume_fisier(tipar.nume_tipar(metas[0][1].get("nume") or "", aspect, len(ids)), fisiere.PDF),
                        _nume_ocupate(wid, cid, folder))
     rezultat = _inregistreaza(wid, cid, folder, pdf, nume, fisiere.PDF, principal.uid, "generat")
     if rezultat is None:

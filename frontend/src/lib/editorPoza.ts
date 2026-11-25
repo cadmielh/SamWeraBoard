@@ -154,7 +154,11 @@ export function aplicaFiltru(src: Imagine, f: Filtru): Imagine {
       const v = curba(Math.min(1, (gri[i] * k) / 255))
       out[o] = out[o + 1] = out[o + 2] = v
     } else {
-      for (let c = 0; c < 3; c++) out[o + c] = curba(Math.min(1, (data[o + c] * k) / 255))
+      // Lumina se normalizează complet (hârtia devine albă); diferența de culoare față de gri se amplifică doar puțin,
+      // ca zonele colorate care nu sunt hârtie (o masă, fundalul pozei) să nu capete nuanțe țipătoare.
+      const v = curba(Math.min(1, (gri[i] * k) / 255))
+      const kc = Math.min(k, 1.25) * (v / 255 + 0.35) / 1.35
+      for (let c = 0; c < 3; c++) out[o + c] = v + (data[o + c] - gri[i]) * kc
     }
     out[o + 3] = 255
   }

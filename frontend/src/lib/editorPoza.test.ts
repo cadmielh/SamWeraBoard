@@ -66,6 +66,14 @@ describe('efectul de scanare', () => {
     expect(px(out, 155, 10)[0]).toBeGreaterThan(245)
     expect(px(out, 80, 40)[0]).toBeLessThan(90)
   })
+  it('o zonă colorată mare (o masă maro) nu capătă nuanțe țipătoare, iar albastrul rămâne albastru', () => {
+    const masa = imagine(60, 60, () => [92, 70, 52])
+    const [r, g, b] = px(aplicaFiltru(masa, 'scanare'), 30, 30)
+    expect(r - b).toBeLessThan(60)
+    const pix = imagine(80, 40, (x, y) => (y > 15 && y < 20 ? [40, 60, 180] : [210, 210, 210]))
+    const [pr, , pb] = px(aplicaFiltru(pix, 'scanare'), 40, 17)
+    expect(pb).toBeGreaterThan(pr + 40)
+  })
   it('alb-negru: gri pe toate canalele; originalul e neschimbat', () => {
     const out = aplicaFiltru(poza, 'alb_negru')
     const [r, g, b] = px(out, 80, 40)

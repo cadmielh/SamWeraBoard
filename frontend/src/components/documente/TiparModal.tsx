@@ -19,7 +19,14 @@ function Schita({ aspect, n }: { aspect: AspectTipar; n: number }) {
   return (
     <svg className="tip-schita" viewBox="0 0 210 297" aria-hidden>
       <rect x={0.5} y={0.5} width={209} height={296} className="tip-foaie" />
-      {aspect === 'ci'
+      {aspect === 'unire'
+        ? <>
+          <rect x={20} y={20} width={170} height={8} className="tip-card" />
+          {[40, 56, 72, 88, 104, 120].map(y => <rect key={y} x={20} y={y} width={150} height={5} className="tip-text" />)}
+          <path d="M150 230h40v50h-40z" className="tip-card" />
+          <path d="M165 215l-12 -12M165 215l-12 12M165 215h-45" className="tip-sageata" />
+        </>
+        : aspect === 'ci'
         ? Array.from({ length: Math.min(2, Math.max(1, n)) }, (_, i) => (
           <rect key={i} x={62} y={25 + i * 69} width={86} height={54} rx={3} className="tip-card" />
         ))
@@ -29,8 +36,9 @@ function Schita({ aspect, n }: { aspect: AspectTipar; n: number }) {
 }
 
 /** „Pregătește pentru tipar”: documentele alese, în ordinea dorită, într-un PDF A4 nou salvat lângă ele. */
-export default function TiparModal({ fisiere, onClose, onCreat }: {
+export default function TiparModal({ fisiere, aspectInitial, onClose, onCreat }: {
   fisiere: Fisier[]
+  aspectInitial?: AspectTipar
   onClose: () => void
   onCreat: (f: Fisier) => void
 }) {
@@ -38,7 +46,7 @@ export default function TiparModal({ fisiere, onClose, onCreat }: {
   const [ordine, setOrdine] = useState(() => ordinePropusa(fisiere))
   const doarPoze = ordine.every(estePoza)
   const ciPosibil = doarPoze && ordine.length >= 1 && ordine.length <= 2
-  const [aspect, setAspect] = useState<AspectTipar>(ciPosibil ? 'ci' : 'pagina')
+  const [aspect, setAspect] = useState<AspectTipar>(aspectInitial ?? (ciPosibil ? 'ci' : 'pagina'))
   const [busy, setBusy] = useState(false)
   const aspectEfectiv: AspectTipar = aspect === 'ci' && !ciPosibil ? 'pagina' : aspect
   const nedecupate = ordine.filter(f => estePoza(f) && !f.editat)
@@ -64,14 +72,16 @@ export default function TiparModal({ fisiere, onClose, onCreat }: {
   const optiuni: { cheie: AspectTipar; titlu: string; text: string; activ: boolean }[] = [
     { cheie: 'ci', titlu: 'Buletin față-verso', activ: ciPosibil,
       text: ciPosibil ? 'Pe o singură pagină, la mărimea reală a cardului, cu contur pentru decupare.' : 'Alege una sau două poze (fața și verso-ul).' },
-    { cheie: 'pagina', titlu: 'Câte una pe pagină', activ: true,
-      text: 'Fiecare poză cât mai mare pe o pagină A4; paginile PDF-urilor se adaugă în ordine. Bun pentru contracte sau extrase.' },
+    { cheie: 'pagina', titlu: 'Câte una pe pagină A4', activ: true,
+      text: 'Fiecare poză cât mai mare pe o pagină A4; și paginile PDF-urilor se încadrează pe A4. Bun pentru tipar.' },
+    { cheie: 'unire', titlu: 'Unește în PDF', activ: true,
+      text: 'Un singur PDF, în ordinea aleasă: paginile PDF-urilor rămân neschimbate, pozele ajung pe câte o pagină A4.' },
   ]
 
   return (
     <Modal onClose={onClose} className="tip-modal" ariaLabel="Pregătește pentru tipar">
       <div className="modal-head">
-        <span className="modal-title">Pregătește pentru tipar</span>
+        <span className="modal-title">{aspectEfectiv === 'unire' ? 'Unește în PDF' : 'Pregătește pentru tipar'}</span>
         <button className="modal-close" onClick={onClose} aria-label="Închide">×</button>
       </div>
       <div className="modal-body tip-corp">

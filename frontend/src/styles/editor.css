@@ -53,9 +53,12 @@
 }
 
 /* „Pregătește pentru tipar” (TiparModal.tsx) */
-.tip-modal.modal-box { max-width: min(640px, 96vw); }
+.tip-modal.modal-box { max-width: min(760px, 96vw); }
 .tip-corp { display: flex; flex-direction: column; gap: .75rem; }
-.tip-aspecte { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.tip-aspecte { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+.tip-aspect { flex-direction: column; }
+.tip-text { fill: var(--s300); }
+.tip-sageata { fill: none; stroke: var(--p500); stroke-width: 4; stroke-linecap: round; }
 .tip-aspect {
   display: flex;
   gap: .6rem;
@@ -93,3 +96,4 @@
 .pg-eticheta { font-size: .8rem; font-weight: 600; }
 .pg-actiuni { display: flex; gap: .1rem; }
 .pg-sterge:hover:not(:disabled) { color: var(--r600); }
+.pg-editata { margin-left: .35rem; font-size: .65rem; }

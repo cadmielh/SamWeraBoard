@@ -3,6 +3,7 @@
 Rulare: tests/run_all.sh (sau `firebase emulators:exec --only firestore ... pytest tests/test_fisiere_api.py`).
 """
 import base64
+import json
 import io
 import os
 import sys
@@ -573,3 +574,41 @@ def test_pagini_pdf_ordine_rotire_stergere(env):
     assert [p.get_text().strip() for p in nou] == ["Pagina 1"]
     jpg = upload(c, "bob", wid, data=JPG, name="a.jpg").get_json()["fisier"]["id"]
     assert call(c, "bob", "post", f"/fisiere/{jpg}/pagini", wid, json={"pagini": [{"p": 0}]}).get_json()["error"] == "tip_nepermis"
+
+
+def test_unire_in_pdf_pastreaza_paginile_si_transforma_poza(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    src = fitz.open()
+    src.new_page(width=300, height=400).insert_text((20, 40), "Anexa")
+    a = upload(c, "bob", wid, data=_pdf_pagini(2), name="Contract.pdf").get_json()["fisier"]["id"]
+    b = upload(c, "bob", wid, data=src.tobytes(), name="Anexa.pdf").get_json()["fisier"]["id"]
+    i = upload(c, "bob", wid, data=_poza(600, 400), name="Chitanta.jpg").get_json()["fisier"]["id"]
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [a, b, i], "aspect": "unire"})
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Contract – unit.pdf"
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{r.get_json()['fisier']['id']}/continut", wid).data, filetype="pdf")
+    assert [(round(p.rect.width), round(p.rect.height)) for p in doc] == [(595, 842), (595, 842), (300, 400), (842, 595)]
+    assert doc[2].get_text().strip() == "Anexa"                          # paginile PDF rămân cu textul lor
+    # o singură poză: „Transformă în PDF”, cu același nume
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [i], "aspect": "unire"})
+    assert r.get_json()["fisier"]["nume"] == "Chitanta.pdf"
+
+
+def test_pagina_pdf_editata_ca_poza_inlocuieste_pagina(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    fid = upload(c, "bob", wid, data=_pdf_pagini(3), name="Scan.pdf").get_json()["fisier"]["id"]
+    date = json.dumps({"pagini": [{"p": 0}, {"p": 1}, {"p": 2, "r": 90}]})
+    r = call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, content_type="multipart/form-data",
+             data={"date": date, "pagina_1": (io.BytesIO(_poza(400, 300)), "p.jpg")})
+    assert r.status_code == 200, r.get_json()
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{fid}/continut", wid).data, filetype="pdf")
+    assert doc.page_count == 3 and doc[0].get_text().strip() == "Pagina 1"
+    assert doc[1].get_text().strip() == "" and len(doc[1].get_images()) == 1   # pagina 2: poza editată
+    assert round(doc[1].rect.width) == 595 and round(doc[1].rect.height) == 446   # lățimea paginii, proporția pozei
+    assert doc[2].rotation == 90
+    r = call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, content_type="multipart/form-data",
+             data={"date": date, "pagina_1": (io.BytesIO(b"text"), "p.txt")})
+    assert r.get_json()["error"] == "tip_nepermis"

@@ -39,7 +39,15 @@ function laBlob(im: Imagine, calitate = 0.9): Promise<Blob> {
 
 /** Editorul unei poze: colțurile actului (trase cu mouse-ul sau cu degetul), rotire, filtru de scanare; salvarea înlocuiește
  * fișierul (originalul rămâne păstrat pe server) sau creează o copie „(editat)” alături. */
-export default function EditorPoza({ fisier, onClose }: { fisier: Fisier; onClose: () => void }) {
+export default function EditorPoza({ fisier, continut, titlu, onRezultat, onClose }: {
+  fisier: Fisier
+  /** O imagine dată direct (ex. o pagină de PDF desenată); altfel, conținutul fișierului. */
+  continut?: Blob
+  titlu?: string
+  /** Cu `onRezultat`, editorul doar întoarce poza editată (fără salvare pe server). */
+  onRezultat?: (b: Blob) => void
+  onClose: () => void
+}) {
   const { activeWorkspace, toast } = useApp()
   const [sursa, setSursa] = useState<Imagine | null>(null)
   const [vedere, setVedere] = useState<string | null>(null)          // URL-ul pozei afișate sub colțuri
@@ -57,12 +65,13 @@ export default function EditorPoza({ fisier, onClose }: { fisier: Fisier; onClos
 
   useEffect(() => {
     let viu = true
-    continutFisier(fisier.id, 'previzualizare')
+    const blob = continut ? Promise.resolve(continut) : continutFisier(fisier.id, 'previzualizare')
+    blob
       .then(incarcaImagine)
       .then(im => { if (viu) { setSursa(im); setColturi(colturiImplicite(im.width, im.height)) } })
       .catch(() => { if (viu) setEroare('Poza nu a putut fi deschisă pentru editare.') })
     return () => { viu = false }
-  }, [fisier.id])
+  }, [fisier.id, continut])
 
   // Poza afișată sub colțuri se regenerează doar când se schimbă sursa (la deschidere și la rotire).
   useEffect(() => {
@@ -130,13 +139,28 @@ export default function EditorPoza({ fisier, onClose }: { fisier: Fisier; onClos
     }
   }
 
+  const aplica = async () => {
+    if (!sursa || !colturi || !onRezultat) return
+    setSalvez('inlocuieste')
+    try {
+      await new Promise(r => setTimeout(r, 20))
+      const { w, h } = dimensiuneRezultat(colturi)
+      onRezultat(await laBlob(aplicaFiltru(indreapta(sursa, colturi, w, h), filtru)))
+      onClose()
+    } catch {
+      toast('Pagina nu a putut fi prelucrată.', 'err')
+    } finally {
+      setSalvez(null)
+    }
+  }
+
   const raza = sursa ? Math.max(sursa.width, sursa.height) / 55 : 0
   const ocupat = salvez !== null
 
   return (
     <Modal onClose={onClose} className="ed-modal" ariaLabel="Editează poza">
       <div className="modal-head">
-        <span className="modal-title">Editează · {fisier.nume}</span>
+        <span className="modal-title">{titlu ?? `Editează · ${fisier.nume}`}</span>
         <button className="modal-close" onClick={onClose} aria-label="Închide">×</button>
       </div>
 
@@ -190,6 +214,14 @@ export default function EditorPoza({ fisier, onClose }: { fisier: Fisier; onClos
           : '„Scanare” albește hârtia și scoate umbrele, păstrând culorile (ștampile, semnături); „Alb-negru” arată ca o fotocopie.'}
       </p>
 
+      {onRezultat ? (
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose} disabled={ocupat}>Renunță</button>
+          <button className="btn btn-primary" disabled={!sursa || ocupat} onClick={() => void aplica()}>
+            <BtnLabel busy={ocupat}>Aplică pe pagină</BtnLabel>
+          </button>
+        </div>
+      ) : (
       <div className="modal-footer">
         <button className="btn btn-ghost" onClick={onClose} disabled={ocupat}>Renunță</button>
         <button className="btn btn-outline-primary" onClick={() => void salveaza('copie')} disabled={!sursa || ocupat}>
@@ -200,6 +232,7 @@ export default function EditorPoza({ fisier, onClose }: { fisier: Fisier; onClos
           <BtnLabel busy={salvez === 'inlocuieste'}>Înlocuiește</BtnLabel>
         </button>
       </div>
+      )}
     </Modal>
   )
 }

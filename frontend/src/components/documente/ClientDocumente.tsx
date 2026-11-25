@@ -4,9 +4,9 @@ import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
   ACCEPT, DESC_IMPLICIT, ascundeTemporar, incepeStergereAmanata, terminaStergereAmanata, caleFolder, continutRecursiv, creeazaFolder, descarcaFisier, descendenti, extensie,
-  editabil, extractibil, formatMarime, tiparibil, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
+  editabil, extractibil, formatMarime, pregatesteTipar, tiparibil, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
   reafiseaza, redenumesteFisier, redenumesteFolder, revinoLaOriginal, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
-  useAscunse, useDocumenteClient, type EroareFisier, type Fisier, type Folder, type Sortare,
+  useAscunse, useDocumenteClient, type AspectTipar, type EroareFisier, type Fisier, type Folder, type Sortare,
 } from '../../lib/fisiere'
 import ConfirmModal from '../ConfirmModal'
 import BtnLabel from '../BtnLabel'
@@ -112,7 +112,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const [confirmaSterge, setConfirmaSterge] = useState<Element[] | null>(null)
   const [extrage, setExtrage] = useState<Fisier | null>(null)
   const [editor, setEditor] = useState<Fisier | null>(null)
-  const [tipar, setTipar] = useState<Fisier[] | null>(null)
+  const [tipar, setTipar] = useState<{ fisiere: Fisier[]; aspect?: AspectTipar } | null>(null)
   const [pagini, setPagini] = useState<Fisier | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
@@ -364,6 +364,12 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     return <>{ce} {parti.join(' și ')}. Se șterg împreună. Vei putea anula câteva secunde.</>
   }
 
+  /** O poză devine PDF (pagină A4), lângă ea, cu același nume. */
+  const transformaInPdf = (f: Fisier) => ruleaza(f.id, async () => {
+    const nou = await pregatesteTipar([f.id], 'unire')
+    toast(`„${nou.nume}” a fost creat lângă poză.`, 'ok', { action: { label: 'Deschide', onClick: () => setPreview(nou.id) } })
+  })
+
   const optiuni = (el: Element): OptiuneMeniu[] => [
     ...(el.tip === 'fisier' ? [{ label: 'Descarcă', onSelect: () => void descarca(el.f) }] : []),
     ...(el.tip === 'fisier' && canEdit && onSaveClient && extractibil(el.f.mime)
@@ -374,7 +380,9 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
       ...(el.tip === 'fisier' && el.f.mime === 'application/pdf' && !el.f.arhivat
         ? [{ label: 'Pagini (rotește, mută, șterge)', onSelect: () => setPagini(el.f) }] : []),
       ...(el.tip === 'fisier' && tiparibil(el.f.mime) && !el.f.arhivat
-        ? [{ label: 'Pregătește pentru tipar', onSelect: () => setTipar([el.f]) }] : []),
+        ? [{ label: 'Pregătește pentru tipar', onSelect: () => setTipar({ fisiere: [el.f] }) }] : []),
+      ...(el.tip === 'fisier' && editabil(el.f.mime) && !el.f.arhivat
+        ? [{ label: 'Transformă în PDF', onSelect: () => void transformaInPdf(el.f) }] : []),
       ...(el.tip === 'fisier' && el.f.editat
         ? [{ label: 'Revino la original', onSelect: () => void ruleaza(el.f.id, () => revinoLaOriginal(el.f.id), 'Documentul a revenit la original.') }]
         : []),
@@ -570,8 +578,14 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
               </button>
             )}
             {canEdit && fisiereSelectate.length > 0 && fisiereSelectate.length === selectate.length && fisiereSelectate.every(f => tiparibil(f.mime)) && (
-              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar(fisiereSelectate)}
-                title="Într-un PDF A4: buletinul față-verso la mărime reală sau câte un document pe pagină">Pentru tipar</button>
+              <>
+                {fisiereSelectate.length > 1 && (
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar({ fisiere: fisiereSelectate, aspect: 'unire' })}
+                    title="Documentele selectate, într-un singur PDF, în ordinea aleasă">Unește în PDF</button>
+                )}
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar({ fisiere: fisiereSelectate })}
+                  title="Într-un PDF A4: buletinul față-verso la mărime reală sau câte un document pe pagină">Pentru tipar</button>
+              </>
             )}
             {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}>Mută în…</button>}
             {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}>Șterge</button>}
@@ -677,7 +691,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
 
       {tipar && (
         <Suspense fallback={null}>
-          <TiparModal fisiere={tipar} onClose={() => setTipar(null)} onCreat={f => {
+          <TiparModal fisiere={tipar.fisiere} aspectInitial={tipar.aspect} onClose={() => setTipar(null)} onCreat={f => {
             setSelectie(new Set())
             toast(`„${f.nume}” a fost creat lângă documente.`, 'ok', { action: { label: 'Deschide', onClick: () => setPreview(f.id) } })
           }} />
