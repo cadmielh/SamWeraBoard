@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import LogoMark from '../components/LogoMark'
 import { formatDateRo } from '../lib/dates'
 import { formatMarime } from '../lib/fisiere'
 import {
@@ -79,8 +80,14 @@ function Cerere({ p, token, onSchimbat, onInactiv }: {
   return (
     <>
       <header className="portal-cap">
-        <div className="portal-cabinet">{cabinet}</div>
-        {p.cerutDe && <div className="portal-cerut">Cerere trimisă de {p.cerutDe}</div>}
+        <div className="portal-cap-cabinet">
+          <div className="portal-cabinet">{cabinet}</div>
+          {p.cerutDe && <div className="portal-cerut">Cerere trimisă de {p.cerutDe}</div>}
+        </div>
+        {/* Discret: cabinetul e cel care cere actele; Cabinio e doar platforma, numită și în informarea de jos. */}
+        <div className="portal-marca" aria-label="Cabinio">
+          <LogoMark size={18} /><span>Cabin<b>io</b></span>
+        </div>
       </header>
 
       {gata ? (

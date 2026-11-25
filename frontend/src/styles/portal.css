@@ -19,7 +19,27 @@
 .portal h2 { font-size: 1rem; margin: 0; }
 .portal p { margin: 0; line-height: 1.5; }
 
-.portal-cap { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.portal-cap {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.portal-cap-cabinet { min-width: 0; overflow-wrap: anywhere; }
+.portal-marca {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: .85rem;
+  letter-spacing: -.01em;
+}
+.portal-marca svg { color: var(--p500); }
+.portal-marca b { font-weight: 700; }
 .portal-cabinet { font-size: 1.1rem; font-weight: 700; }
 .portal-cerut { color: var(--text-muted); font-size: .9rem; margin-top: 2px; }
 
