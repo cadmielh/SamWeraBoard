@@ -203,3 +203,79 @@
 }
 @keyframes portal-rot { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .portal-spinner { animation-duration: 2s; } }
+
+/* Opțional, „nu am acest act”, față/verso, verificarea pozei */
+.portal-optional {
+  margin-left: 8px;
+  font-size: .7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  vertical-align: 2px;
+}
+.portal-stare--lipsa {
+  background: color-mix(in srgb, var(--a500) 16%, var(--surface));
+  color: var(--a800);
+  border-color: transparent;
+}
+:root[data-theme="dark"] .portal-stare--lipsa { color: var(--y400); }
+.portal-act--lipsa { border-color: color-mix(in srgb, var(--a500) 45%, transparent); }
+.portal-lipsa {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: .9rem;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+.portal-link {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font: inherit;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--p500);
+  cursor: pointer;
+}
+.portal-link:disabled { opacity: .6; cursor: default; }
+.portal-link:focus-visible { outline: 2px solid var(--p500); outline-offset: 2px; border-radius: 4px; }
+.portal-nu-am { align-self: flex-start; color: var(--text-muted); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.portal-nu-am-form { display: flex; flex-direction: column; gap: 8px; }
+.portal-nu-am-form label { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--text-muted); }
+.portal-nu-am-form textarea {
+  font: inherit;
+  font-size: 1rem;                 /* sub 16px, iOS mărește pagina la atingere */
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.portal-zona { display: flex; flex-direction: column; gap: 8px; }
+.portal-zona--parte + .portal-zona--parte { border-top: 1px dashed var(--border); padding-top: 10px; }
+.portal-zona-titlu { font-size: .85rem; font-weight: 600; }
+.portal-zona-titlu span { font-weight: 400; color: var(--text-muted); }
+
+.portal-miniatura { flex: none; width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
+
+.portal-verifica {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--a500) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--a500) 40%, transparent);
+}
+.portal-verifica-poza { flex: none; width: 88px; height: 88px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+.portal-verifica-text { display: flex; flex-direction: column; gap: 6px; font-size: .9rem; min-width: 0; }
+.portal-verifica-text > span { color: var(--text-muted); }
+.portal-actiuni--mic .portal-btn--principal { color: #fff; }

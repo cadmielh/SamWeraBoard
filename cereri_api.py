@@ -50,7 +50,8 @@ MAX_ETICHETA = 120
 MAX_MESAJ = 1000
 MAX_MOTIV = 300
 TIPURI_ACT = ("ci", "dovada_sediu", "altul")
-STARI_ACT = ("de_trimis", "primit", "acceptat", "respins")
+STARI_ACT = ("de_trimis", "primit", "acceptat", "respins", "lipsa")
+PARTI_CI = {"fata": "față", "verso": "verso"}     # buletinul electronic are și verso
 FOLDER_PRIMITE = "Primite de la client"
 FOLDER_ACTE_IDENTITATE = "Acte identitate"
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{30,64}$")
@@ -172,6 +173,8 @@ def _acte_din(raw) -> list[dict]:
         if not eticheta:
             raise fisiere.FisierRefuzat("acte_invalide")
         act = {"id": f"a{i + 1}", "eticheta": eticheta, "tip": tip, "stare": "de_trimis", "fisiere": []}
+        if a.get("optional") is True:
+            act["optional"] = True                  # „dacă există”: cererea se poate încheia și fără el
         pid = a.get("persoanaPid")
         if isinstance(pid, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", pid):
             act["persoanaPid"] = pid
@@ -296,10 +299,19 @@ def _handle_modificat(_e):
     return _err("act_modificat", 409)
 
 
+def _completa(acte: list[dict]) -> bool:
+    """Toate actele acceptate; un act opțional pe care clientul a spus că nu-l are nu mai ține cererea deschisă."""
+    return all(a.get("stare") == "acceptat" or (a.get("optional") and a.get("stare") == "lipsa") for a in acte)
+
+
+def _cu_parte(eticheta: str, parte: str | None) -> str:
+    return f"{eticheta} ({PARTI_CI[parte]})" if parte in PARTI_CI else eticheta
+
+
 def _schimba_act(ref, aid: str, fisiere_vazute: list[str] | None, schimbare) -> dict:
     """Aplică `schimbare(act) -> act nou` într-o tranzacție. Cu `fisiere_vazute`, doar dacă actul are exact acele
-    fișiere (altfel _ActModificat: utilizatorul reîncarcă și vede noua stare). Cererea devine „completă” când toate
-    actele sunt acceptate; `deVerificat` se recalculează."""
+    fișiere (altfel _ActModificat: utilizatorul reîncarcă și vede noua stare). Cererea devine „completă” (vezi
+    `_completa`); `deVerificat` se recalculează."""
     @firestore.transactional
     def run(txn) -> dict:
         snap = ref.get(transaction=txn)
@@ -312,7 +324,7 @@ def _schimba_act(ref, aid: str, fisiere_vazute: list[str] | None, schimbare) -> 
             raise _ActModificat()
         acte[k] = schimbare(a)
         patch = {"acte": acte, "deVerificat": de_verificat(acte), "actualizataLa": _now()}
-        if d.get("stare") == "deschisa" and all(x.get("stare") == "acceptat" for x in acte):
+        if d.get("stare") == "deschisa" and _completa(acte):
             patch["stare"] = "completa"
         txn.update(ref, patch)
         return {**d, **patch}
@@ -344,7 +356,7 @@ def accepta(rid: str, aid: str):
             continue
         folder = tinta if tinta is not None else f.get("folderId")
         tip = fisiere.PDF if f.get("mime") == fisiere.PDF.mime else fisiere.JPEG
-        dorit = fisiere.nume_fisier(f"{act.get('eticheta')}.{tip.ext}", tip)
+        dorit = fisiere.nume_fisier(f"{_cu_parte(act.get('eticheta') or '', f.get('parte'))}.{tip.ext}", tip)
         nume = fisiere_api._nume_liber(dorit, fisiere_api._nume_ocupate(wid, cid, folder, exclude=fid))
         col.document(fid).update({"stare": "acceptat", "folderId": folder, "nume": nume, "updatedAt": _now()})
 
@@ -449,7 +461,9 @@ def _out_portal(d: dict, ws: dict) -> dict:
     acte = []
     for a in d.get("acte") or []:
         acte.append({"id": a.get("id"), "eticheta": a.get("eticheta"), "tip": a.get("tip"), "stare": a.get("stare"),
-                     **({"motiv": a["motiv"]} if a.get("stare") == "respins" and a.get("motiv") else {})})
+                     **({"optional": True} if a.get("optional") else {}),
+                     **({"motiv": a["motiv"]} if a.get("stare") == "respins" and a.get("motiv") else {}),
+                     **({"notaClient": a.get("notaClient") or ""} if a.get("stare") == "lipsa" else {})})
     return {"cabinet": ws.get("name") or "", "cerutDe": d.get("cerutDe") or "", "mesaj": d.get("mesaj") or "",
             "expiraLa": _iso(d.get("expiraLa")), "stare": d.get("stare"), "acte": acte}
 
@@ -466,7 +480,8 @@ def _fisiere_trimise(wid: str, rid: str, d: dict) -> dict[str, list[dict]]:
             s = col.document(fid).get()
             f = s.to_dict() if s.exists else None
             if f and f.get("cerereId") == rid and f.get("stare") == "de_verificat":
-                lista.append({"id": fid, "nume": f.get("numeOriginal") or f.get("nume"), "marime": f.get("marime")})
+                lista.append({"id": fid, "nume": f.get("numeOriginal") or f.get("nume"), "marime": f.get("marime"),
+                              **({"parte": f["parte"]} if f.get("parte") in PARTI_CI else {})})
         out[a["id"]] = lista
     return out
 
@@ -498,6 +513,8 @@ def portal_incarca(token: str, aid: str):
         return _err("act_acceptat", 409)
     if sum(len(a.get("fisiere") or []) for a in d.get("acte") or []) >= MAX_FISIERE_CERERE:
         return _err("prea_multe_fisiere", 409)
+    parte = request.form.get("parte") if act.get("tip") == "ci" else None
+    parte = parte if parte in PARTI_CI else None
     upload = request.files.get("fisier")
     if upload is None:
         return _err("fisier_lipsa", 400)
@@ -518,7 +535,7 @@ def portal_incarca(token: str, aid: str):
 
     fisiere_api.pregateste_client(wid, cid, _PORTAL_UID)     # folderele implicite, dacă e primul document
     folder = _folder_dupa_nume(wid, cid, FOLDER_PRIMITE, _PORTAL_UID, creeaza=True)
-    nume = fisiere_api._nume_liber(fisiere.nume_fisier(f"{act.get('eticheta')}.{tip.ext}", tip),
+    nume = fisiere_api._nume_liber(fisiere.nume_fisier(f"{_cu_parte(act.get('eticheta') or '', parte)}.{tip.ext}", tip),
                                    fisiere_api._nume_ocupate(wid, cid, folder))
     fref = col.document()
     fisiere.salveaza(wid, fref.id, data)
@@ -526,7 +543,7 @@ def portal_incarca(token: str, aid: str):
     meta = {
         "clientId": cid, "folderId": folder, "nume": nume, "mime": tip.mime, "marime": len(data), "sha256": sha,
         "sursa": "portal", "stare": "de_verificat", "arhivat": False, "cerereId": ref.id, "actId": aid,
-        "numeOriginal": _nume_original(upload.filename or "", tip),
+        "numeOriginal": _nume_original(upload.filename or "", tip), **({"parte": parte} if parte else {}),
         "createdAt": acum, "createdBy": _PORTAL_UID, "updatedAt": acum,
     }
     client_ref = _ws(wid).collection("clienti").document(cid)
@@ -544,6 +561,7 @@ def portal_incarca(token: str, aid: str):
             return None
         acte[k] = {**a, "stare": "primit", "fisiere": [*(a.get("fisiere") or []), fref.id], "primitLa": acum}
         acte[k].pop("motiv", None)
+        acte[k].pop("notaClient", None)
         txn.create(fref, meta)
         txn.update(ref, {"acte": acte, "deVerificat": de_verificat(acte), "ultimaPrimireLa": acum,
                          "actualizataLa": acum, **({} if cd.get("deschisaLa") else {"deschisaLa": acum})})
@@ -579,4 +597,53 @@ def portal_sterge(token: str, fid: str):
     _schimba_act(ref, f.get("actId") or "", None, schimbare)
     fisiere_api._sterge_fisiere(wid, [snap])
     audit.log(wid, _PORTAL_UID, "portal.stergere", ref.id, {"act": f.get("actId")})
+    return jsonify({"ok": True})
+
+
+@bp.post("/portal/<token>/acte/<aid>/lipsa")
+def portal_lipsa(token: str, aid: str):
+    """„Nu am acest act”, cu o notă pentru cabinet (ex. „îl trimit săptămâna viitoare”). Se anulează cu DELETE sau
+    trimițând un fișier."""
+    wid, ref, d, _ = _portal(token, "portal_scriere")
+    if d.get("stare") != "deschisa":
+        return _err("cerere_completa", 409)
+    if not _ACT_RE.match(aid or ""):
+        return _err("not_found", 404)
+    _, act = _act(d, aid)
+    if act is None:
+        return _err("not_found", 404)
+    if act.get("stare") not in ("de_trimis", "respins", "lipsa"):
+        return _err("act_are_fisiere", 409)     # întâi se retrag fișierele trimise
+    nota = _curat(_body().get("nota"), MAX_MOTIV)
+
+    def schimbare(a: dict) -> dict:
+        if a.get("stare") not in ("de_trimis", "respins", "lipsa"):
+            raise _ActModificat()
+        nou = {**a, "stare": "lipsa", "notaClient": nota, "lipsaLa": _now()}
+        nou.pop("motiv", None)
+        return nou
+
+    _schimba_act(ref, aid, None, schimbare)
+    audit.log(wid, _PORTAL_UID, "portal.lipsa", ref.id, {"act": aid})
+    return jsonify({"ok": True})
+
+
+@bp.delete("/portal/<token>/acte/<aid>/lipsa")
+def portal_lipsa_anuleaza(token: str, aid: str):
+    wid, ref, d, _ = _portal(token, "portal_scriere")
+    if d.get("stare") != "deschisa":
+        return _err("cerere_completa", 409)
+    if not _ACT_RE.match(aid or ""):
+        return _err("not_found", 404)
+    _, act = _act(d, aid)
+    if act is None:
+        return _err("not_found", 404)
+    if act.get("stare") == "lipsa":
+        def schimbare(a: dict) -> dict:
+            nou = {**a, "stare": "de_trimis" if a.get("stare") == "lipsa" else a.get("stare")}
+            nou.pop("notaClient", None)
+            nou.pop("lipsaLa", None)
+            return nou
+        _schimba_act(ref, aid, None, schimbare)
+        audit.log(wid, _PORTAL_UID, "portal.lipsa_anulata", ref.id, {"act": aid})
     return jsonify({"ok": True})

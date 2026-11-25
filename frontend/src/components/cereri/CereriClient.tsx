@@ -18,11 +18,13 @@ const TON_CHIP = { ok: 'chip chip-success', info: 'chip chip-primary', atentie: 
 
 /** Cererile de documente ale clientului, în secțiunea „Documente”: cele în lucru deschise, restul în „Istoric”.
  * Actele primite se verifică aici (previzualizare, Acceptă / Respinge cu motiv). */
-export default function CereriClient({ client, fisiere, onPreview }: {
+export default function CereriClient({ client, fisiere, onPreview, onExtrage }: {
   client: Client
   /** Documentele clientului (cele primite prin link sunt printre ele, „de verificat”). */
   fisiere: Fisier[]
   onPreview: (lista: Fisier[], index: number) => void
+  /** După acceptarea unui buletin: propune extragerea datelor în fișă din fișierele lui. */
+  onExtrage?: (fisiere: string[]) => void
 }) {
   const { activeWorkspace } = useApp()
   const cereri = useCereriClient(activeWorkspace?.id ?? null, client.id)
@@ -31,19 +33,20 @@ export default function CereriClient({ client, fisiere, onPreview }: {
   const istoric = cereri.filter(c => !inLucru.includes(c))
   return (
     <div className="cer-lista" aria-label="Cereri de documente">
-      {inLucru.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} />)}
+      {inLucru.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} onExtrage={onExtrage} />)}
       {istoric.length > 0 && (
         <details className="cer-istoric">
           <summary className="doc-meta">Cereri încheiate ({istoric.length})</summary>
-          {istoric.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} />)}
+          {istoric.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} onExtrage={onExtrage} />)}
         </details>
       )}
     </div>
   )
 }
 
-function CerereCard({ c, client, fisiere, onPreview }: {
+function CerereCard({ c, client, fisiere, onPreview, onExtrage }: {
   c: Cerere; client: Client; fisiere: Fisier[]; onPreview: (lista: Fisier[], index: number) => void
+  onExtrage?: (fisiere: string[]) => void
 }) {
   const { activeWorkspace, canEdit, toast } = useApp()
   const [link, setLink] = useState<string | null>(null)
@@ -53,9 +56,12 @@ function CerereCard({ c, client, fisiere, onPreview }: {
   const st = stareCerere(c, acum)
   const deschisa = c.stare === 'deschisa'
 
-  const ruleaza = async (cheie: string, fn: () => Promise<unknown>, ok?: string) => {
+  const ruleaza = async (cheie: string, fn: () => Promise<unknown>, ok?: string, actiune?: { label: string; onClick: () => void }) => {
     setBusy(cheie)
-    try { await fn(); if (ok) toast(ok, 'ok') } catch (e) { toast((e as Error).message || 'Operația nu a reușit', 'err') } finally { setBusy(null) }
+    try {
+      await fn()
+      if (ok) toast(ok, 'ok', actiune ? { action: actiune } : undefined)
+    } catch (e) { toast((e as Error).message || 'Operația nu a reușit', 'err') } finally { setBusy(null) }
   }
   const arataLink = () => ruleaza('link', async () => setLink((await linkCerere(c.id)).link))
 
@@ -72,7 +78,8 @@ function CerereCard({ c, client, fisiere, onPreview }: {
       <ul className="cer-acte">
         {c.acte.map(a => (
           <ActRand key={a.id} a={a} fisiere={fisiere} onPreview={onPreview} busy={busy} poateVerifica={canEdit}
-            onAccepta={() => ruleaza(`a:${a.id}`, () => acceptaAct(c.id, a.id), `„${a.eticheta}” a fost acceptat.`)}
+            onAccepta={() => ruleaza(`a:${a.id}`, () => acceptaAct(c.id, a.id), `„${a.eticheta}” a fost acceptat.`,
+              a.tip === 'ci' && onExtrage ? { label: 'Extrage datele în fișă', onClick: () => onExtrage(a.fisiere) } : undefined)}
             onRespinge={motiv => ruleaza(`r:${a.id}`, () => respingeAct(c.id, a.id, motiv),
               `„${a.eticheta}” a fost respins. Trimite din nou linkul clientului, ca să-l refacă.`)} />
         ))}
@@ -130,10 +137,11 @@ function ActRand({ a, fisiere, onPreview, busy, poateVerifica, onAccepta, onResp
   return (
     <li className={`cer-act cer-act--${a.stare}`}>
       <div className="cer-act-cap">
-        <span className="cer-act-nume">{a.eticheta}</span>
+        <span className="cer-act-nume">{a.eticheta}{a.optional && <span className="doc-meta"> · opțional</span>}</span>
         <span className={`cer-act-stare cer-act-stare--${a.stare}`}>{ETICHETA_STARE_ACT[a.stare]}</span>
       </div>
       {a.stare === 'respins' && a.motiv && <div className="doc-meta">Motiv: {a.motiv}</div>}
+      {a.stare === 'lipsa' && <div className="cer-nota-client">{a.notaClient ? <>Nota clientului: „{a.notaClient}”</> : 'Clientul a spus că nu îl are, fără o notă.'}</div>}
       {primite.length > 0 && (
         <>
           <ul className="cer-fisiere">

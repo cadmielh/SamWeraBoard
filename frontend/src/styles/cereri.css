@@ -10,6 +10,9 @@
   border-radius: var(--r-md); font-size: .875rem; cursor: pointer; background: var(--surface); }
 .cer-optiune:has(.cer-check:checked) { border-color: var(--p300, var(--p200)); background: var(--p50); }
 .cer-optiune--liber { cursor: default; }
+.cer-optiune-alege { display: flex; align-items: center; gap: .6rem; flex: 1; min-width: 0; cursor: pointer; }
+.cer-optional { display: inline-flex; align-items: center; gap: .3rem; margin-left: auto; flex: none; font-size: .75rem; color: var(--s500); cursor: pointer; white-space: nowrap; }
+.cer-optiune--liber .cer-optional + .doc-icon-btn { margin-left: 0; }
 .cer-optiune--liber .doc-icon-btn { margin-left: auto; }
 .cer-optiune-nume { font-weight: 600; color: var(--s800); }
 .cer-adauga { display: flex; gap: .5rem; }
@@ -48,6 +51,8 @@
 .cer-act-stare--primit { color: var(--a800); }
 .cer-act-stare--acceptat { color: var(--g600); }
 .cer-act-stare--respins { color: var(--r600); }
+.cer-act-stare--lipsa { color: var(--a800); }
+:root[data-theme="dark"] .cer-act-stare--lipsa { color: var(--y400); }
 .cer-fisiere { list-style: none; margin: 0; padding: 0; font-size: .8rem; display: flex; flex-direction: column; gap: .15rem; }
 .cer-fisiere .doc-link { overflow-wrap: anywhere; text-align: left; }
 .cer-verifica, .cer-respinge, .cer-card-actiuni { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
@@ -70,3 +75,5 @@
 /* Fișierele primite prin link, încă neverificate, în lista documentelor */
 .doc-de-verificat { display: inline-block; margin-left: .4rem; padding: .05rem .4rem; border-radius: var(--r-full);
   background: var(--a100); color: var(--a800); font-size: .65rem; font-weight: 700; vertical-align: 1px; }
+
+.cer-nota-client { font-size: .8rem; color: var(--s700); background: var(--surface-2); border-radius: 6px; padding: .35rem .5rem; overflow-wrap: anywhere; }

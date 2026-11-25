@@ -11,7 +11,8 @@ import type { Client, Persoana } from '../types'
 import { inferTipClient } from '../types'
 
 export type TipAct = 'ci' | 'dovada_sediu' | 'altul'
-export type StareAct = 'de_trimis' | 'primit' | 'acceptat' | 'respins'
+/** `lipsa`: clientul a spus că nu are actul (cu o notă opțională). */
+export type StareAct = 'de_trimis' | 'primit' | 'acceptat' | 'respins' | 'lipsa'
 export type StareCerere = 'deschisa' | 'completa' | 'anulata'
 
 export interface ActCerere {
@@ -22,6 +23,10 @@ export interface ActCerere {
   /** Fișierele trimise de client (id-uri în `fisiere`), cât actul e „primit”. */
   fisiere: string[]
   motiv?: string
+  /** „Dacă există”: cererea se încheie și fără el. */
+  optional: boolean
+  /** Nota clientului când a spus că nu are actul. */
+  notaClient?: string
   persoanaPid?: string
   primitLa: Date | null
 }
@@ -54,9 +59,11 @@ export function cerereDinFirestore(id: string, d: DocumentData): Cerere {
       id: String(a.id ?? ''),
       eticheta: String(a.eticheta ?? ''),
       tip: (['ci', 'dovada_sediu', 'altul'] as const).includes(a.tip) ? a.tip : 'altul',
-      stare: (['de_trimis', 'primit', 'acceptat', 'respins'] as const).includes(a.stare) ? a.stare : 'de_trimis',
+      stare: (['de_trimis', 'primit', 'acceptat', 'respins', 'lipsa'] as const).includes(a.stare) ? a.stare : 'de_trimis',
       fisiere: Array.isArray(a.fisiere) ? a.fisiere.map(String) : [],
       motiv: a.motiv ? String(a.motiv) : undefined,
+      optional: a.optional === true,
+      notaClient: a.stare === 'lipsa' && a.notaClient ? String(a.notaClient) : undefined,
       persoanaPid: a.persoanaPid ? String(a.persoanaPid) : undefined,
       primitLa: toDateSafe(a.primitLa),
     })),
@@ -83,12 +90,14 @@ export function stareCerere(c: Cerere, acum: Date = new Date()): { text: string;
   if (c.stare === 'anulata') return { text: 'Anulată', ton: 'stins' }
   if (c.stare === 'completa') return { text: 'Completă', ton: 'ok' }
   if (c.deVerificat > 0) return { text: c.deVerificat === 1 ? 'Un act de verificat' : `${c.deVerificat} acte de verificat`, ton: 'atentie' }
+  const lipsa = c.acte.filter(a => a.stare === 'lipsa' && !a.optional).length
+  if (lipsa > 0) return { text: lipsa === 1 ? 'Clientul nu are un act' : `Clientul nu are ${lipsa} acte`, ton: 'atentie' }
   if (expirata(c, acum)) return { text: 'Link expirat', ton: 'atentie' }
   return { text: c.deschisaLa ? 'Deschisă de client' : 'Trimisă, nedeschisă încă', ton: 'info' }
 }
 
 export const ETICHETA_STARE_ACT: Record<StareAct, string> = {
-  de_trimis: 'Așteaptă', primit: 'De verificat', acceptat: 'Acceptat', respins: 'Respins',
+  de_trimis: 'Așteaptă', primit: 'De verificat', acceptat: 'Acceptat', respins: 'Respins', lipsa: 'Clientul nu îl are',
 }
 
 function sorteaza(lista: Cerere[]): Cerere[] {
@@ -122,7 +131,7 @@ export function useCereriDeVerificat(workspaceId: string | null) {
 
 // ── Apeluri ──────────────────────────────────────────────────────────────────
 
-export interface ActNou { eticheta: string; tip: TipAct; persoanaPid?: string }
+export interface ActNou { eticheta: string; tip: TipAct; persoanaPid?: string; optional?: boolean }
 
 export const creeazaCerere = (clientId: string, acte: ActNou[], mesaj: string, zile: number) =>
   apiJson<{ cerere: { id: string; expiraLa: string }; link: string }>('POST', '/cereri', { clientId, acte, mesaj, zile })

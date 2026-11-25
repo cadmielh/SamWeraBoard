@@ -3,7 +3,10 @@
 import { BASE, FILES_BASE } from './apiBase'
 import type { StareAct, TipAct } from './cereri'
 
-export interface FisierTrimis { id: string; nume: string; marime: number }
+/** Fața sau verso-ul unui buletin (la cartea electronică). */
+export type ParteCi = 'fata' | 'verso'
+
+export interface FisierTrimis { id: string; nume: string; marime: number; parte?: ParteCi }
 
 export interface ActPortal {
   id: string
@@ -11,6 +14,10 @@ export interface ActPortal {
   tip: TipAct
   stare: StareAct
   motiv?: string
+  /** „Dacă există”: cererea se încheie și fără el. */
+  optional: boolean
+  /** Nota clientului, când a spus că nu are actul. */
+  notaClient?: string
   /** Trimise și încă neverificate (doar nume și mărime). */
   fisiere: FisierTrimis[]
 }
@@ -30,7 +37,7 @@ export class LinkInactiv extends Error {}
 
 export class EroarePortal extends Error {}
 
-const STARI: StareAct[] = ['de_trimis', 'primit', 'acceptat', 'respins']
+const STARI: StareAct[] = ['de_trimis', 'primit', 'acceptat', 'respins', 'lipsa']
 
 function portalDinJson(j: Record<string, unknown>): Portal {
   const acte = Array.isArray(j.acte) ? (j.acte as Record<string, unknown>[]) : []
@@ -47,8 +54,13 @@ function portalDinJson(j: Record<string, unknown>): Portal {
       tip: (a.tip === 'ci' || a.tip === 'dovada_sediu' ? a.tip : 'altul') as TipAct,
       stare: STARI.includes(a.stare as StareAct) ? (a.stare as StareAct) : 'de_trimis',
       ...(typeof a.motiv === 'string' && a.motiv ? { motiv: a.motiv } : {}),
+      optional: a.optional === true,
+      ...(a.stare === 'lipsa' ? { notaClient: String(a.notaClient ?? '') } : {}),
       fisiere: Array.isArray(a.fisiere)
-        ? (a.fisiere as Record<string, unknown>[]).map(f => ({ id: String(f.id ?? ''), nume: String(f.nume ?? ''), marime: Number(f.marime) || 0 }))
+        ? (a.fisiere as Record<string, unknown>[]).map(f => ({
+          id: String(f.id ?? ''), nume: String(f.nume ?? ''), marime: Number(f.marime) || 0,
+          ...(f.parte === 'fata' || f.parte === 'verso' ? { parte: f.parte } : {}),
+        }))
         : [],
     })),
   }
@@ -75,6 +87,7 @@ export function mesajEroare(cod: string | undefined, status: number, retryAfter?
     case 'spatiu_depasit': return 'Cabinetul nu mai poate primi fișiere momentan. Contactați cabinetul.'
     case 'act_acceptat': return 'Cabinetul a primit deja acest act.'
     case 'cerere_completa': return 'Cabinetul a primit toate actele; nu mai e nevoie de altele.'
+    case 'act_are_fisiere': return 'Ați trimis deja fișiere pentru acest act. Retrageți-le întâi, dacă actul e greșit.'
     case 'storage_unavailable': return 'Serviciul e temporar indisponibil. Vă rugăm să reîncercați în câteva minute.'
     default:
       return status === 0
@@ -106,23 +119,69 @@ export async function retrageFisier(token: string, fid: string): Promise<void> {
   await raspuns(res)
 }
 
+async function trimiteJson(token: string, rest: string, method: 'POST' | 'DELETE', body?: unknown): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(url(BASE, token, rest), {
+      method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    })
+  } catch { throw new EroarePortal(mesajEroare(undefined, 0)) }
+  await raspuns(res)
+}
+
+/** „Nu am acest act”, cu o notă opțională pentru cabinet; `anuleazaLipsa` revine (la fel și trimițând un fișier). */
+export const marcheazaLipsa = (token: string, aid: string, nota: string) =>
+  trimiteJson(token, `/acte/${encodeURIComponent(aid)}/lipsa`, 'POST', { nota })
+export const anuleazaLipsa = (token: string, aid: string) =>
+  trimiteJson(token, `/acte/${encodeURIComponent(aid)}/lipsa`, 'DELETE')
+
+/** Pe date mobile o încărcare poate pica din rețea sau dintr-o eroare trecătoare a serverului: se reia de câteva ori,
+ * cu pauze crescânde. Refuzurile (fișier nepotrivit, limită, link inactiv) nu se reiau. */
+export const PAUZE_REINCERCARE = [1500, 4000]
+
+const trecatoare = (status: number) => status === 0 || status === 502 || status === 503 || status === 504
+
+export async function incarcaAct(
+  token: string, aid: string, fisier: Blob, nume: string, onProgres?: (p: number) => void, parte?: ParteCi,
+  pauze: number[] = PAUZE_REINCERCARE,
+): Promise<FisierTrimis> {
+  for (let i = 0; ; i++) {
+    try {
+      return await incarcaOdata(token, aid, fisier, nume, onProgres, parte)
+    } catch (e) {
+      if (!(e instanceof EroareTrecatoare) || i >= pauze.length) throw e instanceof EroareTrecatoare ? e.eroare : e
+      onProgres?.(0)
+      await new Promise(r => setTimeout(r, pauze[i]))
+    }
+  }
+}
+
+class EroareTrecatoare extends Error {
+  readonly eroare: EroarePortal
+  constructor(eroare: EroarePortal) { super(eroare.message); this.eroare = eroare }
+}
+
 /** Încărcarea unui fișier pentru un act, cu progresul (0–1); XHR, ca progresul să se vadă și pe date mobile. */
-export function incarcaAct(token: string, aid: string, fisier: Blob, nume: string, onProgres?: (p: number) => void): Promise<FisierTrimis> {
+function incarcaOdata(token: string, aid: string, fisier: Blob, nume: string, onProgres?: (p: number) => void, parte?: ParteCi): Promise<FisierTrimis> {
   return new Promise((resolve, reject) => {
     const fd = new FormData()
     fd.append('fisier', fisier, nume)
+    if (parte) fd.append('parte', parte)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', url(FILES_BASE, token, `/acte/${encodeURIComponent(aid)}`))
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgres?.(e.loaded / e.total) }
-    xhr.onerror = () => reject(new EroarePortal(mesajEroare(undefined, 0)))
+    xhr.onerror = () => reject(new EroareTrecatoare(new EroarePortal(mesajEroare(undefined, 0))))
     xhr.onload = () => {
       let j: Record<string, unknown> = {}
       try { j = JSON.parse(xhr.responseText) as Record<string, unknown> } catch { /* răspuns fără JSON */ }
       if (xhr.status >= 200 && xhr.status < 300) {
         const f = (j.fisier ?? {}) as Record<string, unknown>
-        resolve({ id: String(f.id ?? ''), nume: String(f.nume ?? nume), marime: Number(f.marime) || fisier.size })
+        resolve({ id: String(f.id ?? ''), nume: String(f.nume ?? nume), marime: Number(f.marime) || fisier.size, ...(parte ? { parte } : {}) })
       } else if (j.error === 'link_inactiv') reject(new LinkInactiv())
-      else reject(new EroarePortal(mesajEroare(j.error as string | undefined, xhr.status, xhr.getResponseHeader('Retry-After'))))
+      else {
+        const e = new EroarePortal(mesajEroare(j.error as string | undefined, xhr.status, xhr.getResponseHeader('Retry-After')))
+        reject(trecatoare(xhr.status) ? new EroareTrecatoare(e) : e)
+      }
     }
     xhr.send(fd)
   })
@@ -153,10 +212,63 @@ function citesteImagine(f: File): Promise<HTMLImageElement> {
   })
 }
 
+/** Ce se vede în poză, pe scurt: lumina (0–255) a celei mai luminoase părți și claritatea (varianța laplacianului pe
+ * tonuri de gri). Lumina se ia din percentila 98, nu din medie: un act bine luminat, mic în cadru pe o masă închisă,
+ * nu e o poză întunecată. */
+export interface Calitate { intunecata: boolean; neclara: boolean }
+
+/** Pragurile sunt alese pe partea de siguranță: o poză bună de act nu trebuie oprită; cea întunecată sau mișcată, da.
+ * Calculul se face pe o variantă mică a pozei (latura de ANALIZA_LATURA), deci e rapid și pe telefoane vechi. */
+export const ANALIZA_LATURA = 640
+export const PRAG_LUMINA = 70
+export const PRAG_CLARITATE = 40
+
+export function analizeazaPoza(img: { data: ArrayLike<number>; width: number; height: number }): Calitate & { lumina: number; claritate: number } {
+  const { data, width: w, height: h } = img
+  const gri = new Float32Array(w * h)
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < w * h; i++) {
+    const g = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]
+    gri[i] = g
+    hist[Math.min(255, Math.round(g))]++
+  }
+  let lumina = 0
+  for (let v = 0, acc = 0; v < 256; v++) {
+    acc += hist[v]
+    if (acc >= 0.98 * w * h) { lumina = v; break }
+  }
+  let n = 0, s1 = 0, s2 = 0
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      const lap = gri[i - w] + gri[i + w] + gri[i - 1] + gri[i + 1] - 4 * gri[i]
+      s1 += lap
+      s2 += lap * lap
+      n++
+    }
+  }
+  const claritate = n ? s2 / n - (s1 / n) ** 2 : 0
+  return { lumina, claritate, intunecata: lumina < PRAG_LUMINA, neclara: claritate < PRAG_CLARITATE }
+}
+
+function calitateaPozei(img: HTMLImageElement): Calitate | undefined {
+  const k = Math.min(1, ANALIZA_LATURA / Math.max(img.naturalWidth, img.naturalHeight))
+  const c = document.createElement('canvas')
+  c.width = Math.max(3, Math.round(img.naturalWidth * k))
+  c.height = Math.max(3, Math.round(img.naturalHeight * k))
+  const ctx = c.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return undefined
+  ctx.drawImage(img, 0, 0, c.width, c.height)
+  try {
+    const { intunecata, neclara } = analizeazaPoza(ctx.getImageData(0, 0, c.width, c.height))
+    return { intunecata, neclara }
+  } catch { return undefined }
+}
+
 /** PDF-ul pleacă așa cum e. Pozele (inclusiv HEIC, unde browserul le poate citi) se micșorează și se trimit ca JPEG;
  * orientarea din cameră e aplicată de browser la desenare. O poză pe care browserul n-o poate citi pleacă neschimbată
  * (serverul decide), cu excepția HEIC, pe care serverul nu-l primește. */
-export async function pregatesteFisier(f: File): Promise<{ blob: Blob; nume: string }> {
+export async function pregatesteFisier(f: File): Promise<{ blob: Blob; nume: string; calitate?: Calitate }> {
   if (estePdf(f) || !(f.type.startsWith('image/') || esteHeic(f))) {
     if (f.size > MAX_BYTES) throw new EroarePortal(mesajEroare('fisier_prea_mare', 413))
     return { blob: f, nume: f.name }
@@ -179,7 +291,7 @@ export async function pregatesteFisier(f: File): Promise<{ blob: Blob; nume: str
   const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.85))
   if (!blob) return { blob: f, nume: f.name }
   if (blob.size > MAX_BYTES) throw new EroarePortal(mesajEroare('fisier_prea_mare', 413))
-  return { blob, nume: numeJpg(f.name) }
+  return { blob, nume: numeJpg(f.name), calitate: calitateaPozei(img) }
 }
 
 // ── Textele paginii ───────────────────────────────────────────────────────────
@@ -196,8 +308,12 @@ export const ETICHETA_STARE_PORTAL: Record<StareAct, string> = {
   primit: 'Trimis',
   acceptat: 'Primit de cabinet',
   respins: 'De refăcut',
+  lipsa: 'Nu îl aveți',
 }
 
-/** Toate actele trimise sau primite: ecranul de final. */
+/** Actul nu mai așteaptă nimic de la client: trimis, primit sau declarat lipsă. */
+export const rezolvat = (a: ActPortal) => a.stare === 'primit' || a.stare === 'acceptat' || a.stare === 'lipsa'
+
+/** Ecranul de final: fiecare act obligatoriu e trimis sau declarat lipsă; cele opționale nu țin pagina deschisă. */
 export const totulTrimis = (p: Portal) =>
-  p.stare === 'completa' || (p.acte.length > 0 && p.acte.every(a => a.stare === 'primit' || a.stare === 'acceptat'))
+  p.stare === 'completa' || (p.acte.length > 0 && p.acte.every(a => rezolvat(a) || (a.optional && a.stare === 'de_trimis')))

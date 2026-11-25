@@ -44,6 +44,7 @@ UNGATED = {
     # îl oprește separat (cereri_api._portal: linkul devine inactiv)
     ("GET", "/cereri/<rid>/link"), ("POST", "/cereri/<rid>/anuleaza"),
     ("GET", "/portal/<token>"), ("POST", "/portal/<token>/acte/<aid>"), ("DELETE", "/portal/<token>/fisiere/<fid>"),
+    ("POST", "/portal/<token>/acte/<aid>/lipsa"), ("DELETE", "/portal/<token>/acte/<aid>/lipsa"),
     ("POST", "/workspaces"), ("POST", "/workspaces/<wid>/consent"),
     ("PATCH", "/workspaces/<wid>/members/<uid>"), ("DELETE", "/workspaces/<wid>/members/<uid>"),
     ("POST", "/workspaces/<wid>/invites"), ("GET", "/workspaces/<wid>/invites"),

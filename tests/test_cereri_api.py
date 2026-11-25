@@ -333,6 +333,63 @@ def test_limita_de_fisiere_pe_cerere(env, monkeypatch):
     assert trimite(c, token, "a2", data=PDF + b"\n%3").get_json()["error"] == "prea_multe_fisiere"
 
 
+def test_clientul_spune_ca_nu_are_un_act(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    rid, token, _ = cerere(c, wid)
+    r = c.post(f"/portal/{token}/acte/a2/lipsa", json={"nota": "  Îl trimit   săptămâna viitoare "})
+    assert r.status_code == 200
+    a2 = doc_cerere(db, wid, rid)["acte"][1]
+    assert (a2["stare"], a2["notaClient"]) == ("lipsa", "Îl trimit săptămâna viitoare")
+    assert c.get(f"/portal/{token}").get_json()["acte"][1]["notaClient"] == "Îl trimit săptămâna viitoare"
+    assert c.delete(f"/portal/{token}/acte/a2/lipsa").status_code == 200
+    a2 = doc_cerere(db, wid, rid)["acte"][1]
+    assert a2["stare"] == "de_trimis" and "notaClient" not in a2
+    c.post(f"/portal/{token}/acte/a2/lipsa", json={})
+    assert trimite(c, token, "a2").status_code == 201                   # un fișier trimis anulează „nu am”
+    a2 = doc_cerere(db, wid, rid)["acte"][1]
+    assert a2["stare"] == "primit" and "notaClient" not in a2
+    assert c.post(f"/portal/{token}/acte/a2/lipsa", json={}).get_json()["error"] == "act_are_fisiere"
+
+
+def test_actul_optional_lipsa_nu_tine_cererea_deschisa(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    rid, token, _ = cerere(c, wid, acte=[{**ACTE[0]}, {**ACTE[1], "optional": True}])
+    assert doc_cerere(db, wid, rid)["acte"][1]["optional"] is True
+    assert c.get(f"/portal/{token}").get_json()["acte"][1]["optional"] is True
+    c.post(f"/portal/{token}/acte/a2/lipsa", json={"nota": "nu există"})
+    trimite(c, token, "a1")
+    assert call(c, "bob", "post", f"/cereri/{rid}/acte/a1/accepta", wid).status_code == 200
+    assert doc_cerere(db, wid, rid)["stare"] == "completa"
+
+
+def test_actul_obligatoriu_lipsa_tine_cererea_deschisa(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    rid, token, _ = cerere(c, wid)
+    c.post(f"/portal/{token}/acte/a2/lipsa", json={})
+    trimite(c, token, "a1")
+    call(c, "bob", "post", f"/cereri/{rid}/acte/a1/accepta", wid)
+    assert doc_cerere(db, wid, rid)["stare"] == "deschisa"
+
+
+def test_fata_si_verso_la_buletin(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    rid, token, _ = cerere(c, wid)
+    r = c.post(f"/portal/{token}/acte/a1", data={"fisier": (io.BytesIO(_png_cu_gps()), "a.png"), "parte": "verso"},
+               content_type="multipart/form-data")
+    fid = r.get_json()["fisier"]["id"]
+    assert fisier(db, wid, fid)["parte"] == "verso" and fisier(db, wid, fid)["nume"] == "CI – Popescu Ion (verso).jpg"
+    assert c.get(f"/portal/{token}").get_json()["acte"][0]["fisiere"][0]["parte"] == "verso"
+    r = c.post(f"/portal/{token}/acte/a2", data={"fisier": (io.BytesIO(PDF), "s.pdf"), "parte": "verso"},
+               content_type="multipart/form-data")                     # doar la buletin
+    assert "parte" not in fisier(db, wid, r.get_json()["fisier"]["id"])
+    call(c, "bob", "post", f"/cereri/{rid}/acte/a1/accepta", wid)
+    assert fisier(db, wid, fid)["nume"] == "CI – Popescu Ion (verso).jpg"
+
+
 def test_stergerea_clientului_inchide_linkurile(env):
     c, db, _ = env
     wid = setup_ws(c, db)

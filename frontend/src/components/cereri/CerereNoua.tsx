@@ -17,6 +17,8 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
   const propuneri = useMemo(() => propuneriActe(client), [client])
   const [bifate, setBifate] = useState<Set<string>>(() => new Set(propuneri.filter(p => p.bifat).map(p => p.cheie)))
   const [libere, setLibere] = useState<string[]>([])
+  // Actele marcate „dacă există” (cheia propunerii sau `l:<act liber>`): cererea se poate încheia și fără ele.
+  const [optionale, setOptionale] = useState<Set<string>>(() => new Set())
   const [nou, setNou] = useState('')
   const [mesaj, setMesaj] = useState('')
   const [zile, setZile] = useState<number>(ZILE_IMPLICIT)
@@ -24,9 +26,22 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
   const [gata, setGata] = useState<{ link: string; expiraLa: Date | null } | null>(null)
 
   const acte: ActNou[] = [
-    ...propuneri.filter(p => bifate.has(p.cheie)).map(({ eticheta, tip, persoanaPid }: PropunereAct) => ({ eticheta, tip, persoanaPid })),
-    ...libere.map(eticheta => ({ eticheta, tip: 'altul' as const })),
+    ...propuneri.filter(p => bifate.has(p.cheie)).map(({ cheie, eticheta, tip, persoanaPid }: PropunereAct) =>
+      ({ eticheta, tip, persoanaPid, ...(optionale.has(cheie) ? { optional: true } : {}) })),
+    ...libere.map(eticheta => ({ eticheta, tip: 'altul' as const, ...(optionale.has(`l:${eticheta}`) ? { optional: true } : {}) })),
   ]
+  const comutaOptional = (cheie: string) => setOptionale(prev => {
+    const n = new Set(prev)
+    if (n.has(cheie)) n.delete(cheie)
+    else n.add(cheie)
+    return n
+  })
+  const optional = (cheie: string, nume: string) => (
+    <label className="cer-optional" title="Clientul îl trimite doar dacă îl are; cererea se poate încheia și fără el">
+      <input type="checkbox" checked={optionale.has(cheie)} onChange={() => comutaOptional(cheie)} aria-label={`${nume}: doar dacă există`} />
+      dacă există
+    </label>
+  )
   const comuta = (cheie: string) => setBifate(prev => {
     const n = new Set(prev)
     if (n.has(cheie)) n.delete(cheie)
@@ -76,18 +91,22 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
               <p className="doc-meta">Fișa nu are persoane cu nume; adaugă mai jos actele cerute.</p>
             )}
             {propuneri.map(p => (
-              <label key={p.cheie} className="cer-optiune">
-                <input type="checkbox" className="cer-check" checked={bifate.has(p.cheie)} onChange={() => comuta(p.cheie)} />
-                <span>
-                  <span className="cer-optiune-nume">{p.eticheta}</span>
-                  {p.nota && <span className="doc-meta"> · {p.nota}</span>}
-                </span>
-              </label>
+              <div key={p.cheie} className="cer-optiune">
+                <label className="cer-optiune-alege">
+                  <input type="checkbox" className="cer-check" checked={bifate.has(p.cheie)} onChange={() => comuta(p.cheie)} />
+                  <span>
+                    <span className="cer-optiune-nume">{p.eticheta}</span>
+                    {p.nota && <span className="doc-meta"> · {p.nota}</span>}
+                  </span>
+                </label>
+                {bifate.has(p.cheie) && optional(p.cheie, p.eticheta)}
+              </div>
             ))}
             {libere.map(e => (
               <div key={e} className="cer-optiune cer-optiune--liber">
                 <input type="checkbox" className="cer-check" checked readOnly aria-label={e} />
                 <span className="cer-optiune-nume">{e}</span>
+                {optional(`l:${e}`, e)}
                 <button type="button" className="doc-icon-btn" onClick={() => setLibere(prev => prev.filter(x => x !== e))}
                   aria-label={`Scoate ${e}`} title="Scoate">×</button>
               </div>

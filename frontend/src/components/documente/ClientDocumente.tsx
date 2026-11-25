@@ -97,6 +97,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     const vizibile = new Set(foldere.map(d => d.id))
     return date.fisiere.filter(f => !ascunse.has(f.id) && (!f.folderId || vizibile.has(f.folderId)))
   }, [date.fisiere, foldere, ascunse])
+  useEffect(() => { fisiereRef.current = fisiere }, [fisiere])
 
   const [folderCerut, setFolderCerut] = useState<string | null>(null)
   const [sortare, setSortareStare] = useState(citesteSortare)
@@ -115,6 +116,13 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const [muta, setMuta] = useState<Element[] | null>(null)
   const [confirmaSterge, setConfirmaSterge] = useState<Element[] | null>(null)
   const [extrage, setExtrage] = useState<Fisier | null>(null)
+  // După acceptarea unui buletin primit prin link: extragerea din fața actului (lista curentă, nu cea de la acceptare).
+  const fisiereRef = useRef<Fisier[]>([])
+  const extrageDinAct = (ids: string[]) => {
+    const ale = fisiereRef.current.filter(f => ids.includes(f.id) && extractibil(f.mime))
+    const f = ale.find(x => !/\(verso\)/i.test(x.nume)) ?? ale[0]
+    if (f) setExtrage(f)
+  }
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
   const [tintaTragere, setTintaTragere] = useState<string | null>(null)   // folderul (sau „radacina”) de sub cursor
@@ -544,7 +552,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         )}
       </div>
 
-      <CereriClient client={client} fisiere={fisiere} onPreview={(lista, index) => setPreviewCerere({ lista, index })} />
+      <CereriClient client={client} fisiere={fisiere} onPreview={(lista, index) => setPreviewCerere({ lista, index })}
+        onExtrage={canEdit && onSaveClient ? extrageDinAct : undefined} />
 
       {arataCautare && (
         <div className="doc-cautare">

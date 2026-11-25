@@ -221,6 +221,10 @@ pe care o decide dacă portalul chiar e folosit.
   fișiere, deci fără permisiunea `camera` în antete) și „Alege din telefon”; pozele se micșorează la 2400 px și pleacă ca
   JPEG (HEIC doar unde browserul îl poate citi); fișierele trimise (nume, mărime) cu retragere; actele respinse cu motivul;
   ecran de final; mesaj pentru linkuri inactive; informarea GDPR în numele cabinetului; `noindex`.
+- **Îmbunătățiri după 4b (25 nov 2026):** „Nu am acest act” cu notă pentru cabinet (stare `lipsa`), acte opționale
+  („dacă există”; cererea se încheie și fără ele), față și verso separat la buletin (`parte` pe fișier, în nume), verificarea
+  pozei pe telefon (neclară sau întunecată: „O refac” / „Trimite oricum”), miniaturi locale ale pozelor trimise,
+  reîncercare automată la rețea slabă, iar după acceptarea unui buletin cabinetul primește „Extrage datele în fișă”.
 - **La deploy:** funcțiile `api` și `documente`, regulile Firestore (`cereriDocumente`), triggerul nou `alerte_cerere` și
   hostingul.
 

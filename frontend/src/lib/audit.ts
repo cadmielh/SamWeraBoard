@@ -49,6 +49,8 @@ const ACTIONS: Record<string, { label: string; category: AuditCategory }> = {
   'cerere.respinge': { label: 'Act primit respins', category: 'documente' },
   'portal.incarcare': { label: 'Act încărcat de client prin link', category: 'documente' },
   'portal.stergere': { label: 'Act retras de client prin link', category: 'documente' },
+  'portal.lipsa': { label: 'Clientul a spus că nu are un act', category: 'documente' },
+  'portal.lipsa_anulata': { label: 'Clientul a revenit asupra unui act lipsă', category: 'documente' },
   'member.role_change': { label: 'Schimbare rol', category: 'membri' },
   'member.remove': { label: 'Eliminare membru', category: 'membri' },
   'invite.create': { label: 'Invitație trimisă', category: 'membri' },
@@ -158,6 +160,8 @@ export function describe(e: AuditEntry, nameOf: NameOf = uid => uid): string {
     case 'portal.incarcare':
       return [str(m.tip).toUpperCase(), `${Math.max(1, Math.round(num(m.marime) / 1024))} KB`, `cerere ${shortId(e.target)}`].filter(Boolean).join(' · ')
     case 'portal.stergere':
+    case 'portal.lipsa':
+    case 'portal.lipsa_anulata':
       return `cerere ${shortId(e.target)}`
     case 'member.role_change':
       return `${e.target ? nameOf(e.target) : '—'} → ${ROLE_LABELS[str(m.role)] ?? (str(m.role) || '—')}`
