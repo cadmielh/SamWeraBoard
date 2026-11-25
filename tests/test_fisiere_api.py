@@ -485,3 +485,58 @@ def test_editarea_doar_pentru_poze_si_pdf(env):
     r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(b"text"), "a.txt")},
              content_type="multipart/form-data")
     assert r.get_json()["error"] == "tip_nepermis"
+
+
+def _poza(w: int, h: int, culoare=(30, 90, 200)) -> bytes:
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", (w, h), culoare).save(b, "JPEG")
+    return b.getvalue()
+
+
+def test_tipar_buletin_fata_verso_la_marime_reala(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    f1 = upload(c, "bob", wid, data=_poza(856, 540), name="CI Ion (față).jpg").get_json()["fisier"]["id"]
+    f2 = upload(c, "bob", wid, data=_poza(856, 540, (200, 30, 30)), name="CI Ion (verso).jpg").get_json()["fisier"]["id"]
+    assert call(c, "vera", "post", "/fisiere/tipar", wid, json={"fisiere": [f1, f2], "aspect": "ci"}).status_code == 403
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [f1, f2], "aspect": "ci"})
+    assert r.status_code == 201, r.get_json()
+    f = r.get_json()["fisier"]
+    assert f["nume"] == "CI Ion – față-verso.pdf" and f["mime"] == "application/pdf" and f["sursa"] == "generat"
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{f['id']}/continut", wid).data, filetype="pdf")
+    assert doc.page_count == 1 and round(doc[0].rect.width) == 595                     # A4
+    imagini = doc[0].get_image_info()
+    assert len(imagini) == 2
+    latime_mm = (imagini[0]["bbox"][2] - imagini[0]["bbox"][0]) * 25.4 / 72
+    assert abs(latime_mm - 85.6) < 0.5                                                 # mărimea reală a cardului
+
+
+def test_tipar_pagini_a4_din_poze_si_pdf(env):
+    import fitz
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    src = fitz.open()
+    src.new_page(width=842, height=595)
+    src.new_page()
+    pdf2 = src.tobytes()
+    a = upload(c, "bob", wid, data=_poza(600, 900), name="Contract p1.jpg").get_json()["fisier"]["id"]
+    b = upload(c, "bob", wid, data=pdf2, name="anexa.pdf").get_json()["fisier"]["id"]
+    r = call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": [a, b], "aspect": "pagina"})
+    assert r.status_code == 201 and r.get_json()["fisier"]["nume"] == "Contract p1 – pentru tipar.pdf"
+    doc = fitz.open(stream=call(c, "bob", "get", f"/fisiere/{r.get_json()['fisier']['id']}/continut", wid).data, filetype="pdf")
+    assert [(round(p.rect.width), round(p.rect.height)) for p in doc] == [(595, 842), (842, 595), (595, 842)]
+
+
+def test_tipar_refuzuri(env):
+    c, db, _ = env
+    wid = setup_ws(c, db)
+    p = upload(c, "bob", wid, data=PDF, name="a.pdf").get_json()["fisier"]["id"]
+    i = upload(c, "bob", wid, data=_poza(10, 10), name="a.jpg").get_json()["fisier"]["id"]
+    j = upload(c, "bob", wid, data=_poza(10, 10, (1, 2, 3)), name="b.jpg", cid=CID2).get_json()["fisier"]["id"]
+    tip = lambda ids, aspect="ci": call(c, "bob", "post", "/fisiere/tipar", wid, json={"fisiere": ids, "aspect": aspect}).get_json()  # noqa: E731
+    assert tip([p])["error"] == "tip_nepermis"                       # buletinul: doar poze
+    assert tip([i, j])["error"] == "tipar_invalid"                   # clienți diferiți
+    assert tip([i, i])["error"] == "tipar_invalid"
+    assert tip([i], "altceva")["error"] == "tipar_invalid"

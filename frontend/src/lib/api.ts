@@ -165,6 +165,12 @@ export function apiErrorMessage(data: { error?: string } | undefined, res: Respo
       return "Conținutul fișierului nu mai este disponibil.";
     case "arhivat":
       return "Documentele din Arhivă nu pot fi mutate în foldere.";
+    case "tipar_invalid":
+      return "Alege documentele aceluiași client: pentru buletin, una sau două poze.";
+    case "tipar_prea_mare":
+      return "PDF-ul ar depăși 15 MB. Alege mai puține documente sau micșorează pozele (Editează).";
+    case "prea_multe_pagini":
+      return "Rezultatul ar avea peste 60 de pagini. Alege mai puține documente.";
     case "fisier_modificat":
       return "Documentul a fost modificat între timp. Redeschide-l și încearcă din nou.";
     case "folder_negol":

@@ -4,7 +4,7 @@ import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
   ACCEPT, DESC_IMPLICIT, ascundeTemporar, incepeStergereAmanata, terminaStergereAmanata, caleFolder, continutRecursiv, creeazaFolder, descarcaFisier, descendenti, extensie,
-  editabil, extractibil, formatMarime, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
+  editabil, extractibil, formatMarime, tiparibil, initDocumenteClient, mutaFisier, mutaFolder, normalizeazaCautare, numeLipire, previzualizabil,
   reafiseaza, redenumesteFisier, redenumesteFolder, revinoLaOriginal, sorteazaFisiere, sorteazaFoldere, stergeFisier, stergeFolder, subfoldere,
   useAscunse, useDocumenteClient, type EroareFisier, type Fisier, type Folder, type Sortare,
 } from '../../lib/fisiere'
@@ -22,6 +22,7 @@ import '../../styles/documente.css'
 
 // Editorul de poze (procesarea pixelilor) se descarcă doar la prima editare.
 const EditorPoza = lazy(() => import('./EditorPoza'))
+const TiparModal = lazy(() => import('./TiparModal'))
 
 const SORTARI: { key: Sortare; label: string }[] = [
   { key: 'nume', label: 'Nume' },
@@ -110,6 +111,7 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   const [confirmaSterge, setConfirmaSterge] = useState<Element[] | null>(null)
   const [extrage, setExtrage] = useState<Fisier | null>(null)
   const [editor, setEditor] = useState<Fisier | null>(null)
+  const [tipar, setTipar] = useState<Fisier[] | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [peste, setPeste] = useState(false)
   const [tintaTragere, setTintaTragere] = useState<string | null>(null)   // folderul (sau „radacina”) de sub cursor
@@ -367,6 +369,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
     ...(canEdit ? [
       ...(el.tip === 'fisier' && editabil(el.f.mime) && !el.f.arhivat
         ? [{ label: 'Editează (decupează, îndreaptă)', onSelect: () => setEditor(el.f) }] : []),
+      ...(el.tip === 'fisier' && tiparibil(el.f.mime) && !el.f.arhivat
+        ? [{ label: 'Pregătește pentru tipar', onSelect: () => setTipar([el.f]) }] : []),
       ...(el.tip === 'fisier' && el.f.editat
         ? [{ label: 'Revino la original', onSelect: () => void ruleaza(el.f.id, () => revinoLaOriginal(el.f.id), 'Documentul a revenit la original.') }]
         : []),
@@ -561,6 +565,10 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
                 <IconDescarca size={14} /> Descarcă
               </button>
             )}
+            {canEdit && fisiereSelectate.length > 0 && fisiereSelectate.length === selectate.length && fisiereSelectate.every(f => tiparibil(f.mime)) && (
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setTipar(fisiereSelectate)}
+                title="Într-un PDF A4: buletinul față-verso la mărime reală sau câte un document pe pagină">Pentru tipar</button>
+            )}
             {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}>Mută în…</button>}
             {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}>Șterge</button>}
             <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
@@ -657,6 +665,15 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         <ConfirmModal title={confirmaSterge.length === 1 ? 'Șterge folderul' : 'Șterge elementele selectate'} message={mesajStergere(confirmaSterge)}
           confirmLabel="Șterge" danger onConfirm={() => { const lot = confirmaSterge; setConfirmaSterge(null); stergeAmanat(lot, true) }}
           onCancel={() => setConfirmaSterge(null)} />
+      )}
+
+      {tipar && (
+        <Suspense fallback={null}>
+          <TiparModal fisiere={tipar} onClose={() => setTipar(null)} onCreat={f => {
+            setSelectie(new Set())
+            toast(`„${f.nume}” a fost creat lângă documente.`, 'ok', { action: { label: 'Deschide', onClick: () => setPreview(f.id) } })
+          }} />
+        </Suspense>
       )}
 
       {editor && (

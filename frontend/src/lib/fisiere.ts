@@ -444,6 +444,13 @@ export async function inlocuiesteContinut(id: string, blob: Blob, nume: string):
   if (!res.ok || !data.fisier) throw eroare(apiErrorMessage(data, res, `Eroare ${res.status}`), data.error, res.status)
   return fisierDinFirestore(data.fisier.id, data.fisier)
 }
+export type AspectTipar = 'ci' | 'pagina'
+/** Pozele (și PDF-urile) într-un PDF A4 nou, lângă primul document (vezi tipar.py). */
+export const pregatesteTipar = (ids: string[], aspect: AspectTipar) =>
+  apiJson<{ fisier: DocumentData & { id: string } }>('POST', '/fisiere/tipar', { fisiere: ids, aspect })
+    .then(r => fisierDinFirestore(r.fisier.id, r.fisier))
+/** Ce se poate pune pe A4: pozele obișnuite și PDF-urile. */
+export const tiparibil = (mime: string) => editabil(mime) || mime === 'application/pdf'
 export const revinoLaOriginal = (id: string) => apiJson('POST', `/fisiere/${encodeURIComponent(id)}/original`)
 
 export const redenumesteFisier = (id: string, nume: string) => apiJson('PATCH', `/fisiere/${encodeURIComponent(id)}`, { nume })

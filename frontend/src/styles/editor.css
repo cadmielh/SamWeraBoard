@@ -51,3 +51,34 @@
   .ed-bara { padding: .5rem; }
   .ed-modal .modal-footer { flex-wrap: wrap; }
 }
+
+/* „Pregătește pentru tipar” (TiparModal.tsx) */
+.tip-modal.modal-box { max-width: min(640px, 96vw); }
+.tip-corp { display: flex; flex-direction: column; gap: .75rem; }
+.tip-aspecte { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.tip-aspect {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+  padding: .6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.tip-aspect.is-activ { border-color: var(--p500); background: var(--p50); box-shadow: 0 0 0 1px var(--p500); }
+.tip-aspect:disabled { opacity: .5; cursor: default; }
+.tip-aspect-text { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; }
+.tip-schita { flex: none; width: 52px; height: 74px; }
+.tip-foaie { fill: #fff; stroke: var(--s300); stroke-width: 2; }
+.tip-card { fill: var(--p200); stroke: var(--p500); stroke-width: 2; }
+.tip-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.tip-lista li { display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: var(--r-sm); font-size: .85rem; }
+.tip-nume { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tip-mutari { display: flex; gap: .15rem; }
+@media (max-width: 520px) { .tip-aspecte { grid-template-columns: 1fr; } }
+.tip-avertisment { margin: 0; font-size: .8125rem; padding: .5rem .65rem; border-radius: var(--r-sm); background: var(--y50); color: var(--y800); }
+:root[data-theme="dark"] .tip-avertisment { background: color-mix(in srgb, var(--y500) 15%, transparent); color: var(--y400); }
