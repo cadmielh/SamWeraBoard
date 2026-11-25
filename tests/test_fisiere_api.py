@@ -483,9 +483,16 @@ def test_editarea_doar_pentru_poze_si_pdf(env):
              content_type="multipart/form-data")
     assert r.get_json()["error"] == "tip_nepermis"
     fid = upload(c, "bob", wid, data=PDF, name="a.pdf").get_json()["fisier"]["id"]
-    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(b"text"), "a.txt")},
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(JPG), "a.jpg")},
              content_type="multipart/form-data")
-    assert r.get_json()["error"] == "tip_nepermis"
+    assert r.get_json()["error"] == "tip_nepermis"                      # PDF-urile se modifică prin /pagini
+    fid = upload(c, "bob", wid, data=_png(), name="b.png").get_json()["fisier"]["id"]
+    r = call(c, "bob", "put", f"/fisiere/{fid}/continut", wid, data={"fisier": (io.BytesIO(PDF), "b.pdf")},
+             content_type="multipart/form-data")
+    assert r.get_json()["error"] == "tip_nepermis"                      # o poză rămâne poză
+    r = call(c, "bob", "post", f"/fisiere/{fid}/pagini", wid, content_type="multipart/form-data",
+             data={"date": "[1, 2]", "pagina_0": (io.BytesIO(JPG), "p.jpg")})
+    assert r.status_code == 400
 
 
 def _poza(w: int, h: int, culoare=(30, 90, 200)) -> bytes:

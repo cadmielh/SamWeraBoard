@@ -344,7 +344,10 @@ def _cu_extensia(nume: str, tip: fisiere.Tip) -> str:
     return fisiere.nume_fisier(f"{baza or 'document'}.{tip.ext}", tip)
 
 
-EDITABILE = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime, fisiere.PDF.mime}
+POZE = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime}
+EDITABILE = POZE | {fisiere.PDF.mime}
+# Tot ce intră în PDF-urile pregătite pentru tipar (sursele se țin în memorie, deci plafonul contează).
+MAX_SURSE_TIPAR = 60 * 1024 * 1024
 
 
 class _SpatiuDepasit(Exception):
@@ -419,7 +422,7 @@ def inlocuieste(fid: str):
     d = snap.to_dict() if snap.exists else None
     if not d or d.get("arhivat"):
         return _err("not_found", 404)
-    if d.get("mime") not in EDITABILE:
+    if d.get("mime") not in POZE:                     # PDF-urile se modifică prin /pagini
         return _err("tip_nepermis", 400)
     upload = request.files.get("fisier")
     if upload is None:
@@ -428,7 +431,7 @@ def inlocuieste(fid: str):
     if len(data) > fisiere.MAX_BYTES:
         return _err("fisier_prea_mare", 413)
     tip = fisiere.detecteaza_tip(data, upload.filename or "")
-    if tip.mime not in EDITABILE:
+    if tip.mime not in POZE:
         return _err("tip_nepermis", 400)
     rezultat = _inlocuieste(wid, fid, d, data, tip, principal.uid)
     audit.log(wid, principal.uid, "fisier.edit", fid, {"marime": len(data), "tip": tip.ext})
@@ -461,12 +464,14 @@ def pagini_pdf(fid: str):
             if not m:
                 return _err("pagini_invalide", 400)
             img = f.read(fisiere.MAX_BYTES + 1)
-            if len(img) > fisiere.MAX_BYTES or fisiere.detecteaza_tip(img, f.filename or "").mime not in EDITABILE - {fisiere.PDF.mime}:
+            if len(img) > fisiere.MAX_BYTES or fisiere.detecteaza_tip(img, f.filename or "").mime not in POZE:
                 return _err("tip_nepermis", 400)
             inlocuiri[int(m.group(1))] = img
     else:
         body = _body()
-    raw = body.get("pagini") if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        return _err("pagini_invalide", 400)
+    raw = body.get("pagini")
     if not isinstance(raw, list) or not 1 <= len(raw) <= 500:
         return _err("pagini_invalide", 400)
     try:
@@ -565,6 +570,8 @@ def pregateste_tipar():
     permise = {fisiere.JPEG.mime, fisiere.PNG.mime, fisiere.WEBP.mime} | ({fisiere.PDF.mime} if aspect != "ci" else set())
     if any(d.get("mime") not in permise for _, d in metas):
         return _err("tip_nepermis", 400)
+    if sum(int(d.get("marime") or 0) for _, d in metas) > MAX_SURSE_TIPAR:
+        return _err("tipar_prea_mare", 413)
     continut = []
     for i, d in metas:
         data = fisiere.citeste(wid, obiect(i, d))
