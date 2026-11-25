@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { collection, limit, onSnapshot, query } from 'firebase/firestore'
+import { db } from '../lib/firebase'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../AppContext'
 import { hasCurrentConsent } from '../lib/legal'
 import {
-  MAX_IN_FEREASTRA, NOUTATI, deAnuntat, noutatiVizibile, opresteTur, pornesteTur, urmatorulPasTur, useNoutatiVazute,
+  MAX_IN_FEREASTRA, NOUTATI, deAnuntat, noutatiVizibile, opresteTur, pasiTur, pornesteTur, urmatorulPasTur, useNoutatiVazute,
   useTurNoutate, type Noutate,
 } from '../lib/noutati'
 import { formatDateRo } from '../lib/dates'
@@ -17,16 +19,27 @@ const REINCERCARE_MS = 4000         // altă fereastră deschisă: încercăm di
  * în Setări › Noutăți. Apare doar după acceptarea termenilor, niciodată peste altă fereastră sau peste ghidul „Primii
  * pași” deschis. Închiderea (sau orice buton) le marchează pe toate ca văzute. */
 export function NoutatiFereastra() {
-  const { user, activeWorkspace, userRole, hasFeature, ghid } = useApp()
+  const { user, activeWorkspace, userRole, hasFeature, ghid, billing } = useApp()
   const navigate = useNavigate()
   const { vazute, marcheaza } = useNoutatiVazute(user.uid)
   const [deschisa, setDeschisa] = useState(false)
 
   const consimtamant = !!activeWorkspace && hasCurrentConsent(activeWorkspace.consent)
   const creatLa = user.metadata.creationTime ?? ''
+  // „Are cabinetul un client?” — ascultat (un singur document) doar cât un anunț nevăzut așteaptă un client:
+  // anunțul apare singur imediat după primul client adăugat.
+  const wid = activeWorkspace?.id ?? null
+  const asteaptaClient = !!vazute && NOUTATI.some(n => n.necesita?.includes('client') && !vazute.has(n.id))
+  const [clienti, setClienti] = useState<{ wid: string; are: boolean } | null>(null)
+  useEffect(() => {
+    if (!wid || !asteaptaClient) return
+    return onSnapshot(query(collection(db, 'workspaces', wid, 'clienti'), limit(1)),
+      snap => setClienti({ wid, are: !snap.empty }), () => setClienti({ wid, are: false }))
+  }, [wid, asteaptaClient])
+  const areClienti = clienti?.wid === wid ? clienti.are : null
   const lista = useMemo(() => vazute && consimtamant
-    ? deAnuntat(NOUTATI, { hasFeature, rol: userRole }, vazute, creatLa ? new Date(creatLa) : null)
-    : [], [vazute, consimtamant, hasFeature, userRole, creatLa])
+    ? deAnuntat(NOUTATI, { hasFeature, rol: userRole, areClienti, accesComplet: billing.full }, vazute, creatLa ? new Date(creatLa) : null)
+    : [], [vazute, consimtamant, hasFeature, userRole, areClienti, billing.full, creatLa])
 
   // Nu peste ghidul „Primii pași” (panoul deschis sau o bulă „Arată-mi” activă) și nici în timpul unui tur: un cont
   // nou are deja destule de citit, iar o bulă activă înseamnă că utilizatorul tocmai face ceva.
@@ -123,16 +136,23 @@ export function NoutatiIstoric() {
 /** Turul „Arată-mi cum” al unei noutăți: aceleași indicii ca ghidul „Primii pași”, cu „Următorul” și „Gata”. */
 export function TurNoutate() {
   const tur = useTurNoutate()
-  if (!tur?.noutate.tur) return null
-  const pasi = tur.noutate.tur.pasi
+  const { canEdit } = useApp()
+  // Vizitatorii și cabinetele în mod citire nu văd pașii de editare (ex. „Încarcă”): îi sărim.
+  const pasi = tur ? pasiTur(tur.noutate, canEdit) : []
+  // Un tur păstrat în sesiune dincolo de pașii rămași (ex. drepturile s-au schimbat): îl încheiem, altfel ar bloca
+  // fereastra „Ce e nou” fără să se vadă.
+  const depasit = !!tur && tur.index >= pasi.length
+  useEffect(() => { if (depasit) opresteTur() }, [depasit])
+  if (!tur?.noutate.tur || depasit) return null
+  const urmator = () => urmatorulPasTur(pasi.length)
   const ultimul = tur.index + 1 >= pasi.length
   return (
     <IndiciuEvidentiat
       titlu={tur.noutate.titlu} indicii={pasi} index={tur.index} ruta={tur.noutate.tur.ruta}
-      onUrmator={urmatorulPasTur} onOpreste={opresteTur} incheieLaUltimulClic
+      onUrmator={urmator} onOpreste={opresteTur} incheieLaUltimulClic
       actiuni={<>
         {!ultimul && <button type="button" className="btn btn-ghost btn-xs" onClick={opresteTur}>Închide</button>}
-        <button type="button" className="btn btn-primary btn-xs" onClick={ultimul ? opresteTur : urmatorulPasTur}>
+        <button type="button" className="btn btn-primary btn-xs" onClick={ultimul ? opresteTur : urmator}>
           {ultimul ? 'Gata' : 'Următorul'}
         </button>
       </>}

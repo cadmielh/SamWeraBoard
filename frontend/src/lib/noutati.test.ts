@@ -10,7 +10,7 @@ vi.stubGlobal('sessionStorage', {
   removeItem: (k: string) => { sesiune.delete(k) },
 })
 
-import { NOUTATI, deAnuntat, noutatiVizibile, opresteTur, pornesteTur, turAcum, urmatorulPasTur, type Noutate } from './noutati'
+import { NOUTATI, deAnuntat, noutatiVizibile, opresteTur, pasiTur, pornesteTur, turAcum, urmatorulPasTur, type Noutate } from './noutati'
 
 const N = (o: Partial<Noutate>): Noutate => ({ id: 'x', data: '2026-11-24', icon: '•', titlu: 'T', text: 't', ...o })
 const lista = [
@@ -76,3 +76,34 @@ describe('turul „Arată-mi cum”', () => {
     expect(turAcum()).toBeNull()
   })
 })
+
+describe('noutăți pentru cabinetele active', () => {
+  const cuClient = N({ id: 'cu-client', necesita: ['client', 'acces'] })
+  const ctx = (o: { areClienti?: boolean | null; accesComplet?: boolean }) => ({ ...cu([], 'member'), ...o })
+  it('așteaptă un client și accesul complet; nu se consumă cât așteaptă', () => {
+    const nevazute = new Set<string>()
+    expect(deAnuntat([cuClient], ctx({ areClienti: false, accesComplet: true }), nevazute, null)).toEqual([])
+    expect(deAnuntat([cuClient], ctx({ areClienti: null, accesComplet: true }), nevazute, null)).toEqual([])   // încă nu se știe
+    expect(deAnuntat([cuClient], ctx({ areClienti: true, accesComplet: false }), nevazute, null)).toEqual([])  // mod citire
+    expect(deAnuntat([cuClient], ctx({ areClienti: true, accesComplet: true }), nevazute, null).map(n => n.id)).toEqual(['cu-client'])
+  })
+  it('istoricul le arată oricum', () => {
+    expect(noutatiVizibile([cuClient], cu([], 'viewer')).map(n => n.id)).toEqual(['cu-client'])
+  })
+  it('turul sare peste pașii de editare pentru cine nu poate edita', () => {
+    const n = N({ tur: { ruta: '/', pasi: [{ tinta: 'a', text: '1' }, { tinta: 'b', text: '2', doarEditare: true }, { tinta: 'c', text: '3' }] } })
+    expect(pasiTur(n, true).map(p => p.tinta)).toEqual(['a', 'b', 'c'])
+    expect(pasiTur(n, false).map(p => p.tinta)).toEqual(['a', 'c'])
+    pornesteTur(n)
+    urmatorulPasTur(2)
+    expect(turAcum()).toMatchObject({ index: 1 })
+    urmatorulPasTur(2)
+    expect(turAcum()).toBeNull()
+  })
+  it('anunțul documentelor: încărcarea e pas de editare; cere client și acces', () => {
+    const doc = NOUTATI.find(n => n.id === 'documente-clienti')!
+    expect(doc.necesita).toEqual(['client', 'acces'])
+    expect(pasiTur(doc, false).some(p => p.tinta === 'doc-incarca')).toBe(false)
+  })
+})
+

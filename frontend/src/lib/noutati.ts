@@ -6,7 +6,11 @@
  *
  * Cine vede un anunț: dacă are `feature`, doar în cabinetele cu funcția pornită, și abia când e pornită; dacă are
  * `roluri`, doar acele roluri. Conturile create după data anunțului nu primesc fereastra (au ghidul „Primii pași”), dar
- * îl găsesc în istoric. „Văzut” se ține pe cont (`users/{uid}.noutatiVazute`), nu pe dispozitiv. */
+ * îl găsesc în istoric. „Văzut” se ține pe cont (`users/{uid}.noutatiVazute`), nu pe dispozitiv.
+ *
+ * Noutățile sunt pentru cabinetele active: un anunț cu `necesita` așteaptă (rămâne nevăzut, fără să fie consumat) până
+ * când cabinetul îndeplinește condițiile, ex. are un client sau iese din modul citire. Pașii de tur marcați
+ * `doarEditare` sunt săriți pentru cine nu poate edita (vizitatori, mod citire). */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { arrayUnion, doc, onSnapshot, setDoc } from 'firebase/firestore'
 import { db } from './firebase'
@@ -27,7 +31,11 @@ export interface Noutate {
   roluri?: Rol[]
   /** Turul „Arată-mi cum” (opțional): pornește pe `ruta` și evidențiază pe rând elementele [data-ghid=țintă]. */
   tur?: { ruta: string; pasi: IndiciuGhid[] }
+  /** Când are sens anunțul: `client` = cabinetul are cel puțin un client; `acces` = cabinetul nu e în mod citire. */
+  necesita?: ConditieNoutate[]
 }
+
+export type ConditieNoutate = 'client' | 'acces'
 
 /** Câte anunțuri încap în fereastra „Ce e nou”; restul se văd în Setări › Noutăți. */
 export const MAX_IN_FEREASTRA = 3
@@ -42,6 +50,7 @@ export const NOUTATI: Noutate[] = [
       + 'Le previzualizezi, le cauți, le tragi dintr-un folder în altul și extragi datele dintr-un buletin direct în fișă. '
       + 'La generarea unui document poți păstra și o copie a lui la client.',
     actiune: { label: 'Deschide clienții', cale: '/' },
+    necesita: ['client', 'acces'],
     tur: {
       ruta: '/',
       pasi: INDICII_DOCUMENTE,
@@ -54,6 +63,7 @@ export const NOUTATI: Noutate[] = [
     titlu: 'Folderele fiecărui client nou, alese de tine',
     text: 'În Setări › Documente stabilești ce foldere primește automat fiecare client și unde se păstrează copiile documentelor generate.',
     actiune: { label: 'Deschide setările documentelor', cale: '/setari/documente' },
+    necesita: ['acces'],
     roluri: ['admin'],
   },
 ]
@@ -61,6 +71,18 @@ export const NOUTATI: Noutate[] = [
 export interface ContextNoutati {
   hasFeature: (key: FeatureKey) => boolean
   rol: Rol | null
+  /** Pentru condițiile din `necesita` (doar fereastra le folosește; istoricul arată tot). Necunoscut = condiție neîndeplinită. */
+  areClienti?: boolean | null
+  accesComplet?: boolean
+}
+
+function conditiiIndeplinite(n: Noutate, ctx: ContextNoutati): boolean {
+  return (n.necesita ?? []).every(c => (c === 'client' ? ctx.areClienti === true : ctx.accesComplet === true))
+}
+
+/** Pașii turului pe care utilizatorul îi poate face (fără cei de editare, dacă nu poate edita). */
+export function pasiTur(n: Noutate, poateEdita: boolean): IndiciuGhid[] {
+  return (n.tur?.pasi ?? []).filter(p => poateEdita || !p.doarEditare)
 }
 
 /** Anunțurile care privesc utilizatorul în cabinetul activ (funcție pornită, rol potrivit), cele mai noi primele. */
@@ -74,7 +96,7 @@ export function noutatiVizibile(lista: Noutate[], ctx: ContextNoutati): Noutate[
  * anunțuri despre ce exista deja când și-a făcut contul). */
 export function deAnuntat(lista: Noutate[], ctx: ContextNoutati, vazute: ReadonlySet<string>, contCreatLa: Date | null): Noutate[] {
   const prag = contCreatLa ? contCreatLa.toISOString().slice(0, 10) : ''
-  return noutatiVizibile(lista, ctx).filter(n => !vazute.has(n.id) && (!prag || n.data >= prag))
+  return noutatiVizibile(lista, ctx).filter(n => !vazute.has(n.id) && (!prag || n.data >= prag) && conditiiIndeplinite(n, ctx))
 }
 
 /** Noutățile văzute de utilizator (null cât se încarcă) și marcarea lor. */
@@ -126,7 +148,10 @@ const seteazaTur = (t: typeof tur) => {
 }
 
 export function pornesteTur(n: Noutate) { if (n.tur?.pasi.length) seteazaTur({ noutate: n, index: 0 }) }
-export function urmatorulPasTur() { if (tur) seteazaTur(tur.index + 1 < (tur.noutate.tur?.pasi.length ?? 0) ? { ...tur, index: tur.index + 1 } : null) }
+/** `total`: câți pași are turul pentru utilizatorul curent (vezi pasiTur); implicit toți. */
+export function urmatorulPasTur(total?: number) {
+  if (tur) seteazaTur(tur.index + 1 < (total ?? tur.noutate.tur?.pasi.length ?? 0) ? { ...tur, index: tur.index + 1 } : null)
+}
 export function opresteTur() { seteazaTur(null) }
 
 /** Turul activ (pentru teste și cod din afara React). */

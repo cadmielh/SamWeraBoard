@@ -22,6 +22,8 @@ export interface IndiciuGhid {
   text: string
   /** Ținta e o zonă de lucru, nu un buton (ex. board-ul): clicurile din ea nu trec mai departe, doar „Următorul”. */
   doarCuButon?: boolean
+  /** Pas care cere drept de editare (ex. încărcarea): sărit în turul unei noutăți pentru vizitatori și în mod citire. */
+  doarEditare?: boolean
 }
 
 export interface DefinitiePas {
@@ -43,7 +45,7 @@ export interface DefinitiePas {
 /** Indiciile pentru documentele clientului: aceleași în pasul din ghid și în turul „Arată-mi cum” al noutății. */
 export const INDICII_DOCUMENTE: IndiciuGhid[] = [
   { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
-  { tinta: 'doc-incarca', text: 'Aici încarci actele clientului. Le poți și trage direct în secțiunea „Documente” sau lipi cu Ctrl+V.' },
+  { tinta: 'doc-incarca', doarEditare: true, text: 'Aici încarci actele clientului. Le poți și trage direct în secțiunea „Documente” sau lipi cu Ctrl+V.' },
   { tinta: 'doc-lista', text: 'Apasă un document ca să-l vezi. Din meniul „⋯” al unui buletin alegi „Extrage datele în fișă”; '
     + 'un document tras peste un folder se mută acolo.' },
 ]
