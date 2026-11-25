@@ -19,7 +19,11 @@ import SpatiuCabinet from './SpatiuCabinet'
 import CereriClient from '../cereri/CereriClient'
 import CerereNoua from '../cereri/CerereNoua'
 import { useIncarcari } from './useIncarcari'
-import { IconCautare, IconCerere, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
+import {
+  IconCautare, IconCerere, IconDescarca, IconDirectie, IconExtrage, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconMuta, IconRestrange,
+} from './icons'
+import IconPencil from '../IconPencil'
+import IconTrash from '../IconTrash'
 import '../../styles/documente.css'
 
 const SORTARI: { key: Sortare; label: string }[] = [
@@ -362,14 +366,14 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
   }
 
   const optiuni = (el: Element): OptiuneMeniu[] => [
-    ...(el.tip === 'fisier' ? [{ label: 'Descarcă', onSelect: () => void descarca(el.f) }] : []),
+    ...(el.tip === 'fisier' ? [{ label: 'Descarcă', icon: <IconDescarca size={14} />, onSelect: () => void descarca(el.f) }] : []),
     ...(el.tip === 'fisier' && canEdit && onSaveClient && extractibil(el.f.mime)
-      ? [{ label: 'Extrage datele în fișă', onSelect: () => setExtrage(el.f) }] : []),
+      ? [{ label: 'Extrage datele în fișă', icon: <IconExtrage />, onSelect: () => setExtrage(el.f) }] : []),
     ...(canEdit ? [
-      { label: 'Redenumește', onSelect: () => { setFolderNou(false); setRedenumire(el.f.id) } },
-      { label: 'Mută în…', onSelect: () => setMuta([el]) },
+      { label: 'Redenumește', icon: <IconPencil size={13} />, onSelect: () => { setFolderNou(false); setRedenumire(el.f.id) } },
+      { label: 'Mută în…', icon: <IconMuta />, onSelect: () => setMuta([el]) },
     ] : []),
-    ...(poateSterge ? [{ label: 'Șterge', danger: true, onSelect: () => cereStergere([el]) }] : []),
+    ...(poateSterge ? [{ label: 'Șterge', danger: true, icon: <IconTrash size={13} />, onSelect: () => cereStergere([el]) }] : []),
   ]
 
   const comuta = (el: Element) => setSelectie(prev => {
@@ -565,8 +569,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
                 <IconDescarca size={14} /> Descarcă
               </button>
             )}
-            {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}>Mută în…</button>}
-            {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}>Șterge</button>}
+            {canEdit && !q && <button type="button" className="btn btn-ghost btn-xs" onClick={() => setMuta(selectate)}><IconMuta /> Mută în…</button>}
+            {poateSterge && <button type="button" className="btn btn-ghost btn-xs doc-bulk-danger" onClick={() => cereStergere(selectate)}><IconTrash size={13} /> Șterge</button>}
             <button type="button" className="doc-icon-btn" onClick={() => setSelectie(new Set())} aria-label="Renunță la selecție" title="Renunță (Esc)">✕</button>
           </div>
         </div>

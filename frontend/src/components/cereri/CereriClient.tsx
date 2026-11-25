@@ -5,6 +5,7 @@ import Modal from '../Modal'
 import ConfirmModal from '../ConfirmModal'
 import BtnLabel from '../BtnLabel'
 import TrimiteLink from './TrimiteLink'
+import { IconBifa, IconPrelungeste, IconTrimite, IconX } from '../documente/icons'
 import { formatDateRo } from '../../lib/dates'
 import { formatMarime, type Fisier } from '../../lib/fisiere'
 import {
@@ -80,15 +81,15 @@ function CerereCard({ c, client, fisiere, onPreview }: {
       {canEdit && deschisa && (
         <div className="cer-card-actiuni">
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => void arataLink()} disabled={busy === 'link'}>
-            <BtnLabel busy={busy === 'link'} dark>Trimite din nou</BtnLabel>
+            <BtnLabel busy={busy === 'link'} dark><IconTrimite size={12} /> Trimite din nou</BtnLabel>
           </button>
           {(expirata(c, acum) || (c.expiraLa && c.expiraLa.getTime() - acum.getTime() < 3 * 86_400_000)) && (
             <button type="button" className="btn btn-ghost btn-xs" disabled={busy === 'prelungeste'}
               onClick={() => void ruleaza('prelungeste', () => prelungesteCerere(c.id, ZILE_IMPLICIT), `Linkul e valabil încă ${ZILE_IMPLICIT} zile.`)}>
-              Prelungește {ZILE_IMPLICIT} zile
+              <IconPrelungeste size={12} /> Prelungește {ZILE_IMPLICIT} zile
             </button>
           )}
-          <button type="button" className="btn btn-ghost btn-xs cer-anuleaza" onClick={() => setAnuleaza(true)}>Anulează</button>
+          <button type="button" className="btn btn-ghost btn-xs cer-anuleaza" onClick={() => setAnuleaza(true)}><IconX size={11} /> Anulează</button>
         </div>
       )}
 
@@ -153,15 +154,15 @@ function ActRand({ a, fisiere, onPreview, busy, poateVerifica, onAccepta, onResp
                     if (e.key === 'Escape') { e.stopPropagation(); setRespinge(false) }
                   }} aria-label="Motivul respingerii" />
                 <button type="button" className="btn btn-danger btn-xs" disabled={!motiv.trim()}
-                  onClick={() => { setRespinge(false); onRespinge(motiv.trim()) }}>Respinge</button>
+                  onClick={() => { setRespinge(false); onRespinge(motiv.trim()) }}><IconX size={11} /> Respinge</button>
                 <button type="button" className="btn btn-ghost btn-xs" onClick={() => setRespinge(false)}>Renunță</button>
               </div>
             ) : (
               <div className="cer-verifica">
                 <button type="button" className="btn btn-success btn-xs" onClick={onAccepta} disabled={ocupat}>
-                  <BtnLabel busy={busy === `a:${a.id}`}>Acceptă</BtnLabel>
+                  <BtnLabel busy={busy === `a:${a.id}`}><IconBifa size={12} /> Acceptă</BtnLabel>
                 </button>
-                <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setMotiv(''); setRespinge(true) }} disabled={ocupat}>Respinge</button>
+                <button type="button" className="btn btn-ghost btn-xs" onClick={() => { setMotiv(''); setRespinge(true) }} disabled={ocupat}><IconX size={11} /> Respinge</button>
               </div>
             )
           ) : null}

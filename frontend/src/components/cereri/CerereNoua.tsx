@@ -4,6 +4,8 @@ import { useApp } from '../../AppContext'
 import Modal from '../Modal'
 import BtnLabel from '../BtnLabel'
 import TrimiteLink from './TrimiteLink'
+import IconPlus from '../IconPlus'
+import { IconLink } from '../documente/icons'
 import {
   MAX_ACTE, ZILE_IMPLICIT, ZILE_VALABILITATE, creeazaCerere, propuneriActe, type ActNou, type PropunereAct,
 } from '../../lib/cereri'
@@ -94,7 +96,7 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
               <input className="field-input" value={nou} maxLength={120} placeholder="Alt act (ex. certificat de căsătorie)"
                 onChange={e => setNou(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adauga() } }} aria-label="Alt act" />
-              <button type="button" className="btn btn-ghost btn-sm" onClick={adauga} disabled={!nou.trim()}>Adaugă</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={adauga} disabled={!nou.trim()}><IconPlus size={12} /> Adaugă</button>
             </div>
           </fieldset>
 
@@ -120,7 +122,7 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
           <span className="doc-meta cer-numar">{acte.length === 0 ? 'Niciun act ales' : acte.length === 1 ? 'Un act' : `${acte.length} acte`}</span>
           <button className="btn btn-ghost" onClick={onClose}>Renunță</button>
           <button className="btn btn-primary" onClick={() => void trimite()} disabled={busy || !acte.length || acte.length > MAX_ACTE}>
-            <BtnLabel busy={busy}>Creează linkul</BtnLabel>
+            <BtnLabel busy={busy}><IconLink /> Creează linkul</BtnLabel>
           </button>
         </>)}
       </div>

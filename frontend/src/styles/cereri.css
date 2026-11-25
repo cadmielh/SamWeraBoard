@@ -22,6 +22,7 @@
 .cer-link { display: flex; gap: .5rem; }
 .cer-link .field-input { flex: 1; min-width: 0; font-family: var(--mono, ui-monospace, monospace); font-size: .8rem; }
 .cer-canale { display: flex; flex-wrap: wrap; gap: .5rem; }
+.cer-canale a.btn { text-decoration: none; }
 .cer-qr-zona { display: flex; align-items: center; gap: 1rem; }
 .cer-qr { width: 168px; height: 168px; border-radius: var(--r-md); border: 1px solid var(--s200); flex-shrink: 0; }
 .cer-nota { margin: 0; line-height: 1.45; }

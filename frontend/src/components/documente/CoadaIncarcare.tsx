@@ -1,5 +1,6 @@
 import { formatMarime, type Folder } from '../../lib/fisiere'
 import type { useIncarcari } from './useIncarcari'
+import IconRefresh from '../IconRefresh'
 
 /** Lista încărcărilor în curs pentru clientul deschis: progres, erori cu „Reîncearcă”, duplicate cu „Încarcă oricum”. */
 export default function CoadaIncarcare({ coada, foldere }: { coada: ReturnType<typeof useIncarcari>; foldere: Folder[] }) {
@@ -44,7 +45,7 @@ export default function CoadaIncarcare({ coada, foldere }: { coada: ReturnType<t
                 <span>{it.mesaj}</span>
                 <span className="doc-queue-btns">
                   {/* Erorile verificate în browser (mărime, tip) nu se rezolvă reîncercând. */}
-                  {!it.local && <button type="button" className="btn btn-ghost btn-xs" onClick={() => reincearca(it.id)}>Reîncearcă</button>}
+                  {!it.local && <button type="button" className="btn btn-ghost btn-xs" onClick={() => reincearca(it.id)}><IconRefresh size={12} /> Reîncearcă</button>}
                   <button type="button" className="btn btn-ghost btn-xs" onClick={() => renunta(it.id)}>Elimină</button>
                 </span>
               </div>

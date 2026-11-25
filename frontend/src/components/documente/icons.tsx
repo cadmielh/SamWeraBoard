@@ -81,3 +81,112 @@ export function IconCautare({ size = 15 }: { size?: number }) {
     </svg>
   )
 }
+
+const linie = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
+
+export function IconCamera({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M2 5.5a1 1 0 0 1 1-1h2l1.2-1.8h3.6L11 4.5h2a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
+      <circle cx="8" cy="8.5" r="2.4" />
+    </svg>
+  )
+}
+
+/** Mutarea în alt folder: folder cu săgeată. */
+export function IconMuta({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M1.5 4.5a1 1 0 0 1 1-1h3.2l1.6 1.6h6.2a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
+      <path d="M5.5 9.3h5M8.8 7.6l1.7 1.7-1.7 1.7" />
+    </svg>
+  )
+}
+
+export function IconCopiaza({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.3" />
+      <path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
+    </svg>
+  )
+}
+
+/** Mesaj (WhatsApp, SMS): bulă de conversație. */
+export function IconMesaj({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M8 2.5c3.3 0 6 2.2 6 5s-2.7 5-6 5c-.8 0-1.6-.1-2.3-.4L2.5 13.5l.9-2.7C2.5 9.9 2 8.8 2 7.5c0-2.8 2.7-5 6-5z" />
+    </svg>
+  )
+}
+
+export function IconEmail({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <rect x="2" y="3.5" width="12" height="9" rx="1.2" />
+      <path d="m2.5 4.5 5.5 4 5.5-4" />
+    </svg>
+  )
+}
+
+export function IconQr({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <rect x="2" y="2" width="4.5" height="4.5" rx=".6" /><rect x="9.5" y="2" width="4.5" height="4.5" rx=".6" />
+      <rect x="2" y="9.5" width="4.5" height="4.5" rx=".6" /><path d="M9.5 9.5h1.5v1.5M14 9.5v1.5M9.5 14h4.5v-1.5M12.5 12.5" />
+    </svg>
+  )
+}
+
+export function IconLink({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M6.8 9.2a2.8 2.8 0 0 0 4 0l2-2a2.8 2.8 0 0 0-4-4l-.9.9" />
+      <path d="M9.2 6.8a2.8 2.8 0 0 0-4 0l-2 2a2.8 2.8 0 0 0 4 4l.9-.9" />
+    </svg>
+  )
+}
+
+/** Trimiterea (din nou) a linkului: avion de hârtie. */
+export function IconTrimite({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5z" />
+    </svg>
+  )
+}
+
+export function IconBifa({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} strokeWidth={2} aria-hidden>
+      <path d="m3 8.5 3.2 3.2L13 5" />
+    </svg>
+  )
+}
+
+export function IconX({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} strokeWidth={1.9} aria-hidden>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
+  )
+}
+
+/** Prelungirea unui termen: ceas cu săgeată. */
+export function IconPrelungeste({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M13.5 8A5.5 5.5 0 1 1 11.8 4" /><path d="M13.6 2.2v2.5h-2.5" /><path d="M8 5.2V8l1.8 1.2" />
+    </svg>
+  )
+}
+
+/** Extragerea datelor din act în fișă: actul cu raza de scanare. */
+export function IconExtrage({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" {...linie} aria-hidden>
+      <path d="M4 6V3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3M4 10v3a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-3M1.5 8h13" />
+    </svg>
+  )
+}

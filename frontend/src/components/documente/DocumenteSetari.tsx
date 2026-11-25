@@ -10,6 +10,8 @@ import ConfirmModal from '../ConfirmModal'
 import FisierPreview from './FisierPreview'
 import MeniuRand from './MeniuRand'
 import { IconDescarca, IconFisier, IconFolder } from './icons'
+import IconPlus from '../IconPlus'
+import IconTrash from '../IconTrash'
 import '../../styles/documente.css'
 
 const CAUTARE_DE_LA = 8
@@ -127,7 +129,7 @@ export default function DocumenteSetari() {
                       {busyId === f.id
                         ? <span className="spin spin-dark" role="status" aria-label="Se procesează" />
                         : <button type="button" className="doc-icon-btn doc-only-hover" onClick={() => void descarca(f)} aria-label={`Descarcă ${f.nume}`} title="Descarcă"><IconDescarca /></button>}
-                      {poateSterge && <MeniuRand eticheta={`Acțiuni pentru ${f.nume}`} optiuni={[{ label: 'Șterge definitiv', danger: true, onSelect: () => setSterge(f) }]} />}
+                      {poateSterge && <MeniuRand eticheta={`Acțiuni pentru ${f.nume}`} optiuni={[{ label: 'Șterge definitiv', danger: true, icon: <IconTrash size={13} />, onSelect: () => setSterge(f) }]} />}
                     </div>
                   </li>
                 ))}
@@ -212,7 +214,7 @@ function FoldereImpliciteCard() {
         {editabil && salvate !== null && (
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-ghost btn-sm" disabled={curent.length >= MAX_FOLDERE_IMPLICITE}
-              onClick={() => setLista([...curent, ''])}>+ Adaugă folder</button>
+              onClick={() => setLista([...curent, ''])}><IconPlus /> Adaugă folder</button>
             {modificat && (
               <div style={{ display: 'flex', gap: '.5rem' }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLista(null)} disabled={busy}>Renunță</button>

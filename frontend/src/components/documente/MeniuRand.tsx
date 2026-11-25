@@ -1,9 +1,10 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 export interface OptiuneMeniu {
   label: string
   onSelect: () => void
   danger?: boolean
+  icon?: ReactNode
 }
 
 /** Meniul „⋯” al unui rând: se deschide sub buton, se închide la Escape sau clic în afară; săgețile mută focusul. */
@@ -46,7 +47,7 @@ export default function MeniuRand({ optiuni, eticheta }: { optiuni: OptiuneMeniu
           {optiuni.map(o => (
             <button key={o.label} type="button" role="menuitem" className={`doc-menu-item${o.danger ? ' doc-menu-item--danger' : ''}`}
               onClick={() => { setDeschis(false); o.onSelect() }}>
-              {o.label}
+              {o.icon}{o.label}
             </button>
           ))}
         </div>

@@ -105,8 +105,10 @@ body.doc-redimensionare, body.doc-redimensionare * { cursor: col-resize !importa
 .doc-menu { position: relative; }
 .doc-menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 170px; padding: .3rem; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--s200); border-radius: var(--r-sm); box-shadow: var(--sh-lg); animation: slideUp .12s; }
-.doc-menu-item { text-align: left; font: inherit; font-size: .8125rem; color: var(--s700); background: none; border: none; padding: .45rem .65rem;
+.doc-menu-item { display: flex; align-items: center; gap: .5rem; text-align: left; font: inherit; font-size: .8125rem; color: var(--s700); background: none; border: none; padding: .45rem .65rem;
   border-radius: 6px; cursor: pointer; }
+.doc-menu-item svg { flex: none; color: var(--text-muted); }
+.doc-menu-item--danger svg { color: inherit; }
 .doc-menu-item:hover, .doc-menu-item:focus-visible { background: var(--surface-2); outline: none; }
 .doc-menu-item--danger { color: var(--r600); }
 .doc-menu-item--danger:hover, .doc-menu-item--danger:focus-visible { background: var(--r50); }

@@ -158,8 +158,13 @@
 
 .portal-actiuni { display: flex; flex-wrap: wrap; gap: 8px; }
 .portal-btn {
-  flex: 1 1 160px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1 1 150px;
   min-height: 46px;
+  white-space: nowrap;
   padding: 10px 16px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);

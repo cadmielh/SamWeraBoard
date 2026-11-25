@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import { linkEmail, linkWhatsApp, mesajCerere } from '../../lib/cereri'
 import { formatDateRo } from '../../lib/dates'
+import { IconCopiaza, IconEmail, IconMesaj, IconQr } from '../documente/icons'
 
 /** Codul QR al linkului, ca SVG (fără HTML injectat): clientul aflat la birou îl scanează cu telefonul. */
 function CodQr({ text }: { text: string }) {
@@ -40,13 +41,13 @@ export default function TrimiteLink({ link, expiraLa, cabinet, emailClient, onCo
     <div className="cer-trimite">
       <div className="cer-link">
         <input className="field-input" readOnly value={link} aria-label="Linkul cererii" onFocus={e => e.currentTarget.select()} />
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => void copiaza('link')}>Copiază linkul</button>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => void copiaza('link')}><IconCopiaza /> Copiază linkul</button>
       </div>
       <div className="cer-canale">
-        <a className="btn btn-outline-primary btn-sm" href={linkWhatsApp(mesaj)} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-        <a className="btn btn-outline-primary btn-sm" href={linkEmail(emailClient ?? '', cabinet, mesaj)}>E-mail</a>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copiaza('mesaj')} title="Pentru SMS sau altă aplicație">Copiază mesajul</button>
-        <button type="button" className="btn btn-ghost btn-sm" aria-expanded={qr} onClick={() => setQr(v => !v)}>{qr ? 'Ascunde codul QR' : 'Cod QR'}</button>
+        <a className="btn btn-outline-primary btn-sm" href={linkWhatsApp(mesaj)} target="_blank" rel="noopener noreferrer"><IconMesaj /> WhatsApp</a>
+        <a className="btn btn-outline-primary btn-sm" href={linkEmail(emailClient ?? '', cabinet, mesaj)}><IconEmail /> E-mail</a>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copiaza('mesaj')} title="Pentru SMS sau altă aplicație"><IconCopiaza /> Copiază mesajul</button>
+        <button type="button" className="btn btn-ghost btn-sm" aria-expanded={qr} onClick={() => setQr(v => !v)}><IconQr /> {qr ? 'Ascunde codul QR' : 'Cod QR'}</button>
       </div>
       {qr && (
         <div className="cer-qr-zona">

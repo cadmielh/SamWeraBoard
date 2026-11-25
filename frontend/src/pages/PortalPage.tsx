@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import LogoMark from '../components/LogoMark'
+import IconPlus from '../components/IconPlus'
+import IconRefresh from '../components/IconRefresh'
+import { IconCamera, IconIncarca } from '../components/documente/icons'
 import { formatDateRo } from '../lib/dates'
 import { formatMarime } from '../lib/fisiere'
 import {
@@ -61,7 +64,7 @@ export default function PortalPage() {
             <h1>Pagina nu s-a putut încărca</h1>
             <p>{stare.mesaj}</p>
             <button type="button" className="portal-btn portal-btn--principal" onClick={() => { setStare({ fel: 'incarca' }); void reincarca() }}>
-              Reîncearcă
+              <IconRefresh size={16} /> Reîncearcă
             </button>
           </section>
         )}
@@ -230,12 +233,12 @@ function ActCard({ a, token, deschisa, onSchimbat, onInactiv }: {
           {atingere && (
             <button type="button" className={`portal-btn${areFisiere ? '' : ' portal-btn--principal'}`} onClick={() => camera.current?.click()}
               disabled={inCurs.length > 0}>
-              {areFisiere ? 'Mai fac o poză' : 'Fotografiază'}
+              <IconCamera size={areFisiere ? 16 : 18} /> {areFisiere ? 'Mai fac o poză' : 'Fotografiază'}
             </button>
           )}
           <button type="button" className={`portal-btn${atingere || areFisiere ? '' : ' portal-btn--principal'}`}
             onClick={() => fisiere.current?.click()} disabled={inCurs.length > 0}>
-            {areFisiere ? 'Adaugă alt fișier' : atingere ? 'Alege din telefon' : 'Alege fișierul'}
+            {areFisiere ? <IconPlus size={15} /> : <IconIncarca size={18} />} {areFisiere ? 'Adaugă alt fișier' : atingere ? 'Din telefon' : 'Alege fișierul'}
           </button>
         </div>
       )}
