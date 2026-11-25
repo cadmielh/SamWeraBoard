@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../../AppContext'
 import { formatDateRo } from '../../lib/dates'
 import {
-  LIMITA_CABINET, MAX_FOLDERE_IMPLICITE, descarcaFisier, formatMarime, previzualizabil, salveazaSetariDocumente, stergeFisier,
+  LIMITA_CABINET, MAX_FOLDERE_IMPLICITE, nivelSpatiu, descarcaFisier, formatMarime, previzualizabil, salveazaSetariDocumente, stergeFisier,
   useArhiva, useSetariDocumente, useSpatiuDocumente, type Fisier,
 } from '../../lib/fisiere'
 import BtnLabel from '../BtnLabel'
@@ -71,7 +71,7 @@ export default function DocumenteSetari() {
             <span><strong>{formatMarime(spatiu?.octeti ?? 0)}</strong> din {formatMarime(LIMITA_CABINET)}</span>
             <span className="doc-meta">{spatiu?.numar ?? 0} {spatiu?.numar === 1 ? 'document' : 'documente'}</span>
           </div>
-          <div className={`doc-spatiu-bar${procent >= 100 ? ' is-full' : procent >= 85 ? ' is-warn' : ''}`} role="meter"
+          <div className={`doc-spatiu-bar${nivelSpatiu(procent)}`} role="meter"
             aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(procent)} aria-label="Spațiu folosit pentru documente">
             <span style={{ width: `${Math.max(procent, spatiu?.octeti ? 1 : 0)}%` }} />
           </div>

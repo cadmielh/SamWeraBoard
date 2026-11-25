@@ -15,6 +15,7 @@ import FisierPreview from './FisierPreview'
 import MutaModal, { type ElementMutat } from './MutaModal'
 import CoadaIncarcare from './CoadaIncarcare'
 import ExtrageAct from './ExtrageAct'
+import SpatiuCabinet from './SpatiuCabinet'
 import { useIncarcari } from './useIncarcari'
 import { IconCautare, IconDescarca, IconDirectie, IconFisier, IconFolder, IconFolderNou, IconIncarca, IconRestrange } from './icons'
 import '../../styles/documente.css'
@@ -493,7 +494,6 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
         <div className="cv2-section-label">
           Documente
           {fisiere.length > 0 && <span className="cv2-count-chip">{fisiere.length}</span>}
-          {totalOcupat > 0 && <span className="doc-meta doc-head-size">{formatMarime(totalOcupat)}</span>}
         </div>
         <div className="doc-head-actions">
           {fisiere.length + foldere.length > 1 && (
@@ -618,6 +618,8 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           )}
         </ul>
       )}
+
+      {!loading && !error && <SpatiuCabinet workspaceId={workspaceId} client={totalOcupat} />}
 
       {peste && !tintaTragere && (
         <div className="doc-drop" aria-hidden>

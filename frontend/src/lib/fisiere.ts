@@ -10,6 +10,13 @@ import { marcheazaPas } from './ghidPornire'
 
 export const MAX_BYTES = 15 * 1024 * 1024
 export const LIMITA_CABINET = 10 * 1024 * 1024 * 1024
+/** De la ce procent din limită bara de spațiu devine galbenă (roșie la plin). */
+export const PRAG_ATENTIE_SPATIU = 85
+
+/** Clasa barei de spațiu după procentul din limită (Setări › Documente și indicatorul din documentele clientului). */
+export function nivelSpatiu(procent: number): '' | ' is-warn' | ' is-full' {
+  return procent >= 100 ? ' is-full' : procent >= PRAG_ATENTIE_SPATIU ? ' is-warn' : ''
+}
 export const MAX_ADANCIME = 6
 /** Folderele create automat la fiecare client, dacă cabinetul nu și-a ales altele (Setări › Documente). */
 export const FOLDERE_IMPLICITE = ['Acte identitate', 'Documente generate', 'Primite de la client']

@@ -42,10 +42,8 @@ body.doc-redimensionare, body.doc-redimensionare * { cursor: col-resize !importa
   .doc-sort { max-width: 7.5rem; }
   .doc-row-main { padding: .5rem .55rem; gap: .55rem; }
   .doc-only-hover { display: none; }
-  .doc-head-size { display: none; }
 }
 .doc-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
-.doc-head-size { margin-left: .25rem; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .doc-head-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .doc-sort-grup { display: inline-flex; align-items: center; gap: .125rem; }
 .doc-sort { font: inherit; font-size: .78rem; color: var(--s600); background: var(--surface); border: 1.5px solid var(--btn-ghost-border);
@@ -184,6 +182,18 @@ body.doc-redimensionare, body.doc-redimensionare * { cursor: col-resize !importa
 .doc-spatiu-bar > span { display: block; height: 100%; background: var(--p500); border-radius: 4px; }
 .doc-spatiu-bar.is-warn > span { background: var(--a500); }
 .doc-spatiu-bar.is-full > span { background: var(--r500); }
+/* Spațiul cabinetului, discret, la finalul documentelor unui client; devine vizibil spre limită. */
+.doc-spatiu-mini { display: flex; flex-direction: column; gap: .3rem; margin-top: .875rem; padding-top: .625rem;
+  border-top: 1px solid var(--s100); text-decoration: none; color: var(--s400); font-size: .72rem; }
+.doc-spatiu-mini:hover { color: var(--s600); }
+.doc-spatiu-mini-text > span { white-space: nowrap; }   /* în coloana îngustă se rupe între „Clientul” și „Cabinetul”, nu în cifre */
+.doc-spatiu-mini:hover .doc-spatiu-mini-text { text-decoration: underline; }
+.doc-spatiu-bar--mini { height: 3px; border-radius: 2px; }
+.doc-spatiu-bar--mini > span { background: var(--s300); }
+.doc-spatiu-mini.is-warn { color: var(--a600); font-weight: 600; }
+.doc-spatiu-mini.is-full { color: var(--r600); font-weight: 600; }
+.doc-spatiu-bar--mini.is-warn > span { background: var(--a500); }
+.doc-spatiu-bar--mini.is-full > span { background: var(--r500); }
 .doc-arhiva-grup { display: flex; flex-direction: column; gap: .35rem; }
 .doc-arhiva-client { font-size: .8125rem; font-weight: 700; color: var(--s700); display: flex; align-items: baseline; gap: .5rem; }
 

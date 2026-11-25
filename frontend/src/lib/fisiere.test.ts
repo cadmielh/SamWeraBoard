@@ -3,6 +3,7 @@ import {
   ACCEPT, arbore, caleFolder, continutRecursiv, descendenti, extensie, familie, fisierDinFirestore, formatMarime, inaltime,
   previzualizabil, sorteazaFisiere, sorteazaFoldere, subfoldere, verificaLocal, type Fisier, type Folder,
   ascundeTemporar, ascunseAcum, extractibil, felPrevizualizare, normalizeazaCautare, numeLipire, reafiseaza,
+  nivelSpatiu, PRAG_ATENTIE_SPATIU,
 } from './fisiere'
 
 const folder = (id: string, parentId: string | null, nume = id): Folder => ({ id, clientId: 'c1', parentId, nume })
@@ -173,5 +174,14 @@ describe('ștergeri amânate', () => {
     expect([...ascunseAcum()]).toEqual(['b'])
     reafiseaza(['b'])
     expect(ascunseAcum().size).toBe(0)
+  })
+})
+
+describe('nivelSpatiu', () => {
+  it('normal sub prag, galben de la prag, roșu la plin', () => {
+    expect(nivelSpatiu(0)).toBe('')
+    expect(nivelSpatiu(PRAG_ATENTIE_SPATIU - 1)).toBe('')
+    expect(nivelSpatiu(PRAG_ATENTIE_SPATIU)).toBe(' is-warn')
+    expect(nivelSpatiu(100)).toBe(' is-full')
   })
 })
