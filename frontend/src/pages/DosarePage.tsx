@@ -36,6 +36,8 @@ type ListTab = 'active' | 'incheiate'
 type Tab = ListTab | string
 const isListTab = (t: Tab): t is ListTab => t === 'active' || t === 'incheiate'
 
+const OPEN_TABS_KEY = 'samwera-dosare-file'
+
 const STATS_PERIOD_OPTIONS: { key: StatsPeriod; label: string }[] = [
   { key: 'luna', label: 'Lună' },
   { key: 'trimestru', label: 'Trimestru' },
@@ -197,6 +199,44 @@ export default function DosarePage() {
     }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, workspaceId])
+
+  // Dosarele deschise, fila curentă și fila-listă de revenire se țin minte per cabinet în sessionStorage, ca să
+  // supraviețuiască unui refresh și plecării pe altă pagină (ca la Clienți). Dosarele se citesc după id, ca la
+  // deep-link (ținute în extraDosare); cele care nu mai există se pierd. Până la refacere nu se scrie nimic, altfel
+  // starea goală de la montare ar șterge ce era salvat.
+  const [restoredWs, setRestoredWs] = useState<string | null>(null)
+  const restoreStartedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!workspaceId || restoreStartedRef.current === workspaceId) return
+    if (restoreStartedRef.current !== null) { setOpenDosarIds([]); setExtraDosare({}); setTab('active'); setReturnTab('active') }
+    restoreStartedRef.current = workspaceId
+    let saved: { ids?: unknown; tab?: unknown; returnTab?: unknown } | null = null
+    try { saved = JSON.parse(sessionStorage.getItem(`${OPEN_TABS_KEY}:${workspaceId}`) ?? 'null') } catch { /* fără stocare sau valoare coruptă */ }
+    const ids = Array.isArray(saved?.ids) ? saved.ids.filter((x): x is string => typeof x === 'string') : []
+    const savedReturn: ListTab = saved?.returnTab === 'incheiate' ? 'incheiate' : 'active'
+    Promise.all(ids.map(id => fetchDosarById(workspaceId, id).catch(() => null))).then(rows => {
+      if (restoreStartedRef.current !== workspaceId) return
+      const found = rows.filter((d): d is Dosar => !!d)
+      const foundIds = found.map(d => d.id)
+      setExtraDosare(prev => ({ ...Object.fromEntries(found.map(d => [d.id, d])), ...prev }))
+      // Un dosar deschis între timp (ex. deep-link) rămâne, iar fila lui rămâne activă.
+      setOpenDosarIds(prev => [...foundIds.filter(id => !prev.includes(id)), ...prev])
+      setReturnTab(savedReturn)
+      setTab(prev => {
+        if (prev !== 'active') return prev
+        if (saved?.tab === 'incheiate') return 'incheiate'
+        return typeof saved?.tab === 'string' && foundIds.includes(saved.tab) ? saved.tab : prev
+      })
+      setRestoredWs(workspaceId)
+    })
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (!workspaceId || restoredWs !== workspaceId) return
+    try {
+      sessionStorage.setItem(`${OPEN_TABS_KEY}:${workspaceId}`, JSON.stringify({ ids: openDosarIds, tab, returnTab }))
+    } catch { /* fără stocare: filele nu se țin minte */ }
+  }, [workspaceId, restoredWs, openDosarIds, tab, returnTab])
 
   // Stare de sortare/filtrare — separată pe fiecare filă-listă, ca filtrele
   // aplicate în „Dosare în lucru" să nu se scurgă în „Dosare încheiate" și

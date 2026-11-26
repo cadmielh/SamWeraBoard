@@ -316,6 +316,8 @@ function ColumnsPanel({ hiddenCols, onToggle, onSelectAll, onDeselectAll, onClos
 type ModalState = null | 'add' | Client
 type DeleteState = null | Client
 
+const OPEN_TABS_KEY = 'samwera-clienti-file'
+
 export default function ClientiPage() {
   const { user, activeWorkspace, toast, canEdit } = useApp()
   const workspaceId = activeWorkspace?.id ?? null
@@ -486,6 +488,38 @@ export default function ClientiPage() {
     setOpenClientIds(prev => prev.filter(x => x !== id))
     setActiveTab(prev => prev === id ? 'list' : prev)
   }, [])
+
+  // Filele deschise (și fila activă) se țin minte per spațiu de lucru în sessionStorage, ca să supraviețuiască
+  // unui refresh și plecării pe altă pagină. Refacerea așteaptă prima pagină (ca deep-link-ul de mai sus) și aduce
+  // după id clienții din afara ei; cei care nu mai există se pierd. Până la refacere nu se scrie nimic, altfel
+  // starea goală de la montare ar șterge ce era salvat.
+  const [restoredWs, setRestoredWs] = useState<string | null>(null)
+  const restoreStartedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!workspaceId || loading || restoreStartedRef.current === workspaceId) return
+    if (restoreStartedRef.current !== null) { setOpenClientIds([]); setActiveTab('list') }
+    restoreStartedRef.current = workspaceId
+    let saved: { ids?: unknown; active?: unknown } | null = null
+    try { saved = JSON.parse(sessionStorage.getItem(`${OPEN_TABS_KEY}:${workspaceId}`) ?? 'null') } catch { /* fără stocare sau valoare coruptă */ }
+    const ids = Array.isArray(saved?.ids) ? saved.ids.filter((x): x is string => typeof x === 'string') : []
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (ids.length === 0) { setRestoredWs(workspaceId); return }
+    Promise.all(ids.map(id => ensureLoaded(workspaceId, id).catch(() => null))).then(rows => {
+      if (restoreStartedRef.current !== workspaceId) return
+      const found = rows.filter((c): c is Client => !!c).map(c => c.id)
+      // Un client deschis între timp (ex. deep-link) rămâne, iar fila lui rămâne activă.
+      setOpenClientIds(prev => [...found.filter(id => !prev.includes(id)), ...prev])
+      setActiveTab(prev => prev === 'list' && typeof saved?.active === 'string' && found.includes(saved.active) ? saved.active : prev)
+      setRestoredWs(workspaceId)
+    })
+  }, [workspaceId, loading, ensureLoaded])
+
+  useEffect(() => {
+    if (!workspaceId || restoredWs !== workspaceId) return
+    try {
+      sessionStorage.setItem(`${OPEN_TABS_KEY}:${workspaceId}`, JSON.stringify({ ids: openClientIds, active: activeTab }))
+    } catch { /* fără stocare: filele nu se țin minte */ }
+  }, [workspaceId, restoredWs, openClientIds, activeTab])
 
   // Pe telefon fișa clientului ocupă tot ecranul, fără file: „Înapoi” (și gestul telefonului) revine la listă.
   const isMobile = useIsMobile()
