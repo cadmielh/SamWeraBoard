@@ -360,7 +360,7 @@ Aceste decizii înlocuiesc textul de mai sus acolo unde diferă.
 2. **[Tu]** La primul deploy, Firebase CLI cere activarea API-ului Eventarc (dacă nu e activ); confirmi.
 3. **[Tu]** Contul de serviciu dedicat (`RUNTIME_SERVICE_ACCOUNT`, `api-runtime@…`) are nevoie de **două** roluri, altfel evenimentele ajung la triggere dar sunt refuzate cu 403 (văzut la primul deploy, 15 nov 2026):
    - `roles/eventarc.eventReceiver` pe proiect (primirea evenimentelor);
-   - `roles/run.invoker` pe cele 5 servicii `alerte-*` (pornirea funcțiilor). Firebase CLI nu-l dă singur unui cont de serviciu personalizat; la funcțiile programate (`purge_deletions`, `alerte_zilnice`) nu e nevoie.
+   - `roles/run.invoker` pe **toate** serviciile `alerte-*` (pornirea funcțiilor), inclusiv pe cele adăugate ulterior (`alerte-cerere` a rămas fără el la deploy-ul din 26 nov 2026 → 403). Firebase CLI nu-l dă singur unui cont de serviciu personalizat; îl dă `scripts/acorda_invoker_alerte.sh`, rulat automat după deploy-ul funcțiilor (`postdeploy` în `firebase.json`). La funcțiile programate (`purge_deletions`, `alerte_zilnice`) nu e nevoie.
    La primul deploy, crearea triggerelor poate eșua cu „Permission denied while using the Eventarc Service Agent”: se reia deploy-ul după câteva minute.
 4. **[Eu]** Triggerele trebuie să ruleze în regiunea bazei de date Firestore. Implicit e `europe-west3`; dacă baza e în altă locație (ex. `eur3`), se setează `ALERTE_TRIGGER_REGION` în `.env.samwera-board-eu`. Deploy-ul eșuează explicit dacă regiunea nu se potrivește.
 5. **[Eu]** Regulile Firestore se publică împreună cu frontendul (`npm run build:eu`).

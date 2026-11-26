@@ -263,6 +263,9 @@
     {
       "source": ".",
       "codebase": "default",
+    "postdeploy": [
+      "bash \"$PROJECT_DIR/scripts/acorda_invoker_alerte.sh\" \"$GCLOUD_PROJECT\""
+    ],
       "runtime": "python312",
       "memory": "1GiB",
       "cpu": 1,
