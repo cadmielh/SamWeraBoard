@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import LogoMark from '../components/LogoMark'
 import IconPlus from '../components/IconPlus'
 import IconRefresh from '../components/IconRefresh'
@@ -10,6 +10,7 @@ import {
   ETICHETA_STARE_PORTAL, EroarePortal, INDICATII, LinkInactiv, anuleazaLipsa, citestePortal, incarcaAct, marcheazaLipsa,
   pregatesteFisier, retrageFisier, rezolvat, totulTrimis, type ActPortal, type Calitate, type ParteCi, type Portal,
 } from '../lib/portal'
+import { TOKEN_EXEMPLU, pornesteExemplu } from '../lib/portalExemplu'
 import '../styles/portal.css'
 
 type Stare = { fel: 'incarca' } | { fel: 'inactiv' } | { fel: 'eroare'; mesaj: string } | { fel: 'gata'; p: Portal }
@@ -18,6 +19,10 @@ type Stare = { fel: 'incarca' } | { fel: 'inactiv' } | { fel: 'eroare'; mesaj: s
  * ce a trimis deja (doar nume și mărime). Fără cont, fără nimic altceva din cabinet. */
 export default function PortalPage() {
   const { token = '' } = useParams()
+  const [cautare] = useSearchParams()
+  const exemplu = token === TOKEN_EXEMPLU
+  // Exemplul pornește curat la fiecare deschidere, cu numele cabinetului din adresă.
+  useState(() => { if (exemplu) pornesteExemplu(cautare.get('cabinet') ?? '', cautare.get('de') ?? '') })
   const [stare, setStare] = useState<Stare>({ fel: 'incarca' })
 
   const reincarca = useCallback(() => citestePortal(token).then(
@@ -50,6 +55,11 @@ export default function PortalPage() {
 
   return (
     <div className="portal">
+      {exemplu && (
+        <div className="portal-exemplu" role="note">
+          <strong>Exemplu:</strong> așa vede clientul linkul primit. Poți încerca orice; nimic nu se trimite.
+        </div>
+      )}
       <main className="portal-pagina">
         {stare.fel === 'incarca' && <div className="portal-incarca" role="status" aria-label="Se încarcă"><span className="portal-spinner" /></div>}
         {stare.fel === 'inactiv' && (

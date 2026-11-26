@@ -39,12 +39,17 @@ body.doc-redimensionare, body.doc-redimensionare * { cursor: col-resize !importa
 @container doc (max-width: 380px) {
   .doc-btn-text { display: none; }
   .doc-btn.btn-sm { padding: .35rem .5rem; }
-  .doc-sort { max-width: 7.5rem; }
   .doc-row-main { padding: .5rem .55rem; gap: .55rem; }
   .doc-only-hover { display: none; }
 }
 .doc-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 .doc-head-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+/* Antetul: „Încarcă” (principal) și „Cere documente”; dedesubt, „Folder nou” în stânga și ordonarea în dreapta. */
+.doc-section--coloana .doc-btn-principal { flex: 1; justify-content: center; }
+.doc-unelte { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: -.25rem; }
+.doc-unelte .doc-sort-grup { margin-left: auto; flex: none; }
+/* „Folder nou” are aceeași înălțime cu lista de ordonare, ca să încapă pe un singur rând și în coloana îngustă. */
+.doc-btn-folder.btn-sm { font-size: .78rem; padding: .28rem .6rem; gap: .35rem; white-space: nowrap; flex: none; }
 .doc-sort-grup { display: inline-flex; align-items: center; gap: .125rem; }
 .doc-sort { font: inherit; font-size: .78rem; color: var(--s600); background: var(--surface); border: 1.5px solid var(--btn-ghost-border);
   border-radius: var(--r-sm); padding: .28rem .5rem; cursor: pointer; }

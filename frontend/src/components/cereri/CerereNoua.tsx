@@ -6,6 +6,8 @@ import BtnLabel from '../BtnLabel'
 import TrimiteLink from './TrimiteLink'
 import IconPlus from '../IconPlus'
 import { IconLink } from '../documente/icons'
+import { linkExemplu } from '../../lib/portalExemplu'
+import { marcheazaPas } from '../../lib/ghidPornire'
 import {
   MAX_ACTE, ZILE_IMPLICIT, ZILE_VALABILITATE, creeazaCerere, propuneriActe, type ActNou, type PropunereAct,
 } from '../../lib/cereri'
@@ -13,7 +15,7 @@ import {
 /** „Cere documente”: actele (propuse din fișa clientului + adăugate liber), un mesaj și valabilitatea linkului; după
  * creare, aceeași fereastră arată linkul și căile de trimitere. */
 export default function CerereNoua({ client, onClose }: { client: Client; onClose: () => void }) {
-  const { activeWorkspace, toast } = useApp()
+  const { activeWorkspace, user, toast } = useApp()
   const propuneri = useMemo(() => propuneriActe(client), [client])
   const [bifate, setBifate] = useState<Set<string>>(() => new Set(propuneri.filter(p => p.bifat).map(p => p.cheie)))
   const [libere, setLibere] = useState<string[]>([])
@@ -60,12 +62,20 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
     try {
       const r = await creeazaCerere(client.id, acte, mesaj.trim(), zile)
       setGata({ link: r.link, expiraLa: r.cerere.expiraLa ? new Date(r.cerere.expiraLa) : null })
+      marcheazaPas('cerere')
     } catch (e) {
       toast((e as Error).message || 'Cererea nu a putut fi creată', 'err')
     } finally {
       setBusy(false)
     }
   }
+
+  // Exemplul, nu linkul real: deschiderea linkului real ar apărea la cabinet ca „deschis de client”.
+  const veziExemplu = (
+    <a href={linkExemplu(activeWorkspace?.name ?? '', user.displayName ?? '')} target="_blank" rel="noopener" data-ghid="cer-exemplu">
+      Vezi ce primește clientul
+    </a>
+  )
 
   return (
     <Modal onClose={onClose} className="cer-modal" ariaLabel="Cere documente">
@@ -78,14 +88,18 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
         <div className="modal-body">
           <p className="cer-intro">
             Cererea e gata. Trimite linkul clientului: îl deschide pe telefon, fotografiază sau alege actele, iar ele apar aici
-            ca „de verificat”.
+            ca „de verificat”. {veziExemplu}
           </p>
           <TrimiteLink link={gata.link} expiraLa={gata.expiraLa} cabinet={activeWorkspace?.name ?? ''} emailClient={client.email}
             onCopiat={ce => toast(ce === 'link' ? 'Linkul a fost copiat.' : 'Mesajul a fost copiat.', 'ok')} />
         </div>
       ) : (
         <div className="modal-body cer-form">
-          <fieldset className="cer-grup">
+          <p className="cer-intro cer-intro--exemplu">
+            Clientul primește un link și încarcă actele de pe telefon, fără cont.{' '}
+            {veziExemplu}
+          </p>
+          <fieldset className="cer-grup" data-ghid="cer-acte">
             <legend className="field-label">Ce acte ceri</legend>
             {propuneri.length === 0 && libere.length === 0 && (
               <p className="doc-meta">Fișa nu are persoane cu nume; adaugă mai jos actele cerute.</p>
@@ -140,7 +154,7 @@ export default function CerereNoua({ client, onClose }: { client: Client; onClos
         ) : (<>
           <span className="doc-meta cer-numar">{acte.length === 0 ? 'Niciun act ales' : acte.length === 1 ? 'Un act' : `${acte.length} acte`}</span>
           <button className="btn btn-ghost" onClick={onClose}>Renunță</button>
-          <button className="btn btn-primary" onClick={() => void trimite()} disabled={busy || !acte.length || acte.length > MAX_ACTE}>
+          <button className="btn btn-primary" onClick={() => void trimite()} disabled={busy || !acte.length || acte.length > MAX_ACTE} data-ghid="cer-creeaza">
             <BtnLabel busy={busy}><IconLink /> Creează linkul</BtnLabel>
           </button>
         </>)}

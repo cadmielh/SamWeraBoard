@@ -16,9 +16,10 @@ import '../../styles/cereri.css'
 
 const TON_CHIP = { ok: 'chip chip-success', info: 'chip chip-primary', atentie: 'chip cer-chip-atentie', stins: 'chip chip-muted' }
 
-/** Cererile de documente ale clientului, în secțiunea „Documente”: cele în lucru deschise, restul în „Istoric”.
- * Actele primite se verifică aici (previzualizare, Acceptă / Respinge cu motiv). */
-export default function CereriClient({ client, fisiere, onPreview, onExtrage }: {
+/** Cererile de documente ale clientului, în secțiunea „Documente”: cele în lucru deasupra fișierelor,
+ * cele încheiate (restrânse) sub ele. Actele primite se verifică aici (previzualizare, Acceptă / Respinge cu motiv). */
+export default function CereriClient({ parte, client, fisiere, onPreview, onExtrage }: {
+  parte: 'inLucru' | 'incheiate'
   client: Client
   /** Documentele clientului (cele primite prin link sunt printre ele, „de verificat”). */
   fisiere: Fisier[]
@@ -31,15 +32,19 @@ export default function CereriClient({ client, fisiere, onPreview, onExtrage }: 
   if (!cereri?.length) return null
   const inLucru = cereri.filter(c => c.stare === 'deschisa' || c.deVerificat > 0)
   const istoric = cereri.filter(c => !inLucru.includes(c))
+  if (parte === 'incheiate') {
+    if (!istoric.length) return null
+    return (
+      <details className="cer-istoric">
+        <summary className="doc-meta">Cereri încheiate ({istoric.length})</summary>
+        {istoric.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} onExtrage={onExtrage} />)}
+      </details>
+    )
+  }
+  if (!inLucru.length) return null
   return (
     <div className="cer-lista" aria-label="Cereri de documente">
       {inLucru.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} onExtrage={onExtrage} />)}
-      {istoric.length > 0 && (
-        <details className="cer-istoric">
-          <summary className="doc-meta">Cereri încheiate ({istoric.length})</summary>
-          {istoric.map(c => <CerereCard key={c.id} c={c} client={client} fisiere={fisiere} onPreview={onPreview} onExtrage={onExtrage} />)}
-        </details>
-      )}
     </div>
   )
 }
@@ -88,7 +93,7 @@ function CerereCard({ c, client, fisiere, onPreview, onExtrage }: {
       {canEdit && deschisa && (
         <div className="cer-card-actiuni">
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => void arataLink()} disabled={busy === 'link'}>
-            <BtnLabel busy={busy === 'link'} dark><IconTrimite size={12} /> Trimite din nou</BtnLabel>
+            <BtnLabel busy={busy === 'link'} dark><IconTrimite size={12} /> Retrimite</BtnLabel>
           </button>
           {(expirata(c, acum) || (c.expiraLa && c.expiraLa.getTime() - acum.getTime() < 3 * 86_400_000)) && (
             <button type="button" className="btn btn-ghost btn-xs" disabled={busy === 'prelungeste'}

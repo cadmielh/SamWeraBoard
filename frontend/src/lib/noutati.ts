@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { arrayUnion, doc, onSnapshot, setDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import type { FeatureKey } from './features'
-import { INDICII_DOCUMENTE, type IndiciuGhid } from './ghidPornire'
+import { INDICII_CERERE, INDICII_DOCUMENTE, INDICII_EDITARE, type IndiciuGhid } from './ghidPornire'
 
 export type Rol = 'admin' | 'member' | 'viewer'
 
@@ -41,6 +41,32 @@ export type ConditieNoutate = 'client' | 'acces'
 export const MAX_IN_FEREASTRA = 3
 
 export const NOUTATI: Noutate[] = [
+  {
+    id: 'cereri-documente',
+    data: '2026-11-26',
+    icon: '📲',
+    titlu: 'Cere actele direct de la client',
+    text: 'Din fișa clientului apeși „Cere documente”, alegi actele și îi trimiți un link pe WhatsApp, e-mail sau cod QR. '
+      + 'Clientul le fotografiază cu telefonul, fără cont, iar tu le accepți sau le respingi cu motiv; buletinul acceptat '
+      + 'îl treci direct în fișă. Poți vedea dinainte exact ce primește el.',
+    actiune: { label: 'Deschide clienții', cale: '/' },
+    necesita: ['client', 'acces'],
+    roluri: ['admin', 'member'],
+    tur: { ruta: '/', pasi: INDICII_CERERE },
+  },
+  {
+    id: 'documente-editare',
+    data: '2026-11-26',
+    icon: '✂️',
+    titlu: 'Actele primite, gata de tipar',
+    text: 'Poza strâmbă a unui buletin o îndrepți și o decupezi, iar filtrul „Scanare” îi albește fundalul. La PDF-uri rotești, '
+      + 'muți sau ștergi pagini, transformi poze în PDF și unești mai multe documente; buletinul față-verso îl pui pe o '
+      + 'singură pagină A4. Originalul rămâne mereu disponibil.',
+    actiune: { label: 'Deschide clienții', cale: '/' },
+    necesita: ['client', 'acces'],
+    roluri: ['admin', 'member'],
+    tur: { ruta: '/', pasi: INDICII_EDITARE },
+  },
   {
     id: 'documente-clienti',
     data: '2026-11-24',

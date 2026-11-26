@@ -96,8 +96,12 @@ export default function IndiciuEvidentiat({ titlu, indicii, index, ruta, onUrmat
     if (!curent) return
     const onClick = (e: MouseEvent) => {
       if (curent.doarCuButon || !tintaRef.current?.contains(e.target as Node)) return
-      if (areUrmator) onUrmator()
-      else if (incheieLaUltimulClic) onOpreste()
+      // După ce ținta își face treaba: trecerea la indiciul următor re-randează pagina, iar o țintă re-montată
+      // (ex. rândul din lista virtualizată a clienților) și-ar pierde clicul, care ar trebui repetat.
+      setTimeout(() => {
+        if (areUrmator) onUrmator()
+        else if (incheieLaUltimulClic) onOpreste()
+      }, 0)
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpreste() }
     document.addEventListener('click', onClick, true)

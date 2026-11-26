@@ -209,7 +209,7 @@ export function GhidIndiciu() {
   return (
     <IndiciuEvidentiat
       titlu={indiciu.pas.titlu} indicii={indiciu.pas.indicii} index={indiciu.index} ruta={indiciu.pas.ruta}
-      onUrmator={ghid.urmatorulIndiciu} onOpreste={ghid.opresteIndiciul}
+      onUrmator={ghid.urmatorulIndiciu} onOpreste={ghid.opresteIndiciul} incheieLaUltimulClic
       actiuni={<>
         <button type="button" className="btn btn-ghost btn-xs" onClick={ghid.deschide}>Toți pașii</button>
         <button type="button" className="btn btn-primary btn-xs" onClick={areUrmator ? ghid.urmatorulIndiciu : ghid.opresteIndiciul}>

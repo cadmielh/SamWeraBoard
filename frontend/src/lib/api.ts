@@ -25,10 +25,12 @@ export interface IDFields {
 
 // Workspace-ul activ, trimis la fiecare cerere: backend-ul verifică din el că
 // utilizatorul e membru cu rol suficient (vezi authz.require_role). Setat din
-// AppLayout la schimbarea workspace-ului.
-let activeWorkspaceId = "";
+// AppLayout la schimbarea workspace-ului. În dezvoltare, o modificare într-un modul importat de aici reexecută
+// fișierul (HMR) fără ca AppLayout să-l seteze din nou: valoarea se păstrează în `import.meta.hot.data`.
+let activeWorkspaceId: string = import.meta.hot?.data.activeWorkspaceId ?? "";
 export function setApiWorkspace(id: string | null) {
   activeWorkspaceId = id ?? "";
+  if (import.meta.hot) import.meta.hot.data.activeWorkspaceId = activeWorkspaceId;
 }
 
 /** Evenimentul care deschide fereastra de abonare (UpgradeModal), emis la orice refuz `subscription_required`

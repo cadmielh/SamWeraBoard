@@ -540,6 +540,34 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
           {fisiere.length > 0 && <span className="cv2-count-chip">{fisiere.length}</span>}
         </div>
         <div className="doc-head-actions">
+          {canEdit && (
+            <button type="button" className="btn btn-primary btn-sm doc-btn doc-btn-principal" onClick={() => inputRef.current?.click()}
+              title="Încarcă documente (sau trage-le aici, ori lipește cu Ctrl+V)" aria-label="Încarcă documente" data-ghid="doc-incarca">
+              <IconIncarca /> <span>Încarcă</span>
+            </button>
+          )}
+          {canEdit && (
+            <button type="button" className="btn btn-ghost btn-sm doc-btn" onClick={() => setCerereNoua(true)}
+              title="Trimite clientului un link prin care încarcă singur actele" aria-label="Cere documente de la client" data-ghid="doc-cere">
+              <IconCerere /> <span className="doc-btn-text">Cere documente</span>
+            </button>
+          )}
+          {fileInput}
+        </div>
+        {layout === 'coloana' && onRestrans && (
+          <button type="button" className="doc-icon-btn doc-restrange" onClick={() => onRestrans(true)} aria-label="Restrânge documentele" title="Restrânge documentele">
+            <IconRestrange directie="dreapta" />
+          </button>
+        )}
+      </div>
+
+      {(canEdit || fisiere.length + foldere.length > 1) && (
+        <div className="doc-unelte">
+          {canEdit && (
+            <button type="button" className="btn btn-ghost btn-sm doc-btn doc-btn-folder" onClick={() => { setRedenumire(null); setCautare(''); setFolderNou(true) }} title="Folder nou" aria-label="Folder nou">
+              <IconFolderNou size={13} /> <span>Folder nou</span>
+            </button>
+          )}
           {fisiere.length + foldere.length > 1 && (
             <div className="doc-sort-grup">
               <select className="doc-sort" value={sortare.dupa} aria-label="Ordonează după"
@@ -553,33 +581,10 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
               </button>
             </div>
           )}
-          {canEdit && (
-            <button type="button" className="btn btn-ghost btn-sm doc-btn" onClick={() => { setRedenumire(null); setCautare(''); setFolderNou(true) }} title="Folder nou" aria-label="Folder nou">
-              <IconFolderNou /> <span className="doc-btn-text">Folder nou</span>
-            </button>
-          )}
-          {canEdit && (
-            <button type="button" className="btn btn-ghost btn-sm doc-btn" onClick={() => setCerereNoua(true)}
-              title="Trimite clientului un link prin care încarcă singur actele" aria-label="Cere documente de la client">
-              <IconCerere /> <span className="doc-btn-text">Cere</span>
-            </button>
-          )}
-          {canEdit && (
-            <button type="button" className="btn btn-outline-primary btn-sm doc-btn" onClick={() => inputRef.current?.click()}
-              title="Încarcă documente (sau trage-le aici, ori lipește cu Ctrl+V)" aria-label="Încarcă documente" data-ghid="doc-incarca">
-              <IconIncarca /> <span className="doc-btn-text">Încarcă</span>
-            </button>
-          )}
-          {fileInput}
         </div>
-        {layout === 'coloana' && onRestrans && (
-          <button type="button" className="doc-icon-btn doc-restrange" onClick={() => onRestrans(true)} aria-label="Restrânge documentele" title="Restrânge documentele">
-            <IconRestrange directie="dreapta" />
-          </button>
-        )}
-      </div>
+      )}
 
-      <CereriClient client={client} fisiere={fisiere} onPreview={(lista, index) => setPreviewCerere({ lista, index })}
+      <CereriClient parte="inLucru" client={client} fisiere={fisiere} onPreview={(lista, index) => setPreviewCerere({ lista, index })}
         onExtrage={canEdit && onSaveClient ? extrageDinAct : undefined} />
 
       {arataCautare && (
@@ -685,6 +690,9 @@ export default function ClientDocumente({ client, layout = 'sectiune', restrans 
       )}
 
       {!loading && !error && <SpatiuCabinet workspaceId={workspaceId} client={totalOcupat} />}
+
+      <CereriClient parte="incheiate" client={client} fisiere={fisiere} onPreview={(lista, index) => setPreviewCerere({ lista, index })}
+        onExtrage={canEdit && onSaveClient ? extrageDinAct : undefined} />
 
       {peste && !tintaTragere && (
         <div className="doc-drop" aria-hidden>

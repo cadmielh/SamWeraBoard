@@ -13,7 +13,7 @@ import { DENUMIRE_DEMO, esteClientDemo } from './demo'
  * subcolecțiile proprii ale utilizatorului).
  */
 
-export type PasGhid = 'scan' | 'generare' | 'anaf' | 'dosar' | 'sarcina' | 'documente' | 'alerte' | 'coleg' | 'sablon'
+export type PasGhid = 'scan' | 'generare' | 'anaf' | 'dosar' | 'sarcina' | 'documente' | 'cerere' | 'alerte' | 'coleg' | 'sablon'
 
 /** Un indiciu „Arată-mi”: elementul [data-ghid=țintă] e evidențiat cu textul alăturat. Indiciile se succed:
  * următorul apare după clic pe țintă (ex. butonul care deschide formularul, apoi câmpul din formular). */
@@ -36,6 +36,8 @@ export interface DefinitiePas {
   doarAdmin?: boolean
   /** Bun de știut, dar nu condiționează terminarea ghidului (nu intră în progres). */
   optional?: boolean
+  /** Cere drept de editare: nu apare vizitatorilor. */
+  doarEditare?: boolean
   /** Doar la cabinetele cu funcția pornită (lansare treptată). */
   functie?: FeatureKey
   ruta: string
@@ -46,8 +48,27 @@ export interface DefinitiePas {
 export const INDICII_DOCUMENTE: IndiciuGhid[] = [
   { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
   { tinta: 'doc-incarca', doarEditare: true, text: 'Aici încarci actele clientului. Le poți și trage direct în secțiunea „Documente” sau lipi cu Ctrl+V.' },
-  { tinta: 'doc-lista', text: 'Apasă un document ca să-l vezi. Din meniul „⋯” al unui buletin alegi „Extrage datele în fișă”; '
-    + 'un document tras peste un folder se mută acolo.' },
+  { tinta: 'doc-lista', text: 'Apasă un document ca să-l vezi. Din meniul „⋯” alegi „Extrage datele în fișă” (la buletine) '
+    + 'sau „Editează” (decupezi și albești o poză); un document tras peste un folder se mută acolo.' },
+]
+
+/** Indiciile pentru cererea actelor de la client: în pasul din ghid și în turul noutății. */
+export const INDICII_CERERE: IndiciuGhid[] = [
+  { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
+  { tinta: 'doc-cere', doarEditare: true, text: 'Apasă „Cere documente”: clientul primește un link prin care încarcă singur actele, de pe telefon.' },
+  { tinta: 'cer-exemplu', doarEditare: true, text: 'Vezi ce primește clientul: se deschide un exemplu într-o filă nouă, unde poți încerca '
+    + 'fotografierea și trimiterea. Nimic nu se trimite.' },
+  { tinta: 'cer-creeaza', doarEditare: true, text: 'Bifează actele (propuse din fișa clientului), adaugă altele dacă e nevoie, apoi creează '
+    + 'linkul. Îl trimiți pe WhatsApp, e-mail sau cod QR, iar actele primite apar la client, „de verificat”.' },
+]
+
+/** Indiciile pentru editarea documentelor (turul noutății). */
+export const INDICII_EDITARE: IndiciuGhid[] = [
+  { tinta: 'client-deschide', text: 'Deschide un client: apasă „Vizualizează” pe rândul lui (pe telefon, atinge cardul clientului).' },
+  { tinta: 'doc-lista', doarCuButon: true, text: 'Din meniul „⋯” al unei poze alegi „Editează”: tragi colțurile pe marginile actului, '
+    + 'iar poza se îndreaptă; filtrul „Scanare” albește fundalul. Originalul se păstrează („Revino la original”).' },
+  { tinta: 'doc-lista', doarCuButon: true, text: 'La un PDF, „Pagini” rotește, mută sau șterge pagini; o poză se transformă în PDF. '
+    + 'Bifează mai multe documente ca să le unești într-un PDF sau să le pregătești pentru tipar (buletinul față-verso pe A4).' },
 ]
 
 export const PASI_GHID: DefinitiePas[] = [
@@ -116,9 +137,16 @@ export const PASI_GHID: DefinitiePas[] = [
   },
   {
     key: 'documente', optional: true, ruta: '/',
-    titlu: 'Păstrează actele clientului',
-    descriere: 'Buletine, contracte, dovezi de sediu: în fișa clientului, criptate, în foldere. Le previzualizezi și extragi datele din ele.',
+    titlu: 'Păstrează documentele clientului',
+    descriere: 'Buletine, contracte, dovezi de sediu: în fișa clientului, criptate, în foldere. Le previzualizezi, extragi datele '
+      + 'din ele și le editezi: decupezi și albești pozele, aranjezi paginile PDF, le pregătești de tipar.',
     indicii: INDICII_DOCUMENTE,
+  },
+  {
+    key: 'cerere', optional: true, doarEditare: true, ruta: '/',
+    titlu: 'Cere actele de la client',
+    descriere: 'Trimiți clientului un link: el fotografiază actele cu telefonul, tu le verifici și le accepți. Vezi și ce primește el.',
+    indicii: INDICII_CERERE,
   },
   {
     key: 'alerte', optional: true, functie: 'alerte', ruta: '/setari/notificari',
@@ -151,7 +179,7 @@ export function pasiObligatorii(pasi: DefinitiePas[]): DefinitiePas[] {
 
 /** Pașii care îl privesc pe utilizator, după rolul lui în cabinet și funcțiile pornite pentru cabinet. */
 export function pasiPentruRol(role: WorkspaceRole | null, features?: Workspace['features']): DefinitiePas[] {
-  return PASI_GHID.filter(p => (!p.doarAdmin || role === 'admin') && (!p.functie || hasFeature(features, p.functie)))
+  return PASI_GHID.filter(p => (!p.doarAdmin || role === 'admin') && (!p.doarEditare || role !== 'viewer') && (!p.functie || hasFeature(features, p.functie)))
 }
 
 /** Membrii adăugați înainte de lansarea ghidului nu-l primesc deschis automat (îl pot deschide din meniu). */

@@ -225,6 +225,11 @@ pe care o decide dacă portalul chiar e folosit.
   („dacă există”; cererea se încheie și fără ele), față și verso separat la buletin (`parte` pe fișier, în nume), verificarea
   pozei pe telefon (neclară sau întunecată: „O refac” / „Trimite oricum”), miniaturi locale ale pozelor trimise,
   reîncercare automată la rețea slabă, iar după acceptarea unui buletin cabinetul primește „Extrage datele în fișă”.
+- **Anunț și ghid (26 nov 2026):** în „Ce e nou”, „Cere actele direct de la client” și „Actele primite, gata de tipar”,
+  ambele cu tur (`INDICII_CERERE`, `INDICII_EDITARE`); în „Primii pași”, pasul opțional „Cere actele de la client” (bifat la
+  crearea unei cereri). Din „Cere documente”, „Vezi ce primește clientul” deschide `/p/exemplu`: pagina portalului cu o
+  cerere închipuită, ținută în memorie (`lib/portalExemplu.ts`), fără niciun apel la server. Data anunțurilor se mută la
+  data reală a deploy-ului.
 - **La deploy:** funcțiile `api` și `documente`, regulile Firestore (`cereriDocumente`), triggerul nou `alerte_cerere` și
   hostingul.
 

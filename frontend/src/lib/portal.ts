@@ -2,6 +2,7 @@
  * greșite. Vorbește doar cu rutele publice din cereri_api.py; nu folosește Firebase. Plan: docs/plan-documente-client.md. */
 import { BASE, FILES_BASE } from './apiBase'
 import type { StareAct, TipAct } from './cereri'
+import { TOKEN_EXEMPLU, citesteExemplu, incarcaExemplu, lipsaExemplu, retrageExemplu } from './portalExemplu'
 
 /** Fața sau verso-ul unui buletin (la cartea electronică). */
 export type ParteCi = 'fata' | 'verso'
@@ -110,12 +111,14 @@ async function raspuns(res: Response): Promise<Record<string, unknown>> {
 }
 
 export async function citestePortal(token: string): Promise<Portal> {
+  if (token === TOKEN_EXEMPLU) return citesteExemplu()
   let res: Response
   try { res = await fetch(url(BASE, token), { cache: 'no-store' }) } catch { throw new EroarePortal(mesajEroare(undefined, 0)) }
   return portalDinJson(await raspuns(res))
 }
 
 export async function retrageFisier(token: string, fid: string): Promise<void> {
+  if (token === TOKEN_EXEMPLU) return retrageExemplu(fid)
   let res: Response
   try { res = await fetch(url(BASE, token, `/fisiere/${encodeURIComponent(fid)}`), { method: 'DELETE' }) } catch {
     throw new EroarePortal(mesajEroare(undefined, 0))
@@ -134,9 +137,9 @@ async function trimiteJson(token: string, rest: string, method: 'POST' | 'DELETE
 }
 
 /** „Nu am acest act”, cu o notă opțională pentru cabinet; `anuleazaLipsa` revine (la fel și trimițând un fișier). */
-export const marcheazaLipsa = (token: string, aid: string, nota: string) =>
+export const marcheazaLipsa = (token: string, aid: string, nota: string) => token === TOKEN_EXEMPLU ? lipsaExemplu(aid, nota) :
   trimiteJson(token, `/acte/${encodeURIComponent(aid)}/lipsa`, 'POST', { nota })
-export const anuleazaLipsa = (token: string, aid: string) =>
+export const anuleazaLipsa = (token: string, aid: string) => token === TOKEN_EXEMPLU ? lipsaExemplu(aid, null) :
   trimiteJson(token, `/acte/${encodeURIComponent(aid)}/lipsa`, 'DELETE')
 
 /** Pe date mobile o încărcare poate pica din rețea sau dintr-o eroare trecătoare a serverului: se reia de câteva ori,
@@ -149,6 +152,7 @@ export async function incarcaAct(
   token: string, aid: string, fisier: Blob, nume: string, onProgres?: (p: number) => void, parte?: ParteCi,
   pauze: number[] = PAUZE_REINCERCARE,
 ): Promise<FisierTrimis | null> {
+  if (token === TOKEN_EXEMPLU) return incarcaExemplu(aid, fisier, nume, onProgres, parte)
   for (let i = 0; ; i++) {
     try {
       return await incarcaOdata(token, aid, fisier, nume, onProgres, parte)

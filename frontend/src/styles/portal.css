@@ -279,3 +279,17 @@
 .portal-verifica-text { display: flex; flex-direction: column; gap: 6px; font-size: .9rem; min-width: 0; }
 .portal-verifica-text > span { color: var(--text-muted); }
 .portal-actiuni--mic .portal-btn--principal { color: #fff; }
+
+/* Exemplul deschis din cabinet (/p/exemplu): o bandă care spune clar că nu e o cerere reală. */
+.portal-exemplu {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 10px 16px;
+  text-align: center;
+  font-size: .875rem;
+  background: var(--y50);
+  color: var(--y800);
+  border-bottom: 1px solid color-mix(in srgb, var(--y500) 35%, transparent);
+}
+:root[data-theme="dark"] .portal-exemplu { background: color-mix(in srgb, var(--y500) 18%, var(--bg)); color: var(--y400); }
